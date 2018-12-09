@@ -83,9 +83,13 @@ class AX_EXPORT AXPlatformNodeAuraLinux : public AXPlatformNodeBase {
   void OnFocused();
   void OnWindowActivated();
   void OnWindowDeactivated();
+  void OnMenuPopupStart();
+  void OnMenuPopupHide();
+  void OnMenuPopupEnd();
   void OnSelected();
   void OnValueChanged();
 
+  bool SupportsSelectionWithAtkSelection();
   bool SelectionAndFocusAreTheSame();
 
   // AXPlatformNode overrides.

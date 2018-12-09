@@ -51,7 +51,7 @@ const int kBorderInset = 0;
 ToolbarActionView::ToolbarActionView(
     ToolbarActionViewController* view_controller,
     ToolbarActionView::Delegate* delegate)
-    : MenuButton(base::string16(), this, false),
+    : MenuButton(base::string16(), this),
       view_controller_(view_controller),
       delegate_(delegate),
       called_register_command_(false),
@@ -97,7 +97,8 @@ gfx::Rect ToolbarActionView::GetAnchorBoundsInScreen() const {
 
 void ToolbarActionView::GetAccessibleNodeData(ui::AXNodeData* node_data) {
   views::MenuButton::GetAccessibleNodeData(node_data);
-  node_data->role = ax::mojom::Role::kButton;
+  node_data->role = delegate_->ShownInsideMenu() ? ax::mojom::Role::kMenuItem
+                                                 : ax::mojom::Role::kButton;
 }
 
 std::unique_ptr<LabelButtonBorder> ToolbarActionView::CreateDefaultBorder()
@@ -275,7 +276,7 @@ void ToolbarActionView::OnPopupShown(bool by_user) {
     // or delegate_->GetOverflowReferenceView(), which returns a MenuButton.
     views::MenuButton* reference_view =
         static_cast<views::MenuButton*>(GetReferenceViewForPopup());
-    pressed_lock_.reset(new views::MenuButton::PressedLock(reference_view));
+    pressed_lock_ = reference_view->menu_button_event_handler()->TakeLock();
   }
 }
 

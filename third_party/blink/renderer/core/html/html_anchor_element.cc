@@ -44,12 +44,14 @@
 #include "third_party/blink/renderer/core/loader/frame_load_request.h"
 #include "third_party/blink/renderer/core/loader/navigation_policy.h"
 #include "third_party/blink/renderer/core/loader/ping_loader.h"
+#include "third_party/blink/renderer/core/origin_trials/origin_trials.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/trustedtypes/trusted_types_util.h"
 #include "third_party/blink/renderer/core/trustedtypes/trusted_url.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
 #include "third_party/blink/renderer/platform/network/network_hints.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/weborigin/security_policy.h"
 
 namespace blink {
@@ -57,21 +59,22 @@ namespace blink {
 namespace {
 
 void RecordDownloadMetrics(LocalFrame* frame) {
-  DownloadStats::FrameType frame_type =
-      frame->IsMainFrame()
-          ? DownloadStats::FrameType::kMainFrame
-          : frame->IsAdSubframe()
-                ? frame->IsCrossOriginSubframe()
-                      ? DownloadStats::FrameType::kCrossOriginAdSubframe
-                      : DownloadStats::FrameType::kSameOriginAdSubframe
-                : frame->IsCrossOriginSubframe()
-                      ? DownloadStats::FrameType::kCrossOriginNonAdSubframe
-                      : DownloadStats::FrameType::kSameOriginNonAdSubframe;
-  DownloadStats::GestureType gesture_type =
-      LocalFrame::HasTransientUserActivation(frame)
-          ? DownloadStats::GestureType::kWithGesture
-          : DownloadStats::GestureType::kWithoutGesture;
-  DownloadStats::Record(frame_type, gesture_type);
+  if (frame->IsMainFrame()) {
+    DownloadStats::RecordMainFrameHasGesture(
+        LocalFrame::HasTransientUserActivation(frame));
+    return;
+  }
+
+  unsigned value = 0;
+  if (frame->GetDocument()->IsSandboxed(kSandboxDownloads))
+    value |= DownloadStats::kSandboxBit;
+  if (frame->IsCrossOriginSubframe())
+    value |= DownloadStats::kCrossOriginBit;
+  if (frame->IsAdSubframe())
+    value |= DownloadStats::kAdBit;
+  if (LocalFrame::HasTransientUserActivation(frame))
+    value |= DownloadStats::kGestureBit;
+  DownloadStats::RecordSubframeSandboxOriginAdGesture(value);
 }
 
 }  // namespace
@@ -86,7 +89,7 @@ HTMLAnchorElement::HTMLAnchorElement(const QualifiedName& tag_name,
       rel_list_(RelList::Create(this)) {}
 
 HTMLAnchorElement* HTMLAnchorElement::Create(Document& document) {
-  return new HTMLAnchorElement(kATag, document);
+  return MakeGarbageCollected<HTMLAnchorElement>(kATag, document);
 }
 
 HTMLAnchorElement::~HTMLAnchorElement() = default;
@@ -385,7 +388,7 @@ void HTMLAnchorElement::HandleClick(Event& event) {
 
   ResourceRequest request(completed_url);
 
-  ReferrerPolicy policy;
+  network::mojom::ReferrerPolicy policy;
   if (hasAttribute(kReferrerpolicyAttr) &&
       SecurityPolicy::ReferrerPolicyFromString(
           FastGetAttribute(kReferrerpolicyAttr),
@@ -396,9 +399,14 @@ void HTMLAnchorElement::HandleClick(Event& event) {
     request.SetReferrerPolicy(policy);
   }
 
-  if (hasAttribute(kDownloadAttr)) {
+  // Ignore the download attribute if we either can't read the content, or
+  // the event is an alt-click or similar.
+  if (hasAttribute(kDownloadAttr) &&
+      NavigationPolicyFromEvent(&event) != kNavigationPolicyDownload &&
+      GetDocument().GetSecurityOrigin()->CanReadContent(completed_url)) {
     if (GetDocument().IsSandboxed(kSandboxDownloads)) {
-      // TODO(jochen): Also measure navigations resulting in downloads.
+      if (RuntimeEnabledFeatures::BlockingDownloadsInSandboxEnabled())
+        return;
       UseCounter::Count(
           GetDocument(),
           UserGestureIndicator::ProcessingUserGesture()
@@ -406,20 +414,16 @@ void HTMLAnchorElement::HandleClick(Event& event) {
               : WebFeature::
                     kHTMLAnchorElementDownloadInSandboxWithoutUserGesture);
     }
-    // Ignore the download attribute if we either can't read the content, or
-    // the event is an alt-click or similar.
-    if (NavigationPolicyFromEvent(&event) != kNavigationPolicyDownload &&
-        GetDocument().GetSecurityOrigin()->CanReadContent(completed_url)) {
-      RecordDownloadMetrics(frame);
-      request.SetSuggestedFilename(
-          static_cast<String>(FastGetAttribute(kDownloadAttr)));
-      request.SetRequestContext(mojom::RequestContextType::DOWNLOAD);
-      request.SetRequestorOrigin(SecurityOrigin::Create(GetDocument().Url()));
-      frame->Client()->DownloadURL(request,
-                                   DownloadCrossOriginRedirects::kNavigate);
-      return;
-    }
+    RecordDownloadMetrics(frame);
+    request.SetSuggestedFilename(
+        static_cast<String>(FastGetAttribute(kDownloadAttr)));
+    request.SetRequestContext(mojom::RequestContextType::DOWNLOAD);
+    request.SetRequestorOrigin(SecurityOrigin::Create(GetDocument().Url()));
+    frame->Client()->DownloadURL(request,
+                                 DownloadCrossOriginRedirects::kNavigate);
+    return;
   }
+
   request.SetRequestContext(mojom::RequestContextType::HYPERLINK);
   FrameLoadRequest frame_request(&GetDocument(), request,
                                  getAttribute(kTargetAttr));
@@ -429,7 +433,12 @@ void HTMLAnchorElement::HandleClick(Event& event) {
   }
   if (HasRel(kRelationNoOpener))
     frame_request.SetShouldSetOpener(kNeverSetOpener);
-  frame_request.SetHrefTranslate(FastGetAttribute(kHreftranslateAttr));
+  if (origin_trials::HrefTranslateEnabled(&GetDocument()) &&
+      hasAttribute(kHreftranslateAttr)) {
+    frame_request.SetHrefTranslate(FastGetAttribute(kHreftranslateAttr));
+    UseCounter::Count(GetDocument(),
+                      WebFeature::kHTMLAnchorElementHrefTranslateAttribute);
+  }
   frame_request.SetTriggeringEventInfo(
       event.isTrusted() ? WebTriggeringEventInfo::kFromTrustedEvent
                         : WebTriggeringEventInfo::kFromUntrustedEvent);

@@ -8,6 +8,11 @@
 #include "ui/events/event_observer.h"
 #include "ui/events/test/event_generator.h"
 #include "ui/views/test/widget_test.h"
+#include "ui/views/widget/widget_utils.h"
+
+#if defined(USE_AURA)
+#include "ui/aura/window.h"
+#endif
 
 namespace views {
 namespace test {
@@ -40,11 +45,16 @@ class EventMonitorTest : public WidgetTest {
     widget_->SetSize(gfx::Size(100, 100));
     widget_->Show();
     if (IsMus()) {
-      generator_.reset(
-          new ui::test::EventGenerator(widget_->GetNativeWindow()));
+      generator_ =
+          std::make_unique<ui::test::EventGenerator>(GetRootWindow(widget_));
+// This #if will always be true on this path, but the code inside won't compile
+// for non-Aura.
+#if defined(USE_AURA)
+      generator_->MoveMouseRelativeTo(widget_->GetNativeWindow(), gfx::Point());
+#endif
     } else {
-      generator_.reset(new ui::test::EventGenerator(
-          GetContext(), widget_->GetNativeWindow()));
+      generator_ = std::make_unique<ui::test::EventGenerator>(
+          GetContext(), widget_->GetNativeWindow());
     }
     generator_->set_target(ui::test::EventGenerator::Target::APPLICATION);
   }

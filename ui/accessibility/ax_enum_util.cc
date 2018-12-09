@@ -70,6 +70,8 @@ const char* ToString(ax::mojom::Event event) {
       return "menuListValueChanged";
     case ax::mojom::Event::kMenuPopupEnd:
       return "menuPopupEnd";
+    case ax::mojom::Event::kMenuPopupHide:
+      return "menuPopupHide";
     case ax::mojom::Event::kMenuPopupStart:
       return "menuPopupStart";
     case ax::mojom::Event::kMenuStart:
@@ -184,6 +186,8 @@ ax::mojom::Event ParseEvent(const char* event) {
     return ax::mojom::Event::kMenuListValueChanged;
   if (0 == strcmp(event, "menuPopupEnd"))
     return ax::mojom::Event::kMenuPopupEnd;
+  if (0 == strcmp(event, "menuPopupHide"))
+    return ax::mojom::Event::kMenuPopupHide;
   if (0 == strcmp(event, "menuPopupStart"))
     return ax::mojom::Event::kMenuPopupStart;
   if (0 == strcmp(event, "menuStart"))
@@ -997,6 +1001,8 @@ const char* ToString(ax::mojom::Action action) {
       return "setValue";
     case ax::mojom::Action::kShowContextMenu:
       return "showContextMenu";
+    case ax::mojom::Action::kGetTextLocation:
+      return "getTextLocation";
   }
 
   return "";
@@ -1549,6 +1555,8 @@ const char* ToString(ax::mojom::BoolAttribute bool_attribute) {
       return "clipsChildren";
     case ax::mojom::BoolAttribute::kSelected:
       return "selected";
+    case ax::mojom::BoolAttribute::kSupportsTextLocation:
+      return "supportsTextLocation";
   }
 
   return "";
@@ -1581,6 +1589,8 @@ ax::mojom::BoolAttribute ParseBoolAttribute(const char* bool_attribute) {
     return ax::mojom::BoolAttribute::kClipsChildren;
   if (0 == strcmp(bool_attribute, "selected"))
     return ax::mojom::BoolAttribute::kSelected;
+  if (0 == strcmp(bool_attribute, "supportsTextLocation"))
+    return ax::mojom::BoolAttribute::kSupportsTextLocation;
   return ax::mojom::BoolAttribute::kNone;
 }
 

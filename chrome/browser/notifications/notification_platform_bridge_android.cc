@@ -108,8 +108,7 @@ ScopedJavaLocalRef<jobjectArray> ConvertToJavaActionInfos(
 // NotificationBridge has not been initialized yet. Enforce initialization of
 // the class.
 static void JNI_NotificationPlatformBridge_InitializeNotificationPlatformBridge(
-    JNIEnv* env,
-    const JavaParamRef<jclass>& clazz) {
+    JNIEnv* env) {
   g_browser_process->notification_platform_bridge();
 }
 
@@ -318,6 +317,9 @@ void NotificationPlatformBridgeAndroid::Close(
       env, java_object_, j_notification_id, j_scope_url,
       has_queried_webapk_package, j_webapk_package);
 }
+
+void NotificationPlatformBridgeAndroid::DisplayServiceShutDown(
+    Profile* profile) {}
 
 void NotificationPlatformBridgeAndroid::GetDisplayed(
     Profile* profile,

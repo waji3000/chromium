@@ -12,7 +12,7 @@
 
 namespace views {
 
-class FootnoteContainerView;
+class MenuItemView;
 class SubmenuView;
 
 // MenuScrollViewContainer contains the SubmenuView (through a MenuScrollView)
@@ -26,8 +26,8 @@ class MenuScrollViewContainer : public View {
   View* scroll_down_button() const { return scroll_down_button_; }
   View* scroll_up_button() const { return scroll_up_button_; }
 
-  // External function to check if the bubble border is usd.
-  bool HasBubbleBorder();
+  // External function to check if the bubble border is used.
+  bool HasBubbleBorder() const;
 
   // Offsets the Arrow from the default location.
   void SetBubbleArrowOffset(int offset);
@@ -57,7 +57,8 @@ class MenuScrollViewContainer : public View {
 
   BubbleBorder::Arrow BubbleBorderTypeFromAnchor(MenuAnchorPosition anchor);
 
-  bool HasVisibleFootnote();
+  // Returns the last item in the menu if it is of type HIGHLIGHTED.
+  MenuItemView* GetFootnote() const;
 
   class MenuScrollView;
 
@@ -77,8 +78,8 @@ class MenuScrollViewContainer : public View {
   // Weak reference to the currently set border.
   BubbleBorder* bubble_border_ = nullptr;
 
-  // A view to contain the footnote view, if it exists.
-  FootnoteContainerView* footnote_container_ = nullptr;
+  // Corner radius of the background.
+  int corner_radius_ = 0;
 
   DISALLOW_COPY_AND_ASSIGN(MenuScrollViewContainer);
 };

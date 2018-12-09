@@ -100,19 +100,6 @@ void Dispatch(blink::WebLocalFrame* frame, const blink::WebString& script) {
   frame->ExecuteScript(blink::WebScriptSource(script));
 }
 
-std::string GenerateThumbnailURL(int render_view_id,
-                                 InstantRestrictedID most_visited_item_id) {
-  return base::StringPrintf("chrome-search://thumb/%d/%d", render_view_id,
-                            most_visited_item_id);
-}
-
-std::string GenerateThumb2URL(const GURL& page_url,
-                              const GURL& fallback_thumb_url) {
-  return base::StringPrintf("chrome-search://thumb2/%s?fb=%s",
-                            page_url.spec().c_str(),
-                            fallback_thumb_url.spec().c_str());
-}
-
 // Populates a Javascript MostVisitedItem object for returning from
 // newTabPage.mostVisited. This does not include private data such as "url" or
 // "title".
@@ -151,27 +138,20 @@ v8::Local<v8::Object> GenerateMostVisitedItemData(
   // title will be rendered as "!Yahoo" if its "dir" attribute is not set to
   // "ltr".
   const char* direction;
-  if (base::i18n::StringContainsStrongRTLChars(mv_item.title))
+  if (base::i18n::GetFirstStrongCharacterDirection(mv_item.title) ==
+      base::i18n::RIGHT_TO_LEFT) {
     direction = kRTLHtmlTextDirection;
-  else
+  } else {
     direction = kLTRHtmlTextDirection;
+  }
 
   std::string title = base::UTF16ToUTF8(mv_item.title);
   if (title.empty())
     title = mv_item.url.spec();
 
-  // If the suggestion already has a suggested thumbnail, we create a thumbnail
-  // URL with both the local thumbnail and the proposed one as a fallback.
-  // Otherwise, we just pass on the generated one.
-  std::string thumbnail_url =
-      mv_item.thumbnail.is_valid()
-          ? GenerateThumb2URL(mv_item.url, mv_item.thumbnail)
-          : GenerateThumbnailURL(render_view_id, restricted_id);
-
   gin::DataObjectBuilder builder(isolate);
   builder.Set("renderViewId", render_view_id)
       .Set("rid", restricted_id)
-      .Set("thumbnailUrl", thumbnail_url)
       .Set("tileTitleSource", static_cast<int>(mv_item.title_source))
       .Set("tileSource", static_cast<int>(mv_item.source))
       .Set("title", title)
@@ -355,6 +335,9 @@ v8::Local<v8::Object> GenerateThemeBackgroundInfo(
                 theme_info.custom_background_attribution_line_1);
     builder.Set("attribution2",
                 theme_info.custom_background_attribution_line_2);
+    // Clear the theme attribution url, as it shouldn't be shown when
+    // a custom background is set.
+    builder.Set("attributionUrl", std::string());
   }
 
   return builder.Build();
@@ -627,6 +610,7 @@ class NewTabPageBindings : public gin::Wrappable<NewTabPageBindings> {
   static void UpdateCustomLink(int rid,
                                const std::string& url,
                                const std::string& title);
+  static void ReorderCustomLink(int rid, int new_pos);
   static void UndoCustomLinkAction();
   static void ResetCustomLinks();
   static std::string FixupAndValidateUrl(const std::string& url);
@@ -683,6 +667,7 @@ gin::ObjectTemplateBuilder NewTabPageBindings::GetObjectTemplateBuilder(
       .SetMethod("getMostVisitedItemData",
                  &NewTabPageBindings::GetMostVisitedItemData)
       .SetMethod("updateCustomLink", &NewTabPageBindings::UpdateCustomLink)
+      .SetMethod("reorderCustomLink", &NewTabPageBindings::ReorderCustomLink)
       .SetMethod("undoCustomLinkAction",
                  &NewTabPageBindings::UndoCustomLinkAction)
       .SetMethod("resetCustomLinks", &NewTabPageBindings::ResetCustomLinks)
@@ -889,6 +874,16 @@ void NewTabPageBindings::UpdateCustomLink(int rid,
 }
 
 // static
+void NewTabPageBindings::ReorderCustomLink(int rid, int new_pos) {
+  if (!ntp_tiles::IsCustomLinksEnabled())
+    return;
+  SearchBox* search_box = GetSearchBoxForCurrentContext();
+  if (!search_box || !HasOrigin(GURL(chrome::kChromeSearchMostVisitedUrl)))
+    return;
+  search_box->ReorderCustomLink(rid, new_pos);
+}
+
+// static
 void NewTabPageBindings::UndoCustomLinkAction() {
   if (!ntp_tiles::IsCustomLinksEnabled())
     return;
@@ -1029,7 +1024,7 @@ void SearchBoxExtension::Install(blink::WebLocalFrame* frame) {
   if (newtabpage_controller.IsEmpty())
     return;
 
-  v8::Handle<v8::Object> chrome =
+  v8::Local<v8::Object> chrome =
       content::GetOrCreateChromeObject(isolate, context->Global());
   v8::Local<v8::Object> embedded_search = v8::Object::New(isolate);
   embedded_search

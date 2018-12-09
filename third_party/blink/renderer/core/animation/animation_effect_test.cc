@@ -71,9 +71,14 @@ class TestAnimationEffectEventDelegate : public AnimationEffect::EventDelegate {
 class TestAnimationEffect : public AnimationEffect {
  public:
   static TestAnimationEffect* Create(const Timing& specified) {
-    return new TestAnimationEffect(specified,
-                                   new TestAnimationEffectEventDelegate());
+    return MakeGarbageCollected<TestAnimationEffect>(
+        specified, MakeGarbageCollected<TestAnimationEffectEventDelegate>());
   }
+
+  TestAnimationEffect(const Timing& specified,
+                      TestAnimationEffectEventDelegate* event_delegate)
+      : AnimationEffect(specified, event_delegate),
+        event_delegate_(event_delegate) {}
 
   void UpdateInheritedTime(double time) {
     UpdateInheritedTime(time, kTimingUpdateForAnimationFrame);
@@ -115,11 +120,6 @@ class TestAnimationEffect : public AnimationEffect {
   }
 
  private:
-  TestAnimationEffect(const Timing& specified,
-                      TestAnimationEffectEventDelegate* event_delegate)
-      : AnimationEffect(specified, event_delegate),
-        event_delegate_(event_delegate) {}
-
   Member<TestAnimationEffectEventDelegate> event_delegate_;
   mutable double local_time_;
   mutable double time_to_next_iteration_;
@@ -828,7 +828,8 @@ TEST(AnimationAnimationEffectTest, UpdateTimingInformsOwnerOnChange) {
   Timing timing;
   TestAnimationEffect* effect = TestAnimationEffect::Create(timing);
 
-  MockAnimationEffectOwner* owner = new MockAnimationEffectOwner();
+  MockAnimationEffectOwner* owner =
+      MakeGarbageCollected<MockAnimationEffectOwner>();
   effect->Attach(owner);
 
   EXPECT_CALL(*owner, EffectInvalidated()).Times(1);
@@ -850,7 +851,8 @@ TEST(AnimationAnimationEffectTest, UpdateTimingNoChange) {
   timing.timing_function = CubicBezierTimingFunction::Create(1, 1, 0.3, 0.3);
   TestAnimationEffect* effect = TestAnimationEffect::Create(timing);
 
-  MockAnimationEffectOwner* owner = new MockAnimationEffectOwner();
+  MockAnimationEffectOwner* owner =
+      MakeGarbageCollected<MockAnimationEffectOwner>();
   effect->Attach(owner);
 
   // None of the below calls to updateTime should cause the AnimationEffect to

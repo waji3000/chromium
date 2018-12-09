@@ -51,7 +51,7 @@ NavigatorVR* NavigatorVR::From(Document& document) {
 NavigatorVR& NavigatorVR::From(Navigator& navigator) {
   NavigatorVR* supplement = Supplement<Navigator>::From<NavigatorVR>(navigator);
   if (!supplement) {
-    supplement = new NavigatorVR(navigator);
+    supplement = MakeGarbageCollected<NavigatorVR>(navigator);
     ProvideTo(navigator, supplement);
   }
   return *supplement;
@@ -179,7 +179,7 @@ VRController* NavigatorVR::Controller() {
     return nullptr;
 
   if (!controller_) {
-    controller_ = new VRController(this);
+    controller_ = MakeGarbageCollected<VRController>(this);
     controller_->SetListeningForActivate(focused_ && listening_for_activate_);
     controller_->FocusChanged();
   }

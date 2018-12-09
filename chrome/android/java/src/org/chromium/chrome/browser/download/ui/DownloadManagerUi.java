@@ -231,6 +231,8 @@ public class DownloadManagerUi implements OnMenuItemClickListener, SearchDelegat
                 isLocationEnabled ? R.id.with_settings_normal_menu_group : R.id.normal_menu_group;
         mSearchMenuId = isLocationEnabled ? R.id.with_settings_search_menu_id : R.id.search_menu_id;
         mInfoMenuId = isLocationEnabled ? 0 : R.id.info_menu_id;
+        final int closeMenuId =
+                isLocationEnabled ? R.id.with_settings_close_menu_id : R.id.close_menu_id;
 
         mToolbar = (DownloadManagerToolbar) mSelectableListLayout.initializeToolbar(
                 R.layout.download_manager_toolbar, mBackendProvider.getSelectionDelegate(), 0, null,
@@ -253,7 +255,7 @@ public class DownloadManagerUi implements OnMenuItemClickListener, SearchDelegat
         enableStorageInfoHeader(mHistoryAdapter.shouldShowStorageInfoHeader());
 
         mIsSeparateActivity = isSeparateActivity;
-        if (!mIsSeparateActivity) mToolbar.removeCloseButton();
+        if (!mIsSeparateActivity) mToolbar.removeMenuItem(closeMenuId);
 
         RecordUserAction.record("Android.DownloadManager.Open");
     }
@@ -383,9 +385,7 @@ public class DownloadManagerUi implements OnMenuItemClickListener, SearchDelegat
             mToolbar.showSearchView();
             return true;
         } else if (item.getItemId() == R.id.settings_menu_id) {
-            Intent intent = PreferencesLauncher.createIntentForSettingsPage(
-                    mActivity, DownloadPreferences.class.getName());
-            mActivity.startActivity(intent);
+            PreferencesLauncher.launchSettingsPage(mActivity, DownloadPreferences.class);
             return true;
         }
         return false;
@@ -416,7 +416,7 @@ public class DownloadManagerUi implements OnMenuItemClickListener, SearchDelegat
         for (Observer observer : mObservers) observer.onUrlChanged(url);
 
         if (mNativePage != null) {
-            mNativePage.onStateChange(DownloadFilter.getUrlForFilter(filter));
+            mNativePage.onStateChange(DownloadFilter.getUrlForFilter(filter), true);
         }
 
         RecordHistogram.recordEnumeratedHistogram(

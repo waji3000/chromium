@@ -14,11 +14,11 @@
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_number_conversions.h"
+#include "chromeos/components/multidevice/software_feature_state.h"
 #include "chromeos/components/proximity_auth/logging/logging.h"
 #include "components/cryptauth/cryptauth_client.h"
 #include "components/cryptauth/pref_names.h"
 #include "components/cryptauth/proto/enum_util.h"
-#include "components/cryptauth/software_feature_state.h"
 #include "components/cryptauth/sync_scheduler_impl.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
@@ -113,6 +113,10 @@ void RecordDeviceSyncSoftwareFeaturesResult(
   }
 }
 
+void RecordDeviceSyncResult(bool success) {
+  UMA_HISTOGRAM_BOOLEAN("CryptAuth.DeviceSync.Result", success);
+}
+
 // Converts supported and enabled SoftwareFeature protos to a single dictionary
 // value that can be stored in user prefs.
 std::unique_ptr<base::DictionaryValue>
@@ -127,8 +131,10 @@ SupportedAndEnabledSoftwareFeaturesToDictionaryValue(
       std::make_unique<base::DictionaryValue>();
 
   for (const auto& supported_software_feature : supported_software_features) {
-    dictionary->SetInteger(supported_software_feature,
-                           static_cast<int>(SoftwareFeatureState::kSupported));
+    dictionary->SetInteger(
+        supported_software_feature,
+        static_cast<int>(
+            chromeos::multidevice::SoftwareFeatureState::kSupported));
   }
 
   for (const auto& enabled_software_feature : enabled_software_features) {
@@ -139,21 +145,32 @@ SupportedAndEnabledSoftwareFeaturesToDictionaryValue(
     int software_feature_state;
     if (!dictionary->GetInteger(software_feature_key,
                                 &software_feature_state) ||
-        static_cast<SoftwareFeatureState>(software_feature_state) !=
-            SoftwareFeatureState::kSupported) {
-      PA_LOG(ERROR) << "A feature is marked as enabled but not as supported: "
-                    << software_feature_key;
-      RecordDeviceSyncSoftwareFeaturesResult(false /* success */,
-                                             software_feature);
+        static_cast<chromeos::multidevice::SoftwareFeatureState>(
+            software_feature_state) !=
+            chromeos::multidevice::SoftwareFeatureState::kSupported) {
+      if (software_feature == cryptauth::SoftwareFeature::EASY_UNLOCK_HOST) {
+        // Allow this known special-case for legacy purposes; fall-through to
+        // logic which marks this device as enabled.
+        PA_LOG(VERBOSE) << "Encountered legacy case: feature EASY_UNLOCK_HOST "
+                           "is marked as supported but not enabled. Setting as "
+                           "enabled.";
+      } else {
+        PA_LOG(ERROR) << "A feature is marked as enabled but not as supported: "
+                      << software_feature_key << ". Not setting as enabled.";
+        RecordDeviceSyncSoftwareFeaturesResult(false /* success */,
+                                               software_feature);
 
-      continue;
-    } else {
-      RecordDeviceSyncSoftwareFeaturesResult(true /* success */,
-                                             software_feature);
+        continue;
+      }
     }
 
-    dictionary->SetInteger(software_feature_key,
-                           static_cast<int>(SoftwareFeatureState::kEnabled));
+    RecordDeviceSyncSoftwareFeaturesResult(true /* success */,
+                                           software_feature);
+
+    dictionary->SetInteger(
+        software_feature_key,
+        static_cast<int>(
+            chromeos::multidevice::SoftwareFeatureState::kEnabled));
   }
 
   // If software features for EASY_UNLOCK_HOST or MAGIC_TETHER_HOST have not
@@ -166,15 +183,19 @@ SupportedAndEnabledSoftwareFeaturesToDictionaryValue(
       SoftwareFeatureEnumToString(cryptauth::SoftwareFeature::EASY_UNLOCK_HOST);
   if (legacy_unlock_key &&
       !dictionary->GetInteger(software_feature_key, &software_feature_state)) {
-    dictionary->SetInteger(software_feature_key,
-                           static_cast<int>(SoftwareFeatureState::kEnabled));
+    dictionary->SetInteger(
+        software_feature_key,
+        static_cast<int>(
+            chromeos::multidevice::SoftwareFeatureState::kEnabled));
   }
   software_feature_key = SoftwareFeatureEnumToString(
       cryptauth::SoftwareFeature::MAGIC_TETHER_HOST);
   if (legacy_mobile_hotspot_supported &&
       !dictionary->GetInteger(software_feature_key, &software_feature_state)) {
-    dictionary->SetInteger(software_feature_key,
-                           static_cast<int>(SoftwareFeatureState::kSupported));
+    dictionary->SetInteger(
+        software_feature_key,
+        static_cast<int>(
+            chromeos::multidevice::SoftwareFeatureState::kSupported));
   }
 
   return dictionary;
@@ -331,11 +352,12 @@ void AddSoftwareFeaturesToExternalDevice(
       continue;
     }
 
-    switch (static_cast<SoftwareFeatureState>(software_feature_state)) {
-      case SoftwareFeatureState::kEnabled:
+    switch (static_cast<chromeos::multidevice::SoftwareFeatureState>(
+        software_feature_state)) {
+      case chromeos::multidevice::SoftwareFeatureState::kEnabled:
         external_device->add_enabled_software_features(software_feature);
         FALLTHROUGH;
-      case SoftwareFeatureState::kSupported:
+      case chromeos::multidevice::SoftwareFeatureState::kSupported:
         external_device->add_supported_software_features(software_feature);
         break;
       default:
@@ -646,8 +668,12 @@ void CryptAuthDeviceManagerImpl::OnGetMyDevicesSuccess(
   // Update the synced devices stored in the user's prefs.
   std::unique_ptr<base::ListValue> devices_as_list(new base::ListValue());
 
-  if (!response.devices().empty())
-    PA_LOG(INFO) << "Devices were successfully synced.";
+  if (!response.devices().empty()) {
+    PA_LOG(VERBOSE) << "Devices were successfully synced.";
+    RecordDeviceSyncResult(true /* success */);
+  } else {
+    RecordDeviceSyncResult(false /* success */);
+  }
 
   for (const auto& device : response.devices()) {
     std::unique_ptr<base::DictionaryValue> device_dictionary =
@@ -695,6 +721,7 @@ void CryptAuthDeviceManagerImpl::OnGetMyDevicesFailure(
   cryptauth_client_.reset();
   sync_request_.reset();
   NotifySyncFinished(SyncResult::FAILURE, DeviceChangeResult::UNCHANGED);
+  RecordDeviceSyncResult(false /* success */);
 }
 
 void CryptAuthDeviceManagerImpl::OnResyncMessage() {

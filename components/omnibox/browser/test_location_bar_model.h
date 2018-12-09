@@ -29,8 +29,9 @@ class TestLocationBarModel : public LocationBarModel {
   GURL GetURL() const override;
   security_state::SecurityLevel GetSecurityLevel(
       bool ignore_editing) const override;
+  bool IsSecurityInfoInitialized() const override;
   const gfx::VectorIcon& GetVectorIcon() const override;
-  base::string16 GetSecureVerboseText() const override;
+  base::string16 GetSecureDisplayText() const override;
   base::string16 GetSecureAccessibilityText() const override;
   base::string16 GetEVCertName() const override;
   bool ShouldDisplayURL() const override;
@@ -54,6 +55,9 @@ class TestLocationBarModel : public LocationBarModel {
     should_display_url_ = should_display_url;
   }
   void set_offline_page(bool offline_page) { offline_page_ = offline_page; }
+  void set_secure_display_text(base::string16 secure_display_text) {
+    secure_display_text_ = secure_display_text;
+  }
 
  private:
   // If either of these is not explicitly set, the test class will return
@@ -67,6 +71,7 @@ class TestLocationBarModel : public LocationBarModel {
   base::string16 ev_cert_name_;
   bool should_display_url_ = false;
   bool offline_page_ = false;
+  base::string16 secure_display_text_ = base::string16();
 
   DISALLOW_COPY_AND_ASSIGN(TestLocationBarModel);
 };

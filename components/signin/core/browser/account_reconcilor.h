@@ -18,6 +18,7 @@
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "build/build_config.h"
 #include "components/content_settings/core/browser/content_settings_observer.h"
 #include "components/content_settings/core/common/content_settings_pattern.h"
 #include "components/keyed_service/core/keyed_service.h"
@@ -25,13 +26,16 @@
 #include "components/signin/core/browser/gaia_cookie_manager_service.h"
 #include "components/signin/core/browser/signin_client.h"
 #include "components/signin/core/browser/signin_header_helper.h"
-#include "components/signin/core/browser/signin_manager.h"
 #include "components/signin/core/browser/signin_metrics.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "google_apis/gaia/oauth2_token_service.h"
 
 // Enables usage of Gaia Auth Multilogin endpoint for identity consistency.
 extern const base::Feature kUseMultiloginEndpoint;
+
+namespace identity {
+class IdentityManager;
+}
 
 namespace signin {
 class AccountReconcilorDelegate;
@@ -96,7 +100,7 @@ class AccountReconcilor : public KeyedService,
 
   AccountReconcilor(
       ProfileOAuth2TokenService* token_service,
-      SigninManagerBase* signin_manager,
+      identity::IdentityManager* identity_manager,
       SigninClient* client,
       GaiaCookieManagerService* cookie_manager_service,
       std::unique_ptr<signin::AccountReconcilorDelegate> delegate);
@@ -105,6 +109,11 @@ class AccountReconcilor : public KeyedService,
   // Initializes the account reconcilor. Should be called once after
   // construction.
   void Initialize(bool start_reconcile_if_tokens_available);
+
+#if defined(OS_IOS)
+  // Sets the WKHTTPSystemCookieStore flag value.
+  void SetIsWKHTTPSystemCookieStoreEnabled(bool is_enabled);
+#endif  // defined(OS_IOS)
 
   // Enables and disables the reconciliation.
   void EnableReconcile();
@@ -229,8 +238,6 @@ class AccountReconcilor : public KeyedService,
   }
 
   // Register and unregister with dependent services.
-  void RegisterWithSigninManager();
-  void UnregisterWithSigninManager();
   void RegisterWithTokenService();
   void UnregisterWithTokenService();
   void RegisterWithCookieManagerService();
@@ -302,13 +309,16 @@ class AccountReconcilor : public KeyedService,
 
   void HandleReconcileTimeout();
 
+  // Returns true is multilogin endpoint can be enabled.
+  bool IsMultiloginEndpointEnabled() const;
+
   std::unique_ptr<signin::AccountReconcilorDelegate> delegate_;
 
   // The ProfileOAuth2TokenService associated with this reconcilor.
   ProfileOAuth2TokenService* token_service_;
 
-  // The SigninManager associated with this reconcilor.
-  SigninManagerBase* signin_manager_;
+  // The IdentityManager associated with this reconcilor.
+  identity::IdentityManager* identity_manager_;
 
   // The SigninClient associated with this reconcilor.
   SigninClient* client_;
@@ -369,6 +379,11 @@ class AccountReconcilor : public KeyedService,
   // Greater than 0 when synced data is being deleted, and it is important to
   // not invalidate the primary token while this is happening.
   int synced_data_deletion_in_progress_count_ = 0;
+
+#if defined(OS_IOS)
+  // Stores the WKHTTPSystemCookieStore flag value.
+  bool is_wkhttp_system_cookie_store_enabled_ = false;
+#endif  // defined(OS_IOS)
 
   base::WeakPtrFactory<AccountReconcilor> weak_factory_;
 

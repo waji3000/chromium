@@ -6,18 +6,18 @@ concepts, such as DOM elements and layout objects.
 
 This code is owned by the [paint team][paint-team-site].
 
-Slimming Paint v2 is currently being implemented. Unlike Slimming Paint v1, SPv2
-represents its paint artifact not as a flat display list, but as a list of
-drawings, and a list of paint chunks, stored together.
+CompositeAfterPaint is currently being implemented. Unlike Slimming Paint v1,
+CompositeAfterPaint represents its paint artifact not as a flat display list,
+but as a list of drawings, and a list of paint chunks, stored together.
 
-This document explains the SPv2 world as it develops, not the SPv1 world it
+This document explains the CAP world as it develops, not the SPv1 world it
 replaces.
 
 [paint-team-site]: https://www.chromium.org/developers/paint-team
 
 ## Paint artifact
 
-The SPv2 [paint artifact](paint_artifact.h) consists of a list of display items
+The CAP [paint artifact](paint_artifact.h) consists of a list of display items
 in paint order (ideally mostly or all drawings), partitioned into *paint chunks*
 which define certain *paint properties* which affect how the content should be
 drawn or composited.
@@ -140,8 +140,8 @@ but can be other Blink objects which get painted, such as inline boxes and drag
 images.
 
 *** note
-It is illegal for there to be two drawings with the same ID in a display item
-list, except for drawings that are marked uncacheable
+It is illegal for there to be two display items with the same ID in a display
+item list, except for display items that are marked uncacheable
 (see [DisplayItemCacheSkipper](DisplayItemCacheSkipper.h)).
 ***
 
@@ -179,10 +179,10 @@ a `PaintController`.
 the *current* paint artifact, and *new* display items and paint chunks, which
 are added as content is painted.
 
-Painters should call `PaintController::useCachedDrawingIfPossible()` or
-`PaintController::useCachedSubsequenceIfPossible()` and if the function returns
+Painters should call `PaintController::UseCachedItemIfPossible()` or
+`PaintController::UseCachedSubsequenceIfPossible()` and if the function returns
 `true`, existing display items that are still valid in the *current* paint artifact
-will be reused and the painter should skip real painting of the drawing or subsequence.
+will be reused and the painter should skip real painting of the item or subsequence.
 
 When the new display items have been populated, clients call
 `commitNewDisplayItems`, which replaces the previous artifact with the new data,

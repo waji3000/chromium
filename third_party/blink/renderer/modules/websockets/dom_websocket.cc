@@ -62,6 +62,7 @@
 #include "third_party/blink/renderer/platform/weborigin/known_ports.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
@@ -276,7 +277,7 @@ DOMWebSocket* DOMWebSocket::Create(ExecutionContext* context,
     return nullptr;
   }
 
-  DOMWebSocket* websocket = new DOMWebSocket(context);
+  DOMWebSocket* websocket = MakeGarbageCollected<DOMWebSocket>(context);
   websocket->PauseIfNeeded();
 
   if (protocols.IsNull()) {
@@ -318,6 +319,9 @@ void DOMWebSocket::Connect(const String& url,
     if (!upgrade_insecure_requests_set) {
       was_autoupgraded_to_wss_ = true;
       LogMixedAutoupgradeStatus(MixedContentAutoupgradeStatus::kStarted);
+      GetExecutionContext()->AddConsoleMessage(
+          MixedContentChecker::CreateConsoleMessageAboutWebSocketAutoupgrade(
+              GetExecutionContext()->Url(), url_));
     }
     UseCounter::Count(GetExecutionContext(),
                       WebFeature::kUpgradeInsecureRequestsUpgradedRequest);

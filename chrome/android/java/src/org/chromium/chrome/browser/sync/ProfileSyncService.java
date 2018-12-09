@@ -4,6 +4,8 @@
 
 package org.chromium.chrome.browser.sync;
 
+import android.support.annotation.Nullable;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 
@@ -17,8 +19,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
-
-import javax.annotation.Nullable;
 
 /**
  * JNI wrapper for the native ProfileSyncService.
@@ -220,11 +220,6 @@ public class ProfileSyncService {
         return nativeIsUsingSecondaryPassphrase(mNativeProfileSyncServiceAndroid);
     }
 
-    public byte[] getCustomPassphraseKey() {
-        assert isUsingSecondaryPassphrase();
-        return nativeGetCustomPassphraseKey(mNativeProfileSyncServiceAndroid);
-    }
-
     /**
      * Checks if we need a passphrase to decrypt a currently-enabled data type. This returns false
      * if a passphrase is needed for a type that is not currently enabled.
@@ -268,7 +263,7 @@ public class ProfileSyncService {
 
     /**
      * Turns on encryption of all data types. This only takes effect after sync configuration is
-     * completed and setPreferredDataTypes() is invoked.
+     * completed and setChosenDataTypes() is invoked.
      */
     public void enableEncryptEverything() {
         assert isEngineInitialized();
@@ -278,11 +273,6 @@ public class ProfileSyncService {
     public void setEncryptionPassphrase(String passphrase) {
         assert isEngineInitialized();
         nativeSetEncryptionPassphrase(mNativeProfileSyncServiceAndroid, passphrase);
-    }
-
-    public boolean isCryptographerReady() {
-        assert isEngineInitialized();
-        return nativeIsCryptographerReady(mNativeProfileSyncServiceAndroid);
     }
 
     public boolean setDecryptionPassphrase(String passphrase) {
@@ -320,7 +310,21 @@ public class ProfileSyncService {
     }
 
     /**
-     * Gets the set of data types that are enabled in sync.
+     * Gets the set of data types that are enabled in sync. This will always
+     * return a subset of syncer::UserSelectableTypes().
+     *
+     * This is unaffected by whether sync is on.
+     *
+     * @return Set of chosen types.
+     */
+    public Set<Integer> getChosenDataTypes() {
+        int[] modelTypeArray = nativeGetChosenDataTypes(mNativeProfileSyncServiceAndroid);
+        return modelTypeArrayToSet(modelTypeArray);
+    }
+
+    /**
+     * Gets the set of data types that are "preferred" in sync. Those are the
+     * "chosen" ones (see above), plus any that are implied by them.
      *
      * This is unaffected by whether sync is on.
      *
@@ -360,9 +364,9 @@ public class ProfileSyncService {
      * @param enabledTypes   The set of types to enable. Ignored (can be null) if
      *                       syncEverything is true.
      */
-    public void setPreferredDataTypes(boolean syncEverything, Set<Integer> enabledTypes) {
-        nativeSetPreferredDataTypes(mNativeProfileSyncServiceAndroid, syncEverything, syncEverything
-                ? ALL_SELECTABLE_TYPES : modelTypeSetToArray(enabledTypes));
+    public void setChosenDataTypes(boolean syncEverything, Set<Integer> enabledTypes) {
+        nativeSetChosenDataTypes(mNativeProfileSyncServiceAndroid, syncEverything,
+                syncEverything ? ALL_SELECTABLE_TYPES : modelTypeSetToArray(enabledTypes));
     }
 
     public void setFirstSetupComplete() {
@@ -563,12 +567,11 @@ public class ProfileSyncService {
     private native boolean nativeIsPassphraseRequiredForDecryption(
             long nativeProfileSyncServiceAndroid);
     private native boolean nativeIsUsingSecondaryPassphrase(long nativeProfileSyncServiceAndroid);
-    private native byte[] nativeGetCustomPassphraseKey(long nativeProfileSyncServiceAndroid);
+
     private native boolean nativeSetDecryptionPassphrase(
             long nativeProfileSyncServiceAndroid, String passphrase);
     private native void nativeSetEncryptionPassphrase(
             long nativeProfileSyncServiceAndroid, String passphrase);
-    private native boolean nativeIsCryptographerReady(long nativeProfileSyncServiceAndroid);
     private native int nativeGetPassphraseType(long nativeProfileSyncServiceAndroid);
     private native boolean nativeHasExplicitPassphraseTime(long nativeProfileSyncServiceAndroid);
     private native long nativeGetExplicitPassphraseTime(long nativeProfileSyncServiceAndroid);
@@ -580,8 +583,9 @@ public class ProfileSyncService {
     private native String nativeGetSyncEnterCustomPassphraseBodyText(
             long nativeProfileSyncServiceAndroid);
     private native int[] nativeGetActiveDataTypes(long nativeProfileSyncServiceAndroid);
+    private native int[] nativeGetChosenDataTypes(long nativeProfileSyncServiceAndroid);
     private native int[] nativeGetPreferredDataTypes(long nativeProfileSyncServiceAndroid);
-    private native void nativeSetPreferredDataTypes(
+    private native void nativeSetChosenDataTypes(
             long nativeProfileSyncServiceAndroid, boolean syncEverything, int[] modelTypeArray);
     private native void nativeSetSetupInProgress(
             long nativeProfileSyncServiceAndroid, boolean inProgress);

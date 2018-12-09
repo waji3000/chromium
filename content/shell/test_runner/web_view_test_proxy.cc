@@ -29,9 +29,6 @@ ProxyWebWidgetClient::ProxyWebWidgetClient(
 void ProxyWebWidgetClient::DidInvalidateRect(const blink::WebRect& r) {
   base_class_widget_client_->DidInvalidateRect(r);
 }
-bool ProxyWebWidgetClient::AllowsBrokenNullLayerTreeView() const {
-  return base_class_widget_client_->AllowsBrokenNullLayerTreeView();
-}
 void ProxyWebWidgetClient::ScheduleAnimation() {
   widget_test_client_->ScheduleAnimation();
 }
@@ -128,7 +125,7 @@ void ProxyWebWidgetClient::StartDragging(network::mojom::ReferrerPolicy policy,
                                          const blink::WebDragData& data,
                                          blink::WebDragOperationsMask mask,
                                          const SkBitmap& drag_image,
-                                         const blink::WebPoint& image_offset) {
+                                         const gfx::Point& image_offset) {
   widget_test_client_->StartDragging(policy, data, mask, drag_image,
                                      image_offset);
   // Don't forward this call to |base_class_widget_client_| because we don't
@@ -138,7 +135,11 @@ void ProxyWebWidgetClient::StartDragging(network::mojom::ReferrerPolicy policy,
 WebViewTestProxyBase::WebViewTestProxyBase()
     : accessibility_controller_(new AccessibilityController(this)),
       text_input_controller_(new TextInputController(this)),
-      view_test_runner_(new TestRunnerForSpecificView(this)) {
+      // TODO(danakj): We should collapse WebViewTestProxy and
+      // WebViewTestProxyBase into one class really. They are both
+      // concrete types now.
+      view_test_runner_(
+          new TestRunnerForSpecificView(static_cast<WebViewTestProxy*>(this))) {
   WebWidgetTestProxyBase::set_web_view_test_proxy_base(this);
 }
 

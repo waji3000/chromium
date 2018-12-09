@@ -23,11 +23,6 @@ public class AutofillAssistantPreferences extends PreferenceFragment {
         super.onCreate(savedInstanceState);
         getActivity().setTitle(R.string.prefs_autofill_assistant_title);
         setPreferenceScreen(getPreferenceManager().createPreferenceScreen(getActivity()));
-    }
-
-    @Override
-    public void onResume() {
-        super.onResume();
         createAutofillAssistantSwitch();
     }
 
@@ -55,6 +50,6 @@ public class AutofillAssistantPreferences extends PreferenceFragment {
         // (e.g. the switch will say "On" when it is really turned off), so .setChecked() should be
         // called after .addPreference()
         autofillAssistantSwitch.setChecked(ContextUtils.getAppSharedPreferences().getBoolean(
-                PREF_AUTOFILL_ASSISTANT_SWITCH, false));
+                PREF_AUTOFILL_ASSISTANT_SWITCH, true));
     }
 }

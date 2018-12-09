@@ -206,10 +206,7 @@ AXNodeData::AXNodeData(const AXNodeData& other) {
   stringlist_attributes = other.stringlist_attributes;
   html_attributes = other.html_attributes;
   child_ids = other.child_ids;
-  location = other.location;
-  offset_container_id = other.offset_container_id;
-  if (other.transform)
-    transform.reset(new gfx::Transform(*other.transform));
+  relative_bounds = other.relative_bounds;
 }
 
 AXNodeData& AXNodeData::operator=(AXNodeData other) {
@@ -225,12 +222,7 @@ AXNodeData& AXNodeData::operator=(AXNodeData other) {
   stringlist_attributes = other.stringlist_attributes;
   html_attributes = other.html_attributes;
   child_ids = other.child_ids;
-  location = other.location;
-  offset_container_id = other.offset_container_id;
-  if (other.transform)
-    transform.reset(new gfx::Transform(*other.transform));
-  else
-    transform.reset(nullptr);
+  relative_bounds = other.relative_bounds;
   return *this;
 }
 
@@ -421,39 +413,94 @@ bool AXNodeData::GetHtmlAttribute(
 
 void AXNodeData::AddStringAttribute(ax::mojom::StringAttribute attribute,
                                     const std::string& value) {
+  DCHECK_NE(attribute, ax::mojom::StringAttribute::kNone);
+  if (HasStringAttribute(attribute))
+    RemoveStringAttribute(attribute);
   string_attributes.push_back(std::make_pair(attribute, value));
 }
 
 void AXNodeData::AddIntAttribute(ax::mojom::IntAttribute attribute, int value) {
+  DCHECK_NE(attribute, ax::mojom::IntAttribute::kNone);
+  if (HasIntAttribute(attribute))
+    RemoveIntAttribute(attribute);
   int_attributes.push_back(std::make_pair(attribute, value));
-}
-
-void AXNodeData::RemoveIntAttribute(ax::mojom::IntAttribute attribute) {
-  DCHECK_GE(static_cast<int>(attribute), 0);
-  base::EraseIf(int_attributes, [attribute](const auto& int_attribute) {
-    return int_attribute.first == attribute;
-  });
 }
 
 void AXNodeData::AddFloatAttribute(ax::mojom::FloatAttribute attribute,
                                    float value) {
+  DCHECK_NE(attribute, ax::mojom::FloatAttribute::kNone);
+  if (HasFloatAttribute(attribute))
+    RemoveFloatAttribute(attribute);
   float_attributes.push_back(std::make_pair(attribute, value));
 }
 
 void AXNodeData::AddBoolAttribute(ax::mojom::BoolAttribute attribute,
                                   bool value) {
+  DCHECK_NE(attribute, ax::mojom::BoolAttribute::kNone);
+  if (HasBoolAttribute(attribute))
+    RemoveBoolAttribute(attribute);
   bool_attributes.push_back(std::make_pair(attribute, value));
 }
 
 void AXNodeData::AddIntListAttribute(ax::mojom::IntListAttribute attribute,
                                      const std::vector<int32_t>& value) {
+  DCHECK_NE(attribute, ax::mojom::IntListAttribute::kNone);
+  if (HasIntListAttribute(attribute))
+    RemoveIntListAttribute(attribute);
   intlist_attributes.push_back(std::make_pair(attribute, value));
 }
 
 void AXNodeData::AddStringListAttribute(
     ax::mojom::StringListAttribute attribute,
     const std::vector<std::string>& value) {
+  DCHECK_NE(attribute, ax::mojom::StringListAttribute::kNone);
+  if (HasStringListAttribute(attribute))
+    RemoveStringListAttribute(attribute);
   stringlist_attributes.push_back(std::make_pair(attribute, value));
+}
+
+void AXNodeData::RemoveStringAttribute(ax::mojom::StringAttribute attribute) {
+  DCHECK_NE(attribute, ax::mojom::StringAttribute::kNone);
+  base::EraseIf(string_attributes, [attribute](const auto& string_attribute) {
+    return string_attribute.first == attribute;
+  });
+}
+
+void AXNodeData::RemoveIntAttribute(ax::mojom::IntAttribute attribute) {
+  DCHECK_NE(attribute, ax::mojom::IntAttribute::kNone);
+  base::EraseIf(int_attributes, [attribute](const auto& int_attribute) {
+    return int_attribute.first == attribute;
+  });
+}
+
+void AXNodeData::RemoveFloatAttribute(ax::mojom::FloatAttribute attribute) {
+  DCHECK_NE(attribute, ax::mojom::FloatAttribute::kNone);
+  base::EraseIf(float_attributes, [attribute](const auto& float_attribute) {
+    return float_attribute.first == attribute;
+  });
+}
+
+void AXNodeData::RemoveBoolAttribute(ax::mojom::BoolAttribute attribute) {
+  DCHECK_NE(attribute, ax::mojom::BoolAttribute::kNone);
+  base::EraseIf(bool_attributes, [attribute](const auto& bool_attribute) {
+    return bool_attribute.first == attribute;
+  });
+}
+
+void AXNodeData::RemoveIntListAttribute(ax::mojom::IntListAttribute attribute) {
+  DCHECK_NE(attribute, ax::mojom::IntListAttribute::kNone);
+  base::EraseIf(intlist_attributes, [attribute](const auto& intlist_attribute) {
+    return intlist_attribute.first == attribute;
+  });
+}
+
+void AXNodeData::RemoveStringListAttribute(
+    ax::mojom::StringListAttribute attribute) {
+  DCHECK_NE(attribute, ax::mojom::StringListAttribute::kNone);
+  base::EraseIf(stringlist_attributes,
+                [attribute](const auto& stringlist_attribute) {
+                  return stringlist_attribute.first == attribute;
+                });
 }
 
 void AXNodeData::SetName(const std::string& name) {
@@ -585,6 +632,7 @@ ax::mojom::Action AXNodeData::AddAction(ax::mojom::Action action_enum) {
     case ax::mojom::Action::kScrollDown:
     case ax::mojom::Action::kScrollLeft:
     case ax::mojom::Action::kScrollRight:
+    case ax::mojom::Action::kGetTextLocation:
       break;
   }
 
@@ -725,17 +773,17 @@ std::string AXNodeData::ToString() const {
 
   result += StateBitfieldToString(state);
 
-  result += " (" + base::NumberToString(location.x()) + ", " +
-            base::NumberToString(location.y()) + ")-(" +
-            base::NumberToString(location.width()) + ", " +
-            base::NumberToString(location.height()) + ")";
+  result += " (" + base::NumberToString(relative_bounds.bounds.x()) + ", " +
+            base::NumberToString(relative_bounds.bounds.y()) + ")-(" +
+            base::NumberToString(relative_bounds.bounds.width()) + ", " +
+            base::NumberToString(relative_bounds.bounds.height()) + ")";
 
-  if (offset_container_id != -1)
-    result +=
-        " offset_container_id=" + base::NumberToString(offset_container_id);
+  if (relative_bounds.offset_container_id != -1)
+    result += " offset_container_id=" +
+              base::NumberToString(relative_bounds.offset_container_id);
 
-  if (transform && !transform->IsIdentity())
-    result += " transform=" + transform->ToString();
+  if (relative_bounds.transform && !relative_bounds.transform->IsIdentity())
+    result += " transform=" + relative_bounds.transform->ToString();
 
   for (const std::pair<ax::mojom::IntAttribute, int32_t>& int_attribute :
        int_attributes) {
@@ -1184,6 +1232,9 @@ std::string AXNodeData::ToString() const {
         break;
       case ax::mojom::BoolAttribute::kSelected:
         result += " selected=" + value;
+        break;
+      case ax::mojom::BoolAttribute::kSupportsTextLocation:
+        result += " supports_text_location=" + value;
         break;
       case ax::mojom::BoolAttribute::kNone:
         break;

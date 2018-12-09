@@ -61,7 +61,7 @@ MediaStreamAudioSourceHandler::~MediaStreamAudioSourceHandler() {
   Uninitialize();
 }
 
-void MediaStreamAudioSourceHandler::SetFormat(size_t number_of_channels,
+void MediaStreamAudioSourceHandler::SetFormat(uint32_t number_of_channels,
                                               float source_sample_rate) {
   if (number_of_channels != source_number_of_channels_ ||
       source_sample_rate != Context()->sampleRate()) {
@@ -91,7 +91,7 @@ void MediaStreamAudioSourceHandler::SetFormat(size_t number_of_channels,
   }
 }
 
-void MediaStreamAudioSourceHandler::Process(size_t number_of_frames) {
+void MediaStreamAudioSourceHandler::Process(uint32_t number_of_frames) {
   AudioBus* output_bus = Output(0).Bus();
 
   if (!GetAudioSourceProvider()) {
@@ -153,8 +153,9 @@ MediaStreamAudioSourceNode* MediaStreamAudioSourceNode::Create(
   std::unique_ptr<AudioSourceProvider> provider =
       audio_track->CreateWebAudioSource();
 
-  MediaStreamAudioSourceNode* node = new MediaStreamAudioSourceNode(
-      context, media_stream, audio_track, std::move(provider));
+  MediaStreamAudioSourceNode* node =
+      MakeGarbageCollected<MediaStreamAudioSourceNode>(
+          context, media_stream, audio_track, std::move(provider));
 
   if (!node)
     return nullptr;
@@ -191,7 +192,7 @@ MediaStream* MediaStreamAudioSourceNode::getMediaStream() const {
   return media_stream_;
 }
 
-void MediaStreamAudioSourceNode::SetFormat(size_t number_of_channels,
+void MediaStreamAudioSourceNode::SetFormat(uint32_t number_of_channels,
                                            float source_sample_rate) {
   GetMediaStreamAudioSourceHandler().SetFormat(number_of_channels,
                                                source_sample_rate);

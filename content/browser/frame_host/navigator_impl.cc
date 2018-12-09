@@ -39,9 +39,9 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/stream_handle.h"
 #include "content/public/common/bindings_policy.h"
-#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_constants.h"
+#include "content/public/common/navigation_policy.h"
 #include "content/public/common/url_utils.h"
 #include "net/base/net_errors.h"
 #include "services/network/public/cpp/resource_response.h"
@@ -176,8 +176,9 @@ bool NavigatorImpl::StartHistoryNavigationInNewSubframe(
 void NavigatorImpl::DidNavigate(
     RenderFrameHostImpl* render_frame_host,
     const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
-    std::unique_ptr<NavigationHandleImpl> navigation_handle,
+    std::unique_ptr<NavigationRequest> navigation_request,
     bool was_within_same_document) {
+  DCHECK(navigation_request);
   FrameTreeNode* frame_tree_node = render_frame_host->frame_tree_node();
   FrameTree* frame_tree = frame_tree_node->frame_tree();
 
@@ -268,7 +269,7 @@ void NavigatorImpl::DidNavigate(
   LoadCommittedDetails details;
   bool did_navigate = controller_->RendererDidNavigate(
       render_frame_host, params, &details, is_same_document_navigation,
-      navigation_handle.get());
+      navigation_request.get());
 
   // If the history length and/or offset changed, update other renderers in the
   // FrameTree.
@@ -290,10 +291,10 @@ void NavigatorImpl::DidNavigate(
   if (details.type != NAVIGATION_TYPE_NAV_IGNORE && delegate_) {
     DCHECK_EQ(!render_frame_host->GetParent(),
               did_navigate ? details.is_main_frame : false);
-    navigation_handle->DidCommitNavigation(
+    navigation_request->navigation_handle()->DidCommitNavigation(
         params, did_navigate, details.did_replace_entry, details.previous_url,
         details.type, render_frame_host);
-    navigation_handle.reset();
+    navigation_request.reset();
   }
 
   if (!did_navigate)
@@ -392,6 +393,7 @@ void NavigatorImpl::RequestOpenURL(
     bool should_replace_current_entry,
     bool user_gesture,
     blink::WebTriggeringEventInfo triggering_event_info,
+    const std::string& href_translate,
     scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory) {
   // Note: This can be called for subframes (even when OOPIFs are not possible)
   // if the disposition calls for a different window.
@@ -463,6 +465,7 @@ void NavigatorImpl::RequestOpenURL(
   }
 
   params.blob_url_loader_factory = std::move(blob_url_loader_factory);
+  params.href_translate = href_translate;
 
   GetContentClient()->browser()->OverrideNavigationParams(
       current_site_instance, &params.transition, &params.is_renderer_initiated,

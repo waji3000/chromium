@@ -20,7 +20,7 @@
 #include "chrome/browser/chromeos/login/ui/login_display_host_common.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
-#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
+#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager_client.h"
 #include "chromeos/audio/cras_audio_handler.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "content/public/browser/notification_observer.h"
@@ -50,7 +50,7 @@ class LoginDisplayHostWebUI : public LoginDisplayHostCommon,
                               public display::DisplayObserver,
                               public ui::InputDeviceEventObserver,
                               public views::WidgetRemovalsObserver,
-                              public MultiUserWindowManager::Observer {
+                              public MultiUserWindowManagerClient::Observer {
  public:
   LoginDisplayHostWebUI();
   ~LoginDisplayHostWebUI() override;
@@ -129,7 +129,7 @@ class LoginDisplayHostWebUI : public LoginDisplayHostCommon,
   // views::WidgetRemovalsObserver:
   void OnWillRemoveView(views::Widget* widget, views::View* view) override;
 
-  // chrome::MultiUserWindowManager::Observer:
+  // MultiUserWindowManagerClient::Observer:
   void OnUserSwitchAnimationFinished() override;
 
  private:

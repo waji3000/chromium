@@ -22,7 +22,6 @@
 #include "content/public/browser/indexed_db_context.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/browser/quota/special_storage_policy.h"
-#include "url/gurl.h"
 #include "url/origin.h"
 
 namespace base {
@@ -76,6 +75,9 @@ class CONTENT_EXPORT IndexedDBContextImpl : public IndexedDBContext {
 
   IndexedDBFactory* GetIDBFactory();
 
+  // Called by StoragePartitionImpl to clear session-only data.
+  void Shutdown();
+
   // Disables the exit-time deletion of session-only data.
   void SetForceKeepSessionState() { force_keep_session_state_ = true; }
 
@@ -83,18 +85,13 @@ class CONTENT_EXPORT IndexedDBContextImpl : public IndexedDBContext {
 
   // IndexedDBContext implementation:
   base::SequencedTaskRunner* TaskRunner() const override;
-  std::vector<IndexedDBInfo> GetAllOriginsInfo() override;
-  void DeleteForOrigin(const GURL& origin_url) override;
-  void CopyOriginData(const GURL& origin_url,
-                      IndexedDBContext* dest_context) override;
-  base::FilePath GetFilePathForTesting(const GURL& origin_url) const override;
-  void ResetCachesForTesting() override;
-
-  // TODO(jsbell): Replace IndexedDBContext members with these.
-  void DeleteForOrigin(const url::Origin& origin);
+  std::vector<StorageUsageInfo> GetAllOriginsInfo() override;
+  void DeleteForOrigin(const url::Origin& origin) override;
   void CopyOriginData(const url::Origin& origin,
-                      IndexedDBContext* dest_context);
-  base::FilePath GetFilePathForTesting(const url::Origin& origin) const;
+                      IndexedDBContext* dest_context) override;
+  base::FilePath GetFilePathForTesting(
+      const url::Origin& origin) const override;
+  void ResetCachesForTesting() override;
 
   // Methods called by IndexedDBDispatcherHost for quota support.
   void ConnectionOpened(const url::Origin& origin, IndexedDBConnection* db);

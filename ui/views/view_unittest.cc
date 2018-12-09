@@ -41,6 +41,7 @@
 #include "ui/gfx/path.h"
 #include "ui/gfx/transform.h"
 #include "ui/native_theme/native_theme.h"
+#include "ui/native_theme/test_native_theme.h"
 #include "ui/strings/grit/ui_strings.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/native/native_view_host.h"
@@ -4494,7 +4495,7 @@ TEST_F(ViewLayerTest, SnapLayerToPixel) {
 
   const gfx::Size& size = GetRootLayer()->GetCompositor()->size();
   GetRootLayer()->GetCompositor()->SetScaleAndSize(
-      1.25f, size, viz::LocalSurfaceId(), base::TimeTicks());
+      1.25f, size, viz::LocalSurfaceIdAllocation());
 
   v11->SetBoundsRect(gfx::Rect(1, 1, 10, 10));
   v1->SetBoundsRect(gfx::Rect(1, 1, 10, 10));
@@ -4509,7 +4510,7 @@ TEST_F(ViewLayerTest, SnapLayerToPixel) {
 
   // DSF change should get propagated and update offsets.
   GetRootLayer()->GetCompositor()->SetScaleAndSize(
-      1.5f, size, viz::LocalSurfaceId(), base::TimeTicks());
+      1.5f, size, viz::LocalSurfaceIdAllocation());
   EXPECT_EQ("0.33 0.33", ToString(v1->layer()->subpixel_position_offset()));
   EXPECT_EQ("0.33 0.33", ToString(v11->layer()->subpixel_position_offset()));
 
@@ -4523,7 +4524,7 @@ TEST_F(ViewLayerTest, SnapLayerToPixel) {
 
   // Setting integral DSF should reset the offset.
   GetRootLayer()->GetCompositor()->SetScaleAndSize(
-      2.0f, size, viz::LocalSurfaceId(), base::TimeTicks());
+      2.0f, size, viz::LocalSurfaceIdAllocation());
   EXPECT_EQ("0.00 0.00", ToString(v11->layer()->subpixel_position_offset()));
 }
 
@@ -4593,7 +4594,7 @@ TEST_F(ViewLayerPixelCanvasTest, SnapLayerToPixel) {
 
   const gfx::Size& size = GetRootLayer()->GetCompositor()->size();
   GetRootLayer()->GetCompositor()->SetScaleAndSize(
-      1.6f, size, viz::LocalSurfaceId(), base::TimeTicks());
+      1.6f, size, viz::LocalSurfaceIdAllocation());
 
   v3->SetBoundsRect(gfx::Rect(14, 13, 13, 5));
   v2->SetBoundsRect(gfx::Rect(7, 7, 50, 50));
@@ -4609,7 +4610,7 @@ TEST_F(ViewLayerPixelCanvasTest, SnapLayerToPixel) {
 
   // DSF change should get propagated and update offsets.
   GetRootLayer()->GetCompositor()->SetScaleAndSize(
-      1.5f, size, viz::LocalSurfaceId(), base::TimeTicks());
+      1.5f, size, viz::LocalSurfaceIdAllocation());
 
   EXPECT_EQ("0.33 0.33", ToString(v1->layer()->subpixel_position_offset()));
   EXPECT_EQ("0.33 0.67", ToString(v3->layer()->subpixel_position_offset()));
@@ -4619,7 +4620,7 @@ TEST_F(ViewLayerPixelCanvasTest, SnapLayerToPixel) {
   v1->SetPaintToLayer();
 
   GetRootLayer()->GetCompositor()->SetScaleAndSize(
-      1.33f, size, viz::LocalSurfaceId(), base::TimeTicks());
+      1.33f, size, viz::LocalSurfaceIdAllocation());
 
   EXPECT_EQ("0.02 0.02", ToString(v1->layer()->subpixel_position_offset()));
   EXPECT_EQ("0.05 -0.45", ToString(v3->layer()->subpixel_position_offset()));
@@ -4636,7 +4637,7 @@ TEST_F(ViewLayerPixelCanvasTest, SnapLayerToPixel) {
 
   // Setting integral DSF should reset the offset.
   GetRootLayer()->GetCompositor()->SetScaleAndSize(
-      2.0f, size, viz::LocalSurfaceId(), base::TimeTicks());
+      2.0f, size, viz::LocalSurfaceIdAllocation());
   EXPECT_EQ("0.00 0.00", ToString(v3->layer()->subpixel_position_offset()));
 }
 
@@ -4787,41 +4788,6 @@ class ViewThatAddsViewInOnNativeThemeChanged : public View {
   DISALLOW_COPY_AND_ASSIGN(ViewThatAddsViewInOnNativeThemeChanged);
 };
 
-// See comment above test for details.
-class TestNativeTheme : public ui::NativeTheme {
- public:
-  TestNativeTheme() {}
-  ~TestNativeTheme() override {}
-
-  // ui::NativeTheme:
-  SkColor GetSystemColor(ColorId color_id) const override {
-    return SK_ColorRED;
-  }
-  gfx::Size GetPartSize(Part part,
-                        State state,
-                        const ExtraParams& extra) const override {
-    return gfx::Size();
-  }
-  void Paint(cc::PaintCanvas* canvas,
-             Part part,
-             State state,
-             const gfx::Rect& rect,
-             const ExtraParams& extra) const override {}
-
-  bool SupportsNinePatch(Part part) const override { return false; }
-  gfx::Size GetNinePatchCanvasSize(Part part) const override {
-    return gfx::Size();
-  }
-  gfx::Rect GetNinePatchAperture(Part part) const override {
-    return gfx::Rect();
-  }
-  bool UsesHighContrastColors() const override { return false; }
-  bool SystemDarkModeEnabled() const override { return false; }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(TestNativeTheme);
-};
-
 // Creates and adds a new child view to |parent| that has a layer.
 void AddViewWithChildLayer(View* parent) {
   View* child = new View;
@@ -4838,7 +4804,7 @@ void AddViewWithChildLayer(View* parent) {
 // before the layer hierarchy was updated. OnNativeThemeChanged() should be
 // called after the layer hierarchy matches the view hierarchy.
 TEST_F(ViewTest, CrashOnAddFromFromOnNativeThemeChanged) {
-  TestNativeTheme theme;
+  ui::TestNativeTheme theme;
   WidgetWithCustomTheme widget(&theme);
   Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;

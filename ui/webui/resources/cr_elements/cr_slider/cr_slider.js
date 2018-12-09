@@ -34,6 +34,13 @@ cr_slider.SliderTick;
     return Math.min(max, Math.max(min, value));
   }
 
+  /**
+   * The following are the events emitted from cr-slider.
+   *
+   * cr-slider-value-changed-from-ui: fired when updating slider via the UI.
+   * dragging-changed: fired on pointer down and on pointer up.
+   * value-changed: fired anytime |value| is changed, manually or via the UI.
+   */
   Polymer({
     is: 'cr-slider',
 
@@ -56,11 +63,13 @@ cr_slider.SliderTick;
         type: Boolean,
         computed: 'computeDisabled_(disabled, ticks.*)',
         reflectToAttribute: true,
+        observer: 'onDisabledChanged_',
       },
 
       dragging: {
         type: Boolean,
         value: false,
+        notify: true,
         reflectToAttribute: true,
       },
 
@@ -77,6 +86,16 @@ cr_slider.SliderTick;
       min: {
         type: Number,
         value: 0,
+      },
+
+      /**
+       * When set to false, the keybindings are not handled by this component,
+       * for example when the owner of the component wants to set up its own
+       * keybindings.
+       */
+      noKeybindings: {
+        type: Boolean,
+        value: false,
       },
 
       snaps: {
@@ -101,26 +120,6 @@ cr_slider.SliderTick;
         observer: 'onValueChanged_',
       },
 
-      /**
-       * If true, |value| is updated while dragging happens. If false, |value|
-       * is updated only once, when drag gesture finishes.
-       */
-      updateValueInstantly: {
-        type: Boolean,
-        value: true,
-      },
-
-      /**
-       * |immediateValue_| has the most up-to-date value and is used to render
-       * the slider UI. When dragging, |immediateValue_| is always updated, and
-       * |value| is updated at least once when dragging is stopped.
-       * @private
-       */
-      immediateValue_: {
-        type: Number,
-        value: 0,
-      },
-
       /** @private */
       holdDown_: {
         type: Boolean,
@@ -134,6 +133,27 @@ cr_slider.SliderTick;
         type: String,
         value: '',
       },
+
+      /** @private */
+      isRtl_: {
+        type: Boolean,
+        value: false,
+        reflectToAttribute: true,
+      },
+
+      /**
+       * |transiting_| is set to true when bar is touched or clicked. This
+       * triggers a single position transition effect to take place for the
+       * knob, bar and label. When the transition is complete, |transiting_| is
+       * set to false resulting in no transition effect during dragging, manual
+       * value updates and keyboard events.
+       * @private
+       */
+      transiting_: {
+        type: Boolean,
+        value: false,
+        reflectToAttribute: true,
+      },
     },
 
     hostAttributes: {
@@ -142,8 +162,8 @@ cr_slider.SliderTick;
 
     observers: [
       'onTicksChanged_(ticks.*)',
-      'updateLabelAndAria_(immediateValue_, min, max)',
-      'updateKnobAndBar_(immediateValue_, min, max)',
+      'updateLabelAndAria_(value, min, max)',
+      'updateKnobAndBar_(value, min, max)',
     ],
 
     listeners: {
@@ -156,15 +176,13 @@ cr_slider.SliderTick;
     /** @private {Map<string, number>} */
     deltaKeyMap_: null,
 
-    /** @private {boolean} */
-    isRtl_: false,
 
     /** @private {EventTracker} */
     draggingEventTracker_: null,
 
     /** @override */
     attached: function() {
-      this.isRtl_ = this.matches(':host-context([dir=rtl]) cr-slider');
+      this.isRtl_ = window.getComputedStyle(this)['direction'] === 'rtl';
       this.deltaKeyMap_ = new Map([
         ['ArrowDown', -1],
         ['ArrowUp', 1],
@@ -200,7 +218,7 @@ cr_slider.SliderTick;
      * @private
      */
     getMarkerClass_: function(index) {
-      const currentStep = (this.markerCount - 1) * this.getRatio_();
+      const currentStep = (this.markerCount - 1) * this.getRatio();
       return index < currentStep ? 'active-marker' : 'inactive-marker';
     },
 
@@ -210,21 +228,18 @@ cr_slider.SliderTick;
      * This is a helper function used to calculate the bar width, knob location
      * and label location.
      * @return {number}
-     * @private
      */
-    getRatio_: function() {
-      return (this.immediateValue_ - this.min) / (this.max - this.min);
+    getRatio: function() {
+      return (this.value - this.min) / (this.max - this.min);
     },
 
     /** @private */
     ensureValidValue_: function() {
-      if (this.immediateValue_ == undefined || this.value == undefined)
+      if (this.value == undefined)
         return;
-      let validValue = clamp(this.min, this.max, this.immediateValue_);
+      let validValue = clamp(this.min, this.max, this.value);
       validValue = this.snaps ? Math.round(validValue) : validValue;
-      this.immediateValue_ = validValue;
-      if (!this.dragging || this.updateValueInstantly)
-        this.value = validValue;
+      this.value = validValue;
     },
 
     /**
@@ -233,20 +248,25 @@ cr_slider.SliderTick;
      * @private
      */
     stopDragging_: function(pointerId) {
-      this.dragging = false;
       this.draggingEventTracker_.removeAll();
-      this.value = this.immediateValue_;
+      this.releasePointerCapture(pointerId);
+      this.dragging = false;
       // If there is a ripple animation in progress, setTimeout will hold off
       // on updating |holdDown_|.
       setTimeout(() => {
         this.holdDown_ = false;
       });
-      this.releasePointerCapture(pointerId);
     },
 
     /** @private */
     onBlur_: function() {
       this.holdDown_ = false;
+    },
+
+    /** @private */
+    onDisabledChanged_: function() {
+      this.$.knob.setAttribute('tabindex', this.disabled_ ? '-1' : '0');
+      this.blur();
     },
 
     /** @private */
@@ -264,29 +284,37 @@ cr_slider.SliderTick;
      * @private
      */
     onKeyDown_: function(event) {
-      if (this.disabled_)
+      if (this.disabled_ || this.noKeybindings)
         return;
 
       if (event.metaKey || event.shiftKey || event.altKey || event.ctrlKey)
         return;
 
       let handled = true;
-      if (event.key == 'Home')
+      if (event.key == 'Home') {
         this.value = this.min;
-      else if (event.key == 'End')
+      } else if (event.key == 'End') {
         this.value = this.max;
-      else if (this.deltaKeyMap_.has(event.key)) {
+      } else if (this.deltaKeyMap_.has(event.key)) {
         const newValue = this.value + this.deltaKeyMap_.get(event.key);
         this.value = clamp(this.min, this.max, newValue);
-      } else
+      } else {
         handled = false;
+      }
 
       if (handled) {
+        this.fire('cr-slider-value-changed-from-ui');
         event.preventDefault();
+        event.stopPropagation();
         setTimeout(() => {
           this.holdDown_ = true;
         });
       }
+    },
+
+    /** @private */
+    onKnobTransitionEnd_: function() {
+      this.transiting_ = false;
     },
 
     /**
@@ -300,13 +328,14 @@ cr_slider.SliderTick;
         return;
 
       this.dragging = true;
+      this.transiting_ = true;
+      this.updateValueFromClientX_(event.clientX);
       // If there is a ripple animation in progress, setTimeout will hold off on
       // updating |holdDown_|.
       setTimeout(() => {
         this.$.knob.focus();
         this.holdDown_ = true;
       });
-      this.updateValueFromClientX_(event.clientX);
 
       this.setPointerCapture(event.pointerId);
       const stopDragging = this.stopDragging_.bind(this, event.pointerId);
@@ -344,22 +373,17 @@ cr_slider.SliderTick;
     },
 
     /**
-     * Update |immediateValue_| which is used for rendering when |value| is
-     * updated either programmatically or from a keyboard input or a mouse drag
-     * (when |updateValueInstantly| is true).
+     * Update |value| which is used for rendering when |value| is
+     * updated either programmatically or from a keyboard input or a mouse drag.
      * @private
      */
     onValueChanged_: function() {
-      if (this.immediateValue_ == this.value)
-        return;
-
-      this.immediateValue_ = this.value;
       this.ensureValidValue_();
     },
 
     /** @private */
     updateKnobAndBar_: function() {
-      const percent = `${this.getRatio_() * 100}%`;
+      const percent = `${this.getRatio() * 100}%`;
       this.$.bar.style.width = percent;
       this.$.knob.style.marginInlineStart = percent;
     },
@@ -367,7 +391,7 @@ cr_slider.SliderTick;
     /** @private */
     updateLabelAndAria_: function() {
       const ticks = this.ticks;
-      const index = this.immediateValue_;
+      const index = this.value;
       if (!ticks || ticks.length == 0 || index >= ticks.length ||
           !Number.isInteger(index) || !this.snaps) {
         this.setAttribute('aria-valuetext', index);
@@ -386,7 +410,7 @@ cr_slider.SliderTick;
         const labelWidth = label.offsetWidth;
         // The left and right margin are 16px.
         const margin = 16;
-        const knobLocation = parentWidth * this.getRatio_() + margin;
+        const knobLocation = parentWidth * this.getRatio() + margin;
         const offsetStart = knobLocation - (labelWidth / 2);
         // The label should be centered over the knob. Clamping the offset to a
         // min and max value prevents the label from being cutoff.
@@ -417,8 +441,8 @@ cr_slider.SliderTick;
       let ratio = (clientX - rect.left) / rect.width;
       if (this.isRtl_)
         ratio = 1 - ratio;
-      this.immediateValue_ = ratio * (this.max - this.min) + this.min;
-      this.ensureValidValue_();
+      this.value = ratio * (this.max - this.min) + this.min;
+      this.fire('cr-slider-value-changed-from-ui');
     },
 
     _createRipple: function() {

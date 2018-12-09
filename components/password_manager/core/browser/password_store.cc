@@ -26,8 +26,12 @@
 #include "components/password_manager/core/browser/password_manager_metrics_util.h"
 #include "components/password_manager/core/browser/password_manager_util.h"
 #include "components/password_manager/core/browser/password_store_consumer.h"
-#include "components/password_manager/core/browser/password_syncable_service.h"
 #include "components/password_manager/core/browser/statistics_table.h"
+#include "components/password_manager/core/browser/sync/password_sync_bridge.h"
+#include "components/password_manager/core/browser/sync/password_syncable_service.h"
+#include "components/sync/driver/sync_driver_switches.h"
+#include "components/sync/model_impl/client_tag_based_model_type_processor.h"
+#include "components/sync/model_impl/proxy_model_type_controller_delegate.h"
 
 #if defined(SYNC_PASSWORD_REUSE_DETECTION_ENABLED)
 #include "components/password_manager/core/browser/password_store_signin_notifier.h"
@@ -374,6 +378,20 @@ PasswordStore::GetPasswordSyncableService() {
   return syncable_service_->AsWeakPtr();
 }
 
+std::unique_ptr<syncer::ProxyModelTypeControllerDelegate>
+PasswordStore::CreateSyncControllerDelegate() {
+  DCHECK(main_task_runner_->RunsTasksInCurrentSequence());
+  // Note that a callback is bound for
+  // GetSyncControllerDelegateOnBackgroundSequence() because this getter itself
+  // must also run in the backend sequence, and the proxy object below will take
+  // care of that.
+  return std::make_unique<syncer::ProxyModelTypeControllerDelegate>(
+      background_task_runner_,
+      base::BindRepeating(
+          &PasswordStore::GetSyncControllerDelegateOnBackgroundSequence,
+          base::Unretained(this)));
+}
+
 // TODO(crbug.com/706392): Fix password reuse detection for Android.
 #if defined(SYNC_PASSWORD_REUSE_DETECTION_ENABLED)
 void PasswordStore::CheckReuse(const base::string16& input,
@@ -492,9 +510,15 @@ PasswordStore::CreateBackgroundTaskRunner() const {
 bool PasswordStore::InitOnBackgroundSequence(
     const syncer::SyncableService::StartSyncFlare& flare) {
   DCHECK(background_task_runner_->RunsTasksInCurrentSequence());
-  DCHECK(!syncable_service_);
-  syncable_service_.reset(new PasswordSyncableService(this));
-  syncable_service_->InjectStartSyncFlare(flare);
+  if (base::FeatureList::IsEnabled(switches::kSyncUSSPasswords)) {
+    sync_bridge_.reset(new PasswordSyncBridge(
+        std::make_unique<syncer::ClientTagBasedModelTypeProcessor>(
+            syncer::PASSWORDS, base::DoNothing())));
+  } else {
+    DCHECK(!syncable_service_);
+    syncable_service_.reset(new PasswordSyncableService(this));
+    syncable_service_->InjectStartSyncFlare(flare);
+  }
 // TODO(crbug.com/706392): Fix password reuse detection for Android.
 #if defined(SYNC_PASSWORD_REUSE_DETECTION_ENABLED)
   reuse_detector_ = new PasswordReuseDetector;
@@ -968,9 +992,17 @@ void PasswordStore::ScheduleUpdateAffiliatedWebLoginsImpl(
                           updated_android_form, affiliated_web_realms));
 }
 
+base::WeakPtr<syncer::ModelTypeControllerDelegate>
+PasswordStore::GetSyncControllerDelegateOnBackgroundSequence() {
+  DCHECK(background_task_runner_->RunsTasksInCurrentSequence());
+  DCHECK(sync_bridge_);
+  return sync_bridge_->change_processor()->GetControllerDelegate();
+}
+
 void PasswordStore::DestroyOnBackgroundSequence() {
   DCHECK(background_task_runner_->RunsTasksInCurrentSequence());
   syncable_service_.reset();
+  sync_bridge_.reset();
 // TODO(crbug.com/706392): Fix password reuse detection for Android.
 #if defined(SYNC_PASSWORD_REUSE_DETECTION_ENABLED)
   delete reuse_detector_;

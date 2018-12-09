@@ -34,10 +34,22 @@ public final class FeedConfiguration {
     /** Default value for feed server response length prefixed. */
     public static final boolean FEED_SERVER_RESPONSE_LENGTH_PREFIXED_DEFAULT = true;
 
+    private static final String INITIAL_NON_CACHED_PAGE_SIZE = "initial_non_cached_page_size";
+    /** Default value for initial non cached page size. */
+    public static final int INITIAL_NON_CACHED_PAGE_SIZE_DEFAULT = 10;
+
     private static final String LOGGING_IMMEDIATE_CONTENT_THRESHOLD_MS =
             "logging_immediate_content_threshold_ms";
     /** Default value for logging immediate content threshold. */
     public static final int LOGGING_IMMEDIATE_CONTENT_THRESHOLD_MS_DEFAULT = 1000;
+
+    private static final String NON_CACHED_MIN_PAGE_SIZE = "non_cached_min_page_size";
+    /** Default value for non cached minimum page size. */
+    public static final int NON_CACHED_MIN_PAGE_SIZE_DEFAULT = 5;
+
+    private static final String NON_CACHED_PAGE_SIZE = "non_cached_page_size";
+    /** Default value for non cached page size. */
+    public static final int NON_CACHED_PAGE_SIZE_DEFAULT = 20;
 
     private static final String SESSION_LIFETIME_MS = "session_lifetime_ms";
     /** Default value for session lifetime. */
@@ -46,6 +58,10 @@ public final class FeedConfiguration {
     private static final String TRIGGER_IMMEDIATE_PAGINATION = "trigger_immediate_pagination";
     /** Default value for triggering immediate pagination. */
     public static final boolean TRIGGER_IMMEDIATE_PAGINATION_DEFAULT = false;
+
+    private static final String USE_TIMEOUT_SCHEDULER = "use_timeout_scheduler";
+    /** Default value for the type of scheduler handling. */
+    public static final boolean USE_TIMEOUT_SCHEDULER_DEFAULT = true;
 
     private static final String VIEW_LOG_THRESHOLD = "view_log_threshold";
     /** Default value for logging view threshold. */
@@ -69,10 +85,17 @@ public final class FeedConfiguration {
 
     /** @return Whether server response should be length prefixed. */
     @VisibleForTesting
-    static boolean getFeedServerReponseLengthPrefixed() {
+    static boolean getFeedServerResponseLengthPrefixed() {
         return ChromeFeatureList.getFieldTrialParamByFeatureAsBoolean(
                 ChromeFeatureList.INTEREST_FEED_CONTENT_SUGGESTIONS,
                 FEED_SERVER_RESPONSE_LENGTH_PREFIXED, FEED_SERVER_RESPONSE_LENGTH_PREFIXED_DEFAULT);
+    }
+
+    /** @return Used to decide where to place the more button initially. */
+    static int getInitialNonCachedPageSize() {
+        return ChromeFeatureList.getFieldTrialParamByFeatureAsInt(
+                ChromeFeatureList.INTEREST_FEED_CONTENT_SUGGESTIONS, INITIAL_NON_CACHED_PAGE_SIZE,
+                INITIAL_NON_CACHED_PAGE_SIZE_DEFAULT);
     }
 
     /**
@@ -85,6 +108,20 @@ public final class FeedConfiguration {
                 ChromeFeatureList.INTEREST_FEED_CONTENT_SUGGESTIONS,
                 LOGGING_IMMEDIATE_CONTENT_THRESHOLD_MS,
                 LOGGING_IMMEDIATE_CONTENT_THRESHOLD_MS_DEFAULT);
+    }
+
+    /** @return Used to decide where to place the more button. */
+    static int getNonCachedMinPageSize() {
+        return ChromeFeatureList.getFieldTrialParamByFeatureAsInt(
+                ChromeFeatureList.INTEREST_FEED_CONTENT_SUGGESTIONS, NON_CACHED_MIN_PAGE_SIZE,
+                NON_CACHED_MIN_PAGE_SIZE_DEFAULT);
+    }
+
+    /** @return Used to decide where to place the more button. */
+    static int getNonCachedPageSize() {
+        return ChromeFeatureList.getFieldTrialParamByFeatureAsInt(
+                ChromeFeatureList.INTEREST_FEED_CONTENT_SUGGESTIONS, NON_CACHED_PAGE_SIZE,
+                NON_CACHED_PAGE_SIZE_DEFAULT);
     }
 
     /** @return Time until feed stops restoring the UI. */
@@ -100,10 +137,21 @@ public final class FeedConfiguration {
      *         when server could potentially have more content.
      */
     @VisibleForTesting
-    static boolean getTriggerImmedatePagination() {
+    static boolean getTriggerImmediatePagination() {
         return ChromeFeatureList.getFieldTrialParamByFeatureAsBoolean(
                 ChromeFeatureList.INTEREST_FEED_CONTENT_SUGGESTIONS, TRIGGER_IMMEDIATE_PAGINATION,
                 TRIGGER_IMMEDIATE_PAGINATION_DEFAULT);
+    }
+
+    /**
+     * @return Whether the Feed's session handling should use logic to deal with timeouts and
+     * placing new results below the fold.
+     */
+    @VisibleForTesting
+    static boolean getUseTimeoutScheduler() {
+        return ChromeFeatureList.getFieldTrialParamByFeatureAsBoolean(
+                ChromeFeatureList.INTEREST_FEED_CONTENT_SUGGESTIONS, USE_TIMEOUT_SCHEDULER,
+                USE_TIMEOUT_SCHEDULER_DEFAULT);
     }
 
     /** @return How much of a card must be on screen to generate a UMA log view. */
@@ -122,12 +170,18 @@ public final class FeedConfiguration {
                 .put(ConfigKey.FEED_SERVER_ENDPOINT, FeedConfiguration.getFeedServerEndpoint())
                 .put(ConfigKey.FEED_SERVER_METHOD, FeedConfiguration.getFeedServerMethod())
                 .put(ConfigKey.FEED_SERVER_RESPONSE_LENGTH_PREFIXED,
-                        FeedConfiguration.getFeedServerReponseLengthPrefixed())
+                        FeedConfiguration.getFeedServerResponseLengthPrefixed())
+                .put(ConfigKey.INITIAL_NON_CACHED_PAGE_SIZE,
+                        FeedConfiguration.getInitialNonCachedPageSize())
                 .put(ConfigKey.LOGGING_IMMEDIATE_CONTENT_THRESHOLD_MS,
                         FeedConfiguration.getLoggingImmediateContentThresholdMs())
+                .put(ConfigKey.NON_CACHED_MIN_PAGE_SIZE,
+                        FeedConfiguration.getNonCachedMinPageSize())
+                .put(ConfigKey.NON_CACHED_PAGE_SIZE, FeedConfiguration.getNonCachedPageSize())
                 .put(ConfigKey.SESSION_LIFETIME_MS, FeedConfiguration.getSessionLifetimeMs())
                 .put(ConfigKey.TRIGGER_IMMEDIATE_PAGINATION,
-                        FeedConfiguration.getTriggerImmedatePagination())
+                        FeedConfiguration.getTriggerImmediatePagination())
+                .put(ConfigKey.USE_TIMEOUT_SCHEDULER, FeedConfiguration.getUseTimeoutScheduler())
                 .put(ConfigKey.VIEW_LOG_THRESHOLD, FeedConfiguration.getViewLogThreshold())
                 .build();
     }

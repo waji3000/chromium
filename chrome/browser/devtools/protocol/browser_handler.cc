@@ -5,9 +5,12 @@
 #include "chrome/browser/devtools/protocol/browser_handler.h"
 
 #include <set>
+#include <vector>
 
+#include "base/memory/ref_counted_memory.h"
 #include "base/task/post_task.h"
 #include "chrome/browser/devtools/chrome_devtools_manager_delegate.h"
+#include "chrome/browser/devtools/devtools_dock_tile.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/permissions/permission_manager.h"
 #include "chrome/browser/profiles/profile.h"
@@ -18,6 +21,8 @@
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/devtools_agent_host.h"
+#include "ui/gfx/image/image.h"
+#include "ui/gfx/image/image_png_rep.h"
 
 using PermissionOverrides = std::set<content::PermissionType>;
 using protocol::Maybe;
@@ -102,7 +107,9 @@ Response FromProtocolPermissionType(
 
 }  // namespace
 
-BrowserHandler::BrowserHandler(protocol::UberDispatcher* dispatcher) {
+BrowserHandler::BrowserHandler(protocol::UberDispatcher* dispatcher,
+                               const std::string& target_id)
+    : target_id_(target_id) {
   // Dispatcher can be null in tests.
   if (dispatcher)
     protocol::Browser::Dispatcher::wire(dispatcher, this);
@@ -111,10 +118,11 @@ BrowserHandler::BrowserHandler(protocol::UberDispatcher* dispatcher) {
 BrowserHandler::~BrowserHandler() = default;
 
 Response BrowserHandler::GetWindowForTarget(
-    const std::string& target_id,
+    protocol::Maybe<std::string> target_id,
     int* out_window_id,
     std::unique_ptr<protocol::Browser::Bounds>* out_bounds) {
-  auto host = content::DevToolsAgentHost::GetForId(target_id);
+  auto host =
+      content::DevToolsAgentHost::GetForId(target_id.fromMaybe(target_id_));
   if (!host)
     return Response::Error("No target with given id");
   content::WebContents* web_contents = host->GetWebContents();
@@ -270,6 +278,17 @@ Response BrowserHandler::ResetPermissions(
   permission_manager->ResetPermissionOverridesForDevTools();
   contexts_with_overridden_permissions_.erase(browser_context_id.fromMaybe(""));
   return Response::FallThrough();
+}
+
+protocol::Response BrowserHandler::SetDockTile(
+    protocol::Maybe<std::string> label,
+    protocol::Maybe<protocol::Binary> image) {
+  std::vector<gfx::ImagePNGRep> reps;
+  if (image.isJust())
+    reps.emplace_back(image.fromJust().bytes(), 1);
+  DevToolsDockTile::Update(label.fromMaybe(std::string()),
+                           reps.size() ? gfx::Image(reps) : gfx::Image());
+  return Response::OK();
 }
 
 Response BrowserHandler::FindProfile(

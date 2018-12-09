@@ -9,7 +9,9 @@
 
 #include "base/bind.h"
 #include "base/location.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/trace_event/memory_usage_estimator.h"
 #include "components/sync/base/data_type_histogram.h"
@@ -133,6 +135,9 @@ void ClientTagBasedModelTypeProcessor::ModelReadyToSync(
     }
     model_type_state_ = batch->GetModelTypeState();
   } else {
+    // In older versions of the binary, commit-only types did not persist
+    // initial_sync_done(). So this branch can be exercised for commit-only
+    // types exactly once as an upgrade flow.
     // TODO(crbug.com/872360): This DCHECK can currently trigger if the user's
     // persisted Sync metadata is in an inconsistent state.
     DCHECK(commit_only_ || batch->TakeAllMetadata().empty())
@@ -140,9 +145,6 @@ void ClientTagBasedModelTypeProcessor::ModelReadyToSync(
     // First time syncing; initialize metadata.
     model_type_state_.mutable_progress_marker()->set_data_type_id(
         GetSpecificsFieldNumberFromModelType(type_));
-    // For commit-only types, no updates are expected and hence we can consider
-    // initial_sync_done().
-    model_type_state_.set_initial_sync_done(commit_only_);
   }
 
   ConnectIfReady();
@@ -185,9 +187,6 @@ void ClientTagBasedModelTypeProcessor::ConnectIfReady() {
         // The model is still ready to sync (with the same |bridge_|) - replay
         // the initialization.
         model_ready_to_sync_ = true;
-        // For commit-only types, no updates are expected and hence we can
-        // consider initial_sync_done().
-        model_type_state_.set_initial_sync_done(commit_only_);
         // Notify the bridge sync is starting to simulate an enable event.
         bridge_->OnSyncStarting(activation_request_);
         break;
@@ -203,9 +202,18 @@ void ClientTagBasedModelTypeProcessor::ConnectIfReady() {
     }
   }
 
-  // Cache GUID verification guarantees the user is the same.
+  // Cache GUID verification earlier above guarantees the user is the same.
   model_type_state_.set_authenticated_account_id(
       activation_request_.authenticated_account_id);
+
+  // For commit-only types, no updates are expected and hence we can consider
+  // initial_sync_done(), reflecting that sync is enabled.
+  if (commit_only_ && !model_type_state_.initial_sync_done()) {
+    sync_pb::ModelTypeState model_type_state = model_type_state_;
+    model_type_state.set_initial_sync_done(true);
+    OnFullUpdateReceived(model_type_state, UpdateResponseDataList());
+    DCHECK(IsTrackingMetadata());
+  }
 
   auto activation_response = std::make_unique<DataTypeActivationResponse>();
   activation_response->model_type_state = model_type_state_;
@@ -345,6 +353,7 @@ base::Optional<ModelError> ClientTagBasedModelTypeProcessor::GetError() const {
 
 base::WeakPtr<ModelTypeControllerDelegate>
 ClientTagBasedModelTypeProcessor::GetControllerDelegate() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return weak_ptr_factory_for_controller_.GetWeakPtr();
 }
 
@@ -436,10 +445,7 @@ void ClientTagBasedModelTypeProcessor::Delete(
 
   ProcessorEntityTracker* entity = GetEntityForStorageKey(storage_key);
   if (entity == nullptr) {
-    // That's unusual, but not necessarily a bad thing.
     // Missing is as good as deleted as far as the model is concerned.
-    DLOG(WARNING) << "Attempted to delete missing item."
-                  << " storage key: " << storage_key;
     return;
   }
 
@@ -473,15 +479,6 @@ void ClientTagBasedModelTypeProcessor::UpdateStorageKey(
   metadata_change_list->UpdateMetadata(storage_key, entity->metadata());
 }
 
-void ClientTagBasedModelTypeProcessor::UntrackEntity(
-    const EntityData& entity_data) {
-  const std::string& client_tag_hash = entity_data.client_tag_hash;
-  DCHECK(model_type_state_.initial_sync_done());
-  DCHECK(!client_tag_hash.empty());
-  DCHECK(GetEntityForTagHash(client_tag_hash)->storage_key().empty());
-  entities_.erase(client_tag_hash);
-}
-
 void ClientTagBasedModelTypeProcessor::UntrackEntityForStorageKey(
     const std::string& storage_key) {
   DCHECK(model_type_state_.initial_sync_done());
@@ -489,17 +486,32 @@ void ClientTagBasedModelTypeProcessor::UntrackEntityForStorageKey(
   // Look-up the client tag hash.
   auto iter = storage_key_to_tag_hash_.find(storage_key);
   if (iter == storage_key_to_tag_hash_.end()) {
-    // TODO(jkrcal): Add metrics keyed by the model_type to see which model_type
-    // violates the proper behavior expected here (https://crbug.com/847822).
-    // That's unusual, but not necessarily a bad thing.
     // Missing is as good as untracked as far as the model is concerned.
-    DLOG(WARNING) << "Attempted to untrack missing item with storage_key: "
-                  << storage_key;
     return;
   }
 
   entities_.erase(iter->second);
   storage_key_to_tag_hash_.erase(iter);
+}
+
+void ClientTagBasedModelTypeProcessor::UntrackEntityForClientTagHash(
+    const std::string& client_tag_hash) {
+  DCHECK(model_type_state_.initial_sync_done());
+  DCHECK(!client_tag_hash.empty());
+  // Is a no-op if no entity for |client_tag_hash| is tracked.
+  DCHECK(GetEntityForTagHash(client_tag_hash) == nullptr ||
+         GetEntityForTagHash(client_tag_hash)->storage_key().empty());
+  entities_.erase(client_tag_hash);
+}
+
+bool ClientTagBasedModelTypeProcessor::IsEntityUnsynced(
+    const std::string& storage_key) {
+  ProcessorEntityTracker* entity = GetEntityForStorageKey(storage_key);
+  if (entity == nullptr) {
+    return false;
+  }
+
+  return entity->IsUnsynced();
 }
 
 void ClientTagBasedModelTypeProcessor::NudgeForCommitIfNeeded() {
@@ -551,7 +563,7 @@ void ClientTagBasedModelTypeProcessor::GetLocalChanges(
                        weak_ptr_factory_for_worker_.GetWeakPtr(), max_entries,
                        std::move(callback), std::move(storage_keys_to_load)));
   } else {
-    // All commit data can be availbale in memory for those entries passed in
+    // All commit data can be available in memory for those entries passed in
     // the .put() method.
     CommitLocalChanges(max_entries, std::move(callback));
   }
@@ -686,8 +698,8 @@ void ClientTagBasedModelTypeProcessor::OnUpdateReceived(
   // always clear all data. We do this to allow the server to replace all data
   // on the client, without having to know exactly which entities the client
   // has.
-  if (!model_type_state_.initial_sync_done() ||
-      HasClearAllDirective(model_type_state)) {
+  bool is_initial_sync = !model_type_state_.initial_sync_done();
+  if (is_initial_sync || HasClearAllDirective(model_type_state)) {
     error = OnFullUpdateReceived(model_type_state, *updates_to_process);
   } else {
     error = OnIncrementalUpdateReceived(model_type_state, *updates_to_process);
@@ -697,6 +709,19 @@ void ClientTagBasedModelTypeProcessor::OnUpdateReceived(
   if (error) {
     ReportError(*error);
     return;
+  }
+
+  if (is_initial_sync &&
+      activation_request_.storage_option == STORAGE_IN_MEMORY) {
+    base::TimeDelta configuration_duration =
+        base::Time::Now() - activation_request_.configuration_start_time;
+    base::UmaHistogramCustomTimes(
+        base::StringPrintf("Sync.ModelTypeConfigurationTime.Ephemeral.%s",
+                           ModelTypeToHistogramSuffix(type_)),
+        configuration_duration,
+        /*min=*/base::TimeDelta::FromMilliseconds(1),
+        /*min=*/base::TimeDelta::FromSeconds(60),
+        /*buckets=*/50);
   }
 
   // If there were trackers with empty storage keys, they should have been
@@ -735,6 +760,11 @@ ProcessorEntityTracker* ClientTagBasedModelTypeProcessor::ProcessUpdate(
                   << " client_tag_hash: " << client_tag_hash;
     return nullptr;
   }
+
+  if (entity) {
+    entity->RecordEntityUpdateLatency(update.response_version, type_);
+  }
+
   if (entity && entity->UpdateIsReflection(update.response_version)) {
     // Seen this update before; just ignore it.
     return nullptr;
@@ -774,7 +804,7 @@ ProcessorEntityTracker* ClientTagBasedModelTypeProcessor::ProcessUpdate(
              << update.encryption_key_name << " -> "
              << model_type_state_.encryption_key_name();
 
-    entity->IncrementSequenceNumber();
+    entity->IncrementSequenceNumber(base::Time::Now());
     if (entity->RequiresCommitData()) {
       // If there is no pending commit data, then either this update wasn't
       // in conflict or the remote data won; either way the remote data is
@@ -875,7 +905,7 @@ void ClientTagBasedModelTypeProcessor::RecommitAllForEncryption(
       // metadata will be persisted in UpdateStorageKey().
       continue;
     }
-    entity->IncrementSequenceNumber();
+    entity->IncrementSequenceNumber(base::Time::Now());
     if (entity->RequiresCommitData()) {
       entities_needing_data.push_back(entity->storage_key());
     }
@@ -1218,6 +1248,11 @@ bool ClientTagBasedModelTypeProcessor::HasLocalChangesForTest() const {
   return HasLocalChanges();
 }
 
+bool ClientTagBasedModelTypeProcessor::IsTrackingEntityForTest(
+    const std::string& storage_key) const {
+  return storage_key_to_tag_hash_.count(storage_key) != 0;
+}
+
 bool ClientTagBasedModelTypeProcessor::IsModelReadyToSyncForTest() const {
   return model_ready_to_sync_;
 }
@@ -1384,22 +1419,29 @@ void ClientTagBasedModelTypeProcessor::MergeDataWithMetadataForDebugging(
   std::string type_string = ModelTypeToString(type_);
 
   while (batch->HasNext()) {
-    KeyAndData data = batch->Next();
-    std::unique_ptr<base::DictionaryValue> node =
-        data.second->ToDictionaryValue();
-    ProcessorEntityTracker* entity = GetEntityForStorageKey(data.first);
-    // Entity could be null if there are some unapplied changes.
+    KeyAndData key_and_data = batch->Next();
+    std::unique_ptr<EntityData> data = std::move(key_and_data.second);
+
+    // There is an overlap between EntityData fields from the bridge and
+    // EntityMetadata fields from the processor's entity tracker, metadata is
+    // the authoritative source of truth.
+    ProcessorEntityTracker* entity = GetEntityForStorageKey(key_and_data.first);
+    // Tracker could be null if there are some unapplied changes.
     if (entity != nullptr) {
-      std::unique_ptr<base::DictionaryValue> metadata =
-          EntityMetadataToValue(entity->metadata());
-      base::Value* server_id = metadata->FindKey("server_id");
-      if (server_id) {
-        // Set ID value as directory, "s" means server.
-        node->SetString("ID", "s" + server_id->GetString());
-      }
-      node->Set("metadata", std::move(metadata));
+      const sync_pb::EntityMetadata& metadata = entity->metadata();
+      // Set id value as directory, "s" means server.
+      data->id = "s" + metadata.server_id();
+      data->creation_time = ProtoTimeToTime(metadata.creation_time());
+      data->modification_time = ProtoTimeToTime(metadata.modification_time());
+      data->client_tag_hash = metadata.client_tag_hash();
     }
+
+    std::unique_ptr<base::DictionaryValue> node = data->ToDictionaryValue();
     node->SetString("modelType", type_string);
+    // Copy the whole metadata message into the dictionary (if existing).
+    if (entity != nullptr) {
+      node->Set("metadata", EntityMetadataToValue(entity->metadata()));
+    }
     all_nodes->Append(std::move(node));
   }
 

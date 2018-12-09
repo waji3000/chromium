@@ -35,10 +35,11 @@ class RedirectLoader : public network::mojom::URLLoader {
     NotifyRedirect(std::move(url));
   };
 
-  void FollowRedirect(const base::Optional<std::vector<std::string>>&
-                          to_be_removed_request_headers,
-                      const base::Optional<net::HttpRequestHeaders>&
-                          modified_request_headers) override;
+  void FollowRedirect(
+      const base::Optional<std::vector<std::string>>&
+          to_be_removed_request_headers,
+      const base::Optional<net::HttpRequestHeaders>& modified_request_headers,
+      const base::Optional<GURL>& new_url) override;
 
   void ProceedWithResponse() override { DCHECK(false); }
   void SetPriority(net::RequestPriority priority,
@@ -50,6 +51,7 @@ class RedirectLoader : public network::mojom::URLLoader {
   void NotifyRedirect(const std::string& location) {
     auto redirect_info = net::RedirectInfo::ComputeRedirectInfo(
         url_request_.method, url_request_.url, url_request_.site_for_cookies,
+        url_request_.top_frame_origin,
         net::URLRequest::FirstPartyURLPolicy::
             UPDATE_FIRST_PARTY_URL_ON_REDIRECT,
         url_request_.referrer_policy, url_request_.referrer.spec(),
@@ -126,7 +128,8 @@ class TestNetworkInterceptor::Impl {
 void RedirectLoader::FollowRedirect(
     const base::Optional<std::vector<std::string>>&
         to_be_removed_request_headers,
-    const base::Optional<net::HttpRequestHeaders>& modified_request_headers) {
+    const base::Optional<net::HttpRequestHeaders>& modified_request_headers,
+    const base::Optional<GURL>& new_url) {
   response_ = interceptor_impl_->FindResponse(method_, url_.spec());
   CHECK(response_) << "No content for " << url_.spec();
   std::string location;

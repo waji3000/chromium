@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("features.gni")
 import("//build/buildflag_header.gni")
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
@@ -11,6 +10,7 @@ import("//mojo/public/tools/bindings/mojom.gni")
 import("//ppapi/buildflags/buildflags.gni")
 import("//sandbox/features.gni")
 import("//tools/ipc_fuzzer/ipc_fuzzer.gni")
+import("features.gni")
 if (is_mac) {
   import("//build/config/mac/mac_sdk.gni")
 }
@@ -42,8 +42,6 @@ source_set("common") {
     "android/gin_java_bridge_value.h",
     "android/hash_set.cc",
     "android/hash_set.h",
-    "android/media_metadata_android.cc",
-    "android/media_metadata_android.h",
     "android/sync_compositor_statics.cc",
     "android/sync_compositor_statics.h",
     "android/use_zoom_for_dsf_policy_android.cc",
@@ -115,8 +113,6 @@ source_set("common") {
     "font_list_fontconfig.cc",
     "font_list_mac.mm",
     "font_list_win.cc",
-    "font_loader_dispatcher_mac.cc",
-    "font_loader_dispatcher_mac.h",
     "frame_message_enums.h",
     "frame_message_structs.cc",
     "frame_message_structs.h",
@@ -191,7 +187,6 @@ source_set("common") {
     "media/media_player_messages_android.h",
     "media/media_stream_controls.cc",
     "media/media_stream_controls.h",
-    "media/midi_messages.h",
     "media/peer_connection_tracker_messages.h",
     "media/video_capture.h",
     "mime_sniffing_throttle.cc",
@@ -239,8 +234,6 @@ source_set("common") {
     "service_manager/service_manager_connection_impl.h",
     "service_worker/service_worker_loader_helpers.cc",
     "service_worker/service_worker_loader_helpers.h",
-    "service_worker/service_worker_type_converter.cc",
-    "service_worker/service_worker_type_converter.h",
     "service_worker/service_worker_types.cc",
     "service_worker/service_worker_types.h",
     "service_worker/service_worker_utils.cc",
@@ -459,17 +452,8 @@ source_set("common") {
   }
 
   if (is_fuchsia) {
-    sources += [
-      "font_list_fuchsia.cc",
-      "sandbox_policy_fuchsia.cc",
-      "sandbox_policy_fuchsia.h",
-    ]
-
-    deps += [
-      "//third_party/fuchsia-sdk/sdk:fdio",
-      "//third_party/fuchsia-sdk/sdk:fonts",
-      "//third_party/fuchsia-sdk/sdk:scenic",
-    ]
+    sources += [ "font_list_fuchsia.cc" ]
+    deps += [ "//third_party/fuchsia-sdk/sdk:fdio" ]
   }
 }
 
@@ -524,17 +508,12 @@ mojom("mojo_bindings") {
     "render_widget_window_tree_client_factory.mojom",
     "renderer.mojom",
     "renderer_host.mojom",
-    "service_worker/controller_service_worker.mojom",
     "service_worker/embedded_worker.mojom",
     "service_worker/service_worker.mojom",
     "service_worker/service_worker_container.mojom",
     "service_worker/service_worker_provider.mojom",
     "shared_worker/shared_worker.mojom",
-    "shared_worker/shared_worker_client.mojom",
-    "shared_worker/shared_worker_connector.mojom",
     "shared_worker/shared_worker_factory.mojom",
-    "shared_worker/shared_worker_host.mojom",
-    "shared_worker/shared_worker_info.mojom",
     "url_loader_factory_bundle.mojom",
     "widget.mojom",
   ]
@@ -545,8 +524,8 @@ mojom("mojo_bindings") {
 
   if (is_mac) {
     sources += [
-      "font_loader_mac.mojom",
       "render_widget_host_ns_view.mojom",
+      "sandbox_support_mac.mojom",
     ]
   }
 

@@ -130,6 +130,7 @@ def _CreateR8Command(options, map_output_path, output_dir):
   classpath = [
       p for p in set(options.classpath) if p not in options.input_paths
   ]
+
   for lib in classpath:
     cmd += ['--lib', lib]
 

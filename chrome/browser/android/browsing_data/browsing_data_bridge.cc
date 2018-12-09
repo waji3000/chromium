@@ -88,6 +88,7 @@ static void JNI_BrowsingDataBridge_ClearBrowsingData(
       case browsing_data::BrowsingDataType::COOKIES:
         remove_mask |= BrowsingDataRemover::DATA_TYPE_COOKIES;
         remove_mask |= ChromeBrowsingDataRemoverDelegate::DATA_TYPE_SITE_DATA;
+        remove_mask |= BrowsingDataRemover::DATA_TYPE_MEDIA_LICENSES;
         break;
       case browsing_data::BrowsingDataType::PASSWORDS:
         remove_mask |= ChromeBrowsingDataRemoverDelegate::DATA_TYPE_PASSWORDS;
@@ -104,7 +105,8 @@ static void JNI_BrowsingDataBridge_ClearBrowsingData(
             ChromeBrowsingDataRemoverDelegate::DATA_TYPE_CONTENT_SETTINGS;
         break;
       case browsing_data::BrowsingDataType::MEDIA_LICENSES:
-        remove_mask |= BrowsingDataRemover::DATA_TYPE_MEDIA_LICENSES;
+        // Media licenses are deleted as part of cookies.
+        NOTREACHED();
         break;
       case browsing_data::BrowsingDataType::DOWNLOADS:
       case browsing_data::BrowsingDataType::HOSTED_APPS_DATA:
@@ -180,7 +182,6 @@ static void JNI_BrowsingDataBridge_RequestInfoAboutOtherFormsOfBrowsingHistory(
 
 static void JNI_BrowsingDataBridge_FetchImportantSites(
     JNIEnv* env,
-    const JavaParamRef<jclass>& clazz,
     const JavaParamRef<jobject>& jprofile,
     const JavaParamRef<jobject>& java_callback) {
   TRACE_EVENT0("browsing_data", "BrowsingDataBridge_FetchImportantSites");
@@ -212,15 +213,12 @@ static void JNI_BrowsingDataBridge_FetchImportantSites(
 }
 
 // This value should not change during a sessions, as it's used for UMA metrics.
-static jint JNI_BrowsingDataBridge_GetMaxImportantSites(
-    JNIEnv* env,
-    const JavaParamRef<jclass>& clazz) {
+static jint JNI_BrowsingDataBridge_GetMaxImportantSites(JNIEnv* env) {
   return ImportantSitesUtil::kMaxImportantSites;
 }
 
 static void JNI_BrowsingDataBridge_MarkOriginAsImportantForTesting(
     JNIEnv* env,
-    const JavaParamRef<jclass>& clazz,
     const JavaParamRef<jobject>& jprofile,
     const JavaParamRef<jstring>& jorigin) {
   GURL origin(base::android::ConvertJavaStringToUTF8(jorigin));

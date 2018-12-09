@@ -576,6 +576,13 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="Accel_Focus_Pip">
+  <owner>omrilio@chromium.org</owner>
+  <description>
+    Keyboard accelerator to focus picture in picture window.
+  </description>
+</action>
+
 <action name="Accel_Focus_Previous_Pane">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -2340,6 +2347,30 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="AutofillAddressesViewed">
+  <owner>nikunjb@chromium.org</owner>
+  <owner>sebsg@chromium.org</owner>
+  <description>
+    Recorded when user visits chrome://settings/autofill page.
+  </description>
+</action>
+
+<action name="AutofillCreditCardsAdded">
+  <owner>nikunjb@chromium.org</owner>
+  <owner>sebsg@chromium.org</owner>
+  <description>
+    Recorded when user adds card via chrome://settings/payments page.
+  </description>
+</action>
+
+<action name="AutofillCreditCardsViewed">
+  <owner>nikunjb@chromium.org</owner>
+  <owner>sebsg@chromium.org</owner>
+  <description>
+    Recorded when user visits chrome://settings/payments page.
+  </description>
+</action>
+
 <action name="AutomaticReset_WebUIBanner_BannerShown">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -3871,6 +3902,41 @@ should be able to be added at any place in this file.
   <description>User switched to basic tab.</description>
 </action>
 
+<action name="ClearBrowsingData_Sync_NavigateToError">
+  <owner>dullweber@chromium.org</owner>
+  <owner>msramek@chromium.org</owner>
+  <description>
+    The user clicked on the &quot;visit sync settings&quot; link in the sync
+    error message in the Clear Browsing Data footer.
+  </description>
+</action>
+
+<action name="ClearBrowsingData_Sync_NavigateToPassphrase">
+  <owner>dullweber@chromium.org</owner>
+  <owner>msramek@chromium.org</owner>
+  <description>
+    The user clicked on the &quot;enter your passphrase&quot; link in the error
+    message in the Clear Browsing Data footer, which was shown due to a missing
+    sync passphrase.
+  </description>
+</action>
+
+<action name="ClearBrowsingData_Sync_Pause">
+  <owner>dullweber@chromium.org</owner>
+  <owner>msramek@chromium.org</owner>
+  <description>
+    User paused sync from the Clear Browsing Data footer.
+  </description>
+</action>
+
+<action name="ClearBrowsingData_Sync_SignIn">
+  <owner>dullweber@chromium.org</owner>
+  <owner>msramek@chromium.org</owner>
+  <description>
+    User started to sign in from the Clear Browsing Data footer to unpause sync.
+  </description>
+</action>
+
 <action name="ClearBrowsingData_TimePeriodChanged_Everything">
   <owner>dullweber@chromium.org</owner>
   <owner>msramek@chromium.org</owner>
@@ -4354,6 +4420,13 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="ContextualSuggestions">
+  <owner>huayinz@chromium.org</owner>
+  <owner>twellington@chromium.com</owner>
+  <owner>wylieb@chromium.com</owner>
+  <description>Android: User interacts with the feature directly.</description>
+</action>
+
 <action name="ContextualSuggestions.ContextMenu">
   <owner>huayinz@chromium.org</owner>
   <owner>twellington@chromium.com</owner>
@@ -4484,6 +4557,11 @@ should be able to be added at any place in this file.
     The user has clicked on the back arrow while viewing downloaded media on
     Android.
   </description>
+</action>
+
+<action name="CustomTabs.CloseButtonClicked.GoToModuleManagedUrl">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of the metric.</description>
 </action>
 
 <action name="CustomTabs.StartedInitially">
@@ -4707,6 +4785,23 @@ should be able to be added at any place in this file.
 <action name="DeleteWordForward">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="DemoMode.ExitFromShelf">
+  <owner>michaelpg@chromium.org</owner>
+  <owner>wzang@chromium.org</owner>
+  <description>
+    Recorded when user exits Demo Mode from the logout button on the shelf.
+  </description>
+</action>
+
+<action name="DemoMode.ExitFromSystemTray">
+  <owner>michaelpg@chromium.org</owner>
+  <owner>wzang@chromium.org</owner>
+  <description>
+    Recorded when user exits Demo Mode from the logout button in the system
+    tray.
+  </description>
 </action>
 
 <action name="Desktop_SwitchTask">
@@ -7401,6 +7496,13 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="IOSLaunchedBySearchInChromeIntent">
+  <owner>justincohen@chromium.org</owner>
+  <description>
+    User opened Chrome with a `Search in Chrome` Siri Shortcut.
+  </description>
+</action>
+
 <action name="Italic">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -10033,6 +10135,202 @@ should be able to be added at any place in this file.
   <description>The chrome://management page was viewed.</description>
 </action>
 
+<action name="ManualFallback_Close">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user closed the Manual Fallback view by tapping the keyboard icon.
+  </description>
+</action>
+
+<action name="ManualFallback_ClosePopover">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user closed the Manual Fallback Popover view. This happens when the user
+    taps outside the popover.
+  </description>
+</action>
+
+<action name="ManualFallback_ClosePull">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user closed the Manual Fallback view by pulling. This happens when the
+    user pulls enough to the right, similar to &quot;pull to refresh&quot;.
+  </description>
+</action>
+
+<action name="ManualFallback_CreditCard_OpenManageCreditCard">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user tapped on &quot;Manage credit cards&quot; on the Password Manual
+    Fallback view.
+  </description>
+</action>
+
+<action name="ManualFallback_CreditCard_SelectCardholderName">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user tapped on a cardholder name in the Credit Card Fallback view.
+  </description>
+</action>
+
+<action name="ManualFallback_CreditCard_SelectCardNumber">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user tapped on a credit card number in the Credit Card Fallback view.
+  </description>
+</action>
+
+<action name="ManualFallback_CreditCard_SelectExpirationMonth">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user tapped on an expiration month in the Credit Card Fallback view.
+  </description>
+</action>
+
+<action name="ManualFallback_CreditCard_SelectExpirationYear">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user tapped on an expiration year in the Credit Card Fallback view.
+  </description>
+</action>
+
+<action name="ManualFallback_OpenCreditCard">
+  <owner>javierrobles@chromium.org</owner>
+  <description>The user opened Credit Card Manual Fallback view.</description>
+</action>
+
+<action name="ManualFallback_OpenPassword">
+  <owner>javierrobles@chromium.org</owner>
+  <description>The user opened the Password Manual Fallback view.</description>
+</action>
+
+<action name="ManualFallback_OpenProfile">
+  <owner>javierrobles@chromium.org</owner>
+  <description>The user opened the Profile Manual Fallback view.</description>
+</action>
+
+<action name="ManualFallback_Password_OpenManagePassword">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user tapped on &quot;Manage passwords&quot; on the Password Manual
+    Fallback view.
+  </description>
+</action>
+
+<action name="ManualFallback_Password_OpenOtherPassword">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user tapped on &quot;Use other password&quot; on the Password Manual
+    Fallback view.
+  </description>
+</action>
+
+<action name="ManualFallback_Password_SelectPassword">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user tapped on a password in the Password Manual Fallback view.
+  </description>
+</action>
+
+<action name="ManualFallback_Password_SelectUsername">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user tapped on a username in the Password Manual Fallback view.
+  </description>
+</action>
+
+<action name="ManualFallback_Profiles_Address1">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user tapped on line 1 in the Address Manual Fallback view.
+  </description>
+</action>
+
+<action name="ManualFallback_Profiles_Address2">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user tapped on line 2 in the Address Manual Fallback view.
+  </description>
+</action>
+
+<action name="ManualFallback_Profiles_City">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user tapped on a city in the Address Manual Fallback view.
+  </description>
+</action>
+
+<action name="ManualFallback_Profiles_Company">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user tapped on a company name in the Address Manual Fallback view.
+  </description>
+</action>
+
+<action name="ManualFallback_Profiles_Country">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user tapped on a country in the Address Manual Fallback view.
+  </description>
+</action>
+
+<action name="ManualFallback_Profiles_EmailAddress">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user tapped on an email address in the Address Manual Fallback view.
+  </description>
+</action>
+
+<action name="ManualFallback_Profiles_OpenManageProfiles">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user tapped on &quot;Manage addresses&quot; on the Password Manual
+    Fallback view.
+  </description>
+</action>
+
+<action name="ManualFallback_Profiles_PhoneNumber">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user tapped on a phone number in the Address Manual Fallback view.
+  </description>
+</action>
+
+<action name="ManualFallback_Profiles_SelectFirstName">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user tapped on a first name in the Address Manual Fallback view.
+  </description>
+</action>
+
+<action name="ManualFallback_Profiles_SelectLastName">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user tapped on a last name in the Address Manual Fallback view.
+  </description>
+</action>
+
+<action name="ManualFallback_Profiles_SelectMiddleName">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user tapped on a middle name in the Address Manual Fallback view.
+  </description>
+</action>
+
+<action name="ManualFallback_Profiles_State">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user tapped on a state / province in the Address Manual Fallback view.
+  </description>
+</action>
+
+<action name="ManualFallback_Profiles_Zip">
+  <owner>javierrobles@chromium.org</owner>
+  <description>
+    The user tapped on a zip code in the Address Manual Fallback view.
+  </description>
+</action>
+
 <action name="MaxButton_Clk_ExitFS">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -10133,6 +10431,20 @@ should be able to be added at any place in this file.
 <action name="Media.Controls.CastOverlay">
   <owner>mlamouri@chromium.org</owner>
   <description>The user clicked on the cast overlay button.</description>
+</action>
+
+<action name="Media.Controls.ClickAnywhereToPause">
+  <owner>jazzhsu@chromium.org</owner>
+  <description>
+    The user clicked anywhere in the video frame to pause.
+  </description>
+</action>
+
+<action name="Media.Controls.ClickAnywhereToPlay">
+  <owner>jazzhsu@chromium.org</owner>
+  <description>
+    The user clicked anywhere in the video frame to play.
+  </description>
 </action>
 
 <action name="Media.Controls.ClosedCaptionHide">
@@ -11506,6 +11818,45 @@ should be able to be added at any place in this file.
     User used the omnibox to go somewhere. The action doesn't have to lead to a
     search page (except on iOS, where this is only recorded for search-type
     navigations).
+  </description>
+</action>
+
+<action name="MobileOmniboxShortcutsOpenBookmarks">
+  <owner>stkhapugin@chromium.org</owner>
+  <description>
+    The user clicked the Bookmarks shortcut in Omnibox popup shortcuts. iOS
+    only.
+  </description>
+</action>
+
+<action name="MobileOmniboxShortcutsOpenHistory">
+  <owner>stkhapugin@chromium.org</owner>
+  <description>
+    The user clicked the History shortcut in Omnibox popup shortcuts. iOS only.
+  </description>
+</action>
+
+<action name="MobileOmniboxShortcutsOpenMostVisitedItem">
+  <owner>stkhapugin@chromium.org</owner>
+  <description>
+    The user clicked one of the Most Visited tiles in Omnibox popup shortcuts.
+    iOS only.
+  </description>
+</action>
+
+<action name="MobileOmniboxShortcutsOpenReadingList">
+  <owner>stkhapugin@chromium.org</owner>
+  <description>
+    The user clicked the Reading List shortcut in Omnibox popup shortcuts. iOS
+    only.
+  </description>
+</action>
+
+<action name="MobileOmniboxShortcutsOpenRecentTabs">
+  <owner>stkhapugin@chromium.org</owner>
+  <description>
+    The user clicked the Recent Tabs shortcut in Omnibox popup shortcuts. iOS
+    only.
   </description>
 </action>
 
@@ -17126,10 +17477,19 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Signin_Signin_FromForceSigninWarning">
+  <obsolete>Deprecated as the warning dialog is no longer used.</obsolete>
   <owner>zmin@chromium.org</owner>
   <description>
     Record when a user signs in again from the force sign in auth error warning
     modal dialog.
+  </description>
+</action>
+
+<action name="Signin_Signin_FromMachineLogon">
+  <owner>rogerta@chromium.org</owner>
+  <owner>tienmai@chromium.org</owner>
+  <description>
+    Record when a user signs in using a Windows machine's logon screen.
   </description>
 </action>
 
@@ -18563,12 +18923,12 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="StatusArea_DictationDisabled">
-  <owner>zhelfins@chromium.org</owner>
+  <owner>anastasi@google.com</owner>
   <description>Ash system menu: Accessibility: Disable Dictation.</description>
 </action>
 
 <action name="StatusArea_DictationEnabled">
-  <owner>zhelfins@chromium.org</owner>
+  <owner>anastasi@google.com</owner>
   <description>Ash system menu: Accessibility: Enable Dictation.</description>
 </action>
 
@@ -19598,11 +19958,17 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="TodayExtension.ExtensionDismissed">
+  <obsolete>
+    Deprecated. Replaced by IOS.SearchExtension.Action histogram.
+  </obsolete>
   <owner>olivierrobin@chromium.org</owner>
   <description>Dismissed the Chrome Today extension.</description>
 </action>
 
 <action name="TodayExtension.ExtensionDisplayed">
+  <obsolete>
+    Deprecated. Replaced by IOS.SearchExtension.Action histogram.
+  </obsolete>
   <owner>olivierrobin@chromium.org</owner>
   <description>
     Displayed the notification center and display the Chrome Today extension.
@@ -19610,6 +19976,9 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="TodayExtension.ExtensionInitialized">
+  <obsolete>
+    Deprecated. Replaced by IOS.SearchExtension.Action histogram.
+  </obsolete>
   <owner>olivierrobin@chromium.org</owner>
   <description>
     Displayed the notification center and initialize the Chrome Today extension.
@@ -19617,6 +19986,9 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="TodayExtension.NewTabPressed">
+  <obsolete>
+    Deprecated. Replaced by IOS.SearchExtension.Action histogram.
+  </obsolete>
   <owner>olivierrobin@chromium.org</owner>
   <description>
     Tapped on the &quot;New Tab&quot; button in the Chrome Today extension.
@@ -19624,6 +19996,9 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="TodayExtension.OpenClipboardPressed">
+  <obsolete>
+    Deprecated. Replaced by IOS.SearchExtension.Action histogram.
+  </obsolete>
   <owner>olivierrobin@chromium.org</owner>
   <description>
     Tapped on the &quot;Open Copied Link&quot; button in the Chrome Today
@@ -19642,6 +20017,9 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="TodayExtension.VoiceSearchPressed">
+  <obsolete>
+    Deprecated. Replaced by IOS.SearchExtension.Action histogram.
+  </obsolete>
   <owner>olivierrobin@chromium.org</owner>
   <description>
     Tapped on the &quot;Voice Search&quot; button in the Chrome Today extension.
@@ -19819,6 +20197,10 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Tray_SwipeToClose_Successful">
+  <obsolete>
+    No longer needed since swipe on the tray bubble to close it has been
+    disabled and unified system tray has been launched.
+  </obsolete>
   <owner>omrilio@chromium.org</owner>
   <owner>minch@chromium.org</owner>
   <description>
@@ -19829,6 +20211,10 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Tray_SwipeToClose_Unsuccessful">
+  <obsolete>
+    No longer needed since swipe on the tray bubble to close has been disabled
+    and unified system tray has been launched.
+  </obsolete>
   <owner>omrilio@chromium.org</owner>
   <owner>minch@chromium.org</owner>
   <description>
@@ -19839,6 +20225,10 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Tray_SwipeToOpen_Successful">
+  <obsolete>
+    No longer needed since swipe on the status area tray to open it has been
+    disabled and unified system tray has been launched.
+  </obsolete>
   <owner>omrilio@chromium.org</owner>
   <owner>minch@chromium.org</owner>
   <description>
@@ -19849,12 +20239,46 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Tray_SwipeToOpen_Unsuccessful">
+  <obsolete>
+    No longer needed since swipe on the status area tray to open it has been
+    disabled and unified system tray has been launched.
+  </obsolete>
   <owner>omrilio@chromium.org</owner>
   <owner>minch@chromium.org</owner>
   <description>
     Records when the user swipes on the status area tray (ImeTray, SystemTray,
     WebNotificationTray, PaletteTray) in an attempt to open the associated
     bubble but failed ultimately.
+  </description>
+</action>
+
+<action name="TrustedWebActivity.DisclosureAccepted">
+  <owner>peconn@chromium.org</owner>
+  <owner>pshmakov@chromium.org</owner>
+  <owner>peter@chromium.org</owner>
+  <description>
+    Recorded when a user accepts the &quot;Running in Chrome&quot; disclosure
+    seen in a Trusted Web Activity.
+  </description>
+</action>
+
+<action name="TrustedWebActivity.DisclosureShown">
+  <owner>peconn@chromium.org</owner>
+  <owner>pshmakov@chromium.org</owner>
+  <owner>peter@chromium.org</owner>
+  <description>
+    Recorded when a user sees the &quot;Running in Chrome&quot; disclosure in a
+    Trusted Web Activity.
+  </description>
+</action>
+
+<action name="TrustedWebActivity.OpenedSettingsViaManageSpace">
+  <owner>peconn@chromium.org</owner>
+  <owner>pshmakov@chromium.org</owner>
+  <owner>peter@chromium.org</owner>
+  <description>
+    Recorded when site settings are opened via &quot;Manage Space&quot; button
+    in TWA client app's settings.
   </description>
 </action>
 
@@ -20581,6 +21005,7 @@ should be able to be added at any place in this file.
   <suffix name="PreviewsOmniboxUI"
       label="For the Previews UI in the Android Omnibox feature."/>
   <suffix name="ReopenTab" label="For ReopenTab feature."/>
+  <suffix name="TranslateMenuButton" label="For translate menu button."/>
   <affected-action name="InProductHelp.NotifyEvent.IPH"/>
   <affected-action name="InProductHelp.NotifyUsedEvent.IPH"/>
   <affected-action name="InProductHelp.ShouldTriggerHelpUI.IPH"/>
@@ -20623,6 +21048,7 @@ should be able to be added at any place in this file.
   <suffix name="Open" label="User opened an offline item."/>
   <suffix name="Pause" label="User paused downloading an offline item."/>
   <suffix name="Resume" label="User resumed downloading an offline item."/>
+  <suffix name="Retry" label="User retried downloading an offline item."/>
   <affected-action name="Android.DownloadManager.List.View.Action"/>
 </action-suffix>
 
@@ -20636,6 +21062,13 @@ should be able to be added at any place in this file.
   <suffix name="Search" label="User started searching from the top menu."/>
   <suffix name="Settings" label="User entered settings from the top menu."/>
   <affected-action name="Android.DownloadManager.Menu.Action"/>
+</action-suffix>
+
+<action-suffix separator="." ordering="suffix">
+  <suffix name="SuggestionClicked"
+      label="The suggestion was clicked directly."/>
+  <suffix name="ToolbarButtonClicked" label="The toolbar button was shown."/>
+  <affected-action name="ContextualSuggestions"/>
 </action-suffix>
 
 </actions>

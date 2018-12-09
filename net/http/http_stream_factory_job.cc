@@ -562,12 +562,12 @@ int HttpStreamFactory::Job::OnHostResolution(
 }
 
 void HttpStreamFactory::Job::OnIOComplete(int result) {
-  TRACE_EVENT0(kNetTracingCategory, "HttpStreamFactory::Job::OnIOComplete");
+  TRACE_EVENT0(NetTracingCategory(), "HttpStreamFactory::Job::OnIOComplete");
   RunLoop(result);
 }
 
 void HttpStreamFactory::Job::RunLoop(int result) {
-  TRACE_EVENT0(kNetTracingCategory, "HttpStreamFactory::Job::RunLoop");
+  TRACE_EVENT0(NetTracingCategory(), "HttpStreamFactory::Job::RunLoop");
   result = DoLoop(result);
 
   if (result == ERR_IO_PENDING)
@@ -1137,10 +1137,6 @@ int HttpStreamFactory::Job::DoInitConnectionComplete(int result) {
     DCHECK(ssl_started);
     if (IsCertificateError(result)) {
       result = HandleCertificateError(result);
-      if (result == OK && !connection_->socket()->IsConnectedAndIdle()) {
-        ReturnToStateInitConnection(true /* close connection */);
-        return result;
-      }
     }
     if (result < 0)
       return result;
@@ -1416,10 +1412,6 @@ int HttpStreamFactory::Job::HandleCertificateError(int error) {
   server_ssl_config_.allowed_bad_certs.emplace_back(ssl_info.cert,
                                                     ssl_info.cert_status);
 
-  if (session_->params().ignore_certificate_errors &&
-      IsCertificateError(error)) {
-    return OK;
-  }
   return error;
 }
 

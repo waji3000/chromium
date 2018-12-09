@@ -7,26 +7,15 @@
 
 namespace blink {
 
-class LayoutBox;
 class Node;
 class PaintLayer;
-class ScrollableArea;
 
 namespace root_scroller_util {
-
-// Returns the ScrollableArea that's associated with the root scroller Node.
-// For the <html> element and document Node this will be the FrameView or root
-// PaintLayerScrollableArea.
-ScrollableArea* ScrollableAreaForRootScroller(const Node*);
 
 // Returns the PaintLayer that'll be used as the root scrolling layer. For the
 // <html> element and document Node, this returns the LayoutView's PaintLayer
 // rather than <html>'s since scrolling is handled by LayoutView.
 PaintLayer* PaintLayerForRootScroller(const Node*);
-
-bool IsGlobal(const LayoutBox&);
-bool IsGlobal(const PaintLayer&);
-bool IsGlobal(const Node*);
 
 }  // namespace root_scroller_util
 

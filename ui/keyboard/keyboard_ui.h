@@ -13,9 +13,6 @@
 namespace aura {
 class Window;
 }
-namespace gfx {
-class Rect;
-}
 namespace ui {
 class InputMethod;
 }
@@ -35,6 +32,7 @@ class KEYBOARD_EXPORT KeyboardUI {
   // Begin loading the virtual keyboard window asynchronously.
   // Returns a window immediately, but the UI within the window is not
   // guaranteed to be fully loaded until |callback| is called.
+  // |callback| must be called after this function returns.
   // This function can only be called once.
   virtual aura::Window* LoadKeyboardWindow(LoadCallback callback) = 0;
 
@@ -68,13 +66,6 @@ class KEYBOARD_EXPORT KeyboardUI {
   // provide one.
   // TODO(https://crbug.com/845780): Change this to accept a callback.
   virtual void ReloadKeyboardIfNeeded() = 0;
-
-  // When the embedder changes the keyboard bounds, asks the keyboard to adjust
-  // insets for windows affected by this.
-  virtual void InitInsets(const gfx::Rect& keyboard_bounds) = 0;
-
-  // Resets insets for affected windows.
-  virtual void ResetInsets() = 0;
 
   // |controller| may be null when KeyboardController is being destroyed.
   void SetController(KeyboardController* controller);

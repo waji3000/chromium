@@ -294,7 +294,6 @@
           'shards': 2,
         },
       },
-      'chrome_sync_shell_test_apk': {},
       'gl_tests': {
         # TODO(kbr): these are actually run on many of the GPU bots, which have
         # physical hardware for several of the desktop OSs. Once the GPU JSON
@@ -309,6 +308,7 @@
       },
       'mojo_test_apk': {},
       'ui_android_unittests': {},
+      'vr_android_unittests': {},
       'webview_instrumentation_test_apk': {
         'swarming': {
           'shards': 7,
@@ -316,10 +316,33 @@
       },
     },
 
+    'android_vega_vr_gtests': {
+      'chrome_public_test_vr_apk-vega': {
+        'args': [
+          '--shared-prefs-file=//chrome/android/shared_preference_files/test/vr_ddview_skipdon_setupcomplete.json',
+        ],
+        'test': 'chrome_public_test_vr_apk',
+        'experiment_percentage': 100,
+      },
+    },
+
     'aura_gtests': {
       'aura_unittests': {},
       'compositor_unittests': {},
       'wm_unittests': {},
+    },
+
+    'autofill_captured_sites_gtests': {
+      'autofill_captured_sites_interactive_tests': {
+        'test': 'captured_sites_interactive_tests',
+        'args': [
+          '--gtest_filter="AutofillCapturedSitesInteractiveTest.Recipe/*"',
+          '--enable-pixel-output-in-tests',
+          '--ui-test-action-max-timeout=1000000',
+          '--test-launcher-timeout=1000000',
+          '--vmodule=captured_sites_test_utils=1,autofill_captured_sites_interactive_uitest=1'
+        ],
+      },
     },
 
     'cast_audio_specific_chromium_gtests': {
@@ -361,7 +384,11 @@
       'chromedriver_replay_unittests': {},
     },
 
-    'chromeos_gtests': {
+    # Tests that run in Chrome OS VMs.
+    # NOTE: We only want a small subset of test suites here, because most
+    # suites assume that they stub out the underlying device hardware.
+    # https://crbug.com/865693
+    'chromeos_device_friendly_gtests': {
       'aura_unittests': {
         'args': [
           '--ozone-platform=headless',
@@ -372,20 +399,13 @@
       'capture_unittests': {
         'args': [
           '--test-launcher-jobs=1',
-          # TODO(crbug.com/881300): After capture_unittests passes with vivid on VM,
-          # we can run UsingRealWebcam tests except CaptureMjpeg.
-          '--gtest_filter=-*UsingRealWebcam*',
+          # Don't run CaptureMJpeg tests on ChromeOS VM because vivid,
+          # which is the virtual video capture device, doesn't support MJPEG.
+          '--gtest_filter=-*UsingRealWebcam_CaptureMjpeg*',
         ],
       },
       'cc_unittests': {},
       'chrome_all_tast_tests': {},
-      'chromeos_unittests': {
-        'args': [
-          # TODO(crbug.com/865693): Don't stub out dbus clients.
-          '--dbus-stub',
-          '--test-launcher-filter-file=../../testing/buildbot/filters/chromeos.chromeos_unittests.filter',
-        ],
-      },
       'cros_vm_sanity_test': {},
       'crypto_unittests': {},
       'display_unittests': {},
@@ -431,16 +451,9 @@
       'url_unittests': {},
     },
 
-    'chromeos_gtests_experimental': {
+    'chromeos_device_friendly_gtests_experimental': {
       'base_unittests': {},
       'chrome_login_tast_tests': {},
-      'chromeos_unittests': {
-        'args': [
-          # TODO(crbug.com/865693): Don't stub out dbus clients.
-          '--dbus-stub',
-          '--test-launcher-filter-file=../../testing/buildbot/filters/chromeos.chromeos_unittests.filter',
-        ],
-      },
       'cros_vm_sanity_test': {},
       'services_unittests': {
         'args': [
@@ -528,15 +541,15 @@
           '--tool=asan',
         ],
       },
-      'components_browsertests': {
-        'args': [
-          '--tool=asan',
-        ],
-      },
     },
 
     'chromium_android_asan_junit_tests': {
       'base_junit_tests': {},
+    },
+
+    'chromium_android_webkit_gtests': {
+      'blink_heap_unittests': {},
+      'webkit_unit_tests': {},
     },
 
     'chromium_browser_tests': {
@@ -553,6 +566,21 @@
         },
       },
     },
+
+    'chromium_code_coverage_isolated_scripts': {
+      'webkit_layout_tests': {
+        'args': [
+          '--additional-driver-flag=--no-sandbox',
+          '--num-retries=3',
+        ],
+        'isolate_name': 'webkit_layout_tests_exparchive',
+        'results_handler': 'layout tests',
+        'swarming': {
+          'shards': 12,
+         },
+      },
+    },
+
 
     'chromium_gtests': {
       'angle_unittests': {},
@@ -669,15 +697,8 @@
       'service_junit_tests': {},
       'ui_junit_tests': {},
       'webapk_client_junit_tests': {},
+      'webapk_shell_apk_h2o_junit_tests': {},
       'webapk_shell_apk_junit_tests': {},
-    },
-
-    'chromium_linux_coverage_gtests': {
-      'base_unittests': {
-        'swarming': {
-          'shards': 2,
-        },
-      },
     },
 
     'chromium_linux_scripts': {
@@ -687,15 +708,27 @@
       'checkperms': {
         'script': 'checkperms.py',
       },
+      'check_static_initializers': {
+        'script': 'check_static_initializers.py',
+      },
       'webkit_lint': {
         'script': 'webkit_lint.py',
-      }
+      },
+    },
+
+    'chromium_mac_scripts': {
+      'check_static_initializers': {
+        'script': 'check_static_initializers.py',
+      },
+      'webkit_lint': {
+        'script': 'webkit_lint.py',
+      },
     },
 
     'chromium_scripts': {
       'webkit_lint': {
         'script': 'webkit_lint.py',
-      }
+      },
     },
 
     'chromium_swarm_android_gtests': {
@@ -1002,7 +1035,6 @@
       'net_unittests': {
         'args': [
           '--test-launcher-filter-file=../../testing/buildbot/filters/fuchsia.net_unittests.filter',
-          '--test-launcher-batch-limit=200',
         ],
       },
       'service_manager_unittests': {},
@@ -1049,6 +1081,24 @@
     },
 
     # BEGIN tests which run on the GPU bots
+
+    'gpu_android_nexus5x_specific_gpu_fyi_and_optional_and_angle_telemetry_tests': {
+      'webgl_conformance_gles_passthrough': {
+        'telemetry_test_name': 'webgl_conformance',
+        'android_args': [
+          # The current working directory when run via isolate is
+          # out/Debug or out/Release. Reference this file relatively to
+          # it.
+          '--read-abbreviated-json-results-from=../../content/test/data/gpu/webgl_conformance_tests_output.json',
+        ],
+        'args': [
+          '--extra-browser-args=--use-gl=angle --use-angle=gles --use-cmd-decoder=passthrough',
+        ],
+        'swarming': {
+          'shards': 6,
+        },
+      },
+    },
 
     'gpu_angle_deqp_egl_d3d11_tests': {
       'angle_deqp_egl_d3d11_tests': {
@@ -1245,6 +1295,20 @@
       },
     },
 
+    'gpu_angle_end2end_tests': {
+      'angle_end2end_tests': {
+        'desktop_args': [
+          '--use-gpu-in-tests',
+          # ANGLE test retries deliberately disabled to prevent flakiness.
+          # http://crbug.com/669196
+          '--test-launcher-retry-limit=0'
+        ],
+        'swarming': {
+          'shards': 4,
+        },
+      },
+    },
+
     'gpu_angle_fyi_and_optional_win_specific_isolated_scripts': {
       # TODO(jmadill): Run on Linux bots when possible.
       'passthrough_command_buffer_perftests': {
@@ -1280,6 +1344,19 @@
       },
     },
 
+    'gpu_angle_white_box_tests': {
+      # TODO(ynovikov): the old generator script said the white box
+      # tests are supposed to run everywhere angle_end2end_tests do, but
+      # they actually ran only on Windows and Linux.
+      'angle_white_box_tests': {
+        'desktop_args': [
+          # ANGLE test retries deliberately disabled to prevent flakiness.
+          # http://crbug.com/669196
+        '--test-launcher-retry-limit=0'
+        ],
+      },
+    },
+
     'gpu_common_and_optional_telemetry_tests': {
       'info_collection': {
         'args': [
@@ -1302,6 +1379,19 @@
       'gl_unittests': {
         'desktop_args': ['--use-gpu-in-tests'],
         'linux_args': ['--no-xvfb'],
+      },
+    },
+
+    'gpu_dawn_end2end_tests': {
+      'dawn_end2end_tests': {
+        'desktop_args': [
+          '--use-gpu-in-tests',
+          # Dawn test retries deliberately disabled to prevent flakiness.
+          '--test-launcher-retry-limit=0'
+        ],
+        'swarming': {
+          'shards': 4,
+        },
       },
     },
 
@@ -1329,33 +1419,6 @@
         ],
         'linux_args': [ '--no-xvfb' ],
         'test': 'browser_tests',
-      },
-    },
-
-    'gpu_fyi_and_optional_and_win_angle_amd_gtests': {
-      'angle_end2end_tests': {
-        'desktop_args': [
-          '--use-gpu-in-tests',
-          # ANGLE test retries deliberately disabled to prevent flakiness.
-          # http://crbug.com/669196
-          '--test-launcher-retry-limit=0'
-        ],
-        'swarming': {
-          'shards': 4,
-        },
-      },
-    },
-
-    'gpu_fyi_and_optional_and_win_angle_amd_win_and_linux_specific_gtests': {
-      # TODO(ynovikov): the old generator script said the white box
-      # tests are supposed to run everywhere angle_end2end_tests do, but
-      # they actually ran only on Windows and Linux.
-      'angle_white_box_tests': {
-        'desktop_args': [
-          # ANGLE test retries deliberately disabled to prevent flakiness.
-          # http://crbug.com/669196
-        '--test-launcher-retry-limit=0'
-        ],
       },
     },
 
@@ -1665,10 +1728,19 @@
       },
     },
 
+    'layout_ng_gtests': {
+      'webkit_unit_tests_ng': {
+        'args': [
+          '--enable-blink-features=LayoutNG'
+        ],
+        'test': 'webkit_unit_tests',
+      },
+    },
+
     'leak_detection_isolated_scripts': {
       'memory.leak_detection': {
         'args': [
-          '--smoke-test-mode',
+	  '--pageset-repeat=1',
           '--test-shard-map-filename=linux_leak_detection_shard_map.json',
           '--upload-results',
           '--output-format=histograms',
@@ -1775,7 +1847,6 @@
         'test': 'exo_unittests',
         'args': [
           '--enable-features=SingleProcessMash',
-          '--test-launcher-filter-file=../../testing/buildbot/filters/chromeos.single_process_mash.exo_unittests.filter',
         ],
       },
       'single_process_mash_interactive_ui_tests': {
@@ -1802,14 +1873,15 @@
     'linux_specific_chromium_isolated_scripts': {
       'devtools_closure_compile': {},
       'devtools_eslint': {},
-      'site_per_process_webkit_layout_tests': {
+      'not_site_per_process_webkit_layout_tests': {
+        # not_site_per_process_webkit_layout_tests provides coverage for
+        # running Layout Tests without site-per-process.  This is the mode used
+        # on Android and Android bots currently do not run the full set of
+        # layout tests.  Running in this mode on linux compensates for lack of
+        # direct Android coverage.
         'args': [
           '--additional-driver-flag',
-          '--site-per-process',
-          '--additional-driver-flag',
-          '--isolate-origins=http://www.web-platform.test:8001/,http://www1.web-platform.test:8001/,http://www2.web-platform.test:8001/,http://xn--n8j6ds53lwwkrqhv28a.web-platform.test:8001/,http://xn--lve-6lad.web-platform.test:8001/,http://www.web-platform.test:8081/,http://www1.web-platform.test:8081/,http://www2.web-platform.test:8081/,http://xn--n8j6ds53lwwkrqhv28a.web-platform.test:8081/,http://xn--lve-6lad.web-platform.test:8081/,https://www.web-platform.test:8444/,https://www1.web-platform.test:8444/,https://www2.web-platform.test:8444/,https://xn--n8j6ds53lwwkrqhv28a.web-platform.test:8444/,https://xn--lve-6lad.web-platform.test:8444/',
-          '--additional-expectations',
-          'src/third_party/WebKit/LayoutTests/FlagExpectations/site-per-process',
+          '--disable-site-isolation-trials',
 
           # layout test failures are retried 3 times when '--test-list' is not
           # passed, but 0 times when '--test-list' is passed. We want to always
@@ -1836,7 +1908,6 @@
     },
 
     'mac_specific_chromium_gtests': {
-      'mac_installer_unittests': {},
       'sandbox_mac_unittests': {},
     },
 
@@ -1860,12 +1931,29 @@
           '--enable-features=Mash',
         ],
       },
+      'single_process_mash_fyi_unit_tests': {
+        'test': 'unit_tests',
+        'args': [
+          '--enable-features=SingleProcessMash',
+          '--test-launcher-filter-file=../../testing/buildbot/filters/chromeos.single_process_mash.fyi.unit_tests.filter',
+        ],
+      },
+      'mash_fyi_interactive_ui_tests': {
+        'test': 'interactive_ui_tests',
+        'args': [
+          '--enable-features=Mash',
+          '--test-launcher-filter-file=../../testing/buildbot/filters/chromeos.mash.fyi.interactive_ui_tests.filter',
+        ],
+        'swarming': {
+          'shards': 3,
+        },
+      }
     },
 
     'memory_infra_isolated_scripts': {
       'heap_profiling.mobile': {
         'args': [
-          '--smoke-test-mode',
+	  '--pageset-repeat=1',
           '--benchmarks=heap_profiling.mobile.disabled,heap_profiling.mobile.native,heap_profiling.mobile.pseudo',
           '-v',
           '--output-format=chartjson',
@@ -1917,7 +2005,7 @@
       'monochrome_apk_checker': {},
     },
 
-    'network_service_android_gtests': {
+    'network_service_android_fyi_gtests': {
       'network_service_content_browsertests': {
         'args': [
           '--enable-features=NetworkService',
@@ -1934,13 +2022,63 @@
         ],
         'test': 'components_browsertests',
       },
+      'network_service_webview_instrumentation_test_apk': {
+        'swarming': {
+          'shards': 20,
+        },
+        'args': [
+          # TODO(crbug.com/882650): WebView currently does not support running network
+          # service OOP.
+          '--enable-features=NetworkService,NetworkServiceInProcess',
+          '--test-launcher-filter-file=../../testing/buildbot/filters/mojo.fyi.network_webview_instrumentation_test_apk.filter',
+        ],
+        'test': 'webview_instrumentation_test_apk',
+      },
+      'network_service_in_process_content_browsertests': {
+        'args': [
+          '--enable-features=NetworkService,NetworkServiceInProcess',
+          '--test-launcher-filter-file=../../testing/buildbot/filters/mojo.fyi.network_content_browsertests.filter',
+        ],
+        'swarming': {
+          'shards': 5,
+        },
+        'test': 'content_browsertests',
+      },
+      'network_service_in_process_components_browsertests': {
+        'args': [
+          '--enable-features=NetworkService,NetworkServiceInProcess',
+        ],
+        'test': 'components_browsertests',
+      },
+      'network_service_in_process_chrome_public_test_apk': {
+        'swarming': {
+          'shards': 20,
+        },
+        'args': [
+          '--enable-features=NetworkService,NetworkServiceInProcess',
+          '--test-launcher-filter-file=../../testing/buildbot/filters/mojo.fyi.network_chrome_public_test_apk.filter',
+        ],
+        'test': 'chrome_public_test_apk',
+      },
+      'network_service_in_process_content_shell_test_apk': {
+        'swarming': {
+          'shards': 5,
+        },
+        'args': [
+          '--enable-features=NetworkService,NetworkServiceInProcess',
+        ],
+        'test': 'content_shell_test_apk',
+      },
+    },
+
+    # These tests will be run on the main waterfall in addition to the Mojo
+    # Android bot.
+    'network_service_android_gtests': {
       'network_service_chrome_public_test_apk': {
         'swarming': {
           'shards': 20,
         },
         'args': [
-          # TODO(crbug.com/881572): Fix crash when running network service OOP on
-          # Android.
           '--enable-features=NetworkService',
           '--test-launcher-filter-file=../../testing/buildbot/filters/mojo.fyi.network_chrome_public_test_apk.filter',
         ],
@@ -1954,18 +2092,6 @@
           '--enable-features=NetworkService',
         ],
         'test': 'content_shell_test_apk',
-      },
-      'network_service_webview_instrumentation_test_apk': {
-        'swarming': {
-          'shards': 20,
-        },
-        'args': [
-          # TODO(crbug.com/882650): WebView currently does not support running network
-          # service OOP.
-          '--enable-features=NetworkService,NetworkServiceInProcess',
-          '--test-launcher-filter-file=../../testing/buildbot/filters/mojo.fyi.network_webview_instrumentation_test_apk.filter',
-        ],
-        'test': 'webview_instrumentation_test_apk',
       },
     },
 
@@ -2055,6 +2181,29 @@
           'shards': 3,
         },
         'test': 'interactive_ui_tests',
+      },
+    },
+
+    'network_service_in_process_gtests': {
+      'network_service_in_process_browser_tests': {
+        'args': [
+          '--enable-features=NetworkService,NetworkServiceInProcess',
+          '--test-launcher-filter-file=../../testing/buildbot/filters/mojo.fyi.network_browser_tests.filter',
+        ],
+        'swarming': {
+          'shards': 15,
+        },
+        'test': 'browser_tests',
+      },
+      'network_service_in_process_content_browsertests': {
+        'args': [
+          '--enable-features=NetworkService,NetworkServiceInProcess',
+          '--test-launcher-filter-file=../../testing/buildbot/filters/mojo.fyi.network_content_browsertests.filter',
+        ],
+        'swarming': {
+          'shards': 2,
+        },
+        'test': 'content_browsertests',
       },
     },
 
@@ -2156,7 +2305,7 @@
     'performance_smoke_test_isolated_scripts': {
       'performance_test_suite': {
         'args': [
-          '--smoke-test-mode',
+	  '--pageset-repeat=1',
           '--test-shard-map-filename=smoke_test_benchmark_shard_map.json',
         ],
         'swarming': {
@@ -2185,15 +2334,6 @@
     },
 
     'site_isolation_android_fyi_gtests': {
-      'site_per_process_browser_tests': {
-        'args': [
-          '--site-per-process'
-        ],
-        'swarming': {
-          'shards': 10,
-        },
-        'test': 'browser_tests',
-      },
       'site_per_process_components_browsertests': {
         'args': [
           '--site-per-process',
@@ -2204,14 +2344,19 @@
         'args': [
           '--site-per-process',
         ],
+        'swarming': {
+          'shards': 5,
+        },
         'test': 'components_unittests',
       },
       'site_per_process_content_browsertests': {
         'args': [
-          '--site-per-process'
+          '--site-per-process',
+          '--test-launcher-filter-file=../../testing/buildbot/filters/site_isolation_android.content_browsertests.filter',
+
         ],
         'swarming': {
-          'shards': 6,
+          'shards': 10,
         },
         'test': 'content_browsertests',
       },
@@ -2251,6 +2396,15 @@
       },
     },
 
+    'viz_chromeos_fyi_gtests': {
+       'viz_interactive_ui_tests': {
+         'args': [
+          '--enable-features=VizDisplayCompositor',
+        ],
+         'test': 'interactive_ui_tests',
+       },
+    },
+
     'viz_chromeos_gtests': {
       # TODO(jonross): remove once Viz field trials for ChromeOS are enabled.
       'viz_browser_tests': {
@@ -2283,27 +2437,12 @@
     },
 
     'viz_non_android_fyi_gtests': {
-      'viz_browser_tests': {
-        'args': [
-          '--enable-features=VizDisplayCompositor',
-        ],
-        'swarming': {
-          'shards': 10,
-        },
-        'test': 'browser_tests',
-      },
       'viz_content_unittests': {
         'args': [
           '--enable-features=VizDisplayCompositor',
         ],
         'test': 'content_unittests',
       },
-      'viz_interactive_ui_tests': {
-         'args': [
-          '--enable-features=VizDisplayCompositor',
-        ],
-         'test': 'interactive_ui_tests',
-       },
     },
 
     'vr_platform_specific_chromium_gtests': {
@@ -2313,37 +2452,12 @@
       'vr_pixeltests': {},
     },
 
-    # TODO(kbr): figure out a nicer way to add additional command line arguments
-    # to a base test suite (or across multiple test suites, per builder) than just
-    # adding them to test_suite_exceptions.pyl.
-    'webkit_layout_tests_isolated_scripts': {
-      'webkit_layout_tests': {
-        # layout test failures are retried 3 times when '--test-list' is not
-        # passed, but 0 times when '--test-list' is passed. We want to always
-        # retry 3 times, so we explicitly specify it.
-        'args': [
-          '--num-retries=3',
-        ],
-        'isolate_name': 'webkit_layout_tests_exparchive',
-        'merge': {
-          'args': [
-            '--verbose'
-          ],
-          'script': '//third_party/blink/tools/merge_web_test_results.py',
-        },
-        'results_handler': 'layout tests',
-      },
-    },
-
     # TODO(crbug.com/888429): Port remaining WebRTC tests to swarming.
     'webrtc_chromium_baremetal_gtests': {
       # Run capture unittests as well since our bots have real webcams.
       'capture_unittests': {
         'args': ['--enable-logging', '--v=1', '--test-launcher-jobs=1',
-                 '--test-launcher-print-test-stdio=always',
-                 # TODO(crbug.com/893494): Remove once real webcams are fixed
-                 # on chromium.webrtc Mac and Win bots.
-                 '--gtest_filter=-*UsingRealWebcam*'],
+                 '--test-launcher-print-test-stdio=always'],
         'swarming': {
           'can_use_on_swarming_builders': False,
         },
@@ -2419,7 +2533,7 @@
             {
               "cipd_package": 'chromium/android_webview/tools/cts_archive',
               'location': 'android_webview/tools/cts_archive',
-              'revision': 'version:1.0',
+              'revision': 'version:1.1',
             }
           ]
         },
@@ -2514,6 +2628,7 @@
       'android_ddready_vr_gtests',
       'android_ar_gtests',
       'android_oreo_standard_gtests',
+      'android_vega_vr_gtests',
     ],
 
     'chromium_android_gtests': [
@@ -2522,6 +2637,7 @@
       'chromium_gtests_for_devices_with_graphical_output',
       'linux_flavor_specific_chromium_gtests',
       'vr_platform_specific_chromium_gtests',
+      'network_service_android_gtests',
     ],
 
     'chromium_dbg_isolated_scripts': [
@@ -2557,6 +2673,19 @@
       'cast_video_specific_chromium_gtests',
       'chromium_gtests',
       'linux_flavor_specific_chromium_gtests',
+    ],
+
+    'chromium_linux_coverage_gtests': [
+      'aura_gtests',
+      'chromium_gtests',
+      'chromium_gtests_for_devices_with_graphical_output',
+      'chromium_gtests_for_linux_and_chromeos_only',
+      'chromium_gtests_for_win_and_linux_only',
+      'linux_flavor_specific_chromium_gtests',
+      'network_service_gtests',
+      'non_android_chromium_gtests',
+      'non_android_and_cast_and_chromeos_chromium_gtests',
+      'vr_platform_specific_chromium_gtests',
     ],
 
     'chromium_linux_dbg_isolated_scripts': [
@@ -2596,6 +2725,8 @@
       'non_linux_chromium_gtests',
       'non_viz_fyi_chromium_gtests',
       'non_viz_non_android_fyi_chromium_gtests',
+      'viz_gtests',
+      'viz_non_android_fyi_gtests',
     ],
 
     'chromium_mac_gtests': [
@@ -2658,17 +2789,40 @@
       'gpu_angle_deqp_egl_gl_tests',
       'gpu_angle_deqp_egl_vulkan_tests',
       'gpu_angle_deqp_gles2_d3d11_tests',
-      # TODO(kbr): why is gpu_angle_deqp_gles2_gl_tests not here?
+      'gpu_angle_deqp_gles2_gl_tests',
       'gpu_angle_deqp_gles2_vulkan_tests',
       'gpu_angle_deqp_gles31_d3d11_tests',
       'gpu_angle_deqp_gles31_gl_tests',
       'gpu_angle_deqp_gles3_d3d11_tests',
-      # TODO(kbr): why is gpu_angle_deqp_gles3_gl_tests not here?
+      'gpu_angle_deqp_gles3_gl_tests',
     ],
 
     'gpu_angle_gtests': [
+      'gpu_angle_end2end_tests',
       'gpu_angle_unittests',
-      'gpu_fyi_and_optional_and_win_angle_amd_gtests',
+    ],
+
+    'gpu_angle_win_gtests': [
+      'gpu_angle_end2end_tests',
+      'gpu_angle_unittests',
+      'gpu_angle_white_box_tests',
+      'gpu_fyi_and_optional_win_specific_gtests',
+    ],
+
+    'gpu_angle_win_intel_telemetry_tests': [
+      'gpu_fyi_and_optional_and_win_angle_amd_win_specific_gpu_telemetry_tests',
+      'gpu_fyi_and_optional_win_and_linux_specific_telemetry_tests',
+      'gpu_fyi_only_win_intel_and_nvidia_release_specific_telemetry_tests',
+      'gpu_fyi_only_win_linux_intel_nvidia_specific_telemetry_tests',
+      'gpu_fyi_optional_and_v8_desktop_release_specific_telemetry_tests',
+    ],
+
+    'gpu_angle_win_nvidia_telemetry_tests': [
+      'gpu_fyi_and_optional_and_win_angle_amd_win_specific_gpu_telemetry_tests',
+      'gpu_fyi_and_optional_win_and_linux_specific_telemetry_tests',
+      'gpu_fyi_only_win_intel_and_nvidia_release_specific_telemetry_tests',
+      'gpu_fyi_only_win_linux_intel_nvidia_specific_telemetry_tests',
+      'gpu_fyi_optional_and_v8_desktop_release_specific_telemetry_tests',
     ],
 
     'gpu_common_telemetry_tests': [
@@ -2693,17 +2847,17 @@
     ],
 
     'gpu_fyi_android_and_mac_gtests': [
+      'gpu_angle_end2end_tests',
       'gpu_angle_unittests',
       'gpu_common_gtests',
-      'gpu_fyi_and_optional_and_win_angle_amd_gtests',
       'gpu_fyi_and_optional_non_linux_gtests',
     ],
 
     'gpu_fyi_linux_debug_gtests': [
+      'gpu_angle_end2end_tests',
       'gpu_angle_unittests',
+      'gpu_angle_white_box_tests',
       'gpu_common_gtests',
-      'gpu_fyi_and_optional_and_win_angle_amd_gtests',
-      'gpu_fyi_and_optional_and_win_angle_amd_win_and_linux_specific_gtests',
       'gpu_fyi_desktop_specific_gtests',
     ],
 
@@ -2716,41 +2870,44 @@
     ],
 
     'gpu_fyi_linux_optional_gtests': [
-      'gpu_fyi_and_optional_and_win_angle_amd_gtests',
-      'gpu_fyi_and_optional_and_win_angle_amd_win_and_linux_specific_gtests',
+      'gpu_angle_end2end_tests',
+      'gpu_angle_white_box_tests',
       'gpu_fyi_desktop_specific_gtests',
     ],
 
     'gpu_fyi_linux_release_gtests': [
+      'gpu_angle_end2end_tests',
       'gpu_angle_unittests',
+      'gpu_angle_white_box_tests',
       'gpu_common_gtests',
       'gpu_desktop_specific_gtests',
-      'gpu_fyi_and_optional_and_win_angle_amd_gtests',
-      'gpu_fyi_and_optional_and_win_angle_amd_win_and_linux_specific_gtests',
       'gpu_fyi_desktop_specific_gtests',
     ],
 
     'gpu_fyi_mac_debug_gtests': [
+      'gpu_angle_end2end_tests',
       'gpu_angle_unittests',
       'gpu_common_gtests',
-      'gpu_fyi_and_optional_and_win_angle_amd_gtests',
+      'gpu_dawn_end2end_tests',
       'gpu_fyi_and_optional_non_linux_gtests',
       'gpu_fyi_desktop_specific_gtests',
       'gpu_fyi_mac_specific_gtests',
     ],
 
     'gpu_fyi_mac_optional_gtests': [
-      'gpu_fyi_and_optional_and_win_angle_amd_gtests',
+      'gpu_angle_end2end_tests',
+      'gpu_dawn_end2end_tests',
       'gpu_fyi_and_optional_non_linux_gtests',
       'gpu_fyi_desktop_specific_gtests',
       'gpu_fyi_mac_specific_gtests',
     ],
 
     'gpu_fyi_mac_release_gtests': [
+      'gpu_angle_end2end_tests',
       'gpu_angle_unittests',
       'gpu_common_gtests',
+      'gpu_dawn_end2end_tests',
       'gpu_desktop_specific_gtests',
-      'gpu_fyi_and_optional_and_win_angle_amd_gtests',
       'gpu_fyi_and_optional_non_linux_gtests',
       'gpu_fyi_desktop_specific_gtests',
       'gpu_fyi_mac_specific_gtests',
@@ -2774,11 +2931,11 @@
     ],
 
     'gpu_fyi_win7_gtests': [
+      'gpu_angle_end2end_tests',
       'gpu_angle_unittests',
+      'gpu_angle_white_box_tests',
       'gpu_common_gtests',
       'gpu_desktop_specific_gtests',
-      'gpu_fyi_and_optional_and_win_angle_amd_gtests',
-      'gpu_fyi_and_optional_and_win_angle_amd_win_and_linux_specific_gtests',
       'gpu_fyi_and_optional_non_linux_gtests',
       'gpu_fyi_and_optional_win_specific_gtests',
       'gpu_fyi_desktop_specific_gtests',
@@ -2825,12 +2982,13 @@
     ],
 
     'gpu_fyi_win_gtests': [
+      'gpu_angle_end2end_tests',
       'gpu_angle_unittests',
+      'gpu_angle_white_box_tests',
       'gpu_common_gtests',
+      'gpu_dawn_end2end_tests',
       'gpu_default_and_optional_win_specific_gtests',
       'gpu_desktop_specific_gtests',
-      'gpu_fyi_and_optional_and_win_angle_amd_gtests',
-      'gpu_fyi_and_optional_and_win_angle_amd_win_and_linux_specific_gtests',
       'gpu_fyi_and_optional_non_linux_gtests',
       'gpu_fyi_and_optional_win_specific_gtests',
       'gpu_fyi_desktop_specific_gtests',
@@ -2838,9 +2996,10 @@
     ],
 
     'gpu_fyi_win_optional_gtests': [
+      'gpu_angle_end2end_tests',
+      'gpu_angle_white_box_tests',
+      'gpu_dawn_end2end_tests',
       'gpu_default_and_optional_win_specific_gtests',
-      'gpu_fyi_and_optional_and_win_angle_amd_gtests',
-      'gpu_fyi_and_optional_and_win_angle_amd_win_and_linux_specific_gtests',
       'gpu_fyi_and_optional_non_linux_gtests',
       'gpu_fyi_and_optional_win_specific_gtests',
       'gpu_fyi_desktop_specific_gtests',
@@ -2854,6 +3013,12 @@
       'gpu_fyi_only_win_linux_intel_nvidia_specific_telemetry_tests',
       'gpu_fyi_only_win_intel_and_nvidia_release_specific_telemetry_tests',
       'gpu_fyi_optional_and_v8_desktop_release_specific_telemetry_tests',
+      'gpu_telemetry_tests',
+    ],
+
+    'gpu_nexus5x_telemetry_tests': [
+      'gpu_android_nexus5x_specific_gpu_fyi_and_optional_and_angle_telemetry_tests',
+      'gpu_common_and_optional_telemetry_tests',
       'gpu_telemetry_tests',
     ],
 
@@ -2872,8 +3037,8 @@
     ],
 
     'gpu_win_angle_amd_gtests': [
-      'gpu_fyi_and_optional_and_win_angle_amd_gtests',
-      'gpu_fyi_and_optional_and_win_angle_amd_win_and_linux_specific_gtests',
+      'gpu_angle_end2end_tests',
+      'gpu_angle_white_box_tests',
     ],
 
     'gpu_win_angle_amd_telemetry_tests': [
@@ -2910,6 +3075,8 @@
     'linux_viz_gtests': [
       'non_viz_fyi_chromium_gtests',
       'non_viz_non_android_fyi_chromium_gtests',
+      'viz_gtests',
+      'viz_non_android_fyi_gtests',
     ],
 
     'marshmallow_isolated_scripts': [
@@ -2919,8 +3086,10 @@
     ],
 
     'mojo_android_gtests': [
+      'network_service_android_fyi_gtests',
       'network_service_android_gtests',
       'non_viz_fyi_chromium_gtests',
+      'viz_gtests',
     ],
 
     'mojo_chromiumos_fyi_gtests': [
@@ -2928,15 +3097,25 @@
       'mash_fyi_chromium_gtests',
       'mojo_chromiumos_specific_gtests',
       'network_service_chromeos_fyi_gtests',
+      'viz_chromeos_fyi_gtests',
+      'viz_chromeos_gtests',
       'viz_gtests',
       'viz_non_android_fyi_gtests',
+    ],
+
+    'mojo_linux_gtests': [
+      'network_service_gtests',
+      'network_service_in_process_gtests',
     ],
 
     'mojo_windows_gtests': [
       'mojo_windows_specific_gtests',
       'network_service_gtests',
+      'network_service_in_process_gtests',
       'non_viz_fyi_chromium_gtests',
       'non_viz_non_android_fyi_chromium_gtests',
+      'viz_gtests',
+      'viz_non_android_fyi_gtests',
     ],
 
     'sandboxed_chromium_memory_linux_gtests': [
@@ -2955,6 +3134,12 @@
 
     'webrtc_chromium_tests_with_baremetal_tests': [
       'webrtc_chromium_baremetal_gtests',
+      'webrtc_chromium_gtests',
+      'webrtc_chromium_simple_gtests',
+      'webrtc_chromium_simple_baremetal_gtests',
+    ],
+
+    'webrtc_chromium_tests_with_simple_baremetal_tests': [
       'webrtc_chromium_gtests',
       'webrtc_chromium_simple_gtests',
       'webrtc_chromium_simple_baremetal_gtests',

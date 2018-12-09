@@ -28,12 +28,11 @@
 #include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/browser/card_unmask_delegate.h"
 #include "components/autofill/core/browser/field_filler.h"
-#include "components/autofill/core/browser/form_data_importer.h"
 #include "components/autofill/core/browser/form_types.h"
 #include "components/autofill/core/browser/payments/full_card_request.h"
-#include "components/autofill/core/browser/payments/payments_client.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/popup_types.h"
+#include "components/autofill/core/browser/sync_utils.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/signatures_util.h"
 
@@ -95,6 +94,9 @@ class AutofillManager : public AutofillHandler,
   virtual bool ShouldShowCreditCardSigninPromo(const FormData& form,
                                                const FormFieldData& field);
 
+  virtual bool ShouldShowCardsFromAccountOption(const FormData& form,
+                                                const FormFieldData& field);
+
   // Called from our external delegate so they cannot be private.
   virtual void FillOrPreviewForm(AutofillDriver::RendererFormDataAction action,
                                  int query_id,
@@ -138,8 +140,6 @@ class AutofillManager : public AutofillHandler,
   AutofillDownloadManager* download_manager() {
     return download_manager_.get();
   }
-
-  FormDataImporter* form_data_importer() { return form_data_importer_.get(); }
 
   payments::FullCardRequest* GetOrCreateFullCardRequest();
 
@@ -202,6 +202,10 @@ class AutofillManager : public AutofillHandler,
   // server. It verifies that uploading is allowed and |form| meets conditions
   // to be uploadable. Exposed for testing.
   bool ShouldUploadForm(const FormStructure& form);
+
+  // Rich queries are enabled by feature flag iff this chrome instance is
+  // neither on the STABLE nor BETA release channel.
+  static bool IsRichQueryEnabled(version_info::Channel channel);
 
  protected:
   // Test code should prefer to use this constructor.
@@ -278,17 +282,7 @@ class AutofillManager : public AutofillHandler,
   }
 
   // Exposed for testing.
-  payments::PaymentsClient* payments_client() { return payments_client_.get(); }
-
-  // Exposed for testing.
-  void set_payments_client(payments::PaymentsClient* payments_client) {
-    payments_client_.reset(payments_client);
-  }
-
-  // Exposed for testing.
-  void set_form_data_importer(FormDataImporter* form_data_importer) {
-    form_data_importer_.reset(form_data_importer);
-  }
+  bool is_rich_query_enabled() const { return is_rich_query_enabled_; }
 
  private:
   // Keeps track of the filling context for a form, used to make refill attemps.
@@ -509,9 +503,6 @@ class AutofillManager : public AutofillHandler,
 
   AutofillClient* const client_;
 
-  // Handles Payments service requests.
-  std::unique_ptr<payments::PaymentsClient> payments_client_;
-
   std::string app_locale_;
 
   // The personal data manager, used to save and load personal data to/from the
@@ -519,10 +510,6 @@ class AutofillManager : public AutofillHandler,
   // Weak reference.
   // May be NULL.  NULL indicates OTR.
   PersonalDataManager* personal_data_;
-
-  // Handles importing of address and credit card data from forms.
-  // Must be initialized (and thus listed) after payments_client_.
-  std::unique_ptr<FormDataImporter> form_data_importer_;
 
   // Used to help fill data into fields.
   FieldFiller field_filler_;
@@ -603,13 +590,18 @@ class AutofillManager : public AutofillHandler,
   std::map<base::string16, std::unique_ptr<FillingContext>>
       filling_contexts_map_;
 
+  // Tracks whether or not rich query encoding is enabled for this client.
+  const bool is_rich_query_enabled_ = false;
+
+  // Used to record metrics. This shoulb be set at the beginning of the
+  // interaction and re-used throughout the context of this manager.
+  AutofillSyncSigninState sync_state_ = AutofillSyncSigninState::kNumSyncStates;
+
   base::WeakPtrFactory<AutofillManager> weak_ptr_factory_;
 
   friend class AutofillManagerTest;
   friend class FormStructureBrowserTest;
   friend class GetMatchingTypesTest;
-  friend class SaveCardBubbleViewsBrowserTestBase;
-  friend class SaveCardInfobarEGTestHelper;
   FRIEND_TEST_ALL_PREFIXES(ProfileMatchingTypesTest,
                            DeterminePossibleFieldTypesForUpload);
   FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest,
@@ -690,6 +682,8 @@ class AutofillManager : public AutofillHandler,
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest,
                            UserHappinessFormInteraction_CreditCardForm);
   FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest, OnLoadedServerPredictions);
+  FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest,
+                           OnLoadedServerPredictionsFromApi);
   FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest,
                            OnLoadedServerPredictions_ResetManager);
   FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest, DontOfferToSavePaymentsCard);

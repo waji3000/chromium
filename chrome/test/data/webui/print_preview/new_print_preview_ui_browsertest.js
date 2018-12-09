@@ -8,7 +8,6 @@ const ROOT_PATH = '../../../../../';
 
 GEN_INCLUDE(
     [ROOT_PATH + 'chrome/test/data/webui/polymer_browser_test_base.js']);
-GEN('#include "chrome/common/chrome_features.h"');
 
 function PrintPreviewSettingsSectionsTest() {}
 
@@ -16,11 +15,6 @@ const NewPrintPreviewTest = class extends PolymerTest {
   /** @override */
   get browsePreload() {
     return 'chrome://print/';
-  }
-
-  /** @override */
-  get featureList() {
-    return ['features::kNewPrintPreview', ''];
   }
 
   /** @override */
@@ -158,9 +152,15 @@ TEST_F('PrintPreviewSettingsSectionsTest', 'PresetDuplex', function() {
   this.runMochaTest(settings_sections_tests.TestNames.PresetDuplex);
 });
 
+GEN('#if defined(OS_CHROMEOS)');
 TEST_F('PrintPreviewSettingsSectionsTest', 'ColorManaged', function() {
   this.runMochaTest(settings_sections_tests.TestNames.ColorManaged);
 });
+
+TEST_F('PrintPreviewSettingsSectionsTest', 'DuplexManaged', function() {
+  this.runMochaTest(settings_sections_tests.TestNames.DuplexManaged);
+});
+GEN('#endif');
 
 TEST_F(
     'PrintPreviewSettingsSectionsTest', 'DisableMarginsByPagesPerSheet',
@@ -612,6 +612,7 @@ PrintPreviewDestinationSelectTest = class extends NewPrintPreviewTest {
   /** @override */
   get extraLibraries() {
     return super.extraLibraries.concat([
+      '../settings/test_util.js',
       '../test_browser_proxy.js',
       'native_layer_stub.js',
       'print_preview_test_utils.js',
@@ -660,6 +661,19 @@ TEST_F(
       this.runMochaTest(
           destination_select_test.TestNames.SystemDefaultPrinterPolicy);
     });
+GEN('#endif');
+
+TEST_F(
+    'PrintPreviewDestinationSelectTest', 'KioskModeSelectsFirstPrinter',
+    function() {
+      this.runMochaTest(
+          destination_select_test.TestNames.KioskModeSelectsFirstPrinter);
+    });
+
+GEN('#if defined(OS_CHROMEOS)');
+TEST_F('PrintPreviewDestinationSelectTest', 'NoPrintersShowsError', function() {
+  this.runMochaTest(destination_select_test.TestNames.NoPrintersShowsError);
+});
 GEN('#endif');
 
 PrintPreviewDestinationDialogTest = class extends NewPrintPreviewTest {
@@ -814,6 +828,13 @@ TEST_F(
     function() {
       this.runMochaTest(
           custom_margins_test.TestNames.MediaSizeClearsCustomMarginsPDF);
+    });
+
+TEST_F(
+    'PrintPreviewCustomMarginsTest', 'RequestScrollToOutOfBoundsTextbox',
+    function() {
+      this.runMochaTest(
+          custom_margins_test.TestNames.RequestScrollToOutOfBoundsTextbox);
     });
 
 PrintPreviewNewDestinationSearchTest = class extends NewPrintPreviewTest {
@@ -1118,4 +1139,30 @@ TEST_F(
 
 TEST_F('PrintPreviewKeyEventTest', 'CtrlShiftPOpensSystemDialog', function() {
   this.runMochaTest(key_event_test.TestNames.CtrlShiftPOpensSystemDialog);
+});
+
+PrintPreviewDestinationSettingsTest = class extends NewPrintPreviewTest {
+  /** @override */
+  get browsePreload() {
+    return 'chrome://print/new/destination_settings.html';
+  }
+
+  /** @override */
+  get extraLibraries() {
+    return super.extraLibraries.concat([
+      ROOT_PATH + 'ui/webui/resources/js/webui_listener_tracker.js',
+      '../test_browser_proxy.js',
+      'native_layer_stub.js',
+      'destination_settings_test.js',
+    ]);
+  }
+
+  /** @override */
+  get suiteName() {
+    return destination_settings_test.suiteName;
+  }
+};
+
+TEST_F('PrintPreviewDestinationSettingsTest', 'ChangeButtonState', function() {
+  this.runMochaTest(destination_settings_test.TestNames.ChangeButtonState);
 });

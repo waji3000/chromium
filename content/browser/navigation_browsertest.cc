@@ -9,7 +9,9 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/post_task.h"
+#include "base/test/bind_test_util.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/frame_host/navigation_handle_impl.h"
@@ -17,6 +19,7 @@
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/frame_messages.h"
+#include "content/common/navigation_params.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_message_filter.h"
@@ -27,16 +30,20 @@
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/navigation_policy.h"
 #include "content/public/common/previews_state.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
+#include "content/public/test/download_test_observer.h"
 #include "content/public/test/navigation_handle_observer.h"
 #include "content/public/test/test_navigation_observer.h"
+#include "content/public/test/test_navigation_throttle.h"
+#include "content/public/test/test_navigation_throttle_inserter.h"
+#include "content/public/test/url_loader_interceptor.h"
 #include "content/shell/browser/shell.h"
 #include "content/shell/browser/shell_content_browser_client.h"
 #include "content/shell/browser/shell_download_manager_delegate.h"
@@ -184,6 +191,40 @@ class NavigationBrowserTest : public NavigationBaseBrowserTest {
   void SetUpOnMainThread() override {
     NavigationBaseBrowserTest::SetUpOnMainThread();
     ASSERT_TRUE(embedded_test_server()->Start());
+  }
+
+  // Navigate to |url| and for each ResourceRequest record its
+  // top_frame_origin. Stop listening after |final_resource| has been
+  // detected. The output is recorded in |top_frame_origins|.
+  void NavigateAndRecordTopFrameOrigins(
+      const GURL& url,
+      const GURL& final_resource,
+      bool from_renderer,
+      std::map<GURL, url::Origin>* top_frame_origins) {
+    if (from_renderer)
+      EXPECT_TRUE(NavigateToURL(shell(), GURL("about:blank")));
+
+    base::RunLoop run_loop;
+    base::OnceClosure quit_closure = run_loop.QuitClosure();
+
+    // Intercept network requests and record them.
+    URLLoaderInterceptor interceptor(base::BindLambdaForTesting(
+        [&](URLLoaderInterceptor::RequestParams* params) -> bool {
+          (*top_frame_origins)[params->url_request.url] =
+              *params->url_request.top_frame_origin;
+
+          if (params->url_request.url == final_resource)
+            std::move(quit_closure).Run();
+          return false;
+        }));
+
+    if (from_renderer)
+      EXPECT_TRUE(NavigateToURLFromRenderer(shell(), url));
+    else
+      EXPECT_TRUE(NavigateToURL(shell(), url));
+
+    // Wait until the last resource we care about has been requested.
+    run_loop.Run();
   }
 };
 
@@ -463,13 +504,14 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, PostUploadIllegalFilePath) {
   ASSERT_LT(
       0, base::WriteFile(file_path, file_content.data(), file_content.size()));
 
+  base::RunLoop run_loop;
   // Fill out the form to refer to the test file.
   std::unique_ptr<FileChooserDelegate> delegate(
-      new FileChooserDelegate(file_path));
+      new FileChooserDelegate(file_path, run_loop.QuitClosure()));
   shell()->web_contents()->SetDelegate(delegate.get());
   EXPECT_TRUE(ExecuteScript(shell()->web_contents(),
                             "document.getElementById('file').click();"));
-  EXPECT_TRUE(delegate->file_chosen());
+  run_loop.Run();
 
   // Ensure that the process is allowed to access to the chosen file and
   // does not have access to the other file name.
@@ -582,14 +624,15 @@ IN_PROC_BROWSER_TEST_F(NavigationDisableWebSecurityTest,
   // Setup a BeginNavigate IPC with non-empty base_url_for_data_url.
   CommonNavigationParams common_params(
       data_url, Referrer(), ui::PAGE_TRANSITION_LINK,
-      FrameMsg_Navigate_Type::DIFFERENT_DOCUMENT, true /* allow_download */,
+      FrameMsg_Navigate_Type::DIFFERENT_DOCUMENT,
+      NavigationDownloadPolicy::kAllow,
       false /* should_replace_current_entry */,
       file_url, /* base_url_for_data_url */
       GURL() /* history_url_for_data_url */, PREVIEWS_UNSPECIFIED,
       base::TimeTicks::Now() /* navigation_start */, "GET",
       nullptr /* post_data */, base::Optional<SourceLocation>(),
       false /* started_from_context_menu */, false /* has_user_gesture */,
-      InitiatorCSPInfo());
+      InitiatorCSPInfo(), std::string() /* href_translate */);
   mojom::BeginNavigationParamsPtr begin_params =
       mojom::BeginNavigationParams::New(
           std::string() /* headers */, net::LOAD_NORMAL,
@@ -705,6 +748,48 @@ IN_PROC_BROWSER_TEST_F(NavigationBaseBrowserTest,
   std::string done;
   EXPECT_TRUE(dom_message_queue.WaitForMessage(&done));
   EXPECT_EQ("\"done\"", done);
+}
+
+IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, BrowserNavigationTopFrameOrigin) {
+  std::map<GURL, url::Origin> top_frame_origins;
+  GURL url(embedded_test_server()->GetURL("/title1.html"));
+
+  NavigateAndRecordTopFrameOrigins(url, url /*final_resource*/,
+                                   false /*from_renderer*/, &top_frame_origins);
+  EXPECT_EQ(url::Origin::Create(url), top_frame_origins[url]);
+}
+
+IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, RenderNavigationTopFrameOrigin) {
+  std::map<GURL, url::Origin> top_frame_origins;
+  GURL url(embedded_test_server()->GetURL("/title2.html"));
+
+  NavigateAndRecordTopFrameOrigins(url, url /*final_resource*/,
+                                   true /*from_renderer*/, &top_frame_origins);
+  EXPECT_EQ(url::Origin::Create(url), top_frame_origins[url]);
+}
+
+IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, SubframeTopFrameOrigin) {
+  std::map<GURL, url::Origin> top_frame_origins;
+  GURL url(embedded_test_server()->GetURL("/page_with_iframe.html"));
+  GURL iframe_document = embedded_test_server()->GetURL("/title1.html");
+
+  NavigateAndRecordTopFrameOrigins(url, iframe_document /*final_resource*/,
+                                   false /*from_renderer*/, &top_frame_origins);
+  EXPECT_EQ(url::Origin::Create(url), top_frame_origins[url]);
+  EXPECT_EQ(url::Origin::Create(url), top_frame_origins[iframe_document]);
+}
+
+IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, SubresourceTopFrameOrigin) {
+  std::map<GURL, url::Origin> top_frame_origins;
+  GURL url(embedded_test_server()->GetURL("/page_with_iframe_and_image.html"));
+  GURL blank_image = embedded_test_server()->GetURL("/blank.jpg");
+
+  NavigateAndRecordTopFrameOrigins(url, blank_image /*final_resource*/,
+                                   false /*from_renderer*/, &top_frame_origins);
+  EXPECT_EQ(url::Origin::Create(url), top_frame_origins[url]);
+  EXPECT_EQ(url::Origin::Create(url),
+            top_frame_origins[embedded_test_server()->GetURL("/image.jpg")]);
+  EXPECT_EQ(url::Origin::Create(url), top_frame_origins[blank_image]);
 }
 
 // Navigation are started in the browser process. After the headers are
@@ -1133,11 +1218,12 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, HistoryBackInBeforeUnload) {
   GURL url_2(embedded_test_server()->GetURL("/title2.html"));
 
   EXPECT_TRUE(NavigateToURL(shell(), url_1));
-  EXPECT_TRUE(ExecuteScript(shell()->web_contents(),
-                            "onbeforeunload = function() {"
-                            "  history.pushState({}, null, '/');"
-                            "  history.back();"
-                            "};"));
+  EXPECT_TRUE(
+      ExecuteScriptWithoutUserGesture(shell()->web_contents(),
+                                      "onbeforeunload = function() {"
+                                      "  history.pushState({}, null, '/');"
+                                      "  history.back();"
+                                      "};"));
   EXPECT_TRUE(NavigateToURL(shell(), url_2));
 }
 
@@ -1151,11 +1237,12 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest,
   GURL url_2(embedded_test_server()->GetURL("/title2.html"));
 
   EXPECT_TRUE(NavigateToURL(shell(), url_1));
-  EXPECT_TRUE(ExecuteScript(shell()->web_contents(),
-                            "onbeforeunload = function() {"
-                            "  history.pushState({}, null, '/');"
-                            "  setTimeout(()=>history.back());"
-                            "};"));
+  EXPECT_TRUE(
+      ExecuteScriptWithoutUserGesture(shell()->web_contents(),
+                                      "onbeforeunload = function() {"
+                                      "  history.pushState({}, null, '/');"
+                                      "  setTimeout(()=>history.back());"
+                                      "};"));
   TestNavigationManager navigation(shell()->web_contents(), url_2);
   auto ipc_observer = base::MakeRefCounted<BrowserMessageObserver>(
       ViewMsgStart, ViewHostMsg_GoToEntryAtOffset::ID);
@@ -1234,13 +1321,14 @@ class PreviewsStateContentBrowserClient : public ContentBrowserClient {
 
   content::PreviewsState DetermineAllowedPreviews(
       content::PreviewsState initial_state,
-      content::NavigationHandle* navigation_handle) override {
+      content::NavigationHandle* navigation_handle,
+      const GURL& current_navigation_url) override {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
     EXPECT_FALSE(determine_allowed_previews_called_);
     determine_allowed_previews_called_ = true;
     main_frame_url_seen_ = true;
-    EXPECT_EQ(main_frame_url_, navigation_handle->GetURL());
+    EXPECT_EQ(main_frame_url_, current_navigation_url);
     return previews_state_;
   }
 
@@ -1353,8 +1441,9 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, IPCFlood_GoToEntryAtOffset) {
       new ConsoleObserverDelegate(
           shell()->web_contents(),
           "Throttling navigation to prevent the browser from hanging. See "
-          "https://crbug.com/882238 and "
-          "chrome://flags/#disable-ipc-flooding-protection"));
+          "https://crbug.com/882238. Command line switch "
+          "--disable-ipc-flooding-protection can be used to bypass the "
+          "protection"));
   shell()->web_contents()->SetDelegate(console_delegate.get());
 
   EXPECT_TRUE(ExecuteScript(shell(), R"(
@@ -1381,8 +1470,9 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, IPCFlood_Navigation) {
       new ConsoleObserverDelegate(
           shell()->web_contents(),
           "Throttling navigation to prevent the browser from hanging. See "
-          "https://crbug.com/882238 and "
-          "chrome://flags/#disable-ipc-flooding-protection"));
+          "https://crbug.com/882238. Command line switch "
+          "--disable-ipc-flooding-protection can be used to bypass the "
+          "protection"));
   shell()->web_contents()->SetDelegate(console_delegate.get());
 
   EXPECT_TRUE(ExecuteScript(shell(), R"(
@@ -1393,6 +1483,86 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, IPCFlood_Navigation) {
   )"));
 
   console_delegate->Wait();
+}
+
+// TODO(http://crbug.com/632514): This test currently expects opener downloads
+// go through and UMA is logged, but when the linked bug is resolved the
+// download should be disallowed.
+IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, OpenerNavigation_DownloadPolicy) {
+  base::ScopedAllowBlockingForTesting allow_blocking;
+  base::ScopedTempDir download_dir;
+  ASSERT_TRUE(download_dir.CreateUniqueTempDir());
+  ShellDownloadManagerDelegate* delegate =
+      static_cast<ShellDownloadManagerDelegate*>(
+          shell()
+              ->web_contents()
+              ->GetBrowserContext()
+              ->GetDownloadManagerDelegate());
+  delegate->SetDownloadBehaviorForTesting(download_dir.GetPath());
+  NavigateToURL(shell(), embedded_test_server()->GetURL("/title1.html"));
+  WebContents* opener = shell()->web_contents();
+
+  // Open a popup.
+  bool opened = false;
+  EXPECT_TRUE(ExecuteScriptAndExtractBool(
+      opener, "window.domAutomationController.send(!!window.open());",
+      &opened));
+  EXPECT_TRUE(opened);
+  EXPECT_EQ(2u, Shell::windows().size());
+
+  // Using the popup, navigate its opener to a download.
+  base::HistogramTester histograms;
+  WebContents* popup = Shell::windows()[1]->web_contents();
+  EXPECT_NE(popup, opener);
+  DownloadTestObserverInProgress observer(
+      BrowserContext::GetDownloadManager(opener->GetBrowserContext()),
+      1 /* wait_count */);
+  EXPECT_TRUE(ExecuteScriptWithoutUserGesture(
+      popup,
+      "window.opener.location ='data:html/text;base64,'+btoa('payload');"));
+  observer.WaitForFinished();
+  histograms.ExpectUniqueSample("Navigation.DownloadPolicy",
+                                NavigationDownloadPolicy::kAllowOpenerNoGesture,
+                                1);
+}
+
+// Regression test for https://crbug.com/872284.
+// A NavigationThrottle cancels a download in WillProcessResponse.
+// The navigation request must be canceled and it must also cancel the network
+// request. Failing to do so resulted in the network socket being leaked.
+IN_PROC_BROWSER_TEST_F(NavigationDownloadBrowserTest,
+                       CancelDownloadOnResponseStarted) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  GURL url(embedded_test_server()->GetURL("/title1.html"));
+  NavigateToURL(shell(), url);
+
+  // Block every iframe in WillProcessResponse.
+  content::TestNavigationThrottleInserter throttle_inserter(
+      shell()->web_contents(),
+      base::BindLambdaForTesting(
+          [&](NavigationHandle* handle) -> std::unique_ptr<NavigationThrottle> {
+            auto throttle = std::make_unique<TestNavigationThrottle>(handle);
+            throttle->SetResponse(TestNavigationThrottle::WILL_PROCESS_RESPONSE,
+                                  TestNavigationThrottle::SYNCHRONOUS,
+                                  NavigationThrottle::CANCEL_AND_IGNORE);
+
+            return throttle;
+          }));
+
+  // Insert enough iframes so that if sockets are not properly released: there
+  // will not be enough of them to complete all navigations. As of today, only 6
+  // sockets can be used simultaneously. So using 7 iframes is enough. This test
+  // uses 33 as a margin.
+  EXPECT_TRUE(ExecJs(shell(), R"(
+    for(let i = 0; i<33; ++i) {
+      let iframe = document.createElement('iframe');
+      iframe.src = './download-test1.lib'
+      document.body.appendChild(iframe);
+    }
+  )"));
+
+  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
 }
 
 }  // namespace content

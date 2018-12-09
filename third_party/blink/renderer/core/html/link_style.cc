@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/html/link_style.h"
 
+#include "services/network/public/mojom/referrer_policy.mojom-shared.h"
 #include "third_party/blink/renderer/core/css/style_sheet_contents.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
@@ -21,7 +22,6 @@
 #include "third_party/blink/renderer/platform/network/mime/content_type.h"
 #include "third_party/blink/renderer/platform/network/mime/mime_type_registry.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
-#include "third_party/blink/renderer/platform/weborigin/referrer_policy.h"
 #include "third_party/blink/renderer/platform/weborigin/security_policy.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 
@@ -36,7 +36,7 @@ static bool StyleSheetTypeIsSupported(const String& type) {
 }
 
 LinkStyle* LinkStyle::Create(HTMLLinkElement* owner) {
-  return new LinkStyle(owner);
+  return MakeGarbageCollected<LinkStyle>(owner);
 }
 
 LinkStyle::LinkStyle(HTMLLinkElement* owner)
@@ -91,7 +91,7 @@ void LinkStyle::NotifyFinished(Resource* resource) {
   }
 
   CSSParserContext* parser_context = CSSParserContext::Create(
-      GetDocument(), cached_style_sheet->GetResponse().Url(),
+      GetDocument(), cached_style_sheet->GetResponse().CurrentRequestUrl(),
       cached_style_sheet->GetResponse().IsOpaqueResponseFromServiceWorker(),
       cached_style_sheet->GetReferrerPolicy(), cached_style_sheet->Encoding());
 
@@ -263,7 +263,7 @@ LinkStyle::LoadReturnValue LinkStyle::LoadStylesheetIfNeeded(
   if (GetResource()) {
     RemovePendingSheet();
     ClearResource();
-    ClearFetchFollowingCORS();
+    ClearFetchFollowingCors();
   }
 
   if (!owner_->ShouldLoadLink())
@@ -292,7 +292,7 @@ LinkStyle::LoadReturnValue LinkStyle::LoadStylesheetIfNeeded(
   AddPendingSheet(blocking ? kBlocking : kNonBlocking);
 
   if (params.cross_origin != kCrossOriginAttributeNotSet) {
-    SetFetchFollowingCORS();
+    SetFetchFollowingCors();
   }
 
   // Load stylesheets that are not needed for the layout immediately with low
@@ -327,8 +327,8 @@ void LinkStyle::Process() {
       owner_->nonce(), owner_->IntegrityValue(),
       owner_->ImportanceValue().LowerASCII(), owner_->GetReferrerPolicy(),
       owner_->GetNonEmptyURLAttribute(kHrefAttr),
-      owner_->FastGetAttribute(kSrcsetAttr),
-      owner_->FastGetAttribute(kImgsizesAttr));
+      owner_->FastGetAttribute(kImagesrcsetAttr),
+      owner_->FastGetAttribute(kImagesizesAttr));
 
   WTF::TextEncoding charset = GetCharset();
 

@@ -48,12 +48,6 @@ void TrayBluetoothHelperExperimental::Initialize() {
                      base::Unretained(this)));
 }
 
-BluetoothDeviceList
-TrayBluetoothHelperExperimental::GetAvailableBluetoothDevices() const {
-  NOTIMPLEMENTED();
-  return BluetoothDeviceList();
-}
-
 void TrayBluetoothHelperExperimental::StartBluetoothDiscovering() {
   bluetooth_system_ptr_->StartScan(base::DoNothing());
 }
@@ -63,7 +57,7 @@ void TrayBluetoothHelperExperimental::StopBluetoothDiscovering() {
 }
 
 void TrayBluetoothHelperExperimental::ConnectToBluetoothDevice(
-    const std::string& address) {
+    const BluetoothAddress& address) {
   NOTIMPLEMENTED();
 }
 
@@ -81,16 +75,25 @@ bool TrayBluetoothHelperExperimental::HasBluetoothDiscoverySession() {
          device::mojom::BluetoothSystem::ScanState::kScanning;
 }
 
+void TrayBluetoothHelperExperimental::GetBluetoothDevices(
+    GetBluetoothDevicesCallback callback) const {
+  NOTIMPLEMENTED();
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::BindOnce(std::move(callback), BluetoothDeviceList()));
+}
+
 void TrayBluetoothHelperExperimental::OnStateChanged(
     device::mojom::BluetoothSystem::State state) {
   cached_state_ = state;
-  Shell::Get()->system_tray_notifier()->NotifyRefreshBluetooth();
+
+  NotifyBluetoothSystemStateChanged();
+  StartOrStopRefreshingDeviceList();
 }
 
 void TrayBluetoothHelperExperimental::OnScanStateChanged(
     device::mojom::BluetoothSystem::ScanState state) {
   cached_scan_state_ = state;
-  Shell::Get()->system_tray_notifier()->NotifyBluetoothDiscoveringChanged();
+  NotifyBluetoothScanStateChanged();
 }
 
 }  // namespace ash

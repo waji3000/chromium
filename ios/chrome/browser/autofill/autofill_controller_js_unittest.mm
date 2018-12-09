@@ -1603,7 +1603,11 @@ TEST_F(AutofillControllerJsTest, ExtractForms) {
     @"name" : @"TestForm",
     @"fields" : @[
       @{
+        @"aria_description" : @"",
+        @"aria_label" : @"",
         @"name" : @"firstname",
+        @"name_attribute" : @"firstname",
+        @"id_attribute" : @"firstname",
         @"identifier" : @"firstname",
         @"form_control_type" : @"text",
         @"max_length" : GetDefaultMaxLength(),
@@ -1614,7 +1618,11 @@ TEST_F(AutofillControllerJsTest, ExtractForms) {
         @"label" : @"* First name:"
       },
       @{
+        @"aria_description" : @"",
+        @"aria_label" : @"",
         @"name" : @"vehicle",
+        @"name_attribute" : @"vehicle",
+        @"id_attribute" : @"vehicle1",
         @"identifier" : @"vehicle1",
         @"form_control_type" : @"checkbox",
         @"should_autocomplete" : @true,
@@ -1624,7 +1632,11 @@ TEST_F(AutofillControllerJsTest, ExtractForms) {
         @"label" : @"Bicycle"
       },
       @{
+        @"aria_description" : @"",
+        @"aria_label" : @"",
         @"name" : @"vehicle",
+        @"name_attribute" : @"vehicle",
+        @"id_attribute" : @"vehicle2",
         @"identifier" : @"vehicle2",
         @"form_control_type" : @"checkbox",
         @"should_autocomplete" : @true,
@@ -1634,7 +1646,11 @@ TEST_F(AutofillControllerJsTest, ExtractForms) {
         @"label" : @"Automobile"
       },
       @{
+        @"aria_description" : @"",
+        @"aria_label" : @"",
         @"name" : @"vehicle",
+        @"name_attribute" : @"vehicle",
+        @"id_attribute" : @"vehicle3",
         @"identifier" : @"vehicle3",
         @"form_control_type" : @"checkbox",
         @"should_autocomplete" : @true,
@@ -1644,7 +1660,11 @@ TEST_F(AutofillControllerJsTest, ExtractForms) {
         @"label" : @"Missile"
       },
       @{
+        @"aria_description" : @"",
+        @"aria_label" : @"",
         @"name" : @"nameintableth",
+        @"name_attribute" : @"nameintableth",
+        @"id_attribute" : @"nameintableth",
         @"identifier" : @"nameintableth",
         @"form_control_type" : @"text",
         @"max_length" : GetDefaultMaxLength(),
@@ -1655,7 +1675,11 @@ TEST_F(AutofillControllerJsTest, ExtractForms) {
         @"label" : @"* First name:"
       },
       @{
+        @"aria_description" : @"",
+        @"aria_label" : @"",
         @"name" : @"emailtableth",
+        @"name_attribute" : @"",
+        @"id_attribute" : @"emailtableth",
         @"identifier" : @"emailtableth",
         @"form_control_type" : @"email",
         @"max_length" : GetDefaultMaxLength(),
@@ -1666,7 +1690,11 @@ TEST_F(AutofillControllerJsTest, ExtractForms) {
         @"label" : @"Email:"
       },
       @{
+        @"aria_description" : @"",
+        @"aria_label" : @"",
         @"name" : @"pwd",
+        @"name_attribute" : @"pwd",
+        @"id_attribute" : @"pwd",
         @"identifier" : @"pwd",
         @"form_control_type" : @"password",
         @"autocomplete_attribute" : @"off",
@@ -1678,7 +1706,11 @@ TEST_F(AutofillControllerJsTest, ExtractForms) {
         @"label" : @"* Password:"
       },
       @{
+        @"aria_description" : @"",
+        @"aria_label" : @"",
         @"name" : @"state",
+        @"name_attribute" : @"state",
+        @"id_attribute" : @"state",
         @"identifier" : @"state",
         @"form_control_type" : @"select-one",
         @"is_focusable" : @1,

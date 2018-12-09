@@ -39,13 +39,14 @@ class TickClock;
 namespace viz {
 
 class Surface;
+class SurfaceManagerDelegate;
 struct BeginFrameAck;
 struct BeginFrameArgs;
 
 class VIZ_SERVICE_EXPORT SurfaceManager {
  public:
-  explicit SurfaceManager(
-      base::Optional<uint32_t> activation_deadline_in_frames);
+  SurfaceManager(SurfaceManagerDelegate* delegate,
+                 base::Optional<uint32_t> activation_deadline_in_frames);
   ~SurfaceManager();
 
 #if DCHECK_IS_ON()
@@ -192,6 +193,9 @@ class VIZ_SERVICE_EXPORT SurfaceManager {
   // next display frame. We will notify SurfaceObservers accordingly.
   void SurfaceWillBeDrawn(Surface* surface);
 
+  // Removes temporary reference to |surface_id| and older surfaces.
+  void DropTemporaryReference(const SurfaceId& surface_id);
+
  private:
   friend class CompositorFrameSinkSupportTest;
   friend class FrameSinkManagerTest;
@@ -247,11 +251,10 @@ class VIZ_SERVICE_EXPORT SurfaceManager {
   // owner initially.
   void AddTemporaryReference(const SurfaceId& surface_id);
 
-  // Removes temporary reference to |surface_id|. The |reason| for removing will
-  // be recorded with UMA. If |reason| is EMBEDDED then older temporary
-  // references from the same FrameSinkId will also be removed.
-  void RemoveTemporaryReference(const SurfaceId& surface_id,
-                                RemovedReason reason);
+  // Removes temporary reference to |surface_id| and older surfaces. The
+  // |reason| for removing will be recorded with UMA.
+  void RemoveTemporaryReferenceImpl(const SurfaceId& surface_id,
+                                    RemovedReason reason);
 
   // Marks and then expires old temporary references. This function is run
   // periodically by a timer.
@@ -269,6 +272,9 @@ class VIZ_SERVICE_EXPORT SurfaceManager {
 
   // Returns true if |surface_id| is in the garbage collector's queue.
   bool IsMarkedForDestruction(const SurfaceId& surface_id);
+
+  // Can be nullptr.
+  SurfaceManagerDelegate* const delegate_;
 
   base::Optional<uint32_t> activation_deadline_in_frames_;
 

@@ -106,11 +106,6 @@ SpotlightProvider* ChromeBrowserProvider::GetSpotlightProvider() const {
   return nullptr;
 }
 
-ExternalSearchProvider* ChromeBrowserProvider::GetExternalSearchProvider()
-    const {
-  return nullptr;
-}
-
 FullscreenProvider* ChromeBrowserProvider::GetFullscreenProvider() const {
   return nullptr;
 }
@@ -118,8 +113,6 @@ FullscreenProvider* ChromeBrowserProvider::GetFullscreenProvider() const {
 MailtoHandlerProvider* ChromeBrowserProvider::GetMailtoHandlerProvider() const {
   return mailto_handler_provider_.get();
 }
-
-void ChromeBrowserProvider::CheckForFirstPartyApps() const {}
 
 BrandedImageProvider* ChromeBrowserProvider::GetBrandedImageProvider() const {
   return nullptr;

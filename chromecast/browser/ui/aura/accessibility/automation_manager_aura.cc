@@ -15,6 +15,7 @@
 #include "content/public/browser/ax_event_notification_details.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/render_frame_host.h"
+#include "extensions/common/extension_messages.h"
 #include "ui/accessibility/ax_action_data.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/ax_tree_id_registry.h"
@@ -23,6 +24,7 @@
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/views/accessibility/ax_aura_obj_wrapper.h"
+#include "ui/views/accessibility/ax_root_obj_wrapper.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 
@@ -122,8 +124,11 @@ AutomationManagerAura::AutomationManagerAura()
 AutomationManagerAura::~AutomationManagerAura() {}
 
 void AutomationManagerAura::Reset(bool reset_serializer) {
-  if (!current_tree_)
-    current_tree_.reset(new AXTreeSourceAura());
+  if (!current_tree_) {
+    desktop_root_ = std::make_unique<AXRootObjWrapper>(this);
+    current_tree_ = std::make_unique<AXTreeSourceAura>(desktop_root_.get(),
+                                                       ui::DesktopAXTreeID());
+  }
   reset_serializer ? current_tree_serializer_.reset()
                    : current_tree_serializer_.reset(
                          new AuraAXTreeSerializer(current_tree_.get()));
@@ -165,7 +170,7 @@ void AutomationManagerAura::SendEvent(BrowserContext* context,
   }
 
   ui::AXEvent event;
-  event.id = aura_obj->GetUniqueId().Get();
+  event.id = aura_obj->GetUniqueId();
   event.event_type = event_type;
   event_bundle.events.push_back(event);
 

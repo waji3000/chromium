@@ -9,6 +9,7 @@
 
 #include "base/auto_reset.h"
 #include "base/command_line.h"
+#include "base/containers/flat_set.h"
 #include "base/files/file_util.h"
 #include "base/macros.h"
 #include "base/message_loop/message_loop_current.h"
@@ -356,19 +357,93 @@ aura::Window* GetHostWindow(aura::Window* window) {
   return window->parent();
 }
 
-// Returns true iff the aura::client::kMirroringEnabledKey property is set for
-// |window| or its parent. That indicates that |window| is being displayed in
-// Alt-Tab view on ChromeOS.
-bool WindowIsMirrored(aura::Window* window) {
-  if (window->GetProperty(aura::client::kMirroringEnabledKey))
-    return true;
-
-  aura::Window* const host_window = GetHostWindow(window);
-  return host_window &&
-         host_window->GetProperty(aura::client::kMirroringEnabledKey);
-}
-
 }  // namespace
+
+// A class to observe windows that are mirroring the WebContentsView's host
+// window. It keeps track of the occlusion state for each of these mirror
+// windows and requests an update for the webcontent visibility if any of their
+// occlusion state changes.
+class WebContentsViewAura::MirrorWindowObserver : public aura::WindowObserver {
+ public:
+  explicit MirrorWindowObserver(WebContentsViewAura* view) : view_(view) {}
+  ~MirrorWindowObserver() override {
+    for (auto* mirror_window : mirror_windows_) {
+      DCHECK(mirror_window->HasObserver(this));
+      mirror_window->RemoveObserver(this);
+    }
+  }
+
+  // Starts observing the list of windows provided by |mirror_windows|. Results
+  // in removing itself as an observer from all other windows. Triggers a
+  // request to update web content visibilty based on the occlusion state of the
+  // newly added windows.
+  void UpdateMirrorWindowList(
+      const std::vector<aura::Window*>* mirror_windows) {
+    for (auto* mirror_window : mirror_windows_) {
+      DCHECK(mirror_window->HasObserver(this));
+      mirror_window->RemoveObserver(this);
+    }
+
+    mirror_windows_.clear();
+    visible_mirror_windows_.clear();
+
+    if (!mirror_windows) {
+      view_->UpdateWebContentsVisibility();
+      return;
+    }
+
+    // Add self as an observer to the list of mirror windows.
+    for (auto* mirror_window : *mirror_windows) {
+      auto insert_result = mirror_windows_.insert(mirror_window);
+      if (insert_result.second)
+        mirror_window->AddObserver(this);
+
+      if (mirror_window->occlusion_state() ==
+          aura::Window::OcclusionState::VISIBLE) {
+        visible_mirror_windows_.insert(mirror_window);
+      }
+    }
+    view_->UpdateWebContentsVisibility();
+  }
+
+  // Returns true if there are any mirror windows that this class is observing
+  // that has their occlusion state set to VISIBLE.
+  bool HasVisibleMirrorWindow() const { return visible_mirror_windows_.size(); }
+
+ private:
+  // aura::WindowObserver:
+  void OnWindowDestroyed(aura::Window* mirror_window) override {
+    mirror_windows_.erase(mirror_window);
+    visible_mirror_windows_.erase(mirror_window);
+  }
+
+  // aura::WindowObserver:
+  void OnWindowOcclusionChanged(aura::Window* mirror_window) override {
+    auto it = visible_mirror_windows_.find(mirror_window);
+    if (mirror_window->occlusion_state() ==
+            aura::Window::OcclusionState::VISIBLE &&
+        it == visible_mirror_windows_.end()) {
+      visible_mirror_windows_.insert(mirror_window);
+    } else if (mirror_window->occlusion_state() !=
+                   aura::Window::OcclusionState::VISIBLE &&
+               it != visible_mirror_windows_.end()) {
+      visible_mirror_windows_.erase(it);
+    } else {
+      return;
+    }
+    view_->UpdateWebContentsVisibility();
+  }
+
+  // Subset of |mirror_windows_| that are currently VISIBLE.
+  base::flat_set<aura::Window*> visible_mirror_windows_;
+
+  // Set of mirror windows that this class is observing.
+  base::flat_set<aura::Window*> mirror_windows_;
+
+  WebContentsViewAura* view_;
+
+  DISALLOW_COPY_AND_ASSIGN(MirrorWindowObserver);
+};
 
 class WebContentsViewAura::WindowObserver
     : public aura::WindowObserver, public aura::WindowTreeHostObserver {
@@ -437,8 +512,16 @@ class WebContentsViewAura::WindowObserver
   void OnWindowPropertyChanged(aura::Window* window,
                                const void* key,
                                intptr_t old) override {
-    if (key == aura::client::kMirroringEnabledKey)
-      view_->UpdateWebContentsVisibility();
+    if (key == aura::client::kMirrorWindowList) {
+      if (!view_->mirror_window_observer_) {
+        view_->mirror_window_observer_ =
+            std::make_unique<MirrorWindowObserver>(view_);
+      }
+      const std::vector<aura::Window*>* mirror_window_list =
+          window->GetProperty(aura::client::kMirrorWindowList);
+      view_->mirror_window_observer_->UpdateMirrorWindowList(
+          mirror_window_list);
+    }
   }
 
   // Overridden WindowTreeHostObserver:
@@ -742,9 +825,10 @@ gfx::Rect WebContentsViewAura::GetViewBounds() const {
 void WebContentsViewAura::CreateAuraWindow(aura::Window* context) {
   DCHECK(aura::Env::HasInstance());
   DCHECK(!window_);
-  window_ = std::make_unique<aura::Window>(this);
+  window_ = std::make_unique<aura::Window>(
+      this, aura::client::WINDOW_TYPE_CONTROL,
+      context ? context->env() : aura::Env::GetInstance());
   window_->set_owned_by_parent(false);
-  window_->SetType(aura::client::WINDOW_TYPE_CONTROL);
   window_->SetName("WebContentsViewAura");
   window_->Init(ui::LAYER_NOT_DRAWN);
   aura::Window* root_window = context ? context->GetRootWindow() : nullptr;
@@ -778,7 +862,8 @@ void WebContentsViewAura::UpdateWebContentsVisibility() {
 
 Visibility WebContentsViewAura::GetVisibility() const {
   if (window_->occlusion_state() == aura::Window::OcclusionState::VISIBLE ||
-      WindowIsMirrored(window_.get())) {
+      (mirror_window_observer_ &&
+       mirror_window_observer_->HasVisibleMirrorWindow())) {
     return Visibility::VISIBLE;
   }
 

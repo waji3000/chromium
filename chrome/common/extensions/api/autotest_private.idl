@@ -104,6 +104,8 @@ namespace autotestPrivate {
 
   callback IsAppShownCallback = void (boolean appShown);
 
+  callback IsArcProvisionedCallback = void (boolean arcProvisioned);
+
   callback TakeScreenshotCallback = void (DOMString base64Png);
 
   callback VoidCallback = void ();
@@ -175,6 +177,9 @@ namespace autotestPrivate {
     // Returns true if requested app is shown in Chrome.
     static void isAppShown(DOMString appId, IsAppShownCallback callback);
 
+    // Returns true if ARC is provisioned.
+    static void isArcProvisioned(IsArcProvisionedCallback callback);
+
     // Launches an application from the launcher with the given appId.
     static void launchApp(DOMString appId, VoidCallback callback);
 
@@ -217,5 +222,9 @@ namespace autotestPrivate {
     // daemon startup, and 2. the initial D-Bus -> Mojo IPC bootstrap.
     // |callback|: Called when the operation has completed.
     static void bootstrapMachineLearningService(VoidCallback callback);
+
+    // Enable/disable the Google Assistant
+    // |callback|: Called when the operation has completed.
+    static void setAssistantEnabled(boolean enabled, long timeout_ms, VoidCallback callback);
   };
 };

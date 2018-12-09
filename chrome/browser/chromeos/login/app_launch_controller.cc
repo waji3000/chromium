@@ -30,7 +30,7 @@
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/ash/chrome_keyboard_controller_client.h"
+#include "chrome/browser/ui/ash/keyboard/chrome_keyboard_controller_client.h"
 #include "chrome/browser/ui/webui/chromeos/login/app_launch_splash_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chromeos/settings/cros_settings_names.h"
@@ -320,7 +320,7 @@ void AppLaunchController::OnProfileLoaded(Profile* profile) {
   profile_->InitChromeOSPreferences();
 
   // Reset virtual keyboard to use IME engines in app profile early.
-  ChromeKeyboardControllerClient::Get()->ReloadKeyboard();
+  ChromeKeyboardControllerClient::Get()->RebuildKeyboardIfEnabled();
 
   kiosk_profile_loader_.reset();
   startup_app_launcher_.reset(

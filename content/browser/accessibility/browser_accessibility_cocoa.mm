@@ -30,6 +30,8 @@
 #include "ui/accessibility/ax_range.h"
 #include "ui/accessibility/ax_role_properties.h"
 #include "ui/accessibility/platform/ax_platform_node.h"
+#include "ui/base/cocoa/remote_accessibility_api.h"
+#include "ui/gfx/mac/coordinate_conversion.h"
 
 #import "ui/accessibility/platform/ax_platform_node_mac.h"
 
@@ -1256,7 +1258,8 @@ NSString* const NSAccessibilityRequiredAttributeChrome = @"AXRequired";
 - (BOOL)isIgnored {
   if (![self instanceActive])
     return YES;
-  return [[self role] isEqualToString:NSAccessibilityUnknownRole];
+  return [[self role] isEqualToString:NSAccessibilityUnknownRole] ||
+         owner_->HasState(ax::mojom::State::kInvisible);
 }
 
 - (NSString*)invalid {
@@ -1323,8 +1326,9 @@ NSString* const NSAccessibilityRequiredAttributeChrome = @"AXRequired";
 - (NSString*)language {
   if (![self instanceActive])
     return nil;
-  return base::SysUTF8ToNSString(owner_->GetInheritedStringAttribute(
-      ax::mojom::StringAttribute::kLanguage));
+  ui::AXNode* node = owner_->node();
+  DCHECK(node);
+  return base::SysUTF8ToNSString(node->GetLanguage());
 }
 
 // private
@@ -1480,7 +1484,8 @@ NSString* const NSAccessibilityRequiredAttributeChrome = @"AXRequired";
     return nil;
   NSPoint origin = [self origin];
   NSSize size = [[self size] sizeValue];
-  NSPoint pointInScreen = [self pointInScreen:origin size:size];
+  NSPoint pointInScreen =
+      [self rectInScreen:gfx::Rect(gfx::Point(origin), gfx::Size(size))].origin;
   return [NSValue valueWithPoint:pointInScreen];
 }
 
@@ -1592,21 +1597,19 @@ NSString* const NSAccessibilityRequiredAttributeChrome = @"AXRequired";
 }
 
 // internal
-- (NSPoint)pointInScreen:(NSPoint)origin
-                    size:(NSSize)size {
+- (NSRect)rectInScreen:(gfx::Rect)rect {
   if (![self instanceActive])
-    return NSZeroPoint;
+    return NSZeroRect;
 
   // Get the delegate for the topmost BrowserAccessibilityManager, because
   // that's the only one that can convert points to their origin in the screen.
   BrowserAccessibilityDelegate* delegate =
       owner_->manager()->GetDelegateFromRootManager();
   if (delegate) {
-    gfx::Rect bounds(origin.x, origin.y, size.width, size.height);
-    gfx::Point point = delegate->AccessibilityOriginInScreen(bounds);
-    return NSMakePoint(point.x(), point.y());
+    return gfx::ScreenRectToNSRect(
+        rect + delegate->AccessibilityGetViewBounds().OffsetFromOrigin());
   } else {
-    return NSZeroPoint;
+    return NSZeroRect;
   }
 }
 
@@ -2283,7 +2286,23 @@ NSString* const NSAccessibilityRequiredAttributeChrome = @"AXRequired";
   if (!manager || !manager->GetParentView())
     return nil;
 
-  return [manager->GetParentView() window];
+  id parent = manager->GetParentView();
+
+  // If |parent| is an NSView in this process, then return the corresponding
+  // NSWindow.
+  if (auto* view = base::mac::ObjCCast<NSView>(parent))
+    return [view window];
+
+  // If |parent| is a NSAccessibilityRemoteUIElement for an NSView in another
+  // process then return the NSAccessibilityRemoteUIElement for its NSWindow in
+  // that other process.
+  if (auto* element =
+          base::mac::ObjCCast<NSAccessibilityRemoteUIElement>(parent)) {
+    return [element windowUIElement];
+  }
+
+  DLOG(ERROR) << "Failed to find window accessibility element.";
+  return nil;
 }
 
 - (NSString*)methodNameForAttribute:(NSString*)attribute {
@@ -2595,11 +2614,7 @@ NSString* const NSAccessibilityRequiredAttributeChrome = @"AXRequired";
     NSRange range = [(NSValue*)parameter rangeValue];
     gfx::Rect rect =
         owner_->GetScreenBoundsForRange(range.location, range.length);
-    NSPoint origin = NSMakePoint(rect.x(), rect.y());
-    NSSize size = NSMakeSize(rect.width(), rect.height());
-    NSPoint pointInScreen = [self pointInScreen:origin size:size];
-    NSRect nsrect = NSMakeRect(
-        pointInScreen.x, pointInScreen.y, rect.width(), rect.height());
+    NSRect nsrect = [self rectInScreen:rect];
     return [NSValue valueWithRect:nsrect];
   }
 
@@ -2657,11 +2672,7 @@ NSString* const NSAccessibilityRequiredAttributeChrome = @"AXRequired";
 
     gfx::Rect rect = BrowserAccessibilityManager::GetPageBoundsForRange(
         *startObject, startOffset, *endObject, endOffset);
-    NSPoint origin = NSMakePoint(rect.x(), rect.y());
-    NSSize size = NSMakeSize(rect.width(), rect.height());
-    NSPoint pointInScreen = [self pointInScreen:origin size:size];
-    NSRect nsrect = NSMakeRect(
-        pointInScreen.x, pointInScreen.y, rect.width(), rect.height());
+    NSRect nsrect = [self rectInScreen:rect];
     return [NSValue valueWithRect:nsrect];
   }
 

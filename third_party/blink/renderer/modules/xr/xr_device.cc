@@ -32,6 +32,23 @@ const char kRequestRequiresUserActivation[] =
 const char kSessionNotSupported[] =
     "The specified session configuration is not supported.";
 
+/**
+ * Helper method to convert IDL options into Mojo options.
+ */
+device::mojom::blink::XRSessionOptionsPtr convertIdlOptionsToMojo(
+    const XRSessionCreationOptions* options) {
+  auto session_options = device::mojom::blink::XRSessionOptions::New();
+  if (options->hasImmersive()) {
+    session_options->immersive = options->immersive();
+  }
+  if (options->hasEnvironmentIntegration()) {
+    session_options->environment_integration =
+        options->environmentIntegration();
+  }
+
+  return session_options;
+}
+
 }  // namespace
 
 XRDevice::XRDevice(XR* xr, device::mojom::blink::XRDevicePtr device)
@@ -71,8 +88,7 @@ ScriptPromise XRDevice::supportsSession(
   ScriptPromise promise = resolver->Promise();
 
   device::mojom::blink::XRSessionOptionsPtr session_options =
-      device::mojom::blink::XRSessionOptions::New();
-  session_options->immersive = options->immersive();
+      convertIdlOptionsToMojo(options);
 
   device_ptr_->SupportsSession(
       std::move(session_options),
@@ -92,6 +108,11 @@ void XRDevice::OnSupportsSessionReturned(ScriptPromiseResolver* resolver,
 
 int64_t XRDevice::GetSourceId() const {
   return xr_->GetSourceId();
+}
+
+const device::mojom::blink::XREnvironmentIntegrationProviderAssociatedPtr&
+XRDevice::xrEnvironmentProviderPtr() {
+  return environment_provider_;
 }
 
 ScriptPromise XRDevice::requestSession(
@@ -149,10 +170,7 @@ ScriptPromise XRDevice::requestSession(
   ScriptPromise promise = resolver->Promise();
 
   device::mojom::blink::XRSessionOptionsPtr session_options =
-      device::mojom::blink::XRSessionOptions::New();
-  session_options->immersive = options->immersive();
-  session_options->provide_passthrough_camera =
-      options->environmentIntegration();
+      convertIdlOptionsToMojo(options);
   session_options->has_user_activation = has_user_activation;
 
   XRPresentationContext* output_context =
@@ -185,24 +203,31 @@ void XRDevice::OnRequestSessionReturned(
     return;
   }
 
+  // immersive sessions must supply display info.
+  DCHECK(session_ptr->display_info);
+  // If the session supports environment integration, ensure the device does
+  // as well.
+  DCHECK(!environment_integration || session_ptr->display_info->capabilities
+                                         ->canProvideEnvironmentIntegration);
+
   XRSession::EnvironmentBlendMode blend_mode = XRSession::kBlendModeOpaque;
   if (environment_integration)
     blend_mode = XRSession::kBlendModeAlphaBlend;
 
-  XRSession* session =
-      new XRSession(this, std::move(session_ptr->client_request), immersive,
-                    environment_integration, output_context, blend_mode);
-  // immersive sessions must supply display info.
-  DCHECK(!immersive || session_ptr->display_info);
-  if (session_ptr->display_info)
-    session->SetXRDisplayInfo(std::move(session_ptr->display_info));
+  XRSession* session = MakeGarbageCollected<XRSession>(
+      this, std::move(session_ptr->client_request), immersive,
+      environment_integration, output_context, blend_mode);
+  session->SetXRDisplayInfo(std::move(session_ptr->display_info));
   sessions_.insert(session);
 
   if (immersive) {
     frameProvider()->BeginImmersiveSession(session, std::move(session_ptr));
   } else {
     magic_window_provider_.Bind(std::move(session_ptr->data_provider));
-    environment_provider_.Bind(std::move(session_ptr->environment_provider));
+    if (environment_integration) {
+      magic_window_provider_->GetEnvironmentIntegrationProvider(
+          mojo::MakeRequest(&environment_provider_));
+    }
   }
 
   resolver->Resolve(session);
@@ -228,7 +253,7 @@ bool XRDevice::IsFrameFocused() {
 
 XRFrameProvider* XRDevice::frameProvider() {
   if (!frame_provider_) {
-    frame_provider_ = new XRFrameProvider(this);
+    frame_provider_ = MakeGarbageCollected<XRFrameProvider>(this);
   }
 
   return frame_provider_;

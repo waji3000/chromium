@@ -67,14 +67,14 @@ TEST_P(PaintAndRasterInvalidationTest, TrackingForTracing) {
   auto* target = GetDocument().getElementById("target");
   auto get_debug_info = [&]() -> std::string {
     auto* cc_layer =
-        RuntimeEnabledFeatures::SlimmingPaintV2Enabled()
+        RuntimeEnabledFeatures::CompositeAfterPaintEnabled()
             ? GetDocument()
                   .View()
                   ->GetPaintArtifactCompositorForTesting()
                   ->RootLayer()
                   ->children()[0]
                   .get()
-            : GetLayoutView().Layer()->GraphicsLayerBacking()->ContentLayer();
+            : GetLayoutView().Layer()->GraphicsLayerBacking()->CcLayer();
     return cc_layer->GetLayerClientForTesting()
         ->TakeDebugInfo(cc_layer)
         ->ToString();
@@ -86,26 +86,28 @@ TEST_P(PaintAndRasterInvalidationTest, TrackingForTracing) {
     ScopedPaintUnderInvalidationCheckingForTest checking(true);
 
     target->setAttribute(html_names::kStyleAttr, "height: 200px");
-    GetDocument().View()->UpdateAllLifecyclePhases();
-    EXPECT_THAT(get_debug_info(),
-                MatchesRegex(
-                    "\\{\"layer_name\":.*\"annotated_invalidation_rects\":\\["
-                    "\\{\"geometry_rect\":\\[8,108,100,100\\],"
-                    "\"reason\":\"incremental\","
-                    "\"client\":\"LayoutBlockFlow DIV id='target'\"\\}\\]\\}"));
+    UpdateAllLifecyclePhasesForTest();
+    EXPECT_THAT(
+        get_debug_info(),
+        MatchesRegex(
+            "\\{\"layer_name\":.*\"annotated_invalidation_rects\":\\["
+            "\\{\"geometry_rect\":\\[8,108,100,100\\],"
+            "\"reason\":\"incremental\","
+            "\"client\":\"LayoutN?G?BlockFlow DIV id='target'\"\\}\\]\\}"));
 
     target->setAttribute(html_names::kStyleAttr, "height: 200px; width: 200px");
-    GetDocument().View()->UpdateAllLifecyclePhases();
-    EXPECT_THAT(get_debug_info(),
-                MatchesRegex(
-                    "\\{\"layer_name\":.*\"annotated_invalidation_rects\":\\["
-                    "\\{\"geometry_rect\":\\[108,8,100,200\\],"
-                    "\"reason\":\"incremental\","
-                    "\"client\":\"LayoutBlockFlow DIV id='target'\"\\}\\]\\}"));
+    UpdateAllLifecyclePhasesForTest();
+    EXPECT_THAT(
+        get_debug_info(),
+        MatchesRegex(
+            "\\{\"layer_name\":.*\"annotated_invalidation_rects\":\\["
+            "\\{\"geometry_rect\":\\[108,8,100,200\\],"
+            "\"reason\":\"incremental\","
+            "\"client\":\"LayoutN?G?BlockFlow DIV id='target'\"\\}\\]\\}"));
   }
 
   target->setAttribute(html_names::kStyleAttr, "height: 300px; width: 300px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_EQ(std::string::npos, get_debug_info().find("invalidation_rects"));
 }
 
@@ -116,7 +118,7 @@ TEST_P(PaintAndRasterInvalidationTest, IncrementalInvalidationExpand) {
 
   GetDocument().View()->SetTracksPaintInvalidations(true);
   target->setAttribute(html_names::kStyleAttr, "width: 100px; height: 200px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_THAT(GetRasterInvalidationTracking()->Invalidations(),
               UnorderedElementsAre(
                   RasterInvalidationInfo{object, object->DebugName(),
@@ -135,7 +137,7 @@ TEST_P(PaintAndRasterInvalidationTest, IncrementalInvalidationShrink) {
 
   GetDocument().View()->SetTracksPaintInvalidations(true);
   target->setAttribute(html_names::kStyleAttr, "width: 20px; height: 80px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_THAT(GetRasterInvalidationTracking()->Invalidations(),
               UnorderedElementsAre(
                   RasterInvalidationInfo{object, object->DebugName(),
@@ -154,7 +156,7 @@ TEST_P(PaintAndRasterInvalidationTest, IncrementalInvalidationMixed) {
 
   GetDocument().View()->SetTracksPaintInvalidations(true);
   target->setAttribute(html_names::kStyleAttr, "width: 100px; height: 80px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_THAT(GetRasterInvalidationTracking()->Invalidations(),
               UnorderedElementsAre(
                   RasterInvalidationInfo{object, object->DebugName(),
@@ -174,7 +176,7 @@ TEST_P(PaintAndRasterInvalidationTest, SubpixelVisualRectChagne) {
   GetDocument().View()->SetTracksPaintInvalidations(true);
   target->setAttribute(html_names::kStyleAttr,
                        "width: 100.6px; height: 70.3px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_THAT(GetRasterInvalidationTracking()->Invalidations(),
               UnorderedElementsAre(
                   RasterInvalidationInfo{object, object->DebugName(),
@@ -187,7 +189,7 @@ TEST_P(PaintAndRasterInvalidationTest, SubpixelVisualRectChagne) {
 
   GetDocument().View()->SetTracksPaintInvalidations(true);
   target->setAttribute(html_names::kStyleAttr, "width: 50px; height: 100px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_THAT(GetRasterInvalidationTracking()->Invalidations(),
               UnorderedElementsAre(
                   RasterInvalidationInfo{object, object->DebugName(),
@@ -204,12 +206,12 @@ TEST_P(PaintAndRasterInvalidationTest, SubpixelVisualRectChangeWithTransform) {
   Element* target = GetDocument().getElementById("target");
   auto* object = target->GetLayoutObject();
   target->setAttribute(html_names::kClassAttr, "solid transform");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   GetDocument().View()->SetTracksPaintInvalidations(true);
   target->setAttribute(html_names::kStyleAttr,
                        "width: 100.6px; height: 70.3px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_THAT(GetRasterInvalidationTracking()->Invalidations(),
               UnorderedElementsAre(
                   RasterInvalidationInfo{object, object->DebugName(),
@@ -222,7 +224,7 @@ TEST_P(PaintAndRasterInvalidationTest, SubpixelVisualRectChangeWithTransform) {
 
   GetDocument().View()->SetTracksPaintInvalidations(true);
   target->setAttribute(html_names::kStyleAttr, "width: 50px; height: 100px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_THAT(GetRasterInvalidationTracking()->Invalidations(),
               UnorderedElementsAre(
                   RasterInvalidationInfo{object, object->DebugName(),
@@ -243,7 +245,7 @@ TEST_P(PaintAndRasterInvalidationTest, SubpixelWithinPixelsChange) {
   GetDocument().View()->SetTracksPaintInvalidations(true);
   target->setAttribute(html_names::kStyleAttr,
                        "margin-top: 0.6px; width: 50px; height: 99.3px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_EQ(LayoutRect(0, 0, 50, 100), object->FirstFragment().VisualRect());
   EXPECT_THAT(GetRasterInvalidationTracking()->Invalidations(),
               UnorderedElementsAre(RasterInvalidationInfo{
@@ -254,7 +256,7 @@ TEST_P(PaintAndRasterInvalidationTest, SubpixelWithinPixelsChange) {
   GetDocument().View()->SetTracksPaintInvalidations(true);
   target->setAttribute(html_names::kStyleAttr,
                        "margin-top: 0.6px; width: 49.3px; height: 98.5px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_EQ(LayoutRect(0, 0, 50, 100), object->FirstFragment().VisualRect());
   EXPECT_THAT(GetRasterInvalidationTracking()->Invalidations(),
               UnorderedElementsAre(RasterInvalidationInfo{
@@ -268,12 +270,12 @@ TEST_P(PaintAndRasterInvalidationTest, ResizeRotated) {
   Element* target = GetDocument().getElementById("target");
   auto* object = target->GetLayoutObject();
   target->setAttribute(html_names::kStyleAttr, "transform: rotate(45deg)");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   GetDocument().View()->SetTracksPaintInvalidations(true);
   target->setAttribute(html_names::kStyleAttr,
                        "transform: rotate(45deg); width: 200px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   auto expected_rect = EnclosingIntRect(
       TransformationMatrix().Rotate(45).MapRect(FloatRect(50, 0, 150, 100)));
   expected_rect.Intersect(IntRect(0, 0, 800, 600));
@@ -292,14 +294,14 @@ TEST_P(PaintAndRasterInvalidationTest, ResizeRotatedChild) {
   target->SetInnerHTMLFromString(
       "<div id=child style='width: 50px; height: 50px; background: "
       "red'></div>");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   Element* child = GetDocument().getElementById("child");
   auto* child_object = child->GetLayoutObject();
 
   GetDocument().View()->SetTracksPaintInvalidations(true);
   child->setAttribute(html_names::kStyleAttr,
                       "width: 100px; height: 50px; background: red");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   auto expected_rect = EnclosingIntRect(
       TransformationMatrix().Rotate(45).MapRect(FloatRect(50, 0, 50, 50)));
   expected_rect.Intersect(IntRect(0, 0, 800, 600));
@@ -315,10 +317,10 @@ TEST_P(PaintAndRasterInvalidationTest, CompositedLayoutViewResize) {
   Element* target = GetDocument().getElementById("target");
   target->setAttribute(html_names::kClassAttr, "");
   target->setAttribute(html_names::kStyleAttr, "height: 2000px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_EQ(kBackgroundPaintInScrollingContents,
             GetLayoutView().GetBackgroundPaintLocation());
-  if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+  if (!RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
     const auto* mapping = GetLayoutView().Layer()->GetCompositedLayerMapping();
     EXPECT_TRUE(mapping->BackgroundPaintsOntoScrollingContentsLayer());
     EXPECT_FALSE(mapping->BackgroundPaintsOntoGraphicsLayer());
@@ -327,7 +329,7 @@ TEST_P(PaintAndRasterInvalidationTest, CompositedLayoutViewResize) {
   // Resize the content.
   GetDocument().View()->SetTracksPaintInvalidations(true);
   target->setAttribute(html_names::kStyleAttr, "height: 3000px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_THAT(
       GetRasterInvalidationTracking()->Invalidations(),
       UnorderedElementsAre(RasterInvalidationInfo{
@@ -339,7 +341,7 @@ TEST_P(PaintAndRasterInvalidationTest, CompositedLayoutViewResize) {
   // Resize the viewport. No invalidation.
   GetDocument().View()->SetTracksPaintInvalidations(true);
   GetDocument().View()->Resize(800, 1000);
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_FALSE(GetRasterInvalidationTracking()->HasInvalidations());
   GetDocument().View()->SetTracksPaintInvalidations(false);
 }
@@ -350,10 +352,10 @@ TEST_P(PaintAndRasterInvalidationTest, CompositedLayoutViewGradientResize) {
   Element* target = GetDocument().getElementById("target");
   target->setAttribute(html_names::kClassAttr, "");
   target->setAttribute(html_names::kStyleAttr, "height: 2000px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_EQ(kBackgroundPaintInScrollingContents,
             GetLayoutView().GetBackgroundPaintLocation());
-  if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+  if (!RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
     const auto* mapping = GetLayoutView().Layer()->GetCompositedLayerMapping();
     EXPECT_TRUE(mapping->BackgroundPaintsOntoScrollingContentsLayer());
     EXPECT_FALSE(mapping->BackgroundPaintsOntoGraphicsLayer());
@@ -362,7 +364,7 @@ TEST_P(PaintAndRasterInvalidationTest, CompositedLayoutViewGradientResize) {
   // Resize the content.
   GetDocument().View()->SetTracksPaintInvalidations(true);
   target->setAttribute(html_names::kStyleAttr, "height: 3000px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   EXPECT_THAT(
       GetRasterInvalidationTracking()->Invalidations(),
@@ -375,7 +377,7 @@ TEST_P(PaintAndRasterInvalidationTest, CompositedLayoutViewGradientResize) {
   // Resize the viewport. No invalidation.
   GetDocument().View()->SetTracksPaintInvalidations(true);
   GetDocument().View()->Resize(800, 1000);
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_FALSE(GetRasterInvalidationTracking()->HasInvalidations());
   GetDocument().View()->SetTracksPaintInvalidations(false);
 }
@@ -395,7 +397,7 @@ TEST_P(PaintAndRasterInvalidationTest, NonCompositedLayoutViewResize) {
     </style>
     <div id='content' style='width: 200px; height: 200px'></div>
   )HTML");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   Element* iframe = GetDocument().getElementById("iframe");
   Element* content = ChildDocument().getElementById("content");
   EXPECT_EQ(GetLayoutView(),
@@ -408,7 +410,7 @@ TEST_P(PaintAndRasterInvalidationTest, NonCompositedLayoutViewResize) {
   // Resize the content.
   GetDocument().View()->SetTracksPaintInvalidations(true);
   content->setAttribute(html_names::kStyleAttr, "height: 500px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   // No invalidation because the changed part of layout overflow is clipped.
   EXPECT_FALSE(GetRasterInvalidationTracking()->HasInvalidations());
   GetDocument().View()->SetTracksPaintInvalidations(false);
@@ -416,10 +418,10 @@ TEST_P(PaintAndRasterInvalidationTest, NonCompositedLayoutViewResize) {
   // Resize the iframe.
   GetDocument().View()->SetTracksPaintInvalidations(true);
   iframe->setAttribute(html_names::kStyleAttr, "height: 200px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+  UpdateAllLifecyclePhasesForTest();
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
     // TODO(wangxianzhu): This is probably incorrect, but for now we assume
-    // any scrolling contents as composited during SPv2 painting. Perhaps we
+    // any scrolling contents as composited during CAP painting. Perhaps we
     // need some heuristic about composited scrolling during painting.
     EXPECT_FALSE(GetRasterInvalidationTracking()->HasInvalidations());
   } else {
@@ -454,7 +456,7 @@ TEST_P(PaintAndRasterInvalidationTest, NonCompositedLayoutViewGradientResize) {
     </style>
     <div id='content' style='width: 200px; height: 200px'></div>
   )HTML");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   Element* iframe = GetDocument().getElementById("iframe");
   Element* content = ChildDocument().getElementById("content");
   LayoutView* frame_layout_view = content->GetLayoutObject()->View();
@@ -464,10 +466,10 @@ TEST_P(PaintAndRasterInvalidationTest, NonCompositedLayoutViewGradientResize) {
   // Resize the content.
   GetDocument().View()->SetTracksPaintInvalidations(true);
   content->setAttribute(html_names::kStyleAttr, "height: 500px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+  UpdateAllLifecyclePhasesForTest();
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
     // TODO(wangxianzhu): This is probably incorrect, but for now we assume
-    // any scrolling contents as composited during SPv2 painting. Perhaps we
+    // any scrolling contents as composited during CAP painting. Perhaps we
     // need some heuristic about composited scrolling during painting.
     EXPECT_FALSE(GetRasterInvalidationTracking()->HasInvalidations());
   } else {
@@ -482,10 +484,10 @@ TEST_P(PaintAndRasterInvalidationTest, NonCompositedLayoutViewGradientResize) {
   // Resize the iframe.
   GetDocument().View()->SetTracksPaintInvalidations(true);
   iframe->setAttribute(html_names::kStyleAttr, "height: 200px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+  UpdateAllLifecyclePhasesForTest();
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
     // TODO(wangxianzhu): This is probably incorrect, but for now we assume
-    // any scrolling contents as composited during SPv2 painting. Perhaps we
+    // any scrolling contents as composited during CAP painting. Perhaps we
     // need some heuristic about composited scrolling during painting.
     EXPECT_FALSE(GetRasterInvalidationTracking()->HasInvalidations());
   } else {
@@ -510,12 +512,12 @@ TEST_P(PaintAndRasterInvalidationTest,
       "<div id=child style='width: 500px; height: 500px'></div>",
       ASSERT_NO_EXCEPTION);
   Element* child = GetDocument().getElementById("child");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   auto* target_obj = ToLayoutBoxModelObject(target->GetLayoutObject());
   EXPECT_EQ(kBackgroundPaintInScrollingContents,
             target_obj->GetBackgroundPaintLocation());
-  if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+  if (!RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
     const auto* mapping = target_obj->Layer()->GetCompositedLayerMapping();
     EXPECT_TRUE(mapping->BackgroundPaintsOntoScrollingContentsLayer());
     EXPECT_FALSE(mapping->BackgroundPaintsOntoGraphicsLayer());
@@ -523,7 +525,7 @@ TEST_P(PaintAndRasterInvalidationTest,
 
   auto container_raster_invalidation_tracking =
       [&]() -> const RasterInvalidationTracking* {
-    if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+    if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
       return GetRasterInvalidationTracking(1);
     return target_obj->Layer()
         ->GraphicsLayerBacking(target_obj)
@@ -531,7 +533,7 @@ TEST_P(PaintAndRasterInvalidationTest,
   };
   auto contents_raster_invalidation_tracking =
       [&]() -> const RasterInvalidationTracking* {
-    if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+    if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
       return GetRasterInvalidationTracking(2);
     return target_obj->Layer()
         ->GraphicsLayerBacking()
@@ -541,7 +543,7 @@ TEST_P(PaintAndRasterInvalidationTest,
   // Resize the content.
   GetDocument().View()->SetTracksPaintInvalidations(true);
   child->setAttribute(html_names::kStyleAttr, "width: 500px; height: 1000px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   // No invalidation on the container layer.
   EXPECT_FALSE(container_raster_invalidation_tracking()->HasInvalidations());
   // Incremental invalidation of background on contents layer.
@@ -556,7 +558,7 @@ TEST_P(PaintAndRasterInvalidationTest,
   // Resize the container.
   GetDocument().View()->SetTracksPaintInvalidations(true);
   target->setAttribute(html_names::kStyleAttr, "height: 200px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   // Border invalidated in the container layer.
   EXPECT_THAT(container_raster_invalidation_tracking()->Invalidations(),
               UnorderedElementsAre(RasterInvalidationInfo{
@@ -577,13 +579,13 @@ TEST_P(PaintAndRasterInvalidationTest,
       "<div id='child' style='width: 500px; height: 500px'></div>",
       ASSERT_NO_EXCEPTION);
   Element* child = GetDocument().getElementById("child");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   LayoutBoxModelObject* target_obj =
       ToLayoutBoxModelObject(target->GetLayoutObject());
   auto container_raster_invalidation_tracking =
       [&]() -> const RasterInvalidationTracking* {
-    if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+    if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
       return GetRasterInvalidationTracking(1);
     return target_obj->Layer()
         ->GraphicsLayerBacking(target_obj)
@@ -591,7 +593,7 @@ TEST_P(PaintAndRasterInvalidationTest,
   };
   auto contents_raster_invalidation_tracking =
       [&]() -> const RasterInvalidationTracking* {
-    if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+    if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
       return GetRasterInvalidationTracking(2);
     return target_obj->Layer()
         ->GraphicsLayerBacking()
@@ -601,10 +603,10 @@ TEST_P(PaintAndRasterInvalidationTest,
   // Resize the content.
   GetDocument().View()->SetTracksPaintInvalidations(true);
   child->setAttribute(html_names::kStyleAttr, "width: 500px; height: 1000px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_EQ(kBackgroundPaintInScrollingContents,
             target_obj->GetBackgroundPaintLocation());
-  if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+  if (!RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
     const auto* mapping = target_obj->Layer()->GetCompositedLayerMapping();
     EXPECT_TRUE(mapping->BackgroundPaintsOntoScrollingContentsLayer());
     EXPECT_FALSE(mapping->BackgroundPaintsOntoGraphicsLayer());
@@ -625,7 +627,7 @@ TEST_P(PaintAndRasterInvalidationTest,
   // Resize the container.
   GetDocument().View()->SetTracksPaintInvalidations(true);
   target->setAttribute(html_names::kStyleAttr, "height: 200px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   // Border invalidated in the container layer.
   EXPECT_THAT(container_raster_invalidation_tracking()->Invalidations(),
               UnorderedElementsAre(RasterInvalidationInfo{
@@ -646,7 +648,7 @@ TEST_P(PaintAndRasterInvalidationTest,
       "<div id=child style='width: 500px; height: 500px'></div>",
       ASSERT_NO_EXCEPTION);
   Element* child = GetDocument().getElementById("child");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_EQ(&GetLayoutView(), object->ContainerForPaintInvalidation());
   EXPECT_EQ(kBackgroundPaintInScrollingContents,
             ToLayoutBoxModelObject(object)->GetBackgroundPaintLocation());
@@ -654,17 +656,17 @@ TEST_P(PaintAndRasterInvalidationTest,
   // Resize the content.
   GetDocument().View()->SetTracksPaintInvalidations(true);
   child->setAttribute(html_names::kStyleAttr, "width: 500px; height: 1000px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   // No invalidation because the changed part is invisible.
   EXPECT_FALSE(GetRasterInvalidationTracking()->HasInvalidations());
 
   // Resize the container.
   GetDocument().View()->SetTracksPaintInvalidations(true);
   target->setAttribute(html_names::kStyleAttr, "height: 200px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+  UpdateAllLifecyclePhasesForTest();
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
     // TODO(wangxianzhu): This is probably incorrect, but for now we assume
-    // any scrolling contents as composited during SPv2 painting. Perhaps we
+    // any scrolling contents as composited during CAP painting. Perhaps we
     // need some heuristic about composited scrolling during painting.
     EXPECT_FALSE(GetRasterInvalidationTracking()->HasInvalidations());
   } else {
@@ -687,26 +689,26 @@ TEST_P(PaintAndRasterInvalidationTest, CompositedSolidBackgroundResize) {
   target->setAttribute(html_names::kClassAttr, "solid composited scroll");
   target->SetInnerHTMLFromString("<div style='height: 500px'></div>",
                                  ASSERT_NO_EXCEPTION);
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   // Resize the scroller.
   GetDocument().View()->SetTracksPaintInvalidations(true);
   target->setAttribute(html_names::kStyleAttr, "width: 100px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   LayoutBoxModelObject* target_object =
       ToLayoutBoxModelObject(target->GetLayoutObject());
   EXPECT_EQ(
       kBackgroundPaintInScrollingContents | kBackgroundPaintInGraphicsLayer,
       target_object->GetBackgroundPaintLocation());
-  if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+  if (!RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
     const auto* mapping = target_object->Layer()->GetCompositedLayerMapping();
     EXPECT_TRUE(mapping->BackgroundPaintsOntoScrollingContentsLayer());
     EXPECT_TRUE(mapping->BackgroundPaintsOntoGraphicsLayer());
   }
 
   const auto* contents_raster_invalidation_tracking =
-      RuntimeEnabledFeatures::SlimmingPaintV2Enabled()
+      RuntimeEnabledFeatures::CompositeAfterPaintEnabled()
           ? GetRasterInvalidationTracking(2)
           : target_object->Layer()
                 ->GraphicsLayerBacking()
@@ -718,7 +720,7 @@ TEST_P(PaintAndRasterInvalidationTest, CompositedSolidBackgroundResize) {
                   &client, client.DebugName(), IntRect(50, 0, 50, 500),
                   PaintInvalidationReason::kIncremental}));
   const auto* container_raster_invalidation_tracking =
-      RuntimeEnabledFeatures::SlimmingPaintV2Enabled()
+      RuntimeEnabledFeatures::CompositeAfterPaintEnabled()
           ? GetRasterInvalidationTracking(1)
           : target_object->Layer()
                 ->GraphicsLayerBacking(target_object)
@@ -753,7 +755,7 @@ TEST_P(PaintAndRasterInvalidationTest, RecalcOverflowInvalidatesBackground) {
     <div id='container'></div>
   )HTML");
 
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   ScrollableArea* scrollable_area = GetDocument().View()->LayoutViewport();
   ASSERT_EQ(scrollable_area->MaximumScrollOffset().Height(), 0);
@@ -787,7 +789,7 @@ TEST_P(PaintAndRasterInvalidationTest,
             child_layout_view->FirstFragment().VisualRect());
 
   iframe->setAttribute(html_names::kStyleAttr, "border: 20px solid blue");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_EQ(GetDocument().GetLayoutView(),
             &child_layout_view->ContainerForPaintInvalidation());
   EXPECT_EQ(LayoutRect(0, 0, 100, 100),
@@ -816,7 +818,7 @@ TEST_P(PaintAndRasterInvalidationTest, DelayedFullPaintInvalidation) {
   EXPECT_TRUE(target->Parent()->ShouldCheckForPaintInvalidation());
 
   GetDocument().View()->SetTracksPaintInvalidations(true);
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_FALSE(GetRasterInvalidationTracking()->HasInvalidations());
   EXPECT_FALSE(target->ShouldDoFullPaintInvalidation());
   EXPECT_TRUE(target->ShouldDelayFullPaintInvalidation());
@@ -830,22 +832,11 @@ TEST_P(PaintAndRasterInvalidationTest, DelayedFullPaintInvalidation) {
   GetDocument().View()->SetTracksPaintInvalidations(true);
   // Scroll target into view.
   GetDocument().domWindow()->scrollTo(0, 4000);
-  GetDocument().View()->UpdateAllLifecyclePhases();
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
-    // TODO(crbug.com/792577): SPv2's cull rect for view scrolling contents is
-    // too small, causing this result.
-    EXPECT_THAT(
-        GetRasterInvalidationTracking()->Invalidations(),
-        UnorderedElementsAre(RasterInvalidationInfo{
-            target->EnclosingLayer(), target->EnclosingLayer()->DebugName(),
-            IntRect(0, 4000, 100, 100),
-            PaintInvalidationReason::kChunkAppeared}));
-  } else {
-    EXPECT_THAT(GetRasterInvalidationTracking()->Invalidations(),
-                UnorderedElementsAre(RasterInvalidationInfo{
-                    target, target->DebugName(), IntRect(0, 4000, 100, 100),
-                    PaintInvalidationReason::kForTesting}));
-  }
+  UpdateAllLifecyclePhasesForTest();
+  EXPECT_THAT(GetRasterInvalidationTracking()->Invalidations(),
+              UnorderedElementsAre(RasterInvalidationInfo{
+                  target, target->DebugName(), IntRect(0, 4000, 100, 100),
+                  PaintInvalidationReason::kForTesting}));
   EXPECT_EQ(PaintInvalidationReason::kNone,
             target->FullPaintInvalidationReason());
   EXPECT_FALSE(target->ShouldDelayFullPaintInvalidation());
@@ -880,14 +871,14 @@ TEST_P(PaintAndRasterInvalidationTest, SVGHiddenContainer) {
 
   GetDocument().View()->SetTracksPaintInvalidations(true);
   ToElement(mask_rect->GetNode())->setAttribute("x", "20");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   EXPECT_EQ(LayoutRect(), mask_rect->FirstFragment().VisualRect());
   EXPECT_EQ(LayoutRect(55, 66, 7, 8), real_rect->FirstFragment().VisualRect());
 
   // Should invalidate raster for real_rect only.
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
-    // SPv2 creates composited layers for the rect and its mask.
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
+    // CAP creates composited layers for the rect and its mask.
     EXPECT_THAT(GetRasterInvalidationTracking(1)->Invalidations(),
                 UnorderedElementsAre(RasterInvalidationInfo{
                     real_rect, real_rect->DebugName(), IntRect(0, 0, 7, 8),
@@ -935,6 +926,10 @@ TEST_P(PaintAndRasterInvalidationTest, UpdateVisualRectWhenPrinting) {
   FloatSize page_size(400, 200);
   GetFrame().StartPrinting(page_size, page_size, 1);
   GetDocument().View()->UpdateLifecyclePhasesForPrinting();
+  // In LayoutNG these may be different layout objects, so get them again
+  a = GetDocument().getElementById("a")->GetLayoutObject();
+  b = GetDocument().getElementById("b")->GetLayoutObject();
+  c = GetDocument().getElementById("c")->GetLayoutObject();
 
   EXPECT_EQ(LayoutRect(0, 0, 150, 20), a->FirstFragment().VisualRect());
   EXPECT_EQ(LayoutRect(150, 0, 150, 20), b->FirstFragment().VisualRect());
@@ -943,6 +938,9 @@ TEST_P(PaintAndRasterInvalidationTest, UpdateVisualRectWhenPrinting) {
 
   GetFrame().EndPrinting();
   GetDocument().View()->UpdateLifecyclePhasesForPrinting();
+  a = GetDocument().getElementById("a")->GetLayoutObject();
+  b = GetDocument().getElementById("b")->GetLayoutObject();
+  c = GetDocument().getElementById("c")->GetLayoutObject();
 
   EXPECT_EQ(LayoutRect(0, 0, 150, 20), a->FirstFragment().VisualRect());
   EXPECT_EQ(LayoutRect(150, 0, 150, 20), b->FirstFragment().VisualRect());
@@ -954,7 +952,7 @@ TEST_P(PaintAndRasterInvalidationTest, PaintPropertyChange) {
   Element* target = GetDocument().getElementById("target");
   auto* object = target->GetLayoutObject();
   target->setAttribute(html_names::kClassAttr, "solid transform");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   auto* layer = ToLayoutBoxModelObject(object)->Layer();
   GetDocument().View()->SetTracksPaintInvalidations(true);
@@ -965,7 +963,7 @@ TEST_P(PaintAndRasterInvalidationTest, PaintPropertyChange) {
       object->FirstFragment().PaintProperties()->Transform();
   EXPECT_TRUE(transform->Changed(*transform->Parent()));
 
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_THAT(GetRasterInvalidationTracking()->Invalidations(),
               UnorderedElementsAre(
                   RasterInvalidationInfo{
@@ -990,7 +988,7 @@ TEST_P(PaintAndRasterInvalidationTest, ResizeContainerOfFixedSizeSVG) {
   Element* target = GetDocument().getElementById("target");
   GetDocument().View()->SetTracksPaintInvalidations(true);
   target->setAttribute(html_names::kStyleAttr, "width: 200px; height: 200px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   // No raster invalidations because the resized-div doesn't paint anything by
   // itself, and the svg is fixed sized.
@@ -1029,7 +1027,7 @@ TEST_P(PaintAndRasterInvalidationTest, ScrollingInvalidatesStickyOffset) {
   const auto* inner = GetLayoutObjectByElementId("inner");
   EXPECT_EQ(LayoutPoint(0, 0), inner->FirstFragment().PaintOffset());
 
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   EXPECT_FALSE(sticky->NeedsPaintPropertyUpdate());
   EXPECT_EQ(LayoutPoint(0, 0), sticky->FirstFragment().PaintOffset());
@@ -1057,7 +1055,7 @@ class PaintInvalidatorCustomClientTest : public RenderingTest {
  public:
   PaintInvalidatorCustomClientTest()
       : RenderingTest(EmptyLocalFrameClient::Create()),
-        chrome_client_(new PaintInvalidatorTestClient) {}
+        chrome_client_(MakeGarbageCollected<PaintInvalidatorTestClient>()) {}
 
   PaintInvalidatorTestClient& GetChromeClient() const override {
     return *chrome_client_;
@@ -1087,7 +1085,7 @@ TEST_F(PaintInvalidatorCustomClientTest,
   ResetInvalidationRecorded();
 
   target->setAttribute(html_names::kStyleAttr, "opacity: 0.98");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   EXPECT_TRUE(InvalidationRecorded());
 }

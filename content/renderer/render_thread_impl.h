@@ -40,9 +40,9 @@
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/url_loader_throttle_provider.h"
 #include "content/renderer/gpu/compositor_dependencies.h"
-#include "content/renderer/layout_test_dependencies.h"
 #include "content/renderer/media/audio/audio_input_ipc_factory.h"
 #include "content/renderer/media/audio/audio_output_ipc_factory.h"
+#include "content/renderer/web_test_dependencies.h"
 #include "gpu/ipc/client/gpu_channel_host.h"
 #include "ipc/ipc_sync_channel.h"
 #include "media/media_buildflags.h"
@@ -125,9 +125,8 @@ class CategorizedWorkerPool;
 class DomStorageDispatcher;
 class FrameSwapMessageQueue;
 class GpuVideoAcceleratorFactoriesImpl;
-class IndexedDBDispatcher;
 class LowMemoryModeController;
-class MidiMessageFilter;
+class MidiSessionClientImpl;
 class P2PSocketDispatcher;
 class PeerConnectionDependencyFactory;
 class PeerConnectionTracker;
@@ -213,8 +212,8 @@ class CONTENT_EXPORT RenderThreadImpl
   int32_t GetClientId() override;
   bool IsOnline() override;
   void SetRendererProcessType(
-      blink::scheduler::RendererProcessType type) override;
-  blink::WebString GetUserAgent() const override;
+      blink::scheduler::WebRendererProcessType type) override;
+  blink::WebString GetUserAgent() override;
 
   // IPC::Listener implementation via ChildThreadImpl:
   void OnAssociatedInterfaceRequest(
@@ -269,7 +268,7 @@ class CONTENT_EXPORT RenderThreadImpl
   using LayerTreeFrameSinkCallback =
       base::OnceCallback<void(std::unique_ptr<cc::LayerTreeFrameSink>)>;
   void RequestNewLayerTreeFrameSink(
-      int routing_id,
+      int widget_routing_id,
       scoped_refptr<FrameSwapMessageQueue> frame_swap_message_queue,
       const GURL& url,
       LayerTreeFrameSinkCallback callback,
@@ -281,24 +280,23 @@ class CONTENT_EXPORT RenderThreadImpl
   blink::AssociatedInterfaceRegistry* GetAssociatedInterfaceRegistry();
 
   std::unique_ptr<cc::SwapPromise> RequestCopyOfOutputForLayoutTest(
-      int32_t routing_id,
+      int32_t widget_routing_id,
       std::unique_ptr<viz::CopyOutputRequest> request);
 
-  // True if we are running layout tests. This currently disables forwarding
+  // True if we are running web tests. This currently disables forwarding
   // various status messages to the console, skips network error pages, and
   // short circuits size update and focus events.
-  bool layout_test_mode() const { return !!layout_test_deps_; }
-  void set_layout_test_dependencies(
-      std::unique_ptr<LayoutTestDependencies> deps) {
-    layout_test_deps_ = std::move(deps);
+  bool web_test_mode() const { return !!web_test_deps_; }
+  void set_web_test_dependencies(std::unique_ptr<WebTestDependencies> deps) {
+    web_test_deps_ = std::move(deps);
   }
-  // Returns whether we are running layout tests with display compositor for
+  // Returns whether we are running web tests with display compositor for
   // pixel dump enabled. It is meant to disable feature that require display
   // compositor while it is not enabled by default.
   // This should only be called if currently running in layout tests.
-  bool LayoutTestModeUsesDisplayCompositorPixelDump() const {
-    DCHECK(layout_test_deps_);
-    return layout_test_deps_->UseDisplayCompositorPixelDump();
+  bool WebTestModeUsesDisplayCompositorPixelDump() const {
+    DCHECK(web_test_deps_);
+    return web_test_deps_->UseDisplayCompositorPixelDump();
   }
 
   discardable_memory::ClientDiscardableSharedMemoryManager*
@@ -326,8 +324,8 @@ class CONTENT_EXPORT RenderThreadImpl
     return dom_storage_dispatcher_.get();
   }
 
-  MidiMessageFilter* midi_message_filter() {
-    return midi_message_filter_.get();
+  MidiSessionClientImpl* midi_session_client_impl() {
+    return midi_session_client_impl_.get();
   }
 
   ResourceDispatcher* resource_dispatcher() const {
@@ -504,6 +502,14 @@ class CONTENT_EXPORT RenderThreadImpl
   scoped_refptr<base::SingleThreadTaskRunner>
   CreateVideoFrameCompositorTaskRunner();
 
+  // In the case of kOnDemand, we wont be using the task_runner created in
+  // CreateVideoFrameCompositorTaskRunner.
+  // TODO(https://crbug/901513): Remove once kOnDemand is removed.
+  void SetVideoFrameCompositorTaskRunner(
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
+    video_frame_compositor_task_runner_ = task_runner;
+  }
+
  private:
   void OnProcessFinalRelease() override;
   // IPC::Listener
@@ -589,14 +595,13 @@ class CONTENT_EXPORT RenderThreadImpl
   // These objects live solely on the render thread.
   std::unique_ptr<AppCacheDispatcher> appcache_dispatcher_;
   std::unique_ptr<DomStorageDispatcher> dom_storage_dispatcher_;
-  std::unique_ptr<IndexedDBDispatcher> main_thread_indexed_db_dispatcher_;
   std::unique_ptr<blink::scheduler::WebThreadScheduler> main_thread_scheduler_;
   std::unique_ptr<RendererBlinkPlatformImpl> blink_platform_impl_;
   std::unique_ptr<ResourceDispatcher> resource_dispatcher_;
   std::unique_ptr<URLLoaderThrottleProvider> url_loader_throttle_provider_;
 
   // Used on the renderer and IPC threads.
-  scoped_refptr<MidiMessageFilter> midi_message_filter_;
+  std::unique_ptr<MidiSessionClientImpl> midi_session_client_impl_;
 
   std::unique_ptr<BrowserPluginManager> browser_plugin_manager_;
 
@@ -633,8 +638,8 @@ class CONTENT_EXPORT RenderThreadImpl
 
   blink::WebString user_agent_;
 
-  // Used to control layout test specific behavior.
-  std::unique_ptr<LayoutTestDependencies> layout_test_deps_;
+  // Used to control web test specific behavior.
+  std::unique_ptr<WebTestDependencies> web_test_deps_;
 
   // Sticky once true, indicates that compositing is done without Gpu, so
   // resources given to the compositor or to the viz service should be

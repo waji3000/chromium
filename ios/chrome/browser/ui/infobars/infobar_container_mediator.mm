@@ -4,13 +4,12 @@
 
 #import "ios/chrome/browser/ui/infobars/infobar_container_mediator.h"
 
-#include "ios/chrome/browser/infobars/infobar_container_delegate_ios.h"
 #include "ios/chrome/browser/infobars/infobar_container_ios.h"
-#include "ios/chrome/browser/infobars/infobar_container_state_delegate.h"
 #include "ios/chrome/browser/infobars/infobar_manager_impl.h"
 #import "ios/chrome/browser/tabs/tab.h"
 #import "ios/chrome/browser/tabs/tab_model.h"
 #import "ios/chrome/browser/tabs/tab_model_observer.h"
+#import "ios/chrome/browser/translate/language_selection_handler.h"
 #import "ios/chrome/browser/ui/authentication/re_signin_infobar_delegate.h"
 #import "ios/chrome/browser/ui/infobars/infobar_container_consumer.h"
 #import "ios/chrome/browser/ui/settings/sync_utils/sync_util.h"
@@ -23,11 +22,8 @@
 #error "This file requires ARC support."
 #endif
 
-@interface InfobarContainerMediator ()<InfobarContainerStateDelegate,
-                                       TabModelObserver,
+@interface InfobarContainerMediator ()<TabModelObserver,
                                        WebStateListObserving> {
-  // Bridge class to deliver container change notifications.
-  std::unique_ptr<InfoBarContainerDelegateIOS> _infoBarContainerDelegate;
   // A single infobar container handles all infobars in all tabs. It keeps
   // track of infobars for current tab (accessed via infobar helper of
   // the current tab).
@@ -61,9 +57,7 @@
     _tabModel = tabModel;
     _webStateList = _tabModel.webStateList;
 
-    _infoBarContainerDelegate.reset(new InfoBarContainerDelegateIOS(self));
-    _infoBarContainer.reset(
-        new InfoBarContainerIOS(_infoBarContainerDelegate.get(), _consumer));
+    _infoBarContainer.reset(new InfoBarContainerIOS(_consumer));
     infobars::InfoBarManager* infoBarManager = nullptr;
     if (_tabModel.currentTab) {
       DCHECK(_tabModel.currentTab.webState);
@@ -85,13 +79,22 @@
   _webStateListObserver.reset();
 }
 
-#pragma mark - InfobarContainerStateDelegate
+#pragma mark - TabModelObserver
 
-- (void)infoBarContainerStateDidChangeAnimated:(BOOL)animated {
-  [self.consumer updateLayoutAnimated:animated];
+- (void)tabModel:(TabModel*)model
+    didChangeActiveTab:(Tab*)newTab
+           previousTab:(Tab*)previousTab
+               atIndex:(NSUInteger)index {
+  // Dismiss the language selector, if any; this is a no-op when there's no
+  // language selector presented.
+  [self.languageSelectionHandler dismissLanguageSelector];
 }
 
-#pragma mark - TabModelObserver
+- (void)tabModel:(TabModel*)model willStartLoadingTab:(Tab*)tab {
+  // Dismiss the language selector, if any; this is a no-op when there's no
+  // language selector presented.
+  [self.languageSelectionHandler dismissLanguageSelector];
+}
 
 // TODO(crbug.com/892376): Stop observing TabModel and use WebStateList instead.
 - (void)tabModel:(TabModel*)model

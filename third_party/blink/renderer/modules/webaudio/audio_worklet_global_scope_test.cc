@@ -68,14 +68,15 @@ class AudioWorkletGlobalScopeTest : public PageTestBase {
     Document* document = &GetDocument();
     thread->Start(
         std::make_unique<GlobalScopeCreationParams>(
-            document->Url(), ScriptType::kModule, document->UserAgent(),
-            Vector<CSPHeaderAndType>(), document->GetReferrerPolicy(),
-            document->GetSecurityOrigin(), document->IsSecureContext(),
-            document->GetHttpsState(), nullptr /* worker_clients */,
-            document->AddressSpace(),
+            document->Url(), mojom::ScriptType::kModule, document->UserAgent(),
+            nullptr /* web_worker_fetch_context */, Vector<CSPHeaderAndType>(),
+            document->GetReferrerPolicy(), document->GetSecurityOrigin(),
+            document->IsSecureContext(), document->GetHttpsState(),
+            nullptr /* worker_clients */, document->AddressSpace(),
             OriginTrialContext::GetTokens(document).get(),
             base::UnguessableToken::Create(), nullptr /* worker_settings */,
-            kV8CacheOptionsDefault, new WorkletModuleResponsesMap),
+            kV8CacheOptionsDefault,
+            MakeGarbageCollected<WorkletModuleResponsesMap>()),
         base::nullopt, std::make_unique<WorkerDevToolsParams>(),
         ParentExecutionContextTaskRunners::Create());
     return thread;

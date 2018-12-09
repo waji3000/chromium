@@ -162,4 +162,10 @@ FilterEffect* SVGFEImageElement::Build(SVGFilterBuilder*, Filter* filter) {
       preserve_aspect_ratio_->CurrentValue());
 }
 
+bool SVGFEImageElement::TaintsOrigin(bool inputs_taint_origin) const {
+  if (cached_image_ && cached_image_->IsAccessAllowed())
+    return inputs_taint_origin;
+  return true;
+}
+
 }  // namespace blink

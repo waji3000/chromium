@@ -18,7 +18,6 @@
 #include "base/values.h"
 #include "chrome/browser/permissions/chooser_context_base.h"
 #include "chrome/browser/usb/usb_policy_allowed_devices.h"
-#include "device/usb/mojo/device_manager_impl.h"
 #include "device/usb/public/mojom/device_manager.mojom.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 
@@ -36,6 +35,9 @@ class UsbChooserContext : public ChooserContextBase,
                                      const GURL& embedding_origin);
     virtual void OnDeviceManagerConnectionError();
   };
+
+  static std::unique_ptr<base::DictionaryValue> DeviceInfoToDictValue(
+      const device::mojom::UsbDeviceInfo& device_info);
 
   // These methods from ChooserContextBase are overridden in order to expose
   // ephemeral devices through the public interface.
@@ -77,12 +79,12 @@ class UsbChooserContext : public ChooserContextBase,
   void SetDeviceManagerForTesting(
       device::mojom::UsbDeviceManagerPtr fake_device_manager);
 
- private:
   // ChooserContextBase implementation.
   bool IsValidObject(const base::DictionaryValue& object) override;
   std::string GetObjectName(const base::DictionaryValue& object) override;
   void InitDeviceList(std::vector<::device::mojom::UsbDeviceInfoPtr> devices);
 
+ private:
   // device::mojom::UsbDeviceManagerClient implementation.
   void OnDeviceAdded(device::mojom::UsbDeviceInfoPtr device_info) override;
   void OnDeviceRemoved(device::mojom::UsbDeviceInfoPtr device_info) override;

@@ -23,6 +23,7 @@
 #include "net/ssl/channel_id_service.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "services/network/public/cpp/features.h"
 #include "url/gurl.h"
 
 namespace extensions {
@@ -36,6 +37,12 @@ void MessagePropertyProvider::GetChannelID(
   if (!source_url.is_valid()) {
     // This isn't a real URL, so there's no sense in looking for a channel ID
     // for it. Dispatch with an empty tls channel ID.
+    reply.Run(std::string());
+    return;
+  }
+
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
+    // ChannelID is deprecated and doesn't work with network service.
     reply.Run(std::string());
     return;
   }

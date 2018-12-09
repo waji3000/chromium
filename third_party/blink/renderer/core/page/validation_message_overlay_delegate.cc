@@ -16,8 +16,8 @@
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/page/page_popup_client.h"
 #include "third_party/blink/renderer/platform/graphics/paint/cull_rect.h"
-#include "third_party/blink/renderer/platform/layout_test_support.h"
 #include "third_party/blink/renderer/platform/text/platform_locale.h"
+#include "third_party/blink/renderer/platform/web_test_support.h"
 
 namespace blink {
 
@@ -26,7 +26,7 @@ class ValidationMessageChromeClient : public EmptyChromeClient {
  public:
   explicit ValidationMessageChromeClient(ChromeClient& main_chrome_client,
                                          LocalFrameView* anchor_view,
-                                         PageOverlay& overlay)
+                                         FrameOverlay& overlay)
       : main_chrome_client_(main_chrome_client),
         anchor_view_(anchor_view),
         overlay_(overlay) {}
@@ -53,7 +53,7 @@ class ValidationMessageChromeClient : public EmptyChromeClient {
  private:
   Member<ChromeClient> main_chrome_client_;
   Member<LocalFrameView> anchor_view_;
-  PageOverlay& overlay_;
+  FrameOverlay& overlay_;
 };
 
 inline ValidationMessageOverlayDelegate::ValidationMessageOverlayDelegate(
@@ -92,8 +92,8 @@ LocalFrameView& ValidationMessageOverlayDelegate::FrameView() const {
   return *ToLocalFrame(page_->MainFrame())->View();
 }
 
-void ValidationMessageOverlayDelegate::PaintPageOverlay(
-    const PageOverlay& overlay,
+void ValidationMessageOverlayDelegate::PaintFrameOverlay(
+    const FrameOverlay& overlay,
     GraphicsContext& context,
     const IntSize& view_size) const {
   if (IsHiding() && !page_)
@@ -107,7 +107,7 @@ void ValidationMessageOverlayDelegate::PaintPageOverlay(
 }
 
 void ValidationMessageOverlayDelegate::UpdateFrameViewState(
-    const PageOverlay& overlay,
+    const FrameOverlay& overlay,
     const IntSize& view_size) {
   EnsurePage(overlay, view_size);
   if (FrameView().Size() != view_size) {
@@ -120,10 +120,11 @@ void ValidationMessageOverlayDelegate::UpdateFrameViewState(
   // FindVisualRectNeedingUpdateScopeBase::CheckVisualRect().
   FrameView().GetLayoutView()->SetSubtreeShouldCheckForPaintInvalidation();
 
-  FrameView().UpdateAllLifecyclePhases();
+  FrameView().UpdateAllLifecyclePhases(
+      DocumentLifecycle::LifecycleUpdateReason::kOther);
 }
 
-void ValidationMessageOverlayDelegate::EnsurePage(const PageOverlay& overlay,
+void ValidationMessageOverlayDelegate::EnsurePage(const FrameOverlay& overlay,
                                                   const IntSize& view_size) {
   if (page_)
     return;
@@ -131,9 +132,9 @@ void ValidationMessageOverlayDelegate::EnsurePage(const PageOverlay& overlay,
   // InspectorOverlayAgent?
   Page::PageClients page_clients;
   FillWithEmptyClients(page_clients);
-  chrome_client_ = new ValidationMessageChromeClient(
+  chrome_client_ = MakeGarbageCollected<ValidationMessageChromeClient>(
       main_page_->GetChromeClient(), anchor_->GetDocument().View(),
-      const_cast<PageOverlay&>(overlay));
+      const_cast<FrameOverlay&>(overlay));
   page_clients.chrome_client = chrome_client_;
   Settings& main_settings = main_page_->GetSettings();
   page_ = Page::Create(page_clients);
@@ -159,7 +160,7 @@ void ValidationMessageOverlayDelegate::EnsurePage(const PageOverlay& overlay,
   frame->ForceSynchronousDocumentInstall("text/html", data);
 
   Element& container = GetElementById("container");
-  if (LayoutTestSupport::IsRunningLayoutTest()) {
+  if (WebTestSupport::IsRunningWebTest()) {
     container.SetInlineStyleProperty(CSSPropertyTransition, "none");
     GetElementById("icon").SetInlineStyleProperty(CSSPropertyTransition,
                                                   "none");
@@ -169,7 +170,9 @@ void ValidationMessageOverlayDelegate::EnsurePage(const PageOverlay& overlay,
         .SetInlineStyleProperty(CSSPropertyTransition, "none");
   }
   // Get the size to decide position later.
-  FrameView().UpdateAllLifecyclePhases();
+  // TODO(schenney): This says get size, so we only need to update to layout.
+  FrameView().UpdateAllLifecyclePhases(
+      DocumentLifecycle::LifecycleUpdateReason::kOther);
   bubble_size_ = container.VisibleBoundsInVisualViewport().Size();
   // Add one because the content sometimes exceeds the exact width due to
   // rounding errors.
@@ -178,7 +181,8 @@ void ValidationMessageOverlayDelegate::EnsurePage(const PageOverlay& overlay,
                                    bubble_size_.Width() / zoom_factor,
                                    CSSPrimitiveValue::UnitType::kPixels);
   container.setAttribute(html_names::kClassAttr, "shown-initially");
-  FrameView().UpdateAllLifecyclePhases();
+  FrameView().UpdateAllLifecyclePhases(
+      DocumentLifecycle::LifecycleUpdateReason::kOther);
 }
 
 void ValidationMessageOverlayDelegate::WriteDocument(SharedBuffer* data) {

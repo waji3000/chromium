@@ -617,8 +617,8 @@ domain Browser
   # Get the browser window that contains the devtools target.
   experimental command getWindowForTarget
     parameters
-      # Devtools agent host id.
-      Target.TargetID targetId
+      # Devtools agent host id. If called as a part of the session, associated targetId is used.
+      optional Target.TargetID targetId
     returns
       # Browser window id.
       WindowID windowId
@@ -634,6 +634,13 @@ domain Browser
       # New window bounds. The 'minimized', 'maximized' and 'fullscreen' states cannot be combined
       # with 'left', 'top', 'width' or 'height'. Leaves unspecified fields unchanged.
       Bounds bounds
+
+  # Set dock tile details, platform-specific.
+  experimental command setDockTile
+    parameters
+      optional string badgeLabel
+      # Png encoded image.
+      optional binary image
 
 # This domain exposes CSS read/write operations. All CSS objects (stylesheets, rules, and styles)
 # have an associated `id` used in subsequent operations on the related object. Each object type has
@@ -1232,7 +1239,7 @@ experimental domain CacheStorage
   # Fetches cache entry.
   command requestCachedResponse
     parameters
-      # Id of cache that contains the enty.
+      # Id of cache that contains the entry.
       CacheId cacheId
       # URL spec of the request.
       string requestURL
@@ -1249,6 +1256,8 @@ experimental domain CacheStorage
       integer skipCount
       # Number of records to fetch.
       integer pageSize
+      # If present, only return the entries containing this substring in the path
+      optional string pathFilter
     returns
       # Array of object store data entries.
       array of DataEntry cacheDataEntries
@@ -3811,14 +3820,14 @@ domain Network
       # HTTP request headers text.
       optional string requestHeadersText
 
-  # WebSocket frame data.
+  # WebSocket message data. This represents an entire WebSocket message, not just a fragmented frame as the name suggests.
   type WebSocketFrame extends object
     properties
-      # WebSocket frame opcode.
+      # WebSocket message opcode.
       number opcode
-      # WebSocke frame mask.
+      # WebSocket message mask.
       boolean mask
-      # WebSocke frame payload data.
+      # WebSocket message payload data.
       string payloadData
 
   # Information about the cached resource.
@@ -4151,7 +4160,7 @@ domain Network
       # Identifier of the network request to get content for.
       RequestId requestId
     returns
-      # Base64-encoded request body.
+      # Request body string, omitting files from multipart requests
       string postData
 
   # Returns content served for the given currently intercepted request.
@@ -4452,17 +4461,17 @@ domain Network
       # Request initiator.
       optional Initiator initiator
 
-  # Fired when WebSocket frame error occurs.
+  # Fired when WebSocket message error occurs.
   event webSocketFrameError
     parameters
       # Request identifier.
       RequestId requestId
       # Timestamp.
       MonotonicTime timestamp
-      # WebSocket frame error message.
+      # WebSocket error message.
       string errorMessage
 
-  # Fired when WebSocket frame is received.
+  # Fired when WebSocket message is received.
   event webSocketFrameReceived
     parameters
       # Request identifier.
@@ -4472,7 +4481,7 @@ domain Network
       # WebSocket response data.
       WebSocketFrame response
 
-  # Fired when WebSocket frame is sent.
+  # Fired when WebSocket message is sent.
   event webSocketFrameSent
     parameters
       # Request identifier.
@@ -4649,6 +4658,12 @@ experimental domain Overlay
   command setShowScrollBottleneckRects
     parameters
       # True for showing scroll bottleneck rects
+      boolean show
+
+  # Requests that backend shows hit-test borders on layers
+  command setShowHitTestBorders
+    parameters
+      # True for showing hit-test borders
       boolean show
 
   # Paints viewport size upon main frame resize.
@@ -4927,6 +4942,17 @@ domain Page
     returns
       # Base64-encoded image data.
       binary data
+
+  # Returns a snapshot of the page as a string. For MHTML format, the serialization includes
+  # iframes, shadow DOM, external resources, and element-inline styles.
+  experimental command captureSnapshot
+    parameters
+      # Format (defaults to mhtml).
+      optional enum format
+        mhtml
+    returns
+      # Serialized page data.
+      string data
 
   # Clears the overriden device metrics.
   experimental deprecated command clearDeviceMetricsOverride

@@ -84,7 +84,7 @@ QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_enable_version_43, true)
 QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_bbr_less_probe_rtt, false)
 
 // If true, enable QUIC v99.
-QUIC_FLAG(bool, FLAGS_quic_enable_version_99, false)
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_enable_version_99, false)
 
 // When true, set the initial congestion control window from connection options
 // in QuicSentPacketManager rather than TcpCubicSenderBytes.
@@ -151,7 +151,7 @@ QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_bbr_slower_startup4, false)
 
 // If true, QuicCryptoServerConfig::EvaluateClientHello will use GetCertChain
 // instead of the more expensive GetProof.
-QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_use_get_cert_chain, false)
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_use_get_cert_chain, true)
 
 // If true, try to aggregate acked stream frames.
 QUIC_FLAG(bool,
@@ -162,29 +162,22 @@ QUIC_FLAG(bool,
 QUIC_FLAG(
     bool,
     FLAGS_quic_reloadable_flag_quic_process_stateless_reset_at_client_only,
-    false)
+    true)
 
 // If true, do not retransmit old window update frames.
 QUIC_FLAG(bool,
           FLAGS_quic_reloadable_flag_quic_donot_retransmit_old_window_update2,
-          false)
+          true)
 
 // If ture, make QuicSession::GetStream faster by skipping the lookup into
 // static stream map, when possible.
-QUIC_FLAG(bool,
-          FLAGS_quic_reloadable_flag_quic_session_faster_get_stream,
-          false)
-
-// If true, when session decides what to write, set a approximate retransmission
-// for packets to be retransmitted. Also check packet state in
-// IsPacketUsefulForRetransmittableData.
-QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_fix_is_useful_for_retrans, true)
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_session_faster_get_stream, true)
 
 // If true, disable QUIC version 35.
 QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_disable_version_35, false)
 // If true, then QuicCryptoServerConfig::ProcessClientHelloAfterGetProof() will
 // use the async interface to KeyExchange::CalculateSharedKeys.
-QUIC_FLAG(bool, FLAGS_quic_restart_flag_quic_use_async_key_exchange, false)
+QUIC_FLAG(bool, FLAGS_quic_restart_flag_quic_use_async_key_exchange, true)
 
 // If true, increase size of random bytes in IETF stateless reset packet.
 QUIC_FLAG(bool,
@@ -209,7 +202,7 @@ QUIC_FLAG(bool,
 // retransmittable frames.
 QUIC_FLAG(bool,
           FLAGS_quic_reloadable_flag_quic_fix_mark_for_loss_retransmission,
-          false)
+          true)
 
 // If true, enable version 45.
 QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_enable_version_45, false)
@@ -221,9 +214,6 @@ QUIC_FLAG(bool,
           FLAGS_quic_reloadable_flag_quic_fix_has_pending_crypto_data,
           true)
 
-// This flag fixes a bug where a zombie stream cannot be correctly reset.
-QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_fix_reset_zombie_streams, true)
-
 // When true, fix initialization and updating of
 // |time_of_first_packet_sent_after_receiving_| in QuicConnection.
 QUIC_FLAG(
@@ -231,30 +221,20 @@ QUIC_FLAG(
     FLAGS_quic_reloadable_flag_quic_fix_time_of_first_packet_sent_after_receiving,
     true)
 
-// If true, deprecate PostProcessAfterData from QuicConnection. This is used to
-// fix a bug where window update causes session to write data.
-QUIC_FLAG(bool,
-          FLAGS_quic_reloadable_flag_quic_deprecate_post_process_after_data,
-          true)
-
 // When the STMP connection option is sent by the client, timestamps in the QUIC
 // ACK frame are sent and processed.
 QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_send_timestamps, false)
 
-// When true, don't arm the path degrading alarm on the server side and stop
-// using HasUnackedPackets to decide when to arm it.
-QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_fix_path_degrading_alarm, true)
-
 // When true, QUIC server push uses a unidirectional stream.
 QUIC_FLAG(bool,
           FLAGS_quic_reloadable_flag_quic_unidirectional_server_push_stream,
-          false)
+          true)
 
 // If true, a QUIC connection will attempt to process decryptable packets when
 // a new decryption key is made available.
 QUIC_FLAG(bool,
           FLAGS_quic_reloadable_flag_quic_decrypt_packets_on_key_change,
-          false)
+          true)
 
 // This flag fixes a bug where dispatcher's last_packet_is_ietf_quic may be
 // wrong when getting proof asynchronously.
@@ -304,4 +284,32 @@ QUIC_FLAG(bool,
 // If true, public reset packets sent from GFE will include a kEPID tag.
 QUIC_FLAG(bool,
           FLAGS_quic_reloadable_flag_quic_enable_server_epid_in_public_reset,
+          true)
+
+// If true, public reset packets sent from GFE will include a kEPID tag.
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_fix_spurious_ack_alarm, false)
+
+// If true, QuicSpdyStream::WritevBody() will convert iovs into QuicMemSliceSpan
+// and call WriteMemSlices instead.
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_call_write_mem_slices, false)
+
+// If true, enables the BBS4 and BBS5 connection options, which reduce BBR's
+// pacing rate in STARTUP as more losses occur as a fraction of CWND.
+QUIC_FLAG(bool,
+          FLAGS_quic_reloadable_flag_quic_bbr_startup_rate_reduction,
           false)
+
+// If true, enable the fix for the bug where v44 packets are rejected
+// by a lower-version connection close.
+QUIC_FLAG(bool,
+          FLAGS_quic_reloadable_flag_quic_fix_reject_by_session_type,
+          true)
+
+// If true, only send version negotiation packets when they are at least
+// 1200 bytes.
+QUIC_FLAG(bool,
+          FLAGS_quic_reloadable_flag_quic_limit_version_negotiation,
+          false)
+
+// If true, disables key share caching for QUIC key exchange
+QUIC_FLAG(bool, FLAGS_quic_restart_flag_quic_no_ephemeral_key_source, false)

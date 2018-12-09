@@ -37,7 +37,7 @@ class DecoderContext;
 class ServiceDiscardableManager;
 class SharedImageBackingGLTexture;
 class SharedImageBackingFactoryGLTexture;
-class SharedImageBackingAHardwareBuffer;
+class SharedImageBackingAHB;
 class SharedImageRepresentationGLTexture;
 
 namespace gles2 {
@@ -329,7 +329,7 @@ class GPU_GLES2_EXPORT Texture final : public TextureBase {
                        uint64_t client_tracing_id,
                        const std::string& dump_name) const;
 
-  void ApplyFormatWorkarounds(FeatureInfo* feature_info);
+  void ApplyFormatWorkarounds(const FeatureInfo* feature_info);
 
   bool EmulatingRGB();
 
@@ -355,7 +355,7 @@ class GPU_GLES2_EXPORT Texture final : public TextureBase {
   friend class MailboxManagerTest;
   friend class gpu::SharedImageBackingGLTexture;
   friend class gpu::SharedImageBackingFactoryGLTexture;
-  friend class gpu::SharedImageBackingAHardwareBuffer;
+  friend class gpu::SharedImageBackingAHB;
   friend class TextureDefinition;
   friend class TextureManager;
   friend class TextureRef;
@@ -575,7 +575,7 @@ class GPU_GLES2_EXPORT Texture final : public TextureBase {
   // referencing this texture.
   void IncAllFramebufferStateChangeCount();
 
-  void UpdateBaseLevel(GLint base_level);
+  void UpdateBaseLevel(GLint base_level, const FeatureInfo* feature_info);
   void UpdateMaxLevel(GLint max_level);
   void UpdateNumMipLevels();
 
@@ -696,6 +696,9 @@ class GPU_GLES2_EXPORT TextureRef : public base::RefCounted<TextureRef> {
   GLuint client_id() const { return client_id_; }
   GLuint service_id() const { return texture_->service_id(); }
   GLint num_observers() const { return num_observers_; }
+  SharedImageRepresentationGLTexture* shared_image() const {
+    return shared_image_.get();
+  }
 
   // When the TextureRef is destroyed, it will assume that the context has been
   // lost, regardless of the state of the TextureManager.
@@ -1066,20 +1069,20 @@ class GPU_GLES2_EXPORT TextureManager
     TexImageCommandType command_type;
   };
 
-  bool ValidateTexImage(
-    ContextState* state,
-    const char* function_name,
-    const DoTexImageArguments& args,
-    // Pointer to TextureRef filled in if validation successful.
-    // Presumes the pointer is valid.
-    TextureRef** texture_ref);
+  bool ValidateTexImage(ContextState* state,
+                        ErrorState* error_state,
+                        const char* function_name,
+                        const DoTexImageArguments& args,
+                        // Pointer to TextureRef filled in if validation
+                        // successful. Presumes the pointer is valid.
+                        TextureRef** texture_ref);
 
-  void ValidateAndDoTexImage(
-    DecoderTextureState* texture_state,
-    ContextState* state,
-    DecoderFramebufferState* framebuffer_state,
-    const char* function_name,
-    const DoTexImageArguments& args);
+  void ValidateAndDoTexImage(DecoderTextureState* texture_state,
+                             ContextState* state,
+                             ErrorState* error_state,
+                             DecoderFramebufferState* framebuffer_state,
+                             const char* function_name,
+                             const DoTexImageArguments& args);
 
   struct DoTexSubImageArguments {
     enum TexSubImageCommandType {
@@ -1103,17 +1106,18 @@ class GPU_GLES2_EXPORT TextureManager
     TexSubImageCommandType command_type;
   };
 
-  bool ValidateTexSubImage(
-      ContextState* state,
-      const char* function_name,
-      const DoTexSubImageArguments& args,
-      // Pointer to TextureRef filled in if validation successful.
-      // Presumes the pointer is valid.
-      TextureRef** texture_ref);
+  bool ValidateTexSubImage(ContextState* state,
+                           ErrorState* error_state,
+                           const char* function_name,
+                           const DoTexSubImageArguments& args,
+                           // Pointer to TextureRef filled in if validation
+                           // successful. Presumes the pointer is valid.
+                           TextureRef** texture_ref);
 
   void ValidateAndDoTexSubImage(DecoderContext* decoder,
                                 DecoderTextureState* texture_state,
                                 ContextState* state,
+                                ErrorState* error_state,
                                 DecoderFramebufferState* framebuffer_state,
                                 const char* function_name,
                                 const DoTexSubImageArguments& args);
@@ -1159,14 +1163,14 @@ class GPU_GLES2_EXPORT TextureManager
   static GLenum AdjustTexStorageFormat(const gles2::FeatureInfo* feature_info,
                                        GLenum format);
 
-  void WorkaroundCopyTexImageCubeMap(
-      DecoderTextureState* texture_state,
-      ContextState* state,
-      DecoderFramebufferState* framebuffer_state,
-      TextureRef* texture_ref,
-      const char* function_name,
-      const DoTexImageArguments& args) {
-    DoCubeMapWorkaround(texture_state, state, framebuffer_state,
+  void WorkaroundCopyTexImageCubeMap(DecoderTextureState* texture_state,
+                                     ContextState* state,
+                                     ErrorState* error_state,
+                                     DecoderFramebufferState* framebuffer_state,
+                                     TextureRef* texture_ref,
+                                     const char* function_name,
+                                     const DoTexImageArguments& args) {
+    DoCubeMapWorkaround(texture_state, state, error_state, framebuffer_state,
                         texture_ref, function_name, args);
   }
 
@@ -1179,19 +1183,20 @@ class GPU_GLES2_EXPORT TextureManager
       GLenum target,
       GLuint* black_texture);
 
-  void DoTexImage(
-      DecoderTextureState* texture_state,
-      ContextState* state,
-      DecoderFramebufferState* framebuffer_state,
-      const char* function_name,
-      TextureRef* texture_ref,
-      const DoTexImageArguments& args);
+  void DoTexImage(DecoderTextureState* texture_state,
+                  ContextState* state,
+                  ErrorState* error_state,
+                  DecoderFramebufferState* framebuffer_state,
+                  const char* function_name,
+                  TextureRef* texture_ref,
+                  const DoTexImageArguments& args);
 
   // Reserve memory for the texture and set its attributes so it can be filled
   // with TexSubImage. The image contents are undefined after this function,
   // so make sure it's subsequently filled in its entirety.
   void ReserveTexImageToBeFilled(DecoderTextureState* texture_state,
                                  ContextState* state,
+                                 ErrorState* error_state,
                                  DecoderFramebufferState* framebuffer_state,
                                  const char* function_name,
                                  TextureRef* texture_ref,
@@ -1213,13 +1218,13 @@ class GPU_GLES2_EXPORT TextureManager
       const DoTexSubImageArguments& args,
       const PixelStoreParams& unpack_params);
 
-  void DoCubeMapWorkaround(
-      DecoderTextureState* texture_state,
-      ContextState* state,
-      DecoderFramebufferState* framebuffer_state,
-      TextureRef* texture_ref,
-      const char* function_name,
-      const DoTexImageArguments& args);
+  void DoCubeMapWorkaround(DecoderTextureState* texture_state,
+                           ContextState* state,
+                           ErrorState* error_state,
+                           DecoderFramebufferState* framebuffer_state,
+                           TextureRef* texture_ref,
+                           const char* function_name,
+                           const DoTexImageArguments& args);
 
   void StartTracking(TextureRef* texture);
   void StopTracking(TextureRef* texture);

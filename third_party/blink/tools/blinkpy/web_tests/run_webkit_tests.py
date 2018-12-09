@@ -467,6 +467,16 @@ def parse_args(args):
                 ' Used on trybots when layout tests are retried without patch.')
         ]))
 
+    option_group_definitions.append(
+        ('web-platform-tests (WPT) Options', [
+            optparse.make_option(
+                '--no-manifest-update',
+                dest='manifest_update',
+                action='store_false',
+                default=True,
+                help=('Do update the web-platform-tests MANIFEST.json.')),
+        ]))
+
     # FIXME: Move these into json_results_generator.py.
     option_group_definitions.append(
         ('Result JSON Options', [
@@ -499,7 +509,7 @@ def parse_args(args):
     option_parser = optparse.OptionParser(
         prog='run_web_tests.py',
         usage='%prog [options] [tests]',
-        description='Runs Blink layout tests as described in docs/testing/layout_tests.md')
+        description='Runs Blink layout tests as described in docs/testing/web_tests.md')
 
     for group_name, group_options in option_group_definitions:
         option_group = optparse.OptionGroup(option_parser, group_name)

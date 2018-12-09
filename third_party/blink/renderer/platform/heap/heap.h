@@ -284,6 +284,11 @@ class PLATFORM_EXPORT ThreadHeap {
 
   void WeakProcessing(Visitor*);
 
+  // Moves not fully constructed objects to previously not fully constructed
+  // objects. Such objects can be iterated using the Trace() method and do
+  // not need to rely on conservative handling.
+  void FlushNotFullyConstructedObjects();
+
   // Marks not fully constructed objects.
   void MarkNotFullyConstructedObjects(MarkingVisitor*);
   // Marks the transitive closure including ephemerons.
@@ -436,9 +441,29 @@ class PLATFORM_EXPORT ThreadHeap {
   std::unique_ptr<RegionTree> region_tree_;
   std::unique_ptr<AddressCache> address_cache_;
   std::unique_ptr<PagePool> free_page_pool_;
+
+  // All objects on this worklist have been fully initialized and assigned a
+  // trace callback for iterating the body of the object. This worklist should
+  // contain almost all objects.
   std::unique_ptr<MarkingWorklist> marking_worklist_;
+
+  // Objects on this worklist were observed to be in construction (in their
+  // constructor) and thus have been delayed for processing. They have not yet
+  // been assigned a valid header and trace callback.
   std::unique_ptr<NotFullyConstructedWorklist> not_fully_constructed_worklist_;
+
+  // Objects on this worklist were previously in construction but have been
+  // moved here upon observing a safepoint, i.e., processing without stack. They
+  // have not yet been assigned a valid header and trace callback but are fully
+  // specified and can thus be iterated using the trace callback (which can be
+  // looked up dynamically).
+  std::unique_ptr<NotFullyConstructedWorklist>
+      previously_not_fully_constructed_worklist_;
+
+  // Worklist of weak callbacks accumulated for objects. Such callbacks are
+  // processed after finishing marking objects.
   std::unique_ptr<WeakCallbackWorklist> weak_callback_worklist_;
+
   // No duplicates allowed for ephemeron callbacks. Hence, we use a hashmap
   // with the key being the HashTable.
   WTF::HashMap<void*, EphemeronCallback> ephemeron_callbacks_;
@@ -508,11 +533,14 @@ class GarbageCollected {
  public:
   using GarbageCollectedType = T;
 
-  void* operator new(size_t size) {
-    return AllocateObject(size, IsEagerlyFinalizedType<T>::value);
-  }
+  void* operator new(size_t size) = delete;  // Must use MakeGarbageCollected.
 
   static void* AllocateObject(size_t size, bool eagerly_sweep) {
+    if (IsGarbageCollectedMixin<T>::value) {
+      // Ban large mixin so we can use PageFromObject() on them.
+      CHECK_GE(kLargeObjectSizeThreshold, size)
+          << "GarbageCollectedMixin may not be a large object";
+    }
     return ThreadHeap::Allocate<T>(size, eagerly_sweep);
   }
 
@@ -524,15 +552,53 @@ class GarbageCollected {
   DISALLOW_COPY_AND_ASSIGN(GarbageCollected);
 };
 
+template <typename T, bool is_mixin = IsGarbageCollectedMixin<T>::value>
+class ConstructTrait {
+ public:
+};
+
+template <typename T>
+class ConstructTrait<T, false> {
+ public:
+  template <typename... Args>
+  static T* Construct(Args&&... args) {
+    void* memory =
+        T::AllocateObject(sizeof(T), IsEagerlyFinalizedType<T>::value);
+    HeapObjectHeader* header = HeapObjectHeader::FromPayload(memory);
+    header->MarkIsInConstruction();
+    // Placement new as regular operator new() is deleted.
+    T* object = ::new (memory) T(std::forward<Args>(args)...);
+    header->UnmarkIsInConstruction();
+    return object;
+  }
+};
+
+template <typename T>
+class ConstructTrait<T, true> {
+ public:
+  template <typename... Args>
+  NO_SANITIZE_UNRELATED_CAST static T* Construct(Args&&... args) {
+    void* memory =
+        T::AllocateObject(sizeof(T), IsEagerlyFinalizedType<T>::value);
+    HeapObjectHeader* header = HeapObjectHeader::FromPayload(memory);
+    header->MarkIsInConstruction();
+    ThreadState* state =
+        ThreadStateFor<ThreadingTrait<T>::kAffinity>::GetState();
+    state->EnterGCForbiddenScopeIfNeeded(
+        &(reinterpret_cast<T*>(memory)->mixin_constructor_marker_));
+    // Placement new as regular operator new() is deleted.
+    T* object = ::new (memory) T(std::forward<Args>(args)...);
+    header->UnmarkIsInConstruction();
+    return object;
+  }
+};
+
 // Constructs an instance of T, which is a garbage collected type.
 template <typename T, typename... Args>
 T* MakeGarbageCollected(Args&&... args) {
   static_assert(WTF::IsGarbageCollectedType<T>::value,
                 "T needs to be a garbage collected object");
-  // Uses placement new so we can force MakeGarbageCollected usage by deleting
-  // the new operator.
-  return ::new (T::AllocateObject(sizeof(T), IsEagerlyFinalizedType<T>::value))
-      T(std::forward<Args>(args)...);
+  return ConstructTrait<T>::Construct(std::forward<Args>(args)...);
 }
 
 // Assigning class types to their arenas.

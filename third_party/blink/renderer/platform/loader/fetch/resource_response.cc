@@ -79,25 +79,34 @@ ResourceResponse::SignedCertificateTimestamp::IsolatedCopy() const {
 
 ResourceResponse::ResourceResponse() : is_null_(true) {}
 
-ResourceResponse::ResourceResponse(const KURL& url)
-    : url_(url), is_null_(false) {}
+ResourceResponse::ResourceResponse(const KURL& current_request_url)
+    : current_request_url_(current_request_url), is_null_(false) {}
 
 ResourceResponse::ResourceResponse(const ResourceResponse&) = default;
 ResourceResponse& ResourceResponse::operator=(const ResourceResponse&) =
     default;
 
 bool ResourceResponse::IsHTTP() const {
-  return url_.ProtocolIsInHTTPFamily();
+  return current_request_url_.ProtocolIsInHTTPFamily();
 }
 
-const KURL& ResourceResponse::Url() const {
-  return url_;
+const KURL& ResourceResponse::CurrentRequestUrl() const {
+  return current_request_url_;
 }
 
-void ResourceResponse::SetURL(const KURL& url) {
+void ResourceResponse::SetCurrentRequestUrl(const KURL& url) {
   is_null_ = false;
 
-  url_ = url;
+  current_request_url_ = url;
+}
+
+KURL ResourceResponse::ResponseUrl() const {
+  if (WasFetchedViaServiceWorker()) {
+    if (url_list_via_service_worker_.IsEmpty())
+      return KURL();
+    return url_list_via_service_worker_.back();
+  }
+  return CurrentRequestUrl();
 }
 
 const AtomicString& ResourceResponse::MimeType() const {
@@ -112,12 +121,12 @@ void ResourceResponse::SetMimeType(const AtomicString& mime_type) {
   mime_type_ = mime_type;
 }
 
-long long ResourceResponse::ExpectedContentLength() const {
+int64_t ResourceResponse::ExpectedContentLength() const {
   return expected_content_length_;
 }
 
 void ResourceResponse::SetExpectedContentLength(
-    long long expected_content_length) {
+    int64_t expected_content_length) {
   is_null_ = false;
 
   // FIXME: Content length is determined by HTTP Content-Length header. We
@@ -343,7 +352,7 @@ double ResourceResponse::LastModified() const {
 bool ResourceResponse::IsAttachment() const {
   static const char kAttachmentString[] = "attachment";
   String value = http_header_fields_.Get(http_names::kContentDisposition);
-  size_t loc = value.find(';');
+  wtf_size_t loc = value.find(';');
   if (loc != kNotFound)
     value = value.Left(loc);
   value = value.StripWhiteSpace();
@@ -402,13 +411,7 @@ void ResourceResponse::SetCTPolicyCompliance(CTPolicyCompliance compliance) {
 }
 
 bool ResourceResponse::IsOpaqueResponseFromServiceWorker() const {
-  return IsCORSCrossOrigin() && WasFetchedViaServiceWorker();
-}
-
-KURL ResourceResponse::OriginalURLViaServiceWorker() const {
-  if (url_list_via_service_worker_.IsEmpty())
-    return KURL();
-  return url_list_via_service_worker_.back();
+  return IsCorsCrossOrigin() && WasFetchedViaServiceWorker();
 }
 
 AtomicString ResourceResponse::ConnectionInfoString() const {
@@ -419,51 +422,16 @@ AtomicString ResourceResponse::ConnectionInfoString() const {
       connection_info_string.length());
 }
 
-void ResourceResponse::SetEncodedDataLength(long long value) {
+void ResourceResponse::SetEncodedDataLength(int64_t value) {
   encoded_data_length_ = value;
 }
 
-void ResourceResponse::SetEncodedBodyLength(long long value) {
+void ResourceResponse::SetEncodedBodyLength(int64_t value) {
   encoded_body_length_ = value;
 }
 
-void ResourceResponse::SetDecodedBodyLength(long long value) {
+void ResourceResponse::SetDecodedBodyLength(int64_t value) {
   decoded_body_length_ = value;
-}
-
-void ResourceResponse::AppendRedirectResponse(
-    const ResourceResponse& response) {
-  redirect_responses_.push_back(response);
-}
-
-bool ResourceResponse::Compare(const ResourceResponse& a,
-                               const ResourceResponse& b) {
-  if (a.IsNull() != b.IsNull())
-    return false;
-  if (a.Url() != b.Url())
-    return false;
-  if (a.MimeType() != b.MimeType())
-    return false;
-  if (a.ExpectedContentLength() != b.ExpectedContentLength())
-    return false;
-  if (a.TextEncodingName() != b.TextEncodingName())
-    return false;
-  if (a.HttpStatusCode() != b.HttpStatusCode())
-    return false;
-  if (a.HttpStatusText() != b.HttpStatusText())
-    return false;
-  if (a.HttpHeaderFields() != b.HttpHeaderFields())
-    return false;
-  if (a.GetResourceLoadTiming() && b.GetResourceLoadTiming() &&
-      *a.GetResourceLoadTiming() == *b.GetResourceLoadTiming())
-    return true;
-  if (a.GetResourceLoadTiming() != b.GetResourceLoadTiming())
-    return false;
-  if (a.EncodedBodyLength() != b.EncodedBodyLength())
-    return false;
-  if (a.DecodedBodyLength() != b.DecodedBodyLength())
-    return false;
-  return true;
 }
 
 STATIC_ASSERT_ENUM(WebURLResponse::kHTTPVersionUnknown,

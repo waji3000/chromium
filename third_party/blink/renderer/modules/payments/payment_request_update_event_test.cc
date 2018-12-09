@@ -28,8 +28,9 @@ class MockPaymentUpdater : public GarbageCollectedFinalized<MockPaymentUpdater>,
   MockPaymentUpdater() = default;
   ~MockPaymentUpdater() override = default;
 
-  MOCK_METHOD1(OnUpdatePaymentDetails,
-               void(const ScriptValue& detailsScriptValue));
+  MOCK_METHOD2(OnUpdatePaymentDetails,
+               void(const AtomicString& event_type,
+                    const ScriptValue& detailsScriptValue));
   MOCK_METHOD1(OnUpdatePaymentDetailsFailure, void(const String& error));
 
   void Trace(blink::Visitor* visitor) override {}
@@ -39,7 +40,7 @@ TEST(PaymentRequestUpdateEventTest, OnUpdatePaymentDetailsCalled) {
   V8TestingScope scope;
   PaymentRequestUpdateEvent* event = PaymentRequestUpdateEvent::Create(
       scope.GetExecutionContext(), event_type_names::kShippingaddresschange);
-  MockPaymentUpdater* updater = new MockPaymentUpdater;
+  MockPaymentUpdater* updater = MakeGarbageCollected<MockPaymentUpdater>();
   event->SetTrusted(true);
   event->SetPaymentDetailsUpdater(updater);
   event->SetEventPhase(Event::kCapturingPhase);
@@ -49,7 +50,9 @@ TEST(PaymentRequestUpdateEventTest, OnUpdatePaymentDetailsCalled) {
                     scope.GetExceptionState());
   EXPECT_FALSE(scope.GetExceptionState().HadException());
 
-  EXPECT_CALL(*updater, OnUpdatePaymentDetails(testing::_));
+  EXPECT_CALL(*updater,
+              OnUpdatePaymentDetails(event_type_names::kShippingaddresschange,
+                                     testing::_));
   EXPECT_CALL(*updater, OnUpdatePaymentDetailsFailure(testing::_)).Times(0);
 
   payment_details->Resolve("foo");
@@ -59,7 +62,7 @@ TEST(PaymentRequestUpdateEventTest, OnUpdatePaymentDetailsFailureCalled) {
   V8TestingScope scope;
   PaymentRequestUpdateEvent* event = PaymentRequestUpdateEvent::Create(
       scope.GetExecutionContext(), event_type_names::kShippingaddresschange);
-  MockPaymentUpdater* updater = new MockPaymentUpdater;
+  MockPaymentUpdater* updater = MakeGarbageCollected<MockPaymentUpdater>();
   event->SetTrusted(true);
   event->SetPaymentDetailsUpdater(updater);
   event->SetEventPhase(Event::kCapturingPhase);
@@ -69,7 +72,10 @@ TEST(PaymentRequestUpdateEventTest, OnUpdatePaymentDetailsFailureCalled) {
                     scope.GetExceptionState());
   EXPECT_FALSE(scope.GetExceptionState().HadException());
 
-  EXPECT_CALL(*updater, OnUpdatePaymentDetails(testing::_)).Times(0);
+  EXPECT_CALL(*updater,
+              OnUpdatePaymentDetails(event_type_names::kShippingaddresschange,
+                                     testing::_))
+      .Times(0);
   EXPECT_CALL(*updater, OnUpdatePaymentDetailsFailure(testing::_));
 
   payment_details->Reject("oops");
@@ -79,7 +85,7 @@ TEST(PaymentRequestUpdateEventTest, CannotUpdateWithoutDispatching) {
   V8TestingScope scope;
   PaymentRequestUpdateEvent* event = PaymentRequestUpdateEvent::Create(
       scope.GetExecutionContext(), event_type_names::kShippingaddresschange);
-  event->SetPaymentDetailsUpdater(new MockPaymentUpdater);
+  event->SetPaymentDetailsUpdater((MakeGarbageCollected<MockPaymentUpdater>()));
 
   event->updateWith(
       scope.GetScriptState(),
@@ -93,7 +99,7 @@ TEST(PaymentRequestUpdateEventTest, CannotUpdateTwice) {
   V8TestingScope scope;
   PaymentRequestUpdateEvent* event = PaymentRequestUpdateEvent::Create(
       scope.GetExecutionContext(), event_type_names::kShippingaddresschange);
-  MockPaymentUpdater* updater = new MockPaymentUpdater;
+  MockPaymentUpdater* updater = MakeGarbageCollected<MockPaymentUpdater>();
   event->SetTrusted(true);
   event->SetPaymentDetailsUpdater(updater);
   event->SetEventPhase(Event::kCapturingPhase);

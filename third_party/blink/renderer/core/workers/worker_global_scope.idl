@@ -36,12 +36,12 @@
 
     // TODO(foolip): onerror should be an OnErrorEventHandler.
     attribute EventHandler onerror;
-    // attribute EventHandler onlanguagechange;
+    attribute EventHandler onlanguagechange;
     // attribute EventHandler onoffline;
     // attribute EventHandler ononline;
 
     // https://html.spec.whatwg.org/#apis-available-to-workers
-    [RaisesException] void importScripts(DOMString... urls);
+    [RaisesException] void importScripts(ScriptURLString... urls);
     readonly attribute WorkerNavigator navigator;
 
 
@@ -77,9 +77,11 @@
     // https://drafts.csswg.org/css-font-loading-3/#font-face-source
     // TODO(fserb): temporarly until we can enable the interface below.
     [RuntimeEnabled=OffscreenCanvasText] readonly attribute FontFaceSet fonts;
+
+    // TrustedTypes API: http://github.com/wicg/trusted-types
+    [RuntimeEnabled=TrustedDOMTypes, Unforgeable] readonly attribute TrustedTypePolicyFactory TrustedTypes;
 };
 
-WorkerGlobalScope implements WindowBase64;
-WorkerGlobalScope implements WindowTimers;
+WorkerGlobalScope implements WindowOrWorkerGlobalScope;
 // TODO(fserb): this needs to be enabled once we get out of RuntimeEnabled.
 //WorkerGlobalScope implements FontFaceSource;

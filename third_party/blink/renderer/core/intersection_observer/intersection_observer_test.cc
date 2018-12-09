@@ -83,7 +83,7 @@ TEST_F(IntersectionObserverTest, ObserveSchedulesFrame) {
   IntersectionObserverInit* observer_init = IntersectionObserverInit::Create();
   DummyExceptionStateForTesting exception_state;
   TestIntersectionObserverDelegate* observer_delegate =
-      new TestIntersectionObserverDelegate(GetDocument());
+      MakeGarbageCollected<TestIntersectionObserverDelegate>(GetDocument());
   IntersectionObserver* observer = IntersectionObserver::Create(
       observer_init, *observer_delegate, exception_state);
   ASSERT_FALSE(exception_state.HadException());
@@ -120,7 +120,7 @@ TEST_F(IntersectionObserverTest, NotificationSentWhenRootRemoved) {
   observer_init->setRoot(root);
   DummyExceptionStateForTesting exception_state;
   TestIntersectionObserverDelegate* observer_delegate =
-      new TestIntersectionObserverDelegate(GetDocument());
+      MakeGarbageCollected<TestIntersectionObserverDelegate>(GetDocument());
   IntersectionObserver* observer = IntersectionObserver::Create(
       observer_init, *observer_delegate, exception_state);
   ASSERT_FALSE(exception_state.HadException());
@@ -145,7 +145,7 @@ TEST_F(IntersectionObserverTest, NotificationSentWhenRootRemoved) {
 }
 
 TEST_F(IntersectionObserverTest, ResumePostsTask) {
-  WebView().Resize(WebSize(800, 600));
+  WebView().MainFrameWidget()->Resize(WebSize(800, 600));
   SimRequest main_resource("https://example.com/", "text/html");
   LoadURL("https://example.com/");
   main_resource.Complete(R"HTML(
@@ -157,7 +157,7 @@ TEST_F(IntersectionObserverTest, ResumePostsTask) {
   IntersectionObserverInit* observer_init = IntersectionObserverInit::Create();
   DummyExceptionStateForTesting exception_state;
   TestIntersectionObserverDelegate* observer_delegate =
-      new TestIntersectionObserverDelegate(GetDocument());
+      MakeGarbageCollected<TestIntersectionObserverDelegate>(GetDocument());
   IntersectionObserver* observer = IntersectionObserver::Create(
       observer_init, *observer_delegate, exception_state);
   ASSERT_FALSE(exception_state.HadException());
@@ -205,7 +205,7 @@ TEST_F(IntersectionObserverTest, ResumePostsTask) {
 }
 
 TEST_F(IntersectionObserverTest, HitTestAfterMutation) {
-  WebView().Resize(WebSize(800, 600));
+  WebView().MainFrameWidget()->Resize(WebSize(800, 600));
   SimRequest main_resource("https://example.com/", "text/html");
   LoadURL("https://example.com/");
   main_resource.Complete(R"HTML(
@@ -217,7 +217,7 @@ TEST_F(IntersectionObserverTest, HitTestAfterMutation) {
   IntersectionObserverInit* observer_init = IntersectionObserverInit::Create();
   DummyExceptionStateForTesting exception_state;
   TestIntersectionObserverDelegate* observer_delegate =
-      new TestIntersectionObserverDelegate(GetDocument());
+      MakeGarbageCollected<TestIntersectionObserverDelegate>(GetDocument());
   IntersectionObserver* observer = IntersectionObserver::Create(
       observer_init, *observer_delegate, exception_state);
   ASSERT_FALSE(exception_state.HadException());
@@ -252,7 +252,7 @@ TEST_F(IntersectionObserverTest, HitTestAfterMutation) {
 }
 
 TEST_F(IntersectionObserverTest, DisconnectClearsNotifications) {
-  WebView().Resize(WebSize(800, 600));
+  WebView().MainFrameWidget()->Resize(WebSize(800, 600));
   SimRequest main_resource("https://example.com/", "text/html");
   LoadURL("https://example.com/");
   main_resource.Complete(R"HTML(
@@ -264,7 +264,7 @@ TEST_F(IntersectionObserverTest, DisconnectClearsNotifications) {
   IntersectionObserverInit* observer_init = IntersectionObserverInit::Create();
   DummyExceptionStateForTesting exception_state;
   TestIntersectionObserverDelegate* observer_delegate =
-      new TestIntersectionObserverDelegate(GetDocument());
+      MakeGarbageCollected<TestIntersectionObserverDelegate>(GetDocument());
   IntersectionObserver* observer = IntersectionObserver::Create(
       observer_init, *observer_delegate, exception_state);
   ASSERT_FALSE(exception_state.HadException());
@@ -289,7 +289,7 @@ TEST_F(IntersectionObserverTest, DisconnectClearsNotifications) {
 
 TEST_F(IntersectionObserverTest, RootIntersectionWithForceZeroLayoutHeight) {
   WebView().GetSettings()->SetForceZeroLayoutHeight(true);
-  WebView().Resize(WebSize(800, 600));
+  WebView().MainFrameWidget()->Resize(WebSize(800, 600));
   SimRequest main_resource("https://example.com/", "text/html");
   LoadURL("https://example.com/");
   main_resource.Complete(R"HTML(
@@ -314,7 +314,7 @@ TEST_F(IntersectionObserverTest, RootIntersectionWithForceZeroLayoutHeight) {
   IntersectionObserverInit* observer_init = IntersectionObserverInit::Create();
   DummyExceptionStateForTesting exception_state;
   TestIntersectionObserverDelegate* observer_delegate =
-      new TestIntersectionObserverDelegate(GetDocument());
+      MakeGarbageCollected<TestIntersectionObserverDelegate>(GetDocument());
   IntersectionObserver* observer = IntersectionObserver::Create(
       observer_init, *observer_delegate, exception_state);
   ASSERT_FALSE(exception_state.HadException());
@@ -349,7 +349,7 @@ TEST_F(IntersectionObserverV2Test, TrackVisibilityInit) {
   IntersectionObserverInit* observer_init = IntersectionObserverInit::Create();
   DummyExceptionStateForTesting exception_state;
   TestIntersectionObserverDelegate* observer_delegate =
-      new TestIntersectionObserverDelegate(GetDocument());
+      MakeGarbageCollected<TestIntersectionObserverDelegate>(GetDocument());
   IntersectionObserver* observer = IntersectionObserver::Create(
       observer_init, *observer_delegate, exception_state);
   ASSERT_FALSE(exception_state.HadException());
@@ -378,7 +378,7 @@ TEST_F(IntersectionObserverV2Test, TrackVisibilityInit) {
 }
 
 TEST_F(IntersectionObserverV2Test, BasicOcclusion) {
-  WebView().Resize(WebSize(800, 600));
+  WebView().MainFrameWidget()->Resize(WebSize(800, 600));
   SimRequest main_resource("https://example.com/", "text/html");
   LoadURL("https://example.com/");
   main_resource.Complete(R"HTML(
@@ -399,7 +399,7 @@ TEST_F(IntersectionObserverV2Test, BasicOcclusion) {
   observer_init->setDelay(100);
   DummyExceptionStateForTesting exception_state;
   TestIntersectionObserverDelegate* observer_delegate =
-      new TestIntersectionObserverDelegate(GetDocument());
+      MakeGarbageCollected<TestIntersectionObserverDelegate>(GetDocument());
   IntersectionObserver* observer = IntersectionObserver::Create(
       observer_init, *observer_delegate, exception_state);
   ASSERT_FALSE(exception_state.HadException());
@@ -437,7 +437,7 @@ TEST_F(IntersectionObserverV2Test, BasicOcclusion) {
 }
 
 TEST_F(IntersectionObserverV2Test, BasicOpacity) {
-  WebView().Resize(WebSize(800, 600));
+  WebView().MainFrameWidget()->Resize(WebSize(800, 600));
   SimRequest main_resource("https://example.com/", "text/html");
   LoadURL("https://example.com/");
   main_resource.Complete(R"HTML(
@@ -457,7 +457,7 @@ TEST_F(IntersectionObserverV2Test, BasicOpacity) {
   observer_init->setDelay(100);
   DummyExceptionStateForTesting exception_state;
   TestIntersectionObserverDelegate* observer_delegate =
-      new TestIntersectionObserverDelegate(GetDocument());
+      MakeGarbageCollected<TestIntersectionObserverDelegate>(GetDocument());
   IntersectionObserver* observer = IntersectionObserver::Create(
       observer_init, *observer_delegate, exception_state);
   ASSERT_FALSE(exception_state.HadException());
@@ -486,7 +486,7 @@ TEST_F(IntersectionObserverV2Test, BasicOpacity) {
 }
 
 TEST_F(IntersectionObserverV2Test, BasicTransform) {
-  WebView().Resize(WebSize(800, 600));
+  WebView().MainFrameWidget()->Resize(WebSize(800, 600));
   SimRequest main_resource("https://example.com/", "text/html");
   LoadURL("https://example.com/");
   main_resource.Complete(R"HTML(
@@ -506,7 +506,7 @@ TEST_F(IntersectionObserverV2Test, BasicTransform) {
   observer_init->setDelay(100);
   DummyExceptionStateForTesting exception_state;
   TestIntersectionObserverDelegate* observer_delegate =
-      new TestIntersectionObserverDelegate(GetDocument());
+      MakeGarbageCollected<TestIntersectionObserverDelegate>(GetDocument());
   IntersectionObserver* observer = IntersectionObserver::Create(
       observer_init, *observer_delegate, exception_state);
   ASSERT_FALSE(exception_state.HadException());

@@ -11,7 +11,7 @@
 #include "build/buildflag.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/prefs/pref_member.h"
-#include "components/signin/core/browser/profile_management_switches.h"
+#include "components/signin/core/browser/account_consistency_method.h"
 #include "components/signin/core/browser/signin_buildflags.h"
 
 namespace user_prefs {
@@ -29,7 +29,6 @@ extern const char kAccountConsistencyFeatureMethodParameter[];
 
 // Account consistency method feature values.
 extern const char kAccountConsistencyFeatureMethodMirror[];
-extern const char kAccountConsistencyFeatureMethodDiceFixAuthErrors[];
 extern const char kAccountConsistencyFeatureMethodDiceMigration[];
 extern const char kAccountConsistencyFeatureMethodDice[];
 

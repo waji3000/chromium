@@ -17,18 +17,18 @@ class ScrollTree;
 // progress of scrolling in some scroll container.
 //
 // This is the compositor-side representation of the web concept expressed in
-// https://wicg.github.io/scroll-animations/#scrolltimeline-interface. There are
-// differences between this class and the web definition of a ScrollTimeline.
-// For example the compositor does not know (or care) about 'writing modes', so
-// this class only tracks whether the ScrollTimeline orientation is horizontal
-// or vertical. Blink is expected to resolve any such 'web' requirements and
-// construct/update the compositor ScrollTimeline accordingly.
+// https://wicg.github.io/scroll-animations/#scrolltimeline-interface.
 class CC_ANIMATION_EXPORT ScrollTimeline {
  public:
-  enum ScrollDirection { Horizontal, Vertical };
+  enum ScrollDirection {
+    ScrollUp,
+    ScrollDown,
+    ScrollLeft,
+    ScrollRight,
+  };
 
   ScrollTimeline(base::Optional<ElementId> scroller_id,
-                 ScrollDirection orientation,
+                 ScrollDirection direction,
                  base::Optional<double> start_scroll_offset,
                  base::Optional<double> end_scroll_offset,
                  double time_range);
@@ -53,6 +53,17 @@ class CC_ANIMATION_EXPORT ScrollTimeline {
 
   void PromoteScrollTimelinePendingToActive();
 
+  base::Optional<ElementId> GetActiveIdForTest() const { return active_id_; }
+  base::Optional<ElementId> GetPendingIdForTest() const { return pending_id_; }
+  ScrollDirection GetDirectionForTest() const { return direction_; }
+  base::Optional<double> GetStartScrollOffsetForTest() const {
+    return start_scroll_offset_;
+  }
+  base::Optional<double> GetEndScrollOffsetForTest() const {
+    return end_scroll_offset_;
+  }
+  double GetTimeRangeForTest() const { return time_range_; }
+
  private:
   // The scroller which this ScrollTimeline is based on. The same underlying
   // scroll source may have different ids in the pending and active tree (see
@@ -60,9 +71,9 @@ class CC_ANIMATION_EXPORT ScrollTimeline {
   base::Optional<ElementId> active_id_;
   base::Optional<ElementId> pending_id_;
 
-  // The orientation of the ScrollTimeline indicates which axis of the scroller
-  // it should base its current time on - either the horizontal or vertical.
-  ScrollDirection orientation_;
+  // The direction of the ScrollTimeline indicates which axis of the scroller
+  // it should base its current time on, and where the origin point is.
+  ScrollDirection direction_;
 
   base::Optional<double> start_scroll_offset_;
   base::Optional<double> end_scroll_offset_;

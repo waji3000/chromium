@@ -116,6 +116,10 @@ class FakeAppInstance : public mojom::AppInstance {
       const std::string& icon_resource_id,
       mojom::ScaleFactor scale_factor,
       RequestShortcutIconDeprecatedCallback callback) override {}
+  void RequestPackageIcon(const std::string& package_name,
+                          int dimension,
+                          bool normalize,
+                          RequestPackageIconCallback callback) override {}
   void RemoveCachedIcon(const std::string& icon_resource_id) override;
   void CanHandleResolutionDeprecated(
       const std::string& package_name,
@@ -176,10 +180,9 @@ class FakeAppInstance : public mojom::AppInstance {
   void SetTaskInfo(int32_t task_id,
                    const std::string& package_name,
                    const std::string& activity);
-  void SendRefreshPackageList(
-      const std::vector<mojom::ArcPackageInfo>& packages);
-  void SendPackageAdded(const mojom::ArcPackageInfo& package);
-  void SendPackageModified(const mojom::ArcPackageInfo& package);
+  void SendRefreshPackageList(std::vector<mojom::ArcPackageInfoPtr> packages);
+  void SendPackageAdded(mojom::ArcPackageInfoPtr package);
+  void SendPackageModified(mojom::ArcPackageInfoPtr package);
   void SendPackageUninstalled(const std::string& pacakge_name);
 
   void SendInstallationStarted(const std::string& package_name);

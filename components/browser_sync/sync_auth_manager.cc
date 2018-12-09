@@ -51,13 +51,6 @@ constexpr net::BackoffEntry::Policy kRequestAccessTokenBackoffPolicy = {
 
 }  // namespace
 
-SyncAuthManager::SyncAccountInfo::SyncAccountInfo() = default;
-
-SyncAuthManager::SyncAccountInfo::SyncAccountInfo(
-    const AccountInfo& account_info,
-    bool is_primary)
-    : account_info(account_info), is_primary(is_primary) {}
-
 SyncAuthManager::SyncAuthManager(
     syncer::SyncPrefs* sync_prefs,
     identity::IdentityManager* identity_manager,
@@ -92,9 +85,9 @@ void SyncAuthManager::RegisterForAuthNotifications() {
   sync_account_ = DetermineAccountToUse();
 }
 
-SyncAuthManager::SyncAccountInfo SyncAuthManager::GetActiveAccountInfo() const {
+syncer::SyncAccountInfo SyncAuthManager::GetActiveAccountInfo() const {
   if (!registered_for_auth_notifications_) {
-    return SyncAccountInfo();
+    return syncer::SyncAccountInfo();
   }
 
 #if defined(OS_CHROMEOS)
@@ -264,8 +257,7 @@ void SyncAuthManager::OnPrimaryAccountCleared(
 }
 
 void SyncAuthManager::OnRefreshTokenUpdatedForAccount(
-    const AccountInfo& account_info,
-    bool is_valid) {
+    const AccountInfo& account_info) {
   if (UpdateSyncAccountIfNecessary()) {
     // If the syncing account was updated as a result of this, then all that's
     // necessary has been handled; nothing else to be done here.
@@ -276,7 +268,22 @@ void SyncAuthManager::OnRefreshTokenUpdatedForAccount(
     return;
   }
 
-  if (!is_valid) {
+  // Compute the validity of the new refresh token: The identity code sets an
+  // account's refresh token to be invalid (error
+  // CREDENTIALS_REJECTED_BY_CLIENT) if the user signs out of that account on
+  // the web.
+  // TODO(blundell): Hide this logic inside IdentityManager.
+  bool is_refresh_token_valid = true;
+  GoogleServiceAuthError token_error =
+      identity_manager_->GetErrorStateOfRefreshTokenForAccount(
+          account_info.account_id);
+  if (token_error == GoogleServiceAuthError::FromInvalidGaiaCredentialsReason(
+                         GoogleServiceAuthError::InvalidGaiaCredentialsReason::
+                             CREDENTIALS_REJECTED_BY_CLIENT)) {
+    is_refresh_token_valid = false;
+  }
+
+  if (!is_refresh_token_valid) {
     // When the refresh token is replaced by an invalid token, Sync must be
     // stopped immediately, even if the current access token is still valid.
     // This happens e.g. when the user signs out of the web with Dice enabled.
@@ -351,36 +358,16 @@ void SyncAuthManager::ResetRequestAccessTokenBackoffForTest() {
   request_access_token_backoff_.Reset();
 }
 
-SyncAuthManager::SyncAccountInfo SyncAuthManager::DetermineAccountToUse()
-    const {
+syncer::SyncAccountInfo SyncAuthManager::DetermineAccountToUse() const {
   DCHECK(registered_for_auth_notifications_);
-
-  // If there is a "primary account", i.e. the user explicitly chose to
-  // sign-in to Chrome, then always use that account.
-  if (identity_manager_->HasPrimaryAccount()) {
-    return SyncAccountInfo(identity_manager_->GetPrimaryAccountInfo(),
-                           /*is_primary=*/true);
-  }
-
-  // Otherwise, fall back to the default content area signed-in account.
-  // TODO(crbug.com/871221): Add tests for this code path.
-  if (base::FeatureList::IsEnabled(switches::kSyncStandaloneTransport) &&
-      base::FeatureList::IsEnabled(switches::kSyncSupportSecondaryAccount)) {
-    // Check if there is a content area signed-in account, and we have a refresh
-    // token for it.
-    std::vector<AccountInfo> cookie_accounts =
-        identity_manager_->GetAccountsInCookieJar("SyncAuthManager");
-    if (!cookie_accounts.empty() &&
-        identity_manager_->HasAccountWithRefreshToken(
-            cookie_accounts[0].account_id)) {
-      return SyncAccountInfo(cookie_accounts[0], /*is_primary=*/false);
-    }
-  }
-  return SyncAccountInfo();
+  return syncer::DetermineAccountToUse(
+      identity_manager_,
+      base::FeatureList::IsEnabled(switches::kSyncStandaloneTransport) &&
+          base::FeatureList::IsEnabled(switches::kSyncSupportSecondaryAccount));
 }
 
 bool SyncAuthManager::UpdateSyncAccountIfNecessary() {
-  SyncAccountInfo new_account = DetermineAccountToUse();
+  syncer::SyncAccountInfo new_account = DetermineAccountToUse();
   // If we're already using this account and its |is_primary| bit hasn't changed
   // (or there was and is no account to use), then there's nothing to do.
   if (new_account.account_info.account_id ==
@@ -394,7 +381,7 @@ bool SyncAuthManager::UpdateSyncAccountIfNecessary() {
 
   // Sign out of the old account (if any).
   if (!sync_account_.account_info.account_id.empty()) {
-    sync_account_ = SyncAccountInfo();
+    sync_account_ = syncer::SyncAccountInfo();
     // Also clear any pending request or auth errors we might have, since they
     // aren't meaningful anymore.
     Clear();

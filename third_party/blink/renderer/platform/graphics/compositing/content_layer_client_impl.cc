@@ -84,7 +84,7 @@ static int GetTransformId(const TransformPaintPropertyNode* transform,
   return transform_id;
 }
 
-// This is the SPv2 version of GraphicsLayer::LayerAsJSONInternal().
+// This is the CAP version of GraphicsLayer::LayerAsJSONInternal().
 std::unique_ptr<JSONObject> ContentLayerClientImpl::LayerAsJSON(
     LayerAsJSONContext& context) const {
   std::unique_ptr<JSONObject> json = JSONObject::Create();
@@ -201,8 +201,7 @@ scoped_refptr<cc::PictureLayer> ContentLayerClientImpl::UpdateCcPictureLayer(
     json->SetArray("displayItems",
                    paint_artifact->GetDisplayItemList().SubsequenceAsJSON(
                        chunk.begin_index, chunk.end_index,
-                       DisplayItemList::kSkipNonDrawings |
-                           DisplayItemList::kShownOnlyDisplayItemTypes));
+                       DisplayItemList::kShownOnlyDisplayItemTypes));
     paint_chunk_debug_data_->PushObject(std::move(json));
   }
 #endif

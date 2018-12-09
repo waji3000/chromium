@@ -68,6 +68,7 @@ const char* const kKnownSettings[] = {
     kAttestationForContentProtectionEnabled,
     kCastReceiverName,
     kDeviceAttestationEnabled,
+    kDeviceAutoUpdateTimeRestrictions,
     kDeviceDisabled,
     kDeviceDisabledMessage,
     kDeviceHostnameTemplate,
@@ -76,13 +77,14 @@ const char* const kKnownSettings[] = {
     kDeviceLoginScreenLocales,
     kDeviceOffHours,
     kDeviceOwner,
-    kDevicePrintersAccessMode,
-    kDevicePrintersBlacklist,
-    kDevicePrintersConfigurations,
-    kDevicePrintersWhitelist,
+    kDeviceNativePrinters,
+    kDeviceNativePrintersAccessMode,
+    kDeviceNativePrintersBlacklist,
+    kDeviceNativePrintersWhitelist,
     kDeviceQuirksDownloadEnabled,
     kDeviceUnaffiliatedCrostiniAllowed,
     kDeviceWallpaperImage,
+    kDeviceDisplayResolution,
     kDisplayRotationDefault,
     kExtensionCacheSize,
     kHeartbeatEnabled,
@@ -90,6 +92,7 @@ const char* const kKnownSettings[] = {
     kLoginAuthenticationBehavior,
     kLoginVideoCaptureAllowedUrls,
     kMinimumRequiredChromeVersion,
+    kPluginVmAllowed,
     kPolicyMissingMitigationMode,
     kRebootOnShutdown,
     kReleaseChannel,
@@ -105,6 +108,7 @@ const char* const kKnownSettings[] = {
     kReportOsUpdateStatus,
     kReportRunningKioskApp,
     kReportUploadFrequency,
+    kSamlLoginAuthenticationType,
     kServiceAccountIdentity,
     kSignedDataRoamingEnabled,
     kStartUpFlags,
@@ -118,8 +122,6 @@ const char* const kKnownSettings[] = {
     kUpdateDisabled,
     kVariationsRestrictParameter,
     kVirtualMachinesAllowed,
-    kSamlLoginAuthenticationType,
-    kDeviceAutoUpdateTimeRestrictions,
 };
 
 // Re-use the DecodeJsonStringAndNormalize from device_policy_decoder_chromeos.h
@@ -584,6 +586,19 @@ void DecodeGenericPolicies(const em::ChromeDeviceSettingsProto& policy,
         policy.display_rotation_default().display_rotation_default());
   }
 
+  if (policy.has_device_display_resolution() &&
+      policy.device_display_resolution().has_device_display_resolution()) {
+    SetJsonDeviceSetting(
+        kDeviceDisplayResolution, policy::key::kDeviceDisplayResolution,
+        policy.device_display_resolution().device_display_resolution(),
+        new_values_cache);
+  } else {
+    // Set empty value if policy is missing, to make sure that webui
+    // will receive setting update.
+    new_values_cache->SetValue(kDeviceDisplayResolution,
+                               std::make_unique<base::DictionaryValue>());
+  }
+
   if (policy.has_allow_bluetooth() &&
       policy.allow_bluetooth().has_allow_bluetooth()) {
     new_values_cache->SetBoolean(kAllowBluetooth,
@@ -675,6 +690,15 @@ void DecodeGenericPolicies(const em::ChromeDeviceSettingsProto& policy,
           kDeviceUnaffiliatedCrostiniAllowed,
           std::make_unique<base::Value>(
               container.device_unaffiliated_crostini_allowed()));
+    }
+  }
+
+  if (policy.has_plugin_vm_allowed()) {
+    const em::PluginVmAllowedProto& container(policy.plugin_vm_allowed());
+    if (container.has_plugin_vm_allowed()) {
+      new_values_cache->SetValue(
+          kPluginVmAllowed,
+          std::make_unique<base::Value>(container.plugin_vm_allowed()));
     }
   }
 }

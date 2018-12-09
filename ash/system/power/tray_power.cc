@@ -15,7 +15,6 @@
 #include "ash/system/date/date_view.h"
 #include "ash/system/power/battery_notification.h"
 #include "ash/system/power/dual_role_notification.h"
-#include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/tray_constants.h"
 #include "ash/system/tray/tray_item_view.h"
 #include "ash/system/tray/tray_utils.h"
@@ -50,6 +49,15 @@ PowerTrayView::PowerTrayView(Shelf* shelf) : TrayItemView(shelf) {
 
 PowerTrayView::~PowerTrayView() {
   PowerStatus::Get()->RemoveObserver(this);
+}
+
+gfx::Size PowerTrayView::CalculatePreferredSize() const {
+  // The battery icon is a lot thinner than other icons, hence the special
+  // logic.
+  gfx::Size standard_size = TrayItemView::CalculatePreferredSize();
+  if (IsHorizontalAlignment())
+    return gfx::Size(kUnifiedTrayBatteryWidth, standard_size.height());
+  return standard_size;
 }
 
 void PowerTrayView::GetAccessibleNodeData(ui::AXNodeData* node_data) {
@@ -107,29 +115,4 @@ void PowerTrayView::UpdateImage() {
 }
 
 }  // namespace tray
-
-TrayPower::TrayPower(SystemTray* system_tray)
-    : SystemTrayItem(system_tray, SystemTrayItemUmaType::UMA_POWER) {}
-
-TrayPower::~TrayPower() = default;
-
-views::View* TrayPower::CreateTrayView(LoginStatus status) {
-  // There may not be enough information when this is created about whether
-  // there is a battery or not. So always create this, and adjust visibility as
-  // necessary.
-  CHECK(power_tray_ == nullptr);
-  power_tray_ = new tray::PowerTrayView(system_tray()->shelf());
-  return power_tray_;
-}
-
-views::View* TrayPower::CreateDefaultView(LoginStatus status) {
-  // Make sure icon status is up to date. (Also triggers stub activation).
-  PowerStatus::Get()->RequestStatusUpdate();
-  return nullptr;
-}
-
-void TrayPower::OnTrayViewDestroyed() {
-  power_tray_ = nullptr;
-}
-
 }  // namespace ash

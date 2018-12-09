@@ -218,7 +218,8 @@ const int kLocationAuthorizationStatusCount = 4;
 #pragma mark - LocationBarURLLoader
 
 - (void)loadGURLFromLocationBar:(const GURL&)url
-                     transition:(ui::PageTransition)transition {
+                     transition:(ui::PageTransition)transition
+                    disposition:(WindowOpenDisposition)disposition {
   if (url.SchemeIs(url::kJavaScriptScheme)) {
     // Evaluate the URL as JavaScript if its scheme is JavaScript.
     NSString* jsToEval = [base::SysUTF8ToNSString(url.GetContent())
@@ -235,7 +236,9 @@ const int kLocationAuthorizationStatusCount = 4;
     web::NavigationManager::WebLoadParams params(url);
     params.transition_type = transition;
     params.extra_headers = [self variationHeadersForURL:url];
-    [self.URLLoader loadURLWithParams:params];
+    ChromeLoadParams chromeParams(params);
+    chromeParams.disposition = disposition;
+    [self.URLLoader loadURLWithParams:chromeParams];
 
     if (google_util::IsGoogleSearchUrl(url)) {
       UMA_HISTOGRAM_ENUMERATION(
@@ -261,7 +264,7 @@ const int kLocationAuthorizationStatusCount = 4;
 - (void)focusOmnibox {
   // When the NTP and fakebox are visible, make the fakebox animates into place
   // before focusing the omnibox.webState
-  if (IsVisibleUrlNewTabPage([self webState]) &&
+  if (IsVisibleURLNewTabPage([self webState]) &&
       !self.browserState->IsOffTheRecord()) {
     [self.viewController.dispatcher focusFakebox];
   } else {
@@ -370,7 +373,8 @@ const int kLocationAuthorizationStatusCount = 4;
     web::NavigationManager::WebLoadParams params(searchURL);
     params.transition_type = ui::PageTransitionFromInt(
         ui::PAGE_TRANSITION_LINK | ui::PAGE_TRANSITION_FROM_ADDRESS_BAR);
-    [self.URLLoader loadURLWithParams:params];
+    ChromeLoadParams chromeParams(params);
+    [self.URLLoader loadURLWithParams:chromeParams];
   }
 }
 

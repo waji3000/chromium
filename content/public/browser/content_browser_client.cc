@@ -134,6 +134,7 @@ network::mojom::URLLoaderFactoryPtrInfo
 ContentBrowserClient::CreateURLLoaderFactoryForNetworkRequests(
     RenderProcessHost* process,
     network::mojom::NetworkContext* network_context,
+    network::mojom::TrustedURLLoaderHeaderClientPtrInfo* header_client,
     const url::Origin& request_initiator) {
   return network::mojom::URLLoaderFactoryPtrInfo();
 }
@@ -194,6 +195,11 @@ bool ContentBrowserClient::ShouldTryToUseExistingProcessHost(
   return false;
 }
 
+bool ContentBrowserClient::ShouldSubframesTryToReuseExistingProcess(
+    RenderFrameHost* main_frame) {
+  return true;
+}
+
 bool ContentBrowserClient::ShouldSwapBrowsingInstancesForNavigation(
     SiteInstance* site_instance,
     const GURL& current_url,
@@ -235,6 +241,10 @@ bool ContentBrowserClient::ShouldEnableStrictSiteIsolation() {
 #else
   return true;
 #endif
+}
+
+bool ContentBrowserClient::ShouldDisableSiteIsolation() {
+  return false;
 }
 
 bool ContentBrowserClient::IsFileAccessAllowed(
@@ -418,6 +428,11 @@ ContentBrowserClient::GetSystemSharedURLLoaderFactory() {
   return nullptr;
 }
 
+network::mojom::NetworkContext*
+ContentBrowserClient::GetSystemNetworkContext() {
+  return nullptr;
+}
+
 std::string ContentBrowserClient::GetGeolocationApiKey() {
   return std::string();
 }
@@ -488,6 +503,14 @@ bool ContentBrowserClient::CanCreateWindow(
 
 SpeechRecognitionManagerDelegate*
     ContentBrowserClient::CreateSpeechRecognitionManagerDelegate() {
+  return nullptr;
+}
+
+TtsControllerDelegate* ContentBrowserClient::GetTtsControllerDelegate() {
+  return nullptr;
+}
+
+TtsPlatform* ContentBrowserClient::GetTtsPlatform() {
   return nullptr;
 }
 
@@ -567,12 +590,6 @@ bool ContentBrowserClient::IsPluginAllowedToUseDevChannelAPIs(
   return false;
 }
 
-std::string ContentBrowserClient::GetServiceUserIdForBrowserContext(
-    BrowserContext* browser_context) {
-  DCHECK(browser_context);
-  return base::GenerateGUID();
-}
-
 bool ContentBrowserClient::BindAssociatedInterfaceRequestFromFrame(
     RenderFrameHost* render_frame_host,
     const std::string& interface_name,
@@ -593,10 +610,10 @@ ContentBrowserClient::GetReceiverPresentationServiceDelegate(
 }
 
 void ContentBrowserClient::OpenURL(
-    content::BrowserContext* browser_context,
+    content::SiteInstance* site_instance,
     const content::OpenURLParams& params,
     const base::Callback<void(content::WebContents*)>& callback) {
-  DCHECK(browser_context);
+  DCHECK(site_instance);
   callback.Run(nullptr);
 }
 
@@ -654,6 +671,10 @@ ContentBrowserClient::OutOfProcessServiceInfo::OutOfProcessServiceInfo(
 ContentBrowserClient::OutOfProcessServiceInfo::~OutOfProcessServiceInfo() =
     default;
 
+void ContentBrowserClient::HandleServiceRequest(
+    const std::string& service_name,
+    service_manager::mojom::ServiceRequest request) {}
+
 bool ContentBrowserClient::ShouldTerminateOnServiceQuit(
     const service_manager::Identity& id) {
   return false;
@@ -664,9 +685,8 @@ ContentBrowserClient::GetExtraServiceManifests() {
   return std::vector<ContentBrowserClient::ServiceManifestInfo>();
 }
 
-std::vector<service_manager::Identity>
-ContentBrowserClient::GetStartupServices() {
-  return std::vector<service_manager::Identity>();
+std::vector<std::string> ContentBrowserClient::GetStartupServices() {
+  return std::vector<std::string>();
 }
 
 ::rappor::RapporService* ContentBrowserClient::GetRapporService() {
@@ -700,9 +720,11 @@ void ContentBrowserClient::RegisterNonNetworkSubresourceURLLoaderFactories(
 bool ContentBrowserClient::WillCreateURLLoaderFactory(
     BrowserContext* browser_context,
     RenderFrameHost* frame,
+    int render_process_id,
     bool is_navigation,
     const url::Origin& request_initiator,
     network::mojom::URLLoaderFactoryRequest* factory_request,
+    network::mojom::TrustedURLLoaderHeaderClientPtrInfo* header_client,
     bool* bypass_redirect_checks) {
   DCHECK(browser_context);
   return false;
@@ -734,7 +756,7 @@ network::mojom::NetworkContextPtr ContentBrowserClient::CreateNetworkContext(
   network::mojom::NetworkContextPtr network_context;
   network::mojom::NetworkContextParamsPtr context_params =
       network::mojom::NetworkContextParams::New();
-  context_params->user_agent = GetContentClient()->GetUserAgent();
+  context_params->user_agent = GetUserAgent();
   context_params->accept_language = "en-us,en";
   context_params->enable_data_url_support = true;
   GetNetworkService()->CreateNetworkContext(MakeRequest(&network_context),
@@ -820,7 +842,9 @@ bool ContentBrowserClient::HandleExternalProtocol(
     NavigationUIData* navigation_data,
     bool is_main_frame,
     ui::PageTransition page_transition,
-    bool has_user_gesture) {
+    bool has_user_gesture,
+    const std::string& method,
+    const net::HttpRequestHeaders& headers) {
   return true;
 }
 
@@ -859,7 +883,8 @@ void ContentBrowserClient::OnNetworkServiceDataUseUpdate(
 
 content::PreviewsState ContentBrowserClient::DetermineAllowedPreviews(
     content::PreviewsState initial_state,
-    content::NavigationHandle* navigation_handle) {
+    content::NavigationHandle* navigation_handle,
+    const GURL& current_navigation_url) {
   return content::PREVIEWS_OFF;
 }
 
@@ -868,6 +893,14 @@ content::PreviewsState ContentBrowserClient::DetermineCommittedPreviews(
     content::NavigationHandle* navigation_handle,
     const net::HttpResponseHeaders* response_headers) {
   return content::PREVIEWS_OFF;
+}
+
+std::string ContentBrowserClient::GetProduct() const {
+  return std::string();
+}
+
+std::string ContentBrowserClient::GetUserAgent() const {
+  return std::string();
 }
 
 }  // namespace content

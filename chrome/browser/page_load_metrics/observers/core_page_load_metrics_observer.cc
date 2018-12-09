@@ -72,10 +72,6 @@ const char kHistogramFirstPaint[] =
     "PageLoad.PaintTiming.NavigationToFirstPaint";
 const char kBackgroundHistogramFirstPaint[] =
     "PageLoad.PaintTiming.NavigationToFirstPaint.Background";
-const char kHistogramFirstTextPaint[] =
-    "PageLoad.PaintTiming.NavigationToFirstTextPaint";
-const char kBackgroundHistogramFirstTextPaint[] =
-    "PageLoad.PaintTiming.NavigationToFirstTextPaint.Background";
 const char kHistogramFirstImagePaint[] =
     "PageLoad.PaintTiming.NavigationToFirstImagePaint";
 const char kBackgroundHistogramFirstImagePaint[] =
@@ -212,6 +208,8 @@ const char kHistogramPageLoadTotalBytes[] = "PageLoad.Experimental.Bytes.Total";
 const char kHistogramPageLoadNetworkBytes[] =
     "PageLoad.Experimental.Bytes.Network";
 const char kHistogramPageLoadCacheBytes[] = "PageLoad.Experimental.Bytes.Cache";
+const char kHistogramPageLoadNetworkBytesIncludingHeaders[] =
+    "PageLoad.Experimental.Bytes.NetworkIncludingHeaders";
 
 const char kHistogramLoadTypeTotalBytesForwardBack[] =
     "PageLoad.Experimental.Bytes.Total.LoadType.ForwardBackNavigation";
@@ -267,6 +265,7 @@ CorePageLoadMetricsObserver::CorePageLoadMetricsObserver()
       num_network_resources_(0),
       cache_bytes_(0),
       network_bytes_(0),
+      network_bytes_including_headers_(0),
       redirect_chain_size_(0) {}
 
 CorePageLoadMetricsObserver::~CorePageLoadMetricsObserver() {}
@@ -364,19 +363,6 @@ void CorePageLoadMetricsObserver::OnFirstPaintInPage(
     PAGE_LOAD_HISTOGRAM(internal::kHistogramForegroundToFirstPaint,
                         timing.paint_timing->first_paint.value() -
                             info.first_foreground_time.value());
-  }
-}
-
-void CorePageLoadMetricsObserver::OnFirstTextPaintInPage(
-    const page_load_metrics::mojom::PageLoadTiming& timing,
-    const page_load_metrics::PageLoadExtraInfo& info) {
-  if (WasStartedInForegroundOptionalEventInForeground(
-          timing.paint_timing->first_text_paint, info)) {
-    PAGE_LOAD_HISTOGRAM(internal::kHistogramFirstTextPaint,
-                        timing.paint_timing->first_text_paint.value());
-  } else {
-    PAGE_LOAD_HISTOGRAM(internal::kBackgroundHistogramFirstTextPaint,
-                        timing.paint_timing->first_text_paint.value());
   }
 }
 
@@ -789,6 +775,14 @@ void CorePageLoadMetricsObserver::OnLoadedResource(
   }
 }
 
+void CorePageLoadMetricsObserver::OnResourceDataUseObserved(
+    const std::vector<page_load_metrics::mojom::ResourceDataUpdatePtr>&
+        resources) {
+  for (auto const& resource : resources) {
+    network_bytes_including_headers_ += resource->delta_bytes;
+  }
+}
+
 // This method records values for metrics that were not recorded during any
 // other event, or records failure status for metrics that have not been
 // collected yet. This is meant to be called at the end of a page lifetime, for
@@ -886,6 +880,8 @@ void CorePageLoadMetricsObserver::RecordByteAndResourceHistograms(
                        network_bytes_);
   PAGE_BYTES_HISTOGRAM(internal::kHistogramPageLoadCacheBytes, cache_bytes_);
   PAGE_BYTES_HISTOGRAM(internal::kHistogramPageLoadTotalBytes, total_bytes);
+  PAGE_BYTES_HISTOGRAM(internal::kHistogramPageLoadNetworkBytesIncludingHeaders,
+                       network_bytes_including_headers_);
 
   switch (GetPageLoadType(transition_)) {
     case LOAD_TYPE_RELOAD:

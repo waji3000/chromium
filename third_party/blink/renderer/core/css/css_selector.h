@@ -163,7 +163,7 @@ class CORE_EXPORT CSSSelector {
     kPseudoLink,
     kPseudoVisited,
     kPseudoAny,
-    kPseudoMatches,
+    kPseudoIs,
     kPseudoWhere,
     kPseudoAnyLink,
     kPseudoWebkitAnyLink,
@@ -380,12 +380,13 @@ class CORE_EXPORT CSSSelector {
   }
 
   bool MatchesPseudoElement() const;
+  bool IsTreeAbidingPseudoElement() const;
 
   bool HasContentPseudo() const;
   bool HasSlottedPseudo() const;
   bool HasDeepCombinatorOrShadowPseudo() const;
   bool NeedsUpdatedDistribution() const;
-  bool HasPseudoMatches() const;
+  bool HasPseudoIs() const;
   bool HasPseudoWhere() const;
 
  private:

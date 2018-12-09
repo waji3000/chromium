@@ -58,7 +58,7 @@ class CORE_EXPORT NGPaintFragment : public RefCounted<NGPaintFragment>,
       NGPhysicalOffset offset);
 
   // Next/last fragment for  when this is fragmented.
-  NGPaintFragment* Next() { return next_fragmented_.get(); }
+  NGPaintFragment* Next();
   void SetNext(scoped_refptr<NGPaintFragment>);
   NGPaintFragment* Last();
   NGPaintFragment* Last(const NGBreakToken&);
@@ -93,8 +93,8 @@ class CORE_EXPORT NGPaintFragment : public RefCounted<NGPaintFragment>,
       NGPaintFragment* current_;
     };
 
-    iterator begin() const { return iterator(first_); }
-    iterator end() const { return iterator(nullptr); }
+    CORE_EXPORT iterator begin() const { return iterator(first_); }
+    CORE_EXPORT iterator end() const { return iterator(nullptr); }
 
     // Returns the first |NGPaintFragment| in |FragmentRange| as STL container.
     // It is error to call |front()| for empty range.
@@ -109,7 +109,7 @@ class CORE_EXPORT NGPaintFragment : public RefCounted<NGPaintFragment>,
     // Returns number of fragments in this range. The complexity is O(n) where n
     // is number of elements.
     wtf_size_t size() const;
-    bool IsEmpty() const { return !first_; }
+    CORE_EXPORT bool IsEmpty() const { return !first_; }
 
     void ToList(Vector<NGPaintFragment*, 16>*) const;
 
@@ -170,10 +170,8 @@ class CORE_EXPORT NGPaintFragment : public RefCounted<NGPaintFragment>,
   LayoutRect VisualRect() const override { return visual_rect_; }
   void SetVisualRect(const LayoutRect& rect) { visual_rect_ = rect; }
 
-  LayoutRect SelectionVisualRect() const { return selection_visual_rect_; }
-  void SetSelectionVisualRect(const LayoutRect& rect) {
-    selection_visual_rect_ = rect;
-  }
+  LayoutRect SelectionVisualRect() const;
+  void SetSelectionVisualRect(const LayoutRect& rect);
 
   // CSS ink overflow https://www.w3.org/TR/css-overflow-3/#ink
   // Encloses all pixels painted by self + children.
@@ -272,6 +270,7 @@ class CORE_EXPORT NGPaintFragment : public RefCounted<NGPaintFragment>,
   // for a LayoutObject.
   static FragmentRange InlineFragmentsFor(const LayoutObject*);
 
+  const NGPaintFragment* LastForSameLayoutObject() const;
   NGPaintFragment* LastForSameLayoutObject();
 
   // Called when lines containing |child| is dirty.
@@ -310,6 +309,8 @@ class CORE_EXPORT NGPaintFragment : public RefCounted<NGPaintFragment>,
       LayoutObject*,
       HashMap<const LayoutObject*, NGPaintFragment*>* last_fragment_map);
 
+  void RemoveChildren();
+
   // Helps for PositionForPoint() when |this| falls in different categories.
   PositionWithAffinity PositionForPointInText(const NGPhysicalOffset&) const;
   PositionWithAffinity PositionForPointInInlineFormattingContext(
@@ -331,8 +332,18 @@ class CORE_EXPORT NGPaintFragment : public RefCounted<NGPaintFragment>,
   scoped_refptr<NGPaintFragment> first_child_;
   scoped_refptr<NGPaintFragment> next_sibling_;
 
-  // The next fragment for when this is fragmented.
-  scoped_refptr<NGPaintFragment> next_fragmented_;
+  struct RareData {
+    USING_FAST_MALLOC(RareData);
+
+   public:
+    // The next fragment for when this is fragmented.
+    scoped_refptr<NGPaintFragment> next_fragmented_;
+
+    // Used for invalidating selected fragment.
+    LayoutRect selection_visual_rect_;
+  };
+  RareData& EnsureRareData();
+  std::unique_ptr<RareData> rare_data_;
 
   NGPaintFragment* next_for_same_layout_object_ = nullptr;
   NGPhysicalOffset inline_offset_to_container_box_;
@@ -348,7 +359,6 @@ class CORE_EXPORT NGPaintFragment : public RefCounted<NGPaintFragment>,
   //
 
   LayoutRect visual_rect_;
-  LayoutRect selection_visual_rect_;
 };
 
 extern template class CORE_EXTERN_TEMPLATE_EXPORT

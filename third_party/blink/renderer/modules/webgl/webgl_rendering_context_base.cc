@@ -102,6 +102,7 @@
 #include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+#include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/waitable_event.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
@@ -644,7 +645,7 @@ CreateContextProviderOnWorkerThread(
   creation_info.url = url.Copy();
   creation_info.using_gpu_compositing = using_gpu_compositing;
   scoped_refptr<base::SingleThreadTaskRunner> task_runner =
-      Platform::Current()->MainThread()->GetTaskRunner();
+      Thread::MainThread()->GetTaskRunner();
   PostCrossThreadTask(*task_runner, FROM_HERE,
                       CrossThreadBind(&CreateContextProviderOnMainThread,
                                       CrossThreadUnretained(&creation_info),
@@ -866,7 +867,8 @@ static const GLenum kSupportedInternalFormatsES3[] = {
     GL_SRGB8_ALPHA8, GL_R8I,      GL_R8UI,     GL_R16I,       GL_R16UI,
     GL_R32I,         GL_R32UI,    GL_RG8I,     GL_RG8UI,      GL_RG16I,
     GL_RG16UI,       GL_RG32I,    GL_RG32UI,   GL_RGBA8I,     GL_RGBA8UI,
-    GL_RGBA16I,      GL_RGBA16UI, GL_RGBA32I,  GL_RGBA32UI,
+    GL_RGBA16I,      GL_RGBA16UI, GL_RGBA32I,  GL_RGBA32UI,   GL_RGB32I,
+    GL_RGB32UI,      GL_RGB8I,    GL_RGB8UI,   GL_RGB16I,     GL_RGB16UI,
 };
 
 // ES3 enums only supported by TexImage
@@ -882,12 +884,6 @@ static const GLenum kSupportedInternalFormatsTexImageES3[] = {
     GL_RGB9_E5,
     GL_RGB16F,
     GL_RGB32F,
-    GL_RGB8UI,
-    GL_RGB8I,
-    GL_RGB16UI,
-    GL_RGB16I,
-    GL_RGB32UI,
-    GL_RGB32I,
     GL_RGBA8_SNORM,
     GL_RGBA16F,
     GL_RGBA32F,
@@ -1009,7 +1005,7 @@ WebGLRenderingContextBase::WebGLRenderingContextBase(
     const CanvasContextCreationAttributesCore& requested_attributes,
     Platform::ContextType context_type)
     : CanvasRenderingContext(host, requested_attributes),
-      context_group_(new WebGLContextGroup()),
+      context_group_(MakeGarbageCollected<WebGLContextGroup>()),
       dispatch_context_lost_event_timer_(
           task_runner,
           this,
@@ -1619,8 +1615,10 @@ bool WebGLRenderingContextBase::CopyRenderingResultsFromDrawingBuffer(
   scoped_refptr<StaticBitmapImage> image = GetImage(kPreferAcceleration);
   if (!image)
     return false;
+  cc::PaintFlags paint_flags;
+  paint_flags.setBlendMode(SkBlendMode::kSrc);
   resource_provider->Canvas()->drawImage(image->PaintImageForCurrentFrame(), 0,
-                                         0, nullptr);
+                                         0, &paint_flags);
   return true;
 }
 
@@ -7553,13 +7551,13 @@ bool WebGLRenderingContextBase::ValidateHTMLImageElement(
     SynthesizeGLError(GL_INVALID_VALUE, function_name, "no image");
     return false;
   }
-  const KURL& url = image->CachedImage()->GetResponse().Url();
+  const KURL& url = image->CachedImage()->GetResponse().CurrentRequestUrl();
   if (url.IsNull() || url.IsEmpty() || !url.IsValid()) {
     SynthesizeGLError(GL_INVALID_VALUE, function_name, "invalid image");
     return false;
   }
 
-  if (WouldTaintOrigin(image, security_origin)) {
+  if (WouldTaintOrigin(image)) {
     exception_state.ThrowSecurityError(
         "The image element contains cross-origin data, and may not be loaded.");
     return false;
@@ -7577,7 +7575,7 @@ bool WebGLRenderingContextBase::ValidateCanvasRenderingContextHost(
     return false;
   }
 
-  if (WouldTaintOrigin(context_host, security_origin)) {
+  if (WouldTaintOrigin(context_host)) {
     exception_state.ThrowSecurityError("Tainted canvases may not be loaded.");
     return false;
   }
@@ -7594,7 +7592,7 @@ bool WebGLRenderingContextBase::ValidateHTMLVideoElement(
     return false;
   }
 
-  if (WouldTaintOrigin(video, security_origin)) {
+  if (WouldTaintOrigin(video)) {
     exception_state.ThrowSecurityError(
         "The video element contains cross-origin data, and may not be loaded.");
     return false;

@@ -33,10 +33,6 @@ namespace service_manager {
 class Connector;
 }
 
-namespace ui {
-class CursorDataFactoryOzone;
-}
-
 namespace wm {
 class WMState;
 }
@@ -79,9 +75,6 @@ class VIEWS_MUS_EXPORT MusClient : public aura::WindowTreeClientDelegate,
     // have one.
     bool create_wm_state = true;
 
-    // Tests may need to control objects owned by MusClient.
-    bool create_cursor_factory = true;
-
     // If provided, MusClient will not create the WindowTreeClient. Not owned.
     // Must outlive MusClient.
     aura::WindowTreeClient* window_tree_client = nullptr;
@@ -121,8 +114,6 @@ class VIEWS_MUS_EXPORT MusClient : public aura::WindowTreeClientDelegate,
   }
 
   aura::WindowTreeClient* window_tree_client() { return window_tree_client_; }
-
-  AXRemoteHost* ax_remote_host() { return ax_remote_host_.get(); }
 
   // Creates DesktopNativeWidgetAura with DesktopWindowTreeHostMus. This is
   // set as the factory function used for creating NativeWidgets when a
@@ -178,10 +169,6 @@ class VIEWS_MUS_EXPORT MusClient : public aura::WindowTreeClientDelegate,
   service_manager::Identity identity_;
 
   base::ObserverList<MusClientObserver>::Unchecked observer_list_;
-
-#if defined(USE_OZONE)
-  std::unique_ptr<ui::CursorDataFactoryOzone> cursor_factory_ozone_;
-#endif
 
   // NOTE: this may be null (creation is based on argument supplied to
   // constructor).

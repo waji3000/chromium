@@ -16,6 +16,7 @@
 #include "chrome/browser/ui/views/overlay/control_image_button.h"
 #include "chrome/browser/ui/views/overlay/resize_handle_button.h"
 #include "chrome/grit/generated_resources.h"
+#include "components/vector_icons/vector_icons.h"
 #include "content/public/browser/picture_in_picture_window_controller.h"
 #include "content/public/browser/web_contents.h"
 #include "media/base/video_util.h"
@@ -34,6 +35,7 @@
 #include "ui/views/window/window_resize_utils.h"
 
 #if defined(OS_CHROMEOS)
+#include "ash/public/cpp/ash_features.h"
 #include "ash/public/cpp/window_properties.h"  // nogncheck
 #include "ui/aura/window.h"
 #endif
@@ -109,12 +111,21 @@ class OverlayWindowFrameView : public views::NonClientFrameView {
 
     // The media controls should take and handle user interaction.
     OverlayWindowViews* window = static_cast<OverlayWindowViews*>(widget_);
-    if (window->GetCloseControlsBounds().Contains(point) ||
-        window->GetFirstCustomControlsBounds().Contains(point) ||
-        window->GetSecondCustomControlsBounds().Contains(point) ||
-        window->GetPlayPauseControlsBounds().Contains(point)) {
+    if (window->AreControlsVisible() &&
+        (window->GetCloseControlsBounds().Contains(point) ||
+         window->GetFirstCustomControlsBounds().Contains(point) ||
+         window->GetSecondCustomControlsBounds().Contains(point) ||
+         window->GetPlayPauseControlsBounds().Contains(point))) {
       return window_component;
     }
+
+#if defined(OS_CHROMEOS)
+    // If the resize handle is clicked on, we want to force the hit test to
+    // force a resize drag.
+    if (window->AreControlsVisible() &&
+        window->GetResizeHandleControlsBounds().Contains(point))
+      return window->GetResizeHTComponent();
+#endif
 
     // Allows for dragging and resizing the window.
     return (window_component == HTNOWHERE) ? HTCAPTION : window_component;
@@ -189,6 +200,7 @@ OverlayWindowViews::OverlayWindowViews(
   params.visible_on_all_workspaces = true;
   params.remove_standard_frame = true;
   params.name = "PictureInPictureWindow";
+  params.layer_type = ui::LAYER_NOT_DRAWN;
 
   // Set WidgetDelegate for more control over |widget_|.
   params.delegate = new OverlayWindowWidgetDelegate(this);
@@ -269,6 +281,9 @@ gfx::Rect OverlayWindowViews::CalculateAndUpdateWindowBounds() {
 }
 
 void OverlayWindowViews::SetUpViews() {
+  GetRootView()->SetPaintToLayer(ui::LAYER_TEXTURED);
+  GetRootView()->layer()->set_name("RootView");
+
   // views::View that is displayed when video is hidden. ----------------------
   // Adding an extra pixel to width/height makes sure controls background cover
   // entirely window when platform has fractional scale applied.
@@ -276,11 +291,13 @@ void OverlayWindowViews::SetUpViews() {
   larger_window_bounds.Inset(-1, -1);
   window_background_view_->SetSize(larger_window_bounds.size());
   window_background_view_->SetPaintToLayer(ui::LAYER_SOLID_COLOR);
+  window_background_view_->layer()->set_name("WindowBackgroundView");
   GetWindowBackgroundLayer()->SetColor(SK_ColorBLACK);
 
   // views::View that holds the scrim, which appears with the controls. -------
   controls_scrim_view_->SetSize(GetBounds().size());
   controls_scrim_view_->SetPaintToLayer(ui::LAYER_SOLID_COLOR);
+  controls_scrim_view_->layer()->set_name("ControlsScrimView");
   GetControlsScrimLayer()->SetColor(gfx::kGoogleGrey900);
   GetControlsScrimLayer()->SetOpacity(0.43f);
 
@@ -288,15 +305,18 @@ void OverlayWindowViews::SetUpViews() {
   controls_parent_view_->SetPaintToLayer(ui::LAYER_TEXTURED);
   controls_parent_view_->SetSize(GetBounds().size());
   controls_parent_view_->layer()->SetFillsBoundsOpaquely(false);
+  controls_parent_view_->layer()->set_name("ControlsParentView");
   controls_parent_view_->set_owned_by_client();
 
   // views::View that closes the window. --------------------------------------
   close_controls_view_->SetPaintToLayer(ui::LAYER_TEXTURED);
   close_controls_view_->layer()->SetFillsBoundsOpaquely(false);
+  close_controls_view_->layer()->set_name("CloseControlsView");
   close_controls_view_->set_owned_by_client();
 
   // view::View that holds the video. -----------------------------------------
   video_view_->SetPaintToLayer(ui::LAYER_TEXTURED);
+  video_view_->layer()->set_name("VideoView");
 
   // views::View that toggles play/pause. -------------------------------------
   play_pause_controls_view_->SetImageAlignment(
@@ -308,6 +328,7 @@ void OverlayWindowViews::SetUpViews() {
   // views::View that shows the affordance that the window can be resized. ----
   resize_handle_view_->SetPaintToLayer(ui::LAYER_TEXTURED);
   resize_handle_view_->layer()->SetFillsBoundsOpaquely(false);
+  resize_handle_view_->layer()->set_name("ResizeHandleView");
   resize_handle_view_->set_owned_by_client();
 #endif
 
@@ -377,9 +398,9 @@ void OverlayWindowViews::UpdateControlsVisibility(bool is_visible) {
 #endif
 
   GetControlsScrimLayer()->SetVisible(
-      (playback_state_ == kNoVideo) ? false : is_visible);
+      (playback_state_ == kEndOfVideo) ? false : is_visible);
   GetControlsParentLayer()->SetVisible(
-      (playback_state_ == kNoVideo) ? false : is_visible);
+      (playback_state_ == kEndOfVideo) ? false : is_visible);
 }
 
 void OverlayWindowViews::UpdateControlsBounds() {
@@ -426,14 +447,14 @@ void OverlayWindowViews::UpdateCustomControlsSize(
   if (control_button == first_custom_controls_view_.get()) {
     first_custom_controls_view_->SetImage(
         views::Button::STATE_NORMAL,
-        gfx::CreateVectorIcon(kPlayArrowIcon, button_size_.width() / 2,
-                              kControlIconColor));
+        gfx::CreateVectorIcon(vector_icons::kPlayArrowIcon,
+                              button_size_.width() / 2, kControlIconColor));
   }
   if (control_button == second_custom_controls_view_.get()) {
     second_custom_controls_view_->SetImage(
         views::Button::STATE_NORMAL,
-        gfx::CreateVectorIcon(kPauseIcon, button_size_.width() / 2,
-                              kControlIconColor));
+        gfx::CreateVectorIcon(vector_icons::kPauseIcon,
+                              button_size_.width() / 2, kControlIconColor));
   }
   const gfx::ImageSkia control_background = gfx::CreateVectorIcon(
       kPictureInPictureControlBackgroundIcon, button_size_.width(), kBgColor);
@@ -446,10 +467,10 @@ void OverlayWindowViews::UpdatePlayPauseControlsSize() {
   play_pause_controls_view_->SetSize(button_size_);
   play_pause_controls_view_->SetImage(
       views::Button::STATE_NORMAL,
-      gfx::CreateVectorIcon(kPlayArrowIcon, button_size_.width() / 2,
-                            kControlIconColor));
+      gfx::CreateVectorIcon(vector_icons::kPlayArrowIcon,
+                            button_size_.width() / 2, kControlIconColor));
   gfx::ImageSkia pause_icon = gfx::CreateVectorIcon(
-      kPauseIcon, button_size_.width() / 2, kControlIconColor);
+      vector_icons::kPauseIcon, button_size_.width() / 2, kControlIconColor);
   play_pause_controls_view_->SetToggledImage(views::Button::STATE_NORMAL,
                                              &pause_icon);
   const gfx::ImageSkia play_pause_background = gfx::CreateVectorIcon(
@@ -540,7 +561,17 @@ void OverlayWindowViews::Close() {
 }
 
 void OverlayWindowViews::Show() {
+#if defined(OS_CHROMEOS)
+  views::Widget::ShowInactive();
+  // For rounded corners.
+  if (ash::features::IsPipRoundedCornersEnabled()) {
+    decorator_ = std::make_unique<ash::RoundedCornerDecorator>(
+        GetNativeWindow(), GetNativeWindow(), GetRootView()->layer(),
+        ash::kPipRoundedCornerRadius);
+  }
+#else
   views::Widget::Show();
+#endif
 
   // If this is not the first time the window is shown, this will be a no-op.
   has_been_shown_ = true;
@@ -559,7 +590,7 @@ bool OverlayWindowViews::IsAlwaysOnTop() const {
 }
 
 ui::Layer* OverlayWindowViews::GetLayer() {
-  return views::Widget::GetLayer();
+  return GetRootView()->layer();
 }
 
 gfx::Rect OverlayWindowViews::GetBounds() const {
@@ -586,19 +617,16 @@ void OverlayWindowViews::SetPlaybackState(PlaybackState playback_state) {
     case kPlaying:
       play_pause_controls_view_->SetToggled(true);
       controls_parent_view_->SetVisible(true);
-      video_view_->SetVisible(true);
       GetControlsParentLayer()->SetVisible(controls_parent_layer_visible);
       break;
     case kPaused:
       play_pause_controls_view_->SetToggled(false);
       controls_parent_view_->SetVisible(true);
-      video_view_->SetVisible(true);
       GetControlsParentLayer()->SetVisible(controls_parent_layer_visible);
       break;
-    case kNoVideo:
+    case kEndOfVideo:
       controls_scrim_view_->SetVisible(false);
       controls_parent_view_->SetVisible(false);
-      video_view_->SetVisible(false);
       GetControlsParentLayer()->SetVisible(false);
       break;
   }
@@ -774,7 +802,7 @@ void OverlayWindowViews::OnGestureEvent(ui::GestureEvent* event) {
   // layers are expected to have the same visibility.
   // TODO(apacible): This placeholder logic should be updated with touchscreen
   // specific investigation. https://crbug/854373
-  if (!GetControlsScrimLayer()->visible()) {
+  if (!AreControlsVisible()) {
     UpdateControlsVisibility(true);
     return;
   }
@@ -787,8 +815,6 @@ void OverlayWindowViews::OnGestureEvent(ui::GestureEvent* event) {
     TogglePlayPause();
     event->SetHandled();
   }
-
-  views::Widget::OnGestureEvent(event);
 }
 
 void OverlayWindowViews::ButtonPressed(views::Button* sender,
@@ -811,6 +837,10 @@ gfx::Rect OverlayWindowViews::GetCloseControlsBounds() {
   return close_controls_view_->GetMirroredBounds();
 }
 
+gfx::Rect OverlayWindowViews::GetResizeHandleControlsBounds() {
+  return resize_handle_view_->GetMirroredBounds();
+}
+
 gfx::Rect OverlayWindowViews::GetPlayPauseControlsBounds() {
   return play_pause_controls_view_->GetMirroredBounds();
 }
@@ -825,6 +855,14 @@ gfx::Rect OverlayWindowViews::GetSecondCustomControlsBounds() {
   if (!second_custom_controls_view_)
     return gfx::Rect();
   return second_custom_controls_view_->GetMirroredBounds();
+}
+
+int OverlayWindowViews::GetResizeHTComponent() const {
+  return resize_handle_view_->GetHTComponent();
+}
+
+bool OverlayWindowViews::AreControlsVisible() const {
+  return controls_scrim_view_->layer()->visible();
 }
 
 ui::Layer* OverlayWindowViews::GetControlsScrimLayer() {

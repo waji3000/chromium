@@ -45,22 +45,22 @@
 #import "ios/chrome/browser/ui/settings/about_chrome_table_view_controller.h"
 #import "ios/chrome/browser/ui/settings/accounts_collection_view_controller.h"
 #import "ios/chrome/browser/ui/settings/autofill_credit_card_collection_view_controller.h"
-#import "ios/chrome/browser/ui/settings/autofill_profile_collection_view_controller.h"
+#import "ios/chrome/browser/ui/settings/autofill_profile_table_view_controller.h"
 #import "ios/chrome/browser/ui/settings/bandwidth_management_table_view_controller.h"
 #import "ios/chrome/browser/ui/settings/cells/account_signin_item.h"
 #import "ios/chrome/browser/ui/settings/cells/legacy/legacy_settings_detail_item.h"
 #import "ios/chrome/browser/ui/settings/cells/legacy/legacy_settings_switch_item.h"
 #import "ios/chrome/browser/ui/settings/cells/settings_text_item.h"
-#import "ios/chrome/browser/ui/settings/content_settings_collection_view_controller.h"
+#import "ios/chrome/browser/ui/settings/content_settings_table_view_controller.h"
 #import "ios/chrome/browser/ui/settings/google_services_settings_coordinator.h"
 #import "ios/chrome/browser/ui/settings/material_cell_catalog_view_controller.h"
-#import "ios/chrome/browser/ui/settings/privacy_collection_view_controller.h"
+#import "ios/chrome/browser/ui/settings/privacy_table_view_controller.h"
 #import "ios/chrome/browser/ui/settings/save_passwords_collection_view_controller.h"
-#import "ios/chrome/browser/ui/settings/search_engine_settings_collection_view_controller.h"
+#import "ios/chrome/browser/ui/settings/search_engine_table_view_controller.h"
 #import "ios/chrome/browser/ui/settings/sync_utils/sync_util.h"
 #import "ios/chrome/browser/ui/settings/table_cell_catalog_view_controller.h"
 #import "ios/chrome/browser/ui/settings/utils/pref_backed_boolean.h"
-#import "ios/chrome/browser/ui/settings/voicesearch_collection_view_controller.h"
+#import "ios/chrome/browser/ui/settings/voice_search_table_view_controller.h"
 #import "ios/chrome/browser/ui/signin_interaction/public/signin_presenter.h"
 #import "ios/chrome/browser/ui/signin_interaction/signin_interaction_coordinator.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
@@ -855,7 +855,7 @@ void IdentityObserverBridge::OnPrimaryAccountCleared(
       [self showSyncGoogleService];
       break;
     case ItemTypeSearchEngine:
-      controller = [[SearchEngineSettingsCollectionViewController alloc]
+      controller = [[SearchEngineTableViewController alloc]
           initWithBrowserState:_browserState];
       break;
     case ItemTypeSavedPasswords:
@@ -867,19 +867,19 @@ void IdentityObserverBridge::OnPrimaryAccountCleared(
           initWithBrowserState:_browserState];
       break;
     case ItemTypeAutofillProfile:
-      controller = [[AutofillProfileCollectionViewController alloc]
+      controller = [[AutofillProfileTableViewController alloc]
           initWithBrowserState:_browserState];
       break;
     case ItemTypeVoiceSearch:
-      controller = [[VoicesearchCollectionViewController alloc]
+      controller = [[VoiceSearchTableViewController alloc]
           initWithPrefs:_browserState->GetPrefs()];
       break;
     case ItemTypePrivacy:
-      controller = [[PrivacyCollectionViewController alloc]
+      controller = [[PrivacyTableViewController alloc]
           initWithBrowserState:_browserState];
       break;
     case ItemTypeContentSettings:
-      controller = [[ContentSettingsCollectionViewController alloc]
+      controller = [[ContentSettingsTableViewController alloc]
           initWithBrowserState:_browserState];
       break;
     case ItemTypeBandwidth:

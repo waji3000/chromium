@@ -876,6 +876,12 @@ bool Texture::CanGenerateMipmaps(const FeatureInfo* feature_info) const {
     return false;
   }
 
+  // WebGL forbids generating mipmaps on zero-size textures.
+  // See https://crbug.com/898351
+  if (feature_info->IsWebGLContext() && (base.width == 0 || base.height == 0)) {
+    return false;
+  }
+
   // According to the OpenGL extension spec EXT_sRGB.txt, EXT_SRGB is based on
   // ES 2.0 and generateMipmap is not allowed if texture format is SRGB_EXT or
   // SRGB_ALPHA_EXT.
@@ -1120,12 +1126,14 @@ void Texture::IncAllFramebufferStateChangeCount() {
     (*it)->manager()->IncFramebufferStateChangeCount();
 }
 
-void Texture::UpdateBaseLevel(GLint base_level) {
+void Texture::UpdateBaseLevel(GLint base_level,
+                              const FeatureInfo* feature_info) {
   if (unclamped_base_level_ == base_level)
     return;
   unclamped_base_level_ = base_level;
 
   UpdateNumMipLevels();
+  ApplyFormatWorkarounds(feature_info);
 }
 
 void Texture::UpdateMaxLevel(GLint max_level) {
@@ -1384,9 +1392,9 @@ GLenum Texture::SetParameteri(
   switch (pname) {
     case GL_TEXTURE_MIN_LOD:
     case GL_TEXTURE_MAX_LOD:
-      {
-        GLfloat fparam = static_cast<GLfloat>(param);
-        return SetParameterf(feature_info, pname, fparam);
+    case GL_TEXTURE_MAX_ANISOTROPY_EXT: {
+      GLfloat fparam = static_cast<GLfloat>(param);
+      return SetParameterf(feature_info, pname, fparam);
       }
     case GL_TEXTURE_MIN_FILTER:
       if (!feature_info->validators()->texture_min_filter_mode.IsValid(param)) {
@@ -1434,18 +1442,13 @@ GLenum Texture::SetParameteri(
       if (param < 0) {
         return GL_INVALID_VALUE;
       }
-      UpdateBaseLevel(param);
+      UpdateBaseLevel(param, feature_info);
       break;
     case GL_TEXTURE_MAX_LEVEL:
       if (param < 0) {
         return GL_INVALID_VALUE;
       }
       UpdateMaxLevel(param);
-      break;
-    case GL_TEXTURE_MAX_ANISOTROPY_EXT:
-      if (param < 1) {
-        return GL_INVALID_VALUE;
-      }
       break;
     case GL_TEXTURE_USAGE_ANGLE:
       if (!feature_info->validators()->texture_usage.IsValid(param)) {
@@ -1484,6 +1487,7 @@ GLenum Texture::SetParameteri(
       break;
     case GL_TEXTURE_IMMUTABLE_FORMAT:
     case GL_TEXTURE_IMMUTABLE_LEVELS:
+    case GL_REQUIRED_TEXTURE_IMAGE_UNITS_OES:
       return GL_INVALID_ENUM;
     default:
       NOTREACHED();
@@ -1497,24 +1501,9 @@ GLenum Texture::SetParameteri(
 
 GLenum Texture::SetParameterf(
     const FeatureInfo* feature_info, GLenum pname, GLfloat param) {
+  // Only handle float parameters here. Handle everything else, including error
+  // cases, in SetParameteri.
   switch (pname) {
-    case GL_TEXTURE_MIN_FILTER:
-    case GL_TEXTURE_MAG_FILTER:
-    case GL_TEXTURE_WRAP_R:
-    case GL_TEXTURE_WRAP_S:
-    case GL_TEXTURE_WRAP_T:
-    case GL_TEXTURE_COMPARE_FUNC:
-    case GL_TEXTURE_COMPARE_MODE:
-    case GL_TEXTURE_BASE_LEVEL:
-    case GL_TEXTURE_MAX_LEVEL:
-    case GL_TEXTURE_USAGE_ANGLE:
-    case GL_TEXTURE_SWIZZLE_R:
-    case GL_TEXTURE_SWIZZLE_G:
-    case GL_TEXTURE_SWIZZLE_B:
-    case GL_TEXTURE_SWIZZLE_A: {
-      GLint iparam = static_cast<GLint>(std::round(param));
-      return SetParameteri(feature_info, pname, iparam);
-    }
     case GL_TEXTURE_MIN_LOD:
       sampler_state_.min_lod = param;
       break;
@@ -1526,12 +1515,10 @@ GLenum Texture::SetParameterf(
         return GL_INVALID_VALUE;
       }
       break;
-    case GL_TEXTURE_IMMUTABLE_FORMAT:
-    case GL_TEXTURE_IMMUTABLE_LEVELS:
-      return GL_INVALID_ENUM;
-    default:
-      NOTREACHED();
-      return GL_INVALID_ENUM;
+    default: {
+      GLint iparam = static_cast<GLint>(std::round(param));
+      return SetParameteri(feature_info, pname, iparam);
+    }
   }
   return GL_NO_ERROR;
 }
@@ -1713,7 +1700,7 @@ bool Texture::ClearLevel(DecoderContext* decoder, GLenum target, GLint level) {
 
   Texture::LevelInfo& info = face_infos_[face_index].level_infos[level];
 
-  DCHECK(target == info.target);
+  DCHECK_EQ(target, info.target);
 
   if (info.target == 0 ||
       info.cleared_rect == gfx::Rect(info.width, info.height) ||
@@ -1952,8 +1939,8 @@ void Texture::SetCompatibilitySwizzle(const CompatibilitySwizzle* swizzle) {
                   GetSwizzleForChannel(swizzle_a_, swizzle));
 }
 
-void Texture::ApplyFormatWorkarounds(FeatureInfo* feature_info) {
-  if (feature_info->gl_version_info().is_desktop_core_profile) {
+void Texture::ApplyFormatWorkarounds(const FeatureInfo* feature_info) {
+  if (feature_info->gl_version_info().NeedsLuminanceAlphaEmulation()) {
     if (static_cast<size_t>(base_level_) >= face_infos_[0].level_infos.size())
       return;
     const Texture::LevelInfo& info = face_infos_[0].level_infos[base_level_];
@@ -2154,13 +2141,8 @@ scoped_refptr<TextureRef>
                      gfx::Rect(1, 1));
       }
     } else {
-      if (needs_initialization) {
-        SetLevelInfo(default_texture.get(), GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 1,
-                     0, GL_RGBA, GL_UNSIGNED_BYTE, gfx::Rect(1, 1));
-      } else {
-        SetLevelInfo(default_texture.get(), GL_TEXTURE_EXTERNAL_OES, 0, GL_RGBA,
-                     1, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, gfx::Rect(1, 1));
-      }
+      SetLevelInfo(default_texture.get(), target, 0, GL_RGBA, 1, 1, 1, 0,
+                   GL_RGBA, GL_UNSIGNED_BYTE, gfx::Rect(1, 1));
     }
   }
 
@@ -2623,12 +2605,11 @@ TextureRef* TextureManager::GetTextureInfoForTargetUnlessDefault(
   return texture;
 }
 
-bool TextureManager::ValidateTexImage(
-    ContextState* state,
-    const char* function_name,
-    const DoTexImageArguments& args,
-    TextureRef** texture_ref) {
-  ErrorState* error_state = state->GetErrorState();
+bool TextureManager::ValidateTexImage(ContextState* state,
+                                      ErrorState* error_state,
+                                      const char* function_name,
+                                      const DoTexImageArguments& args,
+                                      TextureRef** texture_ref) {
   const Validators* validators = feature_info_->validators();
   if (((args.command_type == DoTexImageArguments::kTexImage2D) &&
        !validators->texture_target.IsValid(args.target)) ||
@@ -2745,6 +2726,7 @@ bool TextureManager::ValidateTexImage(
 void TextureManager::DoCubeMapWorkaround(
     DecoderTextureState* texture_state,
     ContextState* state,
+    ErrorState* error_state,
     DecoderFramebufferState* framebuffer_state,
     TextureRef* texture_ref,
     const char* function_name,
@@ -2779,7 +2761,7 @@ void TextureManager::DoCubeMapWorkaround(
   for (GLenum face : undefined_faces) {
     new_args.target = face;
     new_args.pixels = zero.get();
-    DoTexImage(texture_state, state, framebuffer_state,
+    DoTexImage(texture_state, state, error_state, framebuffer_state,
                function_name, texture_ref, new_args);
     texture->MarkLevelAsInternalWorkaround(face, args.level);
   }
@@ -2789,11 +2771,13 @@ void TextureManager::DoCubeMapWorkaround(
 void TextureManager::ValidateAndDoTexImage(
     DecoderTextureState* texture_state,
     ContextState* state,
+    ErrorState* error_state,
     DecoderFramebufferState* framebuffer_state,
     const char* function_name,
     const DoTexImageArguments& args) {
   TextureRef* texture_ref;
-  if (!ValidateTexImage(state, function_name, args, &texture_ref)) {
+  if (!ValidateTexImage(state, error_state, function_name, args,
+                        &texture_ref)) {
     return;
   }
 
@@ -2817,7 +2801,7 @@ void TextureManager::ValidateAndDoTexImage(
             GL_SRGB));
 
   if (need_cube_map_workaround && !buffer) {
-    DoCubeMapWorkaround(texture_state, state, framebuffer_state,
+    DoCubeMapWorkaround(texture_state, state, error_state, framebuffer_state,
                         texture_ref, function_name, args);
   }
 
@@ -2833,8 +2817,9 @@ void TextureManager::ValidateAndDoTexImage(
       // The rows overlap in unpack memory. Upload the texture row by row to
       // work around driver bug.
 
-      ReserveTexImageToBeFilled(texture_state, state, framebuffer_state,
-                                function_name, texture_ref, args);
+      ReserveTexImageToBeFilled(texture_state, state, error_state,
+                                framebuffer_state, function_name, texture_ref,
+                                args);
 
       DoTexSubImageArguments sub_args = {
           args.target, args.level, 0, 0, 0, args.width, args.height, args.depth,
@@ -2857,8 +2842,9 @@ void TextureManager::ValidateAndDoTexImage(
     const PixelStoreParams unpack_params(state->GetUnpackParams(dimension));
     if (unpack_params.image_height != 0 &&
         unpack_params.image_height != args.height) {
-      ReserveTexImageToBeFilled(texture_state, state, framebuffer_state,
-                                function_name, texture_ref, args);
+      ReserveTexImageToBeFilled(texture_state, state, error_state,
+                                framebuffer_state, function_name, texture_ref,
+                                args);
 
       DoTexSubImageArguments sub_args = {
           args.target,
@@ -2889,8 +2875,9 @@ void TextureManager::ValidateAndDoTexImage(
     if (buffer_size - args.pixels_size - ToGLuint(args.pixels) < args.padding) {
       // In ValidateTexImage(), we already made sure buffer size is no less
       // than offset + pixels_size.
-      ReserveTexImageToBeFilled(texture_state, state, framebuffer_state,
-                                function_name, texture_ref, args);
+      ReserveTexImageToBeFilled(texture_state, state, error_state,
+                                framebuffer_state, function_name, texture_ref,
+                                args);
 
       DoTexSubImageArguments sub_args = {
           args.target, args.level, 0, 0, 0, args.width, args.height, args.depth,
@@ -2904,13 +2891,14 @@ void TextureManager::ValidateAndDoTexImage(
       return;
     }
   }
-  DoTexImage(texture_state, state, framebuffer_state,
+  DoTexImage(texture_state, state, error_state, framebuffer_state,
              function_name, texture_ref, args);
 }
 
 void TextureManager::ReserveTexImageToBeFilled(
     DecoderTextureState* texture_state,
     ContextState* state,
+    ErrorState* error_state,
     DecoderFramebufferState* framebuffer_state,
     const char* function_name,
     TextureRef* texture_ref,
@@ -2921,17 +2909,17 @@ void TextureManager::ReserveTexImageToBeFilled(
   DoTexImageArguments new_args = args;
   new_args.pixels = nullptr;
   // pixels_size might be incorrect, but it's not used in this case.
-  DoTexImage(texture_state, state, framebuffer_state, function_name,
-             texture_ref, new_args);
+  DoTexImage(texture_state, state, error_state, framebuffer_state,
+             function_name, texture_ref, new_args);
   glBindBuffer(GL_PIXEL_UNPACK_BUFFER, buffer->service_id());
   state->SetBoundBuffer(GL_PIXEL_UNPACK_BUFFER, buffer);
 }
 
 bool TextureManager::ValidateTexSubImage(ContextState* state,
+                                         ErrorState* error_state,
                                          const char* function_name,
                                          const DoTexSubImageArguments& args,
                                          TextureRef** texture_ref) {
-  ErrorState* error_state = state->GetErrorState();
   const Validators* validators = feature_info_->validators();
 
   if ((args.command_type == DoTexSubImageArguments::kTexSubImage2D &&
@@ -3042,13 +3030,14 @@ void TextureManager::ValidateAndDoTexSubImage(
     DecoderContext* decoder,
     DecoderTextureState* texture_state,
     ContextState* state,
+    ErrorState* error_state,
     DecoderFramebufferState* framebuffer_state,
     const char* function_name,
     const DoTexSubImageArguments& args) {
   TRACE_EVENT0("gpu", "TextureManager::ValidateAndDoTexSubImage");
-  ErrorState* error_state = state->GetErrorState();
   TextureRef* texture_ref;
-  if (!ValidateTexSubImage(state, function_name, args, &texture_ref)) {
+  if (!ValidateTexSubImage(state, error_state, function_name, args,
+                           &texture_ref)) {
     return;
   }
 
@@ -3380,7 +3369,7 @@ void TextureManager::DoTexSubImageLayerByLayerWorkaround(
 const Texture::CompatibilitySwizzle* TextureManager::GetCompatibilitySwizzle(
     const gles2::FeatureInfo* feature_info,
     GLenum format) {
-  if (feature_info->gl_version_info().is_desktop_core_profile) {
+  if (feature_info->gl_version_info().NeedsLuminanceAlphaEmulation()) {
     return GetCompatibilitySwizzleInternal(format);
   } else {
     return nullptr;
@@ -3391,7 +3380,7 @@ const Texture::CompatibilitySwizzle* TextureManager::GetCompatibilitySwizzle(
 GLenum TextureManager::AdjustTexInternalFormat(
     const gles2::FeatureInfo* feature_info,
     GLenum format) {
-  if (feature_info->gl_version_info().is_desktop_core_profile) {
+  if (feature_info->gl_version_info().NeedsLuminanceAlphaEmulation()) {
     const Texture::CompatibilitySwizzle* swizzle =
         GetCompatibilitySwizzleInternal(format);
     if (swizzle)
@@ -3411,7 +3400,7 @@ GLenum TextureManager::AdjustTexFormat(const gles2::FeatureInfo* feature_info,
     if (format == GL_SRGB_ALPHA_EXT)
       return GL_RGBA;
   }
-  if (feature_info->gl_version_info().is_desktop_core_profile) {
+  if (feature_info->gl_version_info().NeedsLuminanceAlphaEmulation()) {
     const Texture::CompatibilitySwizzle* swizzle =
         GetCompatibilitySwizzleInternal(format);
     if (swizzle)
@@ -3424,8 +3413,7 @@ GLenum TextureManager::AdjustTexFormat(const gles2::FeatureInfo* feature_info,
 GLenum TextureManager::AdjustTexStorageFormat(
     const gles2::FeatureInfo* feature_info,
     GLenum format) {
-  // We need to emulate luminance/alpha on core profile only.
-  if (feature_info->gl_version_info().is_desktop_core_profile) {
+  if (feature_info->gl_version_info().NeedsLuminanceAlphaEmulation()) {
     switch (format) {
       case GL_ALPHA8_EXT:
         return GL_R8_EXT;
@@ -3450,14 +3438,13 @@ GLenum TextureManager::AdjustTexStorageFormat(
   return format;
 }
 
-void TextureManager::DoTexImage(
-    DecoderTextureState* texture_state,
-    ContextState* state,
-    DecoderFramebufferState* framebuffer_state,
-    const char* function_name,
-    TextureRef* texture_ref,
-    const DoTexImageArguments& args) {
-  ErrorState* error_state = state->GetErrorState();
+void TextureManager::DoTexImage(DecoderTextureState* texture_state,
+                                ContextState* state,
+                                ErrorState* error_state,
+                                DecoderFramebufferState* framebuffer_state,
+                                const char* function_name,
+                                TextureRef* texture_ref,
+                                const DoTexImageArguments& args) {
   Texture* texture = texture_ref->texture();
   GLsizei tex_width = 0;
   GLsizei tex_height = 0;

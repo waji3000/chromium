@@ -78,18 +78,12 @@ void WebWidgetTestClient::StartDragging(network::mojom::ReferrerPolicy policy,
                                         const blink::WebDragData& data,
                                         blink::WebDragOperationsMask mask,
                                         const SkBitmap& drag_image,
-                                        const blink::WebPoint& image_offset) {
+                                        const gfx::Point& image_offset) {
   test_runner()->setDragImage(drag_image);
 
   // When running a test, we need to fake a drag drop operation otherwise
   // Windows waits for real mouse events to know when the drag is over.
   web_widget_test_proxy_base_->event_sender()->DoDragDrop(data, mask);
-}
-
-bool WebWidgetTestClient::AllowsBrokenNullLayerTreeView() const {
-  // This call should go to the production client, not here.
-  NOTREACHED();
-  return false;
 }
 
 TestRunnerForSpecificView* WebWidgetTestClient::view_test_runner() {

@@ -18,6 +18,7 @@
 #include "third_party/blink/renderer/core/css/document_style_environment_variables.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/renderer/core/dom/dom_token_list.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/dom/node_computed_style.h"
@@ -45,6 +46,7 @@
 #include "third_party/blink/renderer/platform/testing/histogram_tester.h"
 #include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
+#include "third_party/blink/renderer/platform/web_test_support.h"
 
 // The MediaTimelineWidths histogram suffix expected to be encountered in these
 // tests. Depends on the OS, since Android sizes its timeline differently.
@@ -73,10 +75,12 @@ class MockWebMediaPlayerForImpl : public EmptyWebMediaPlayer {
   // WebMediaPlayer overrides:
   WebTimeRanges Seekable() const override { return seekable_; }
   bool HasVideo() const override { return true; }
+  bool HasAudio() const override { return has_audio_; }
   SurfaceLayerMode GetVideoSurfaceLayerMode() const override {
     return SurfaceLayerMode::kAlways;
   }
 
+  bool has_audio_ = false;
   WebTimeRanges seekable_;
 };
 
@@ -105,7 +109,7 @@ class MockLayoutObject : public LayoutObject {
 class StubLocalFrameClientForImpl : public EmptyLocalFrameClient {
  public:
   static StubLocalFrameClientForImpl* Create() {
-    return new StubLocalFrameClientForImpl;
+    return MakeGarbageCollected<StubLocalFrameClientForImpl>();
   }
 
   std::unique_ptr<WebMediaPlayer> CreateWebMediaPlayer(
@@ -206,7 +210,7 @@ class MediaControlsImplTest : public PageTestBase,
   void InitializePage() {
     Page::PageClients clients;
     FillWithEmptyClients(clients);
-    clients.chrome_client = new MockChromeClientForImpl();
+    clients.chrome_client = MakeGarbageCollected<MockChromeClientForImpl>();
     SetupPageWithClients(&clients, StubLocalFrameClientForImpl::Create());
     GetDocument().GetSettings()->SetMediaDownloadInProductHelpEnabled(
         EnableDownloadInProductHelp());
@@ -268,6 +272,8 @@ class MediaControlsImplTest : public PageTestBase,
                                                    false /* requestSeek */);
     SimulateLoadedMetadata();
   }
+
+  void SetHasAudio(bool has_audio) { WebMediaPlayer()->has_audio_ = has_audio; }
 
   void ClickOverflowButton() {
     MediaControls()
@@ -999,7 +1005,16 @@ TEST_F(MediaControlsImplTest, TimeIsCorrectlyFormatted) {
 
 namespace {
 
-class MediaControlsImplTestWithMockScheduler : public MediaControlsImplTest {
+class ModernMediaControlsImplTest : public MediaControlsImplTest {
+ public:
+  void SetUp() override {
+    RuntimeEnabledFeatures::SetModernMediaControlsEnabled(true);
+    MediaControlsImplTest::SetUp();
+  }
+};
+
+class MediaControlsImplTestWithMockScheduler
+    : public ModernMediaControlsImplTest {
  public:
   MediaControlsImplTestWithMockScheduler() { EnablePlatform(); }
 
@@ -1008,7 +1023,7 @@ class MediaControlsImplTestWithMockScheduler : public MediaControlsImplTest {
     // DocumentParserTiming has DCHECKS to make sure time > 0.0.
     platform()->AdvanceClockSeconds(1);
 
-    MediaControlsImplTest::SetUp();
+    ModernMediaControlsImplTest::SetUp();
   }
 
   bool IsCursorHidden() {
@@ -1052,6 +1067,53 @@ TEST_F(MediaControlsImplTestWithMockScheduler,
   // Once user interaction stops, controls can hide.
   platform()->RunForPeriodSeconds(2);
   SimulateTransitionEnd(*panel);
+  EXPECT_FALSE(IsElementVisible(*panel));
+}
+
+TEST_F(MediaControlsImplTestWithMockScheduler,
+       ControlsHideAfterFocusedAndMouseMovement) {
+  EnsureSizing();
+
+  Element* panel = MediaControls().PanelElement();
+  MediaControls().MediaElement().SetSrc("http://example.com");
+  MediaControls().MediaElement().Play();
+
+  // Controls start out visible
+  EXPECT_TRUE(IsElementVisible(*panel));
+  platform()->RunForPeriodSeconds(1);
+
+  // Mouse move while focused
+  MediaControls().DispatchEvent(*Event::Create("focusin"));
+  MediaControls().MediaElement().SetFocused(true,
+                                            WebFocusType::kWebFocusTypeNone);
+  MediaControls().DispatchEvent(*Event::Create("pointermove"));
+
+  // Controls should remain visible
+  platform()->RunForPeriodSeconds(2);
+  EXPECT_TRUE(IsElementVisible(*panel));
+
+  // Controls should hide after being inactive for 4 seconds.
+  platform()->RunForPeriodSeconds(2);
+  EXPECT_FALSE(IsElementVisible(*panel));
+}
+
+TEST_F(MediaControlsImplTestWithMockScheduler,
+       ControlsHideAfterFocusedAndMouseMoveout) {
+  EnsureSizing();
+
+  Element* panel = MediaControls().PanelElement();
+  MediaControls().MediaElement().SetSrc("http://example.com");
+  MediaControls().MediaElement().Play();
+
+  // Controls start out visible
+  EXPECT_TRUE(IsElementVisible(*panel));
+  platform()->RunForPeriodSeconds(1);
+
+  // Mouse move out while focused, controls should hide
+  MediaControls().DispatchEvent(*Event::Create("focusin"));
+  MediaControls().MediaElement().SetFocused(true,
+                                            WebFocusType::kWebFocusTypeNone);
+  MediaControls().DispatchEvent(*Event::Create("pointerout"));
   EXPECT_FALSE(IsElementVisible(*panel));
 }
 
@@ -1265,6 +1327,81 @@ TEST_F(MediaControlsImplTest, OverflowMenuMetricsTimeToDismiss) {
   GetHistogramTester().ExpectTotalCount(kTimeToActionHistogramName, 0);
 }
 
+TEST_F(MediaControlsImplTestWithMockScheduler,
+       ShowVolumeSliderAfterHoverTimerFired) {
+  const double kTimeToShowVolumeSlider = 0.2;
+
+  EnsureSizing();
+  MediaControls().MediaElement().SetSrc("https://example.com/foo.mp4");
+  platform()->RunForPeriodSeconds(1);
+  SetHasAudio(true);
+  SimulateLoadedMetadata();
+
+  WebTestSupport::SetIsRunningWebTest(false);
+
+  Element* volume_slider = GetElementByShadowPseudoId(
+      MediaControls(), "-webkit-media-controls-volume-slider");
+  Element* mute_btn = GetElementByShadowPseudoId(
+      MediaControls(), "-webkit-media-controls-mute-button");
+
+  ASSERT_NE(nullptr, volume_slider);
+  ASSERT_NE(nullptr, mute_btn);
+
+  EXPECT_TRUE(IsElementVisible(*mute_btn));
+  EXPECT_TRUE(volume_slider->classList().contains("closed"));
+
+  DOMRect* mute_btn_rect = mute_btn->getBoundingClientRect();
+  WebFloatPoint mute_btn_center(
+      mute_btn_rect->left() + mute_btn_rect->width() / 2,
+      mute_btn_rect->top() + mute_btn_rect->height() / 2);
+  WebFloatPoint edge(0, 0);
+
+  // Hover on mute button and stay
+  MouseMoveTo(mute_btn_center);
+  platform()->RunForPeriodSeconds(kTimeToShowVolumeSlider - 0.001);
+  EXPECT_TRUE(volume_slider->classList().contains("closed"));
+
+  platform()->RunForPeriodSeconds(0.002);
+  EXPECT_FALSE(volume_slider->classList().contains("closed"));
+
+  MouseMoveTo(edge);
+  EXPECT_TRUE(volume_slider->classList().contains("closed"));
+
+  // Hover on mute button and move away before timer fired
+  MouseMoveTo(mute_btn_center);
+  platform()->RunForPeriodSeconds(kTimeToShowVolumeSlider - 0.001);
+  EXPECT_TRUE(volume_slider->classList().contains("closed"));
+
+  MouseMoveTo(edge);
+  EXPECT_TRUE(volume_slider->classList().contains("closed"));
+}
+
+TEST_F(MediaControlsImplTestWithMockScheduler,
+       VolumeSliderBehaviorWhenFocused) {
+  MediaControls().MediaElement().SetSrc("https://example.com/foo.mp4");
+  platform()->RunForPeriodSeconds(1);
+  SetHasAudio(true);
+
+  WebTestSupport::SetIsRunningWebTest(false);
+
+  Element* volume_slider = GetElementByShadowPseudoId(
+      MediaControls(), "-webkit-media-controls-volume-slider");
+
+  ASSERT_NE(nullptr, volume_slider);
+
+  // Volume slider starts out hidden
+  EXPECT_TRUE(volume_slider->classList().contains("closed"));
+
+  // Tab focus should open volume slider immediately.
+  volume_slider->SetFocused(true, WebFocusType::kWebFocusTypeNone);
+  volume_slider->DispatchEvent(*Event::Create("focus"));
+  EXPECT_FALSE(volume_slider->classList().contains("closed"));
+
+  // Unhover slider while focused should not close slider.
+  volume_slider->DispatchEvent(*Event::Create("mouseout"));
+  EXPECT_FALSE(volume_slider->classList().contains("closed"));
+}
+
 TEST_F(MediaControlsImplTest, CastOverlayDefaultHidesOnTimer) {
   MediaControls().MediaElement().SetBooleanAttribute(html_names::kControlsAttr,
                                                      false);
@@ -1325,16 +1462,8 @@ TEST_F(MediaControlsImplTest, isConnected) {
   EXPECT_FALSE(MediaControls().isConnected());
 }
 
-class ModernMediaControlsImplTest : public MediaControlsImplTest {
- public:
-  void SetUp() override {
-    RuntimeEnabledFeatures::SetModernMediaControlsEnabled(true);
-    MediaControlsImplTest::SetUp();
-  }
-};
-
 TEST_F(ModernMediaControlsImplTest, ControlsShouldUseSafeAreaInsets) {
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   {
     const ComputedStyle* style = MediaControls().GetComputedStyle();
     EXPECT_EQ(0.0, style->MarginTop().Pixels());
@@ -1353,7 +1482,7 @@ TEST_F(ModernMediaControlsImplTest, ControlsShouldUseSafeAreaInsets) {
       "safe-area-inset-right", "4px");
 
   EXPECT_TRUE(GetDocument().NeedsLayoutTreeUpdate());
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   {
     const ComputedStyle* style = MediaControls().GetComputedStyle();

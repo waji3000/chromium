@@ -20,6 +20,7 @@
 #include "base/optional.h"
 #include "base/strings/string16.h"
 #include "base/time/time.h"
+#include "components/viz/common/surfaces/local_surface_id_allocation.h"
 #include "components/viz/common/surfaces/scoped_surface_id_allocator.h"
 #include "ui/aura/aura_export.h"
 #include "ui/aura/client/window_types.h"
@@ -95,20 +96,23 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
     STACK_ABOVE,
     STACK_BELOW
   };
+
+  // These values are persisted to logs. Entries should not be renumbered and
+  // numeric values should never be reused.
   enum class OcclusionState {
     // The window's occlusion state isn't tracked (Window::TrackOcclusionState)
     // or hasn't been computed yet.
-    UNKNOWN,
+    UNKNOWN = 0,
     // The window or one of its descendants IsVisible() [1] and:
     // - Its bounds aren't completely covered by fully opaque windows [2], or,
     // - Its transform, bounds or opacity is animated.
-    VISIBLE,
+    VISIBLE = 1,
     // The window or one of its descendants IsVisible() [1], but they all:
     // - Have bounds completely covered by fully opaque windows [2], and,
     // - Have no transform, bounds or opacity animation.
-    OCCLUDED,
+    OCCLUDED = 2,
     // The window is not IsVisible() [1].
-    HIDDEN,
+    HIDDEN = 3,
     // [1] A window can only be IsVisible() if all its parent are IsVisible().
     // [2] A window is "fully opaque" if:
     // - It's visible (IsVisible()).
@@ -121,6 +125,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
     //
     // TODO(fdoray): A window that clips its children shouldn't be VISIBLE just
     // because it has an animated child.
+    kMaxValue = HIDDEN,
   };
 
   typedef std::vector<Window*> Windows;
@@ -407,9 +412,6 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // Gets the current viz::SurfaceId.
   viz::SurfaceId GetSurfaceId() const;
 
-  // Get the time at which the current viz::LocalSurfaceId was allocated.
-  base::TimeTicks GetLocalSurfaceIdAllocationTime() const;
-
   // Forces the window to allocate a new viz::LocalSurfaceId for the next
   // CompositorFrame submission in anticipation of a synchronization operation
   // that does not involve a resize or a device scale factor change.
@@ -418,17 +420,19 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   viz::ScopedSurfaceIdAllocator GetSurfaceIdAllocator(
       base::OnceCallback<void()> allocation_task);
 
-  // Gets the current viz::LocalSurfaceId.
-  const viz::LocalSurfaceId& GetLocalSurfaceId() const;
+  // Returns the current viz::LocalSurfaceIdAllocation.
+  const viz::LocalSurfaceIdAllocation& GetLocalSurfaceIdAllocation() const;
+
+  // Marks the current viz::LocalSurfaceId as invalid. AllocateLocalSurfaceId
+  // must be called before submitting new CompositorFrames.
+  void InvalidateLocalSurfaceId();
 
   // Sets the current viz::LocalSurfaceId, in cases where the embedded client
   // has allocated one. Also sets child sequence number component of the
   // viz::LocalSurfaceId allocator.
   void UpdateLocalSurfaceIdFromEmbeddedClient(
-      const base::Optional<viz::LocalSurfaceId>&
-          embedded_client_local_surface_id,
-      const base::Optional<base::TimeTicks>&
-          embedded_client_local_surface_id_allocation_time);
+      const base::Optional<viz::LocalSurfaceIdAllocation>&
+          local_surface_id_allocation);
 
   // Returns the FrameSinkId. In LOCAL mode, this returns a valid FrameSinkId
   // only if a LayerTreeFrameSink has been created. In MUS mode, this always
@@ -659,7 +663,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // Makes the window pass all events through to any windows behind it.
   ws::mojom::EventTargetingPolicy event_targeting_policy_;
 
-  base::ObserverList<WindowObserver, true>::Unchecked observers_;
+  base::ObserverList<WindowObserver, true> observers_;
 
   DISALLOW_COPY_AND_ASSIGN(Window);
 };

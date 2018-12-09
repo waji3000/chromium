@@ -100,6 +100,7 @@
 #include "chrome/browser/ui/views/tabs/tab.h"
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
 #include "chrome/browser/ui/views/toolbar/browser_actions_container.h"
+#include "chrome/browser/ui/views/toolbar/browser_app_menu_button.h"
 #include "chrome/browser/ui/views/toolbar/reload_button.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "chrome/browser/ui/views/translate/translate_bubble_view.h"
@@ -123,9 +124,10 @@
 #include "components/prefs/pref_service.h"
 #include "components/safe_browsing/password_protection/metrics_util.h"
 #include "components/sessions/core/tab_restore_service.h"
-#include "components/signin/core/browser/profile_management_switches.h"
+#include "components/signin/core/browser/account_consistency_method.h"
 #include "components/translate/core/browser/language_state.h"
 #include "components/version_info/channel.h"
+#include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/keyboard_event_processing_result.h"
 #include "content/public/browser/notification_service.h"
@@ -165,6 +167,7 @@
 #include "chrome/browser/ui/ash/window_properties.h"
 #include "chrome/browser/ui/views/location_bar/intent_picker_view.h"
 #include "chrome/grit/chrome_unscaled_resources.h"
+#include "ui/base/ui_base_features.h"
 #else
 #include "chrome/browser/ui/signin_view_controller.h"
 #include "chrome/browser/ui/views/profiles/profile_chooser_view.h"
@@ -190,6 +193,12 @@
 #include "ui/native_theme/native_theme_win.h"
 #include "ui/views/win/scoped_fullscreen_visibility.h"
 #endif
+
+#if BUILDFLAG(ENABLE_DESKTOP_IN_PRODUCT_HELP)
+#include "chrome/browser/ui/in_product_help/reopen_tab_in_product_help.h"
+#include "chrome/browser/ui/in_product_help/reopen_tab_in_product_help_factory.h"
+#include "chrome/browser/ui/views/feature_promos/reopen_tab_promo_controller.h"
+#endif  // BUILDFLAG(ENABLE_DESKTOP_IN_PRODUCT_HELP)
 
 #if BUILDFLAG(ENABLE_ONE_CLICK_SIGNIN)
 #include "chrome/browser/ui/sync/one_click_signin_links_delegate_impl.h"
@@ -295,6 +304,15 @@ bool GetGestureCommand(ui::GestureEvent* event, int* command) {
   }
 #endif  // OS_MACOSX
   return false;
+}
+
+bool IsShowingWebContentsModalDialog(content::WebContents* web_contents) {
+  if (!web_contents)
+    return false;
+
+  const web_modal::WebContentsModalDialogManager* manager =
+      web_modal::WebContentsModalDialogManager::FromWebContents(web_contents);
+  return manager && manager->IsDialogActive();
 }
 
 // A view targeter for the overlay view, which makes sure the overlay view
@@ -663,27 +681,12 @@ void BrowserView::Show() {
     return;
   }
 
-  // Showing the window doesn't make the browser window active right away.
-  // This can cause SetFocusToLocationBar() to skip setting focus to the
-  // location bar. To avoid this we explicilty let SetFocusToLocationBar()
-  // know that it's ok to steal focus.
-  force_location_bar_focus_ = true;
-
-  // Setting the focus doesn't work when the window is invisible, so any focus
-  // initialization that happened before this will be lost.
-  //
-  // We really "should" restore the focus whenever the window becomes unhidden,
-  // but I think initializing is the only time where this can happen where
-  // there is some focus change we need to pick up, and this is easier than
-  // plumbing through an un-hide message all the way from the frame.
-  //
-  // If we do find there are cases where we need to restore the focus on show,
-  // that should be added and this should be removed.
-  RestoreFocus();
+  // Only set |restore_focus_on_activation_| when it is not set so that restore
+  // focus on activation only happen once for the very first Show() call.
+  if (!restore_focus_on_activation_.has_value())
+    restore_focus_on_activation_ = true;
 
   frame_->Show();
-
-  force_location_bar_focus_ = false;
 
   browser()->OnWindowDidShow();
 
@@ -809,7 +812,7 @@ void BrowserView::UpdateDevTools() {
 }
 
 void BrowserView::UpdateLoadingAnimations(bool should_animate) {
-  if (should_animate) {
+  if (should_animate || tabstrip_->IsAnyIconAnimating()) {
     if (!loading_animation_timer_.IsRunning()) {
       // Loads are happening, and the timer isn't running, so start it.
       loading_animation_start_ = base::TimeTicks::Now();
@@ -1101,7 +1104,7 @@ void BrowserView::SetFocusToLocationBar(bool select_all) {
   // even if the widget doens't have a focus. Either cases, we need to ignore
   // this when the browser window isn't active.
 #if defined(OS_WIN) || defined(OS_CHROMEOS)
-  if (!force_location_bar_focus_ && !IsActive())
+  if (!IsActive())
     return;
 #endif
 
@@ -1127,6 +1130,11 @@ void BrowserView::UpdateToolbar(content::WebContents* contents) {
   // We may end up here during destruction.
   if (toolbar_)
     toolbar_->Update(contents);
+}
+
+void BrowserView::UpdateToolbarVisibility(bool visible, bool animate) {
+  if (toolbar_)
+    toolbar_->UpdateToolbarVisibility(visible, animate);
 }
 
 void BrowserView::ResetToolbarTabState(content::WebContents* contents) {
@@ -1159,6 +1167,13 @@ void BrowserView::ToolbarSizeChanged(bool is_animating) {
   if (is_animating)
     contents_web_view_->SetFastResize(true);
   UpdateUIForContents(GetActiveWebContents());
+
+  // Do nothing if we're currently participating in a tab dragging process. The
+  // fast resize bit will be reset and the web contents will get re-layed out
+  // after the tab dragging ends.
+  if (in_tab_dragging_)
+    return;
+
   if (is_animating)
     contents_web_view_->SetFastResize(false);
 
@@ -1167,6 +1182,24 @@ void BrowserView::ToolbarSizeChanged(bool is_animating) {
   // haven't changed contents_container_ won't get a Layout and we'll end up
   // with a gray rect because the clip wasn't updated.
   if (!is_animating) {
+    contents_web_view_->InvalidateLayout();
+    contents_container_->Layout();
+  }
+}
+
+void BrowserView::TabDraggingStatusChanged(bool is_dragging) {
+  if (in_tab_dragging_ == is_dragging)
+    return;
+
+  in_tab_dragging_ = is_dragging;
+  if (in_tab_dragging_) {
+    contents_web_view_->SetFastResize(true);
+  } else {
+    contents_web_view_->SetFastResize(false);
+
+    // When tab dragging is ended, we need to make sure the web contents get
+    // re-layed out. Otherwise we may see web contents get clipped to the window
+    // size that was used during dragging.
     contents_web_view_->InvalidateLayout();
     contents_container_->Layout();
   }
@@ -2077,10 +2110,21 @@ void BrowserView::OnWidgetDestroying(views::Widget* widget) {
 void BrowserView::OnWidgetActivationChanged(views::Widget* widget,
                                             bool active) {
   if (browser_->window()) {
-    if (active)
+    if (active) {
+      if (restore_focus_on_activation_.has_value() &&
+          restore_focus_on_activation_.value()) {
+        restore_focus_on_activation_ = false;
+
+        // Set initial focus change on the first activation if there is no
+        // tab modal dialog.
+        if (!IsShowingWebContentsModalDialog(GetActiveWebContents()))
+          RestoreFocus();
+      }
+
       BrowserList::SetLastActive(browser_.get());
-    else
+    } else {
       BrowserList::NotifyBrowserNoLongerActive(browser_.get());
+    }
   }
 
   if (!extension_keybinding_registry_ &&
@@ -2238,7 +2282,7 @@ int BrowserView::NonClientHitTest(const gfx::Point& point) {
 }
 
 gfx::Size BrowserView::GetMinimumSize() const {
-  return GetBrowserViewLayout()->GetMinimumSize();
+  return GetBrowserViewLayout()->GetMinimumSize(this);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2704,7 +2748,9 @@ void BrowserView::ProcessFullscreen(bool fullscreen,
       immersive_mode_controller_->ShouldStayImmersiveAfterExitingFullscreen();
   bool is_locked_fullscreen = false;
 #if defined(OS_CHROMEOS)
-  is_locked_fullscreen = ash::IsWindowTrustedPinned(GetNativeWindow());
+  is_locked_fullscreen = ash::IsWindowTrustedPinned(
+      features::IsUsingWindowService() ? GetNativeWindow()->GetRootWindow()
+                                       : GetNativeWindow());
 #endif
   // Never use immersive in locked fullscreen as it allows the user to exit the
   // locked mode.
@@ -2943,6 +2989,20 @@ std::string BrowserView::GetWorkspace() const {
 bool BrowserView::IsVisibleOnAllWorkspaces() const {
   return frame_->IsVisibleOnAllWorkspaces();
 }
+
+#if BUILDFLAG(ENABLE_DESKTOP_IN_PRODUCT_HELP)
+void BrowserView::ShowInProductHelpPromo(InProductHelpFeature iph_feature) {
+  switch (iph_feature) {
+    case InProductHelpFeature::kReopenTab:
+      if (!reopen_tab_promo_controller_) {
+        reopen_tab_promo_controller_ =
+            std::make_unique<ReopenTabPromoController>(this);
+      }
+      reopen_tab_promo_controller_->ShowPromo();
+      break;
+  }
+}
+#endif
 
 bool BrowserView::DoCutCopyPasteForWebContents(
     WebContents* contents,

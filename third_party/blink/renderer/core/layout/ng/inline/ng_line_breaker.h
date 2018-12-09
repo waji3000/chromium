@@ -98,7 +98,7 @@ class CORE_EXPORT NGLineBreaker {
                  const NGInlineItem&,
                  LayoutUnit available_width);
 
-  scoped_refptr<ShapeResult> TruncateLineEndResult(
+  scoped_refptr<ShapeResultView> TruncateLineEndResult(
       const NGInlineItemResult& item_result,
       unsigned end_offset);
   void UpdateShapeResult(NGInlineItemResult*);
@@ -168,8 +168,9 @@ class CORE_EXPORT NGLineBreaker {
   // True when current box has 'word-break/word-wrap: break-word'.
   bool break_anywhere_if_overflow_ = false;
 
-  // Force LineBreakType::kBreakCharacter by ignoring the current style.
-  // Set to find grapheme cluster boundaries for 'break-word' after overflow.
+  // Force LineBreakType::kBreakCharacter by ignoring the current style if
+  // |break_anywhere_if_overflow_| is set. Set to find grapheme cluster
+  // boundaries for 'break-word' after overflow.
   bool override_break_anywhere_ = false;
 
   // True when breaking at soft hyphens (U+00AD) is allowed.
@@ -212,7 +213,7 @@ class CORE_EXPORT NGLineBreaker {
   // multiple times.
   struct TrailingCollapsibleSpace {
     NGInlineItemResult* item_result;
-    scoped_refptr<const ShapeResult> collapsed_shape_result;
+    scoped_refptr<const ShapeResultView> collapsed_shape_result;
   };
   base::Optional<TrailingCollapsibleSpace> trailing_collapsible_space_;
 

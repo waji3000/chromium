@@ -16,7 +16,7 @@
 #include "base/process/launch.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "base/timer/timer.h"
 #include "base/values.h"
 #include "cc/base/switches.h"
@@ -117,7 +117,6 @@ void DeriveCommandLine(const GURL& start_url,
     ::switches::kEnablePinch,
     ::switches::kEnablePreferCompositingToLCDText,
     ::switches::kEnableRGBA4444Textures,
-    ::switches::kEnableSlimmingPaintV2,
     ::switches::kEnableTouchDragDrop,
     ::switches::kEnableUnifiedDesktop,
     ::switches::kEnableUseZoomForDSF,

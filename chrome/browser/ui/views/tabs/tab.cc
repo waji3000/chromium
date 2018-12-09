@@ -682,7 +682,6 @@ void Tab::AlertStateChanged() {
 
 void Tab::FrameColorsChanged() {
   UpdateForegroundColors();
-  SchedulePaint();
 }
 
 void Tab::SelectedStateChanged() {
@@ -712,7 +711,7 @@ void Tab::SetData(TabRendererData data) {
                 ? l10n_util::GetStringUTF16(IDS_TAB_LOADING_TITLE)
                 : CoreTabHelper::GetDefaultTitle();
   } else {
-    Browser::FormatTitleForDisplay(&title);
+    title = Browser::FormatTitleForDisplay(title);
   }
   title_->SetText(title);
 
@@ -740,6 +739,10 @@ void Tab::StepLoadingAnimation(const base::TimeDelta& elapsed_time) {
   // frequent enough in other cases since the state can be updated and the tab
   // painted before the animation is stepped.
   icon_->SetCanPaintToLayer(controller_->CanPaintThrobberToLayer());
+}
+
+bool Tab::ShowingLoadingAnimation() const {
+  return icon_->ShowingLoadingAnimation();
 }
 
 void Tab::StartPulse() {
@@ -915,10 +918,8 @@ void Tab::UpdateIconVisibility() {
 
     // Show the close button if it's allowed to show on hover, even if it's
     // forced to be hidden normally.
-    const bool show_on_hover = controller_->ShouldShowCloseButtonOnHover();
-    showing_close_button_ |= show_on_hover && hover_controller_.ShouldDraw();
     showing_close_button_ &= large_enough_for_close_button;
-    if (showing_close_button_ || show_on_hover)
+    if (showing_close_button_)
       available_width -= close_button_width;
 
     // If no other controls are visible, show the alert icon or the favicon
@@ -1006,14 +1007,16 @@ void Tab::UpdateForegroundColors() {
   } else if (mouse_hovered_) {
     expected_opacity = GetHoverOpacity();
   }
-  SkColor tab_bg_color = color_utils::AlphaBlend(
+  const SkColor tab_bg_color = color_utils::AlphaBlend(
       controller_->GetTabBackgroundColor(TAB_ACTIVE),
       controller_->GetTabBackgroundColor(TAB_INACTIVE),
       gfx::ToRoundedInt(expected_opacity * SK_AlphaOPAQUE));
   SkColor tab_title_color = controller_->GetTabForegroundColor(
-      expected_opacity > 0.5f ? TAB_ACTIVE : TAB_INACTIVE);
+      expected_opacity > 0.5f ? TAB_ACTIVE : TAB_INACTIVE, tab_bg_color);
   tab_title_color =
       color_utils::GetColorWithMinimumContrast(tab_title_color, tab_bg_color);
+
+  icon_->SetBackgroundColor(tab_bg_color);
 
   title_->SetEnabledColor(tab_title_color);
 
@@ -1053,4 +1056,6 @@ void Tab::UpdateForegroundColors() {
     button_color_ = generated_icon_color;
     alert_indicator_->OnParentTabButtonColorChanged();
   }
+
+  SchedulePaint();
 }

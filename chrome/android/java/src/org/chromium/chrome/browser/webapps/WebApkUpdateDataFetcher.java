@@ -112,16 +112,16 @@ public class WebApkUpdateDataFetcher extends EmptyTabObserver {
             iconUrlToMurmur2HashMap.put(iconUrl, murmur2Hash);
         }
 
-        String serializedShareTarget = WebApkInfo.getSerializedShareTarget(
-                shareAction, shareParamsTitle, shareParamsText, shareParamsUrl);
+        String serializedShareTarget = WebApkInfo.getSerializedShareTarget(shareAction, null, null,
+                shareParamsTitle, shareParamsText, shareParamsUrl, null, null);
 
         WebApkInfo info = WebApkInfo.create(mOldInfo.id(), mOldInfo.uri().toString(), scopeUrl,
                 new WebApkInfo.Icon(primaryIconBitmap), new WebApkInfo.Icon(badgeIconBitmap), null,
                 name, shortName, displayMode, orientation, mOldInfo.source(), themeColor,
-                backgroundColor, mOldInfo.apkPackageName(), mOldInfo.shellApkVersion(),
+                backgroundColor, mOldInfo.webApkPackageName(), mOldInfo.shellApkVersion(),
                 mOldInfo.manifestUrl(), manifestStartUrl, WebApkInfo.WebApkDistributor.BROWSER,
                 iconUrlToMurmur2HashMap, serializedShareTarget, mOldInfo.shouldForceNavigation(),
-                mOldInfo.useTransparentSplash());
+                mOldInfo.useTransparentSplash(), null);
         mObserver.onGotManifestData(info, primaryIconUrl, badgeIconUrl);
     }
 

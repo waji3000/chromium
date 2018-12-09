@@ -62,11 +62,11 @@ class UserPolicySigninService : public UserPolicySigninServiceBase {
   // identity::IdentityManager::Observer implementation:
   // UserPolicySigninServiceBase is already an observer of IdentityManager.
   void OnPrimaryAccountSet(const AccountInfo& account_info) override;
-  void OnRefreshTokenUpdatedForAccount(const AccountInfo& account_info,
-                                       bool is_valid) override;
+  void OnRefreshTokenUpdatedForAccount(
+      const AccountInfo& account_info) override;
 
   // CloudPolicyService::Observer implementation:
-  void OnInitializationCompleted(CloudPolicyService* service) override;
+  void OnCloudPolicyServiceInitializationCompleted() override;
 
  protected:
   // UserPolicySigninServiceBase implementation:

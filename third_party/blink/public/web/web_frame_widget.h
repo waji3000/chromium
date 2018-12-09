@@ -31,7 +31,6 @@
 #ifndef THIRD_PARTY_BLINK_PUBLIC_WEB_WEB_FRAME_WIDGET_H_
 #define THIRD_PARTY_BLINK_PUBLIC_WEB_WEB_FRAME_WIDGET_H_
 
-#include "third_party/blink/public/mojom/page/page_visibility_state.mojom-shared.h"
 #include "third_party/blink/public/platform/web_common.h"
 #include "third_party/blink/public/platform/web_drag_operation.h"
 #include "third_party/blink/public/platform/web_touch_action.h"
@@ -57,13 +56,6 @@ class WebFrameWidget : public WebWidget {
   BLINK_EXPORT static WebFrameWidget* CreateForChildLocalRoot(
       WebWidgetClient*,
       WebLocalFrame* local_root);
-
-  // Sets the visibility of the WebFrameWidget.
-  // We still track page-level visibility, but additionally we need to notify a
-  // WebFrameWidget when its owning RenderWidget receives a Show or Hide
-  // directive, so that it knows whether it needs to draw or not.
-  virtual void SetVisibilityState(mojom::PageVisibilityState visibility_state) {
-  }
 
   // Overrides the WebFrameWidget's background and base background color. You
   // can use this to enforce a transparent background, which is useful if you
@@ -154,6 +146,10 @@ class WebFrameWidget : public WebWidget {
   // inside) this widget into view. The scrolling might end with a final zooming
   // into the editable region which is performed in the main frame process.
   virtual bool ScrollFocusedEditableElementIntoView() = 0;
+
+  // This function provides zooming for find in page results when browsing with
+  // page autosize.
+  virtual void ZoomToFindInPageRect(const WebRect& rect_in_root_frame) = 0;
 };
 
 }  // namespace blink

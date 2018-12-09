@@ -152,8 +152,8 @@ bool MenuDelegate::ShouldReserveSpaceForSubmenuIndicator() const {
   return true;
 }
 
-View* MenuDelegate::CreateFootnoteView() {
-  return nullptr;
+bool MenuDelegate::ShouldTryPositioningBesideAnchor() const {
+  return true;
 }
 
 }  // namespace views

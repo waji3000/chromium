@@ -45,7 +45,7 @@ IDBOpenDBRequest* IDBOpenDBRequest::Create(
     int64_t transaction_id,
     int64_t version,
     IDBRequest::AsyncTraceState metrics) {
-  IDBOpenDBRequest* request = new IDBOpenDBRequest(
+  IDBOpenDBRequest* request = MakeGarbageCollected<IDBOpenDBRequest>(
       script_state, callbacks, transaction_id, version, std::move(metrics));
   request->PauseIfNeeded();
   return request;
@@ -99,7 +99,7 @@ void IDBOpenDBRequest::EnqueueUpgradeNeeded(
     int64_t old_version,
     std::unique_ptr<WebIDBDatabase> backend,
     const IDBDatabaseMetadata& metadata,
-    WebIDBDataLoss data_loss,
+    mojom::IDBDataLoss data_loss,
     String data_loss_message) {
   IDB_TRACE("IDBOpenDBRequest::onUpgradeNeeded()");
   if (!ShouldEnqueueEvent()) {

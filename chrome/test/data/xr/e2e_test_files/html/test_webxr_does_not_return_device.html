@@ -8,16 +8,13 @@ Tests that WebXR returns no devices when OpenVR is disabled.
   </head>
   <body>
     <canvas id="webgl-canvas"></canvas>
-    <script src="../../../../../../third_party/WebKit/LayoutTests/resources/testharness.js"></script>
+    <script src="../../../../../../third_party/blink/web_tests/resources/testharness.js"></script>
     <script src="../resources/webxr_e2e.js"></script>
     <script>
-      var t = async_test("WebXR returns no devices when OpenVR disabled");
       navigator.xr.requestDevice().then( () => {
-        t.step( () => {
-          assert_unreached("WebXR returned a device");
-        });
+        assert_unreached("WebXR returned a device");
       }, () => {
-        t.done();
+        done();
       });
     </script>
   </body>

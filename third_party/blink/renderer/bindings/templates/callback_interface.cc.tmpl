@@ -20,7 +20,7 @@ namespace blink {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wglobal-constructors"
 #endif
-const WrapperTypeInfo {{v8_class}}::wrapperTypeInfo = {
+const WrapperTypeInfo {{snake_case_v8_class}}_wrapper_type_info = {
     gin::kEmbedderBlink,
     {{v8_class}}::DomTemplate,
     nullptr,
@@ -42,15 +42,14 @@ static void Install{{v8_class}}Template(v8::Isolate* isolate, const DOMWrapperWo
   // Initialize the interface object's template.
   V8DOMConfiguration::InitializeDOMInterfaceTemplate(
       isolate, interface_template,
-      {{v8_class}}::wrapperTypeInfo.interface_name,
+      {{v8_class}}::GetWrapperTypeInfo()->interface_name,
       v8::Local<v8::FunctionTemplate>(),
       kV8DefaultWrapperInternalFieldCount);
   interface_template->SetLength(0);
 
   // Register IDL constants.
-  {# |install_constants| requires |interfaceTemplate| and |prototypeTemplate|. #}
-  v8::Local<v8::FunctionTemplate> interfaceTemplate = interface_template;
-  v8::Local<v8::ObjectTemplate> prototypeTemplate =
+  {# |install_constants| requires |interface_template| and |prototype_template|. #}
+  v8::Local<v8::ObjectTemplate> prototype_template =
       interface_template->PrototypeTemplate();
   {{install_constants() | trim | indent(2)}}
 }
@@ -60,7 +59,7 @@ v8::Local<v8::FunctionTemplate> {{v8_class}}::DomTemplate(v8::Isolate* isolate, 
   return V8DOMConfiguration::DomClassTemplate(
       isolate,
       world,
-      const_cast<WrapperTypeInfo*>(&wrapperTypeInfo),
+      const_cast<WrapperTypeInfo*>(GetWrapperTypeInfo()),
       Install{{v8_class}}Template);
 }
 {% endif %}{# is_legacy_callback_interface #}
@@ -79,7 +78,7 @@ const char* {{v8_class}}::NameInHeapSnapshot() const {
   if (creation_context.IsEmpty())
     return nullptr;
 
-  return new {{v8_class}}(callback_object, creation_context);
+  return MakeGarbageCollected<{{v8_class}}>(callback_object, creation_context);
 }
 
 {% for method in methods %}
@@ -88,7 +87,7 @@ v8::Maybe<{{method.cpp_type}}> {{v8_class}}::{{method.name}}({{method.argument_d
 {{callback_invoke(
     'callback interface', None,
     method.cpp_type, method.native_value_traits_tag, method.arguments,
-    False,
+    False, False,
     interface_name, method.name)}}
 }
 
@@ -107,6 +106,42 @@ void {{v8_class}}::InvokeAndReportException({{methods[0].argument_declarations |
       }});
   // An exception if any is killed with the v8::TryCatch above.
   ALLOW_UNUSED_LOCAL(maybe_result);
+}
+{% endif %}
+
+{% if interface_name == 'EventListener' %}
+bool {{v8_class}}::IsRunnableOrThrowException(IgnorePause ignore_pause) {
+  bool is_runnable =
+      ignore_pause == IgnorePause::kIgnore ?
+      IsCallbackFunctionRunnableIgnoringPause(
+          CallbackRelevantScriptState(), IncumbentScriptState()) :
+      IsCallbackFunctionRunnable(
+          CallbackRelevantScriptState(), IncumbentScriptState());
+  if (is_runnable)
+    return true;
+
+  // Wrapper-tracing for the callback function makes the function object and
+  // its creation context alive. Thus it's safe to use the creation context
+  // of the callback function here.
+  v8::HandleScope handle_scope(GetIsolate());
+  v8::Local<v8::Object> callback_object = CallbackObject();
+  CHECK(!callback_object.IsEmpty());
+  v8::Context::Scope context_scope(callback_object->CreationContext());
+  V8ThrowException::ThrowError(
+      GetIsolate(),
+      ExceptionMessages::FailedToExecute(
+          "{{methods[0].name}}",
+          "{{interface_name}}",
+          "The provided callback is no longer runnable."));
+  return false;
+}
+
+v8::Maybe<{{methods[0].cpp_type}}> {{v8_class}}::InvokeWithoutRunnabilityCheck({{methods[0].argument_declarations | join(', ')}}) {
+{{callback_invoke(
+    'callback interface', None,
+    methods[0].cpp_type, methods[0].native_value_traits_tag, methods[0].arguments,
+    False, True,
+    interface_name, methods[0].name)}}
 }
 {% endif %}
 

@@ -25,8 +25,8 @@ SetFormFieldValueAction::~SetFormFieldValueAction() {}
 void SetFormFieldValueAction::InternalProcessAction(
     ActionDelegate* delegate,
     ProcessActionCallback callback) {
-  delegate->WaitForElement(
-      ExtractSelectors(proto_.set_form_value().element().selectors()),
+  delegate->ShortWaitForElementExist(
+      Selector(proto_.set_form_value().element()),
       base::BindOnce(&SetFormFieldValueAction::OnWaitForElement,
                      weak_ptr_factory_.GetWeakPtr(), base::Unretained(delegate),
                      std::move(callback)));
@@ -43,18 +43,66 @@ void SetFormFieldValueAction::OnWaitForElement(ActionDelegate* delegate,
 
   // TODO(crbug.com/806868): Add flag to allow simulating key presses to set
   // field value.
-  delegate->SetFieldValue(
-      ExtractSelectors(proto_.set_form_value().element().selectors()),
-      proto_.set_form_value().value(0).text(),
-      /* simulate_key_presses= */ false,
-      base::BindOnce(&SetFormFieldValueAction::OnSetFieldValue,
-                     weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
+
+  // Start with first value, then call OnSetFieldValue() recursively until done.
+  OnSetFieldValue(delegate, std::move(callback), /* next = */ 0,
+                  /* status= */ true);
 }
 
-void SetFormFieldValueAction::OnSetFieldValue(ProcessActionCallback callback,
+void SetFormFieldValueAction::OnSetFieldValue(ActionDelegate* delegate,
+                                              ProcessActionCallback callback,
+                                              int next,
                                               bool status) {
-  UpdateProcessedAction(status ? ACTION_APPLIED : OTHER_ACTION_STATUS);
-  std::move(callback).Run(std::move(processed_action_proto_));
+  // If something went wrong or we are out of values: finish
+  if (!status || next >= proto_.set_form_value().value_size()) {
+    UpdateProcessedAction(status ? ACTION_APPLIED : OTHER_ACTION_STATUS);
+    std::move(callback).Run(std::move(processed_action_proto_));
+    return;
+  }
+
+  const auto& key_field = proto_.set_form_value().value(next);
+  const auto& selector = Selector(proto_.set_form_value().element());
+  switch (key_field.keypress_case()) {
+    case SetFormFieldValueProto_KeyPress::kText:
+      delegate->SetFieldValue(
+          selector, key_field.text(),
+          /* simulate_key_presses = */ false,
+          base::BindOnce(&SetFormFieldValueAction::OnSetFieldValue,
+                         weak_ptr_factory_.GetWeakPtr(), delegate,
+                         std::move(callback), /* next = */ next + 1));
+      break;
+    case SetFormFieldValueProto_KeyPress::kKeycode:
+      // DEPRECATED: the field `keycode' used to contain a single character to
+      // input as text. Since there is no easy way to convert keycodes to text,
+      // this field is now deprecated and only works for US-ASCII characters.
+      // You should use the `keyboard_input' field instead.
+      if (key_field.keycode() < 128) {  // US-ASCII
+        delegate->SendKeyboardInput(
+            selector, {std::string(1, char(key_field.keycode()))},
+            base::BindOnce(&SetFormFieldValueAction::OnSetFieldValue,
+                           weak_ptr_factory_.GetWeakPtr(), delegate,
+                           std::move(callback), /* next = */ next + 1));
+      } else {
+        DLOG(ERROR)
+            << "SetFormFieldValueProto_KeyPress: field `keycode' is deprecated "
+            << "and only supports US-ASCII values (encountered "
+            << key_field.keycode() << "). Use field `key' instead.";
+        OnSetFieldValue(delegate, std::move(callback), next,
+                        /* status= */ false);
+      }
+      break;
+    case SetFormFieldValueProto_KeyPress::kKeyboardInput:
+      delegate->SendKeyboardInput(
+          selector, {key_field.keyboard_input()},
+          base::BindOnce(&SetFormFieldValueAction::OnSetFieldValue,
+                         weak_ptr_factory_.GetWeakPtr(), delegate,
+                         std::move(callback), /* next = */ next + 1));
+      break;
+    default:
+      DLOG(ERROR) << "Unrecognized field for SetFormFieldValueProto_KeyPress";
+      OnSetFieldValue(delegate, std::move(callback), next, /* status= */ false);
+      break;
+  }
 }
 
 }  // namespace autofill_assistant

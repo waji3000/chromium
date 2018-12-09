@@ -51,8 +51,8 @@ ui::AXTreeUpdate MakeAXTreeUpdate(
 
   ui::AXTreeUpdate update;
   ui::AXTreeData tree_data;
-  tree_data.tree_id = ui::AXTreeID::FromString("1");
-  tree_data.focused_tree_id = ui::AXTreeID::FromString("1");
+  tree_data.tree_id = ui::AXTreeID::CreateNewAXTreeID();
+  tree_data.focused_tree_id = tree_data.tree_id;
   update.tree_data = tree_data;
   update.has_tree_data = true;
   update.root_id = node1.id;
@@ -376,7 +376,7 @@ void BrowserAccessibilityManager::OnAccessibilityEvents(
   // Fire any events related to changes to the tree.
   for (auto targeted_event : *this) {
     BrowserAccessibility* event_target = GetFromAXNode(targeted_event.node);
-    if (!event_target || event_target->PlatformIsChildOfLeaf())
+    if (!event_target || !event_target->CanFireEvents())
       continue;
 
     FireGeneratedEvent(targeted_event.event_params.event, event_target);
@@ -389,7 +389,7 @@ void BrowserAccessibilityManager::OnAccessibilityEvents(
 
     // Fire the native event.
     BrowserAccessibility* event_target = GetFromID(event.id);
-    if (!event_target || event_target->PlatformIsChildOfLeaf())
+    if (!event_target || !event_target->CanFireEvents())
       return;
 
     if (event.event_type == ax::mojom::Event::kHover)

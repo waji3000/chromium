@@ -101,6 +101,16 @@ void WebURLRequest::SetSiteForCookies(const WebURL& site_for_cookies) {
   resource_request_->SetSiteForCookies(site_for_cookies);
 }
 
+base::Optional<WebSecurityOrigin> WebURLRequest::TopFrameOrigin() const {
+  const SecurityOrigin* origin = resource_request_->TopFrameOrigin();
+  return origin ? base::Optional<WebSecurityOrigin>(origin)
+                : base::Optional<WebSecurityOrigin>();
+}
+
+void WebURLRequest::SetTopFrameOrigin(const WebSecurityOrigin& origin) {
+  resource_request_->SetTopFrameOrigin(origin);
+}
+
 WebSecurityOrigin WebURLRequest::RequestorOrigin() const {
   return resource_request_->RequestorOrigin();
 }
@@ -158,8 +168,7 @@ void WebURLRequest::SetHTTPReferrer(
       web_referrer.IsEmpty() ? Referrer::NoReferrer() : String(web_referrer);
   // TODO(domfarolino): Stop storing ResourceRequest's generated referrer as a
   // header and instead use a separate member. See https://crbug.com/850813.
-  resource_request_->SetHTTPReferrer(
-      Referrer(referrer, static_cast<ReferrerPolicy>(referrer_policy)));
+  resource_request_->SetHTTPReferrer(Referrer(referrer, referrer_policy));
 }
 
 void WebURLRequest::AddHTTPHeaderField(const WebString& name,
@@ -210,8 +219,7 @@ network::mojom::RequestContextFrameType WebURLRequest::GetFrameType() const {
 }
 
 network::mojom::ReferrerPolicy WebURLRequest::GetReferrerPolicy() const {
-  return static_cast<network::mojom::ReferrerPolicy>(
-      resource_request_->GetReferrerPolicy());
+  return resource_request_->GetReferrerPolicy();
 }
 
 void WebURLRequest::SetHTTPOriginIfNeeded(const WebSecurityOrigin& origin) {
@@ -380,9 +388,9 @@ bool WebURLRequest::IsExternalRequest() const {
   return resource_request_->IsExternalRequest();
 }
 
-network::mojom::CORSPreflightPolicy WebURLRequest::GetCORSPreflightPolicy()
+network::mojom::CorsPreflightPolicy WebURLRequest::GetCorsPreflightPolicy()
     const {
-  return resource_request_->CORSPreflightPolicy();
+  return resource_request_->CorsPreflightPolicy();
 }
 
 void WebURLRequest::SetNavigationStartTime(
@@ -434,12 +442,27 @@ void WebURLRequest::SetOriginPolicy(const WebString& policy) {
   resource_request_->SetOriginPolicy(policy);
 }
 
-const WebString WebURLRequest::GetRequestedWith() const {
-  return resource_request_->GetRequestedWith();
+const WebString WebURLRequest::GetRequestedWithHeader() const {
+  return resource_request_->GetRequestedWithHeader();
 }
 
-void WebURLRequest::SetRequestedWith(const WebString& value) {
-  resource_request_->SetRequestedWith(value);
+void WebURLRequest::SetRequestedWithHeader(const WebString& value) {
+  resource_request_->SetRequestedWithHeader(value);
+}
+
+const WebString WebURLRequest::GetClientDataHeader() const {
+  return resource_request_->GetClientDataHeader();
+}
+
+void WebURLRequest::SetClientDataHeader(const WebString& value) {
+  resource_request_->SetClientDataHeader(value);
+}
+
+const base::UnguessableToken& WebURLRequest::GetFetchWindowId() const {
+  return resource_request_->GetFetchWindowId();
+}
+void WebURLRequest::SetFetchWindowId(const base::UnguessableToken& id) {
+  resource_request_->SetFetchWindowId(id);
 }
 
 const ResourceRequest& WebURLRequest::ToResourceRequest() const {

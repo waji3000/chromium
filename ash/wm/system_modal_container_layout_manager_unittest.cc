@@ -27,8 +27,8 @@
 #include "ui/compositor/test/layer_animator_test_controller.h"
 #include "ui/events/test/event_generator.h"
 #include "ui/keyboard/keyboard_controller.h"
-#include "ui/keyboard/keyboard_switches.h"
 #include "ui/keyboard/keyboard_ui.h"
+#include "ui/keyboard/public/keyboard_switches.h"
 #include "ui/keyboard/test/keyboard_test_util.h"
 #include "ui/views/test/capture_tracking_view.h"
 #include "ui/views/widget/widget.h"
@@ -183,13 +183,8 @@ class SystemModalContainerLayoutManagerTest : public AshTestBase {
       return;
 
     if (show) {
-      keyboard->ShowKeyboard(true);
-      if (keyboard->GetKeyboardWindow()->bounds().height() == 0) {
-        keyboard->GetKeyboardWindow()->SetBounds(
-            keyboard::KeyboardBoundsFromRootBounds(
-                Shell::GetPrimaryRootWindow()->bounds(), 100));
-        keyboard->NotifyKeyboardWindowLoaded();
-      }
+      keyboard->ShowKeyboard(true /* lock */);
+      ASSERT_TRUE(keyboard::WaitUntilShown());
     } else {
       keyboard->HideKeyboardByUser();
     }

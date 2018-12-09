@@ -178,6 +178,7 @@ TEST_F(OriginTest, OpaqueOriginComparison) {
   EXPECT_LT(opaque_b, url::Origin::Create(GURL("http://www.google.com")));
 
   EXPECT_EQ(opaque_b, url::Origin::Resolve(GURL("about:blank"), opaque_b));
+  EXPECT_EQ(opaque_b, url::Origin::Resolve(GURL("about:srcdoc"), opaque_b));
   EXPECT_EQ(opaque_b,
             url::Origin::Resolve(GURL("about:blank?hello#whee"), opaque_b));
 
@@ -652,6 +653,20 @@ TEST_F(OriginTest, DebugAlias) {
   Origin origin1 = Origin::Create(GURL("https://foo.com/bar"));
   DEBUG_ALIAS_FOR_ORIGIN(origin1_debug_alias, origin1);
   EXPECT_STREQ("https://foo.com", origin1_debug_alias);
+}
+
+TEST_F(OriginTest, NonStandardScheme) {
+  Origin origin = Origin::Create(GURL("cow://"));
+  EXPECT_TRUE(origin.opaque());
+}
+TEST_F(OriginTest, NonStandardSchemeWithAndroidWebViewHack) {
+  EnableNonStandardSchemesForAndroidWebView();
+  Origin origin = Origin::Create(GURL("cow://"));
+  EXPECT_FALSE(origin.opaque());
+  EXPECT_EQ("cow", origin.scheme());
+  EXPECT_EQ("", origin.host());
+  EXPECT_EQ(0, origin.port());
+  Shutdown();
 }
 
 }  // namespace url

@@ -223,20 +223,23 @@ class MutableProfileOAuth2TokenServiceDelegate::RevokeServerRefreshToken
   RevokeServerRefreshToken(
       MutableProfileOAuth2TokenServiceDelegate* token_service_delegate,
       SigninClient* client,
-      const std::string& refresh_token);
+      const std::string& refresh_token,
+      int attempt);
   ~RevokeServerRefreshToken() override;
 
-  // Starts the network request.
-  static void Start(base::WeakPtr<RevokeServerRefreshToken> rsrt,
-                    const std::string& refresh_token);
-
  private:
+  // Starts the network request.
+  void Start();
+  // Returns true if the request should be retried.
+  bool ShouldRetry(GaiaAuthConsumer::TokenRevocationStatus status);
   // GaiaAuthConsumer overrides:
   void OnOAuth2RevokeTokenCompleted(
       GaiaAuthConsumer::TokenRevocationStatus status) override;
 
   MutableProfileOAuth2TokenServiceDelegate* token_service_delegate_;
   GaiaAuthFetcher fetcher_;
+  std::string refresh_token_;
+  int attempt_;
   base::WeakPtrFactory<RevokeServerRefreshToken> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RevokeServerRefreshToken);
@@ -246,43 +249,70 @@ MutableProfileOAuth2TokenServiceDelegate::RevokeServerRefreshToken::
     RevokeServerRefreshToken(
         MutableProfileOAuth2TokenServiceDelegate* token_service_delegate,
         SigninClient* client,
-        const std::string& refresh_token)
+        const std::string& refresh_token,
+        int attempt)
     : token_service_delegate_(token_service_delegate),
       fetcher_(this,
-               GaiaConstants::kChromeSource,
+               gaia::GaiaSource::kChrome,
                token_service_delegate_->GetURLLoaderFactory()),
+      refresh_token_(refresh_token),
+      attempt_(attempt),
       weak_ptr_factory_(this) {
   RecordRefreshTokenRevocationRequestEvent(
       TokenRevocationRequestProgress::kRequestCreated);
   client->DelayNetworkCall(
       base::Bind(&MutableProfileOAuth2TokenServiceDelegate::
                      RevokeServerRefreshToken::Start,
-                 weak_ptr_factory_.GetWeakPtr(), refresh_token));
+                 weak_ptr_factory_.GetWeakPtr()));
 }
 
-// static
-void MutableProfileOAuth2TokenServiceDelegate::RevokeServerRefreshToken::Start(
-    base::WeakPtr<RevokeServerRefreshToken> rsrt,
-    const std::string& refresh_token) {
-  if (!rsrt)
-    return;
+void MutableProfileOAuth2TokenServiceDelegate::RevokeServerRefreshToken::
+    Start() {
   RecordRefreshTokenRevocationRequestEvent(
       TokenRevocationRequestProgress::kRequestStarted);
-  rsrt->fetcher_.StartRevokeOAuth2Token(refresh_token);
+  fetcher_.StartRevokeOAuth2Token(refresh_token_);
 }
 
 MutableProfileOAuth2TokenServiceDelegate::RevokeServerRefreshToken::
     ~RevokeServerRefreshToken() {
 }
 
+bool MutableProfileOAuth2TokenServiceDelegate::RevokeServerRefreshToken::
+    ShouldRetry(GaiaAuthConsumer::TokenRevocationStatus status) {
+  // Token revocation can be retried up to 3 times.
+  if (attempt_ >= 2)
+    return false;
+
+  switch (status) {
+    case GaiaAuthConsumer::TokenRevocationStatus::kServerError:
+    case GaiaAuthConsumer::TokenRevocationStatus::kConnectionFailed:
+    case GaiaAuthConsumer::TokenRevocationStatus::kConnectionTimeout:
+    case GaiaAuthConsumer::TokenRevocationStatus::kConnectionCanceled:
+      return true;
+    case GaiaAuthConsumer::TokenRevocationStatus::kSuccess:
+    case GaiaAuthConsumer::TokenRevocationStatus::kInvalidToken:
+    case GaiaAuthConsumer::TokenRevocationStatus::kInvalidRequest:
+    case GaiaAuthConsumer::TokenRevocationStatus::kUnknownError:
+      return false;
+  }
+}
+
 void MutableProfileOAuth2TokenServiceDelegate::RevokeServerRefreshToken::
     OnOAuth2RevokeTokenCompleted(
         GaiaAuthConsumer::TokenRevocationStatus status) {
-  RecordRefreshTokenRevocationRequestEvent(
-      (status == GaiaAuthConsumer::TokenRevocationStatus::kSuccess)
-          ? TokenRevocationRequestProgress::kRequestSucceeded
-          : TokenRevocationRequestProgress::kRequestFailed);
   UMA_HISTOGRAM_ENUMERATION("Signin.RefreshTokenRevocationStatus", status);
+  if (ShouldRetry(status)) {
+    token_service_delegate_->server_revokes_.push_back(
+        std::make_unique<RevokeServerRefreshToken>(
+            token_service_delegate_, token_service_delegate_->client_,
+            refresh_token_, attempt_ + 1));
+  } else {
+    RecordRefreshTokenRevocationRequestEvent(
+        (status == GaiaAuthConsumer::TokenRevocationStatus::kSuccess)
+            ? TokenRevocationRequestProgress::kRequestSucceeded
+            : TokenRevocationRequestProgress::kRequestFailed);
+    UMA_HISTOGRAM_ENUMERATION("Signin.RefreshTokenRevocationCompleted", status);
+  }
   // |this| pointer will be deleted when removed from the vector, so don't
   // access any members after call to erase().
   token_service_delegate_->server_revokes_.erase(std::find_if(
@@ -294,47 +324,9 @@ void MutableProfileOAuth2TokenServiceDelegate::RevokeServerRefreshToken::
       }));
 }
 
-MutableProfileOAuth2TokenServiceDelegate::AccountStatus::AccountStatus(
-    SigninErrorController* signin_error_controller,
-    const std::string& account_id,
-    const std::string& refresh_token)
-    : signin_error_controller_(signin_error_controller),
-      account_id_(account_id),
-      refresh_token_(refresh_token),
-      last_auth_error_(GoogleServiceAuthError::NONE) {
-  DCHECK(signin_error_controller_);
-  DCHECK(!account_id_.empty());
-  DCHECK(!refresh_token.empty());
-}
-
-void MutableProfileOAuth2TokenServiceDelegate::AccountStatus::Initialize() {
-  signin_error_controller_->AddProvider(this);
-}
-
-MutableProfileOAuth2TokenServiceDelegate::AccountStatus::~AccountStatus() {
-  signin_error_controller_->RemoveProvider(this);
-}
-
-void MutableProfileOAuth2TokenServiceDelegate::AccountStatus::SetLastAuthError(
-    const GoogleServiceAuthError& error) {
-  last_auth_error_ = error;
-  signin_error_controller_->AuthStatusChanged();
-}
-
-std::string
-MutableProfileOAuth2TokenServiceDelegate::AccountStatus::GetAccountId() const {
-  return account_id_;
-}
-
-GoogleServiceAuthError
-MutableProfileOAuth2TokenServiceDelegate::AccountStatus::GetAuthStatus() const {
-  return last_auth_error_;
-}
-
 MutableProfileOAuth2TokenServiceDelegate::
     MutableProfileOAuth2TokenServiceDelegate(
         SigninClient* client,
-        SigninErrorController* signin_error_controller,
         AccountTrackerService* account_tracker_service,
         scoped_refptr<TokenWebData> token_web_data,
         signin::AccountConsistencyMethod account_consistency,
@@ -344,7 +336,6 @@ MutableProfileOAuth2TokenServiceDelegate::
       backoff_entry_(&backoff_policy_),
       backoff_error_(GoogleServiceAuthError::NONE),
       client_(client),
-      signin_error_controller_(signin_error_controller),
       account_tracker_service_(account_tracker_service),
       token_web_data_(token_web_data),
       account_consistency_(account_consistency),
@@ -352,7 +343,6 @@ MutableProfileOAuth2TokenServiceDelegate::
       can_revoke_credentials_(can_revoke_credentials) {
   VLOG(1) << "MutablePO2TS::MutablePO2TS";
   DCHECK(client);
-  DCHECK(signin_error_controller);
   DCHECK(account_tracker_service_);
   // It's okay to fill the backoff policy after being used in construction.
   backoff_policy_.num_errors_to_ignore = 0;
@@ -385,11 +375,11 @@ MutableProfileOAuth2TokenServiceDelegate::CreateAccessTokenFetcher(
     OAuth2AccessTokenConsumer* consumer) {
   ValidateAccountId(account_id);
   // check whether the account has persistent error.
-  if (refresh_tokens_[account_id]->GetAuthStatus().IsPersistentError()) {
+  if (refresh_tokens_[account_id].last_auth_error.IsPersistentError()) {
     VLOG(1) << "Request for token has been rejected due to persistent error #"
-            << refresh_tokens_[account_id]->GetAuthStatus().state();
+            << refresh_tokens_[account_id].last_auth_error.state();
     return new OAuth2AccessTokenFetcherImmediateError(
-        consumer, refresh_tokens_[account_id]->GetAuthStatus());
+        consumer, refresh_tokens_[account_id].last_auth_error);
   }
   if (backoff_entry_.ShouldRejectRequest()) {
     VLOG(1) << "Request for token has been rejected due to backoff rules from"
@@ -406,7 +396,7 @@ GoogleServiceAuthError MutableProfileOAuth2TokenServiceDelegate::GetAuthError(
     const std::string& account_id) const {
   auto it = refresh_tokens_.find(account_id);
   return (it == refresh_tokens_.end()) ? GoogleServiceAuthError::AuthErrorNone()
-                                       : it->second->GetAuthStatus();
+                                       : it->second.last_auth_error;
 }
 
 void MutableProfileOAuth2TokenServiceDelegate::UpdateAuthError(
@@ -434,9 +424,9 @@ void MutableProfileOAuth2TokenServiceDelegate::UpdateAuthError(
     return;
   }
 
-  AccountStatus* status = refresh_tokens_[account_id].get();
-  if (error != status->GetAuthStatus()) {
-    status->SetLastAuthError(error);
+  AccountStatus* status = &refresh_tokens_[account_id];
+  if (error != status->last_auth_error) {
+    status->last_auth_error = error;
     FireAuthErrorChanged(account_id, error);
   }
 }
@@ -445,11 +435,10 @@ std::string MutableProfileOAuth2TokenServiceDelegate::GetTokenForMultilogin(
     const std::string& account_id) const {
   auto iter = refresh_tokens_.find(account_id);
   if (iter == refresh_tokens_.end() ||
-      iter->second->GetAuthStatus() !=
-          GoogleServiceAuthError::AuthErrorNone()) {
+      iter->second.last_auth_error != GoogleServiceAuthError::AuthErrorNone()) {
     return std::string();
   }
-  const std::string& refresh_token = iter->second->refresh_token();
+  const std::string& refresh_token = iter->second.refresh_token;
   DCHECK(!refresh_token.empty());
   return refresh_token;
 }
@@ -464,7 +453,7 @@ std::string MutableProfileOAuth2TokenServiceDelegate::GetRefreshToken(
     const std::string& account_id) const {
   auto iter = refresh_tokens_.find(account_id);
   if (iter != refresh_tokens_.end()) {
-    const std::string refresh_token = iter->second->refresh_token();
+    const std::string refresh_token = iter->second.refresh_token;
     DCHECK(!refresh_token.empty());
     return refresh_token;
   }
@@ -776,7 +765,7 @@ void MutableProfileOAuth2TokenServiceDelegate::UpdateCredentialsInMemory(
   // If token present, and different from the new one, cancel its requests,
   // and clear the entries in cache related to that account.
   if (refresh_token_present) {
-    DCHECK_NE(refresh_token, refresh_tokens_[account_id]->refresh_token());
+    DCHECK_NE(refresh_token, refresh_tokens_[account_id].refresh_token);
     VLOG(1) << "MutablePO2TS::UpdateCredentials; Refresh Token was present. "
             << "account_id=" << account_id;
 
@@ -792,9 +781,9 @@ void MutableProfileOAuth2TokenServiceDelegate::UpdateCredentialsInMemory(
     // would also be invalidated server-side).
     // See http://crbug.com/865189 for more information about this regression.
     if (is_refresh_token_invalidated)
-      RevokeCredentialsOnServer(refresh_tokens_[account_id]->refresh_token());
+      RevokeCredentialsOnServer(refresh_tokens_[account_id].refresh_token);
 
-    refresh_tokens_[account_id]->set_refresh_token(refresh_token);
+    refresh_tokens_[account_id].refresh_token = refresh_token;
     UpdateAuthError(account_id, error);
   } else {
     VLOG(1) << "MutablePO2TS::UpdateCredentials; Refresh Token was absent. "
@@ -820,10 +809,18 @@ void MutableProfileOAuth2TokenServiceDelegate::RevokeAllCredentials() {
     return;
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  ScopedBatchChange batch(this);
-
   VLOG(1) << "MutablePO2TS::RevokeAllCredentials";
-  CancelWebTokenFetch();
+
+  ScopedBatchChange batch(this);
+  if (load_credentials_state() == LOAD_CREDENTIALS_IN_PROGRESS) {
+    VLOG(1) << "MutablePO2TS::RevokeAllCredentials before tokens are loaded.";
+    // If |RevokeAllCredentials| is called while credentials are being loaded,
+    // then the load must be cancelled and the load credentials state updated.
+    DCHECK_NE(0, web_data_service_request_);
+    CancelWebTokenFetch();
+    set_load_credentials_state(LOAD_CREDENTIALS_FINISHED_WITH_SUCCESS);
+    FinishLoadingCredentials();
+  }
 
   // Make a temporary copy of the account ids.
   std::vector<std::string> accounts;
@@ -834,7 +831,7 @@ void MutableProfileOAuth2TokenServiceDelegate::RevokeAllCredentials() {
 
   DCHECK_EQ(0u, refresh_tokens_.size());
 
-  // Make sure all tokens are removed.
+  // Make sure all tokens are removed from storage.
   if (token_web_data_)
     token_web_data_->RemoveAllTokens();
 }
@@ -847,7 +844,7 @@ void MutableProfileOAuth2TokenServiceDelegate::RevokeCredentials(
   if (refresh_tokens_.count(account_id) > 0) {
     VLOG(1) << "MutablePO2TS::RevokeCredentials for account_id=" << account_id;
     ScopedBatchChange batch(this);
-    const std::string& token = refresh_tokens_[account_id]->refresh_token();
+    const std::string& token = refresh_tokens_[account_id].refresh_token;
     RecordTokenRevoked(token);
     RevokeCredentialsOnServer(token);
     refresh_tokens_.erase(account_id);
@@ -875,8 +872,8 @@ void MutableProfileOAuth2TokenServiceDelegate::RevokeCredentialsOnServer(
 
   // Keep track or all server revoke requests.  This way they can be deleted
   // before the token service is shutdown and won't outlive the profile.
-  server_revokes_.push_back(
-      std::make_unique<RevokeServerRefreshToken>(this, client_, refresh_token));
+  server_revokes_.push_back(std::make_unique<RevokeServerRefreshToken>(
+      this, client_, refresh_token, 0));
 }
 
 void MutableProfileOAuth2TokenServiceDelegate::CancelWebTokenFetch() {
@@ -911,12 +908,8 @@ void MutableProfileOAuth2TokenServiceDelegate::AddAccountStatus(
     const std::string& refresh_token,
     const GoogleServiceAuthError& error) {
   DCHECK_EQ(0u, refresh_tokens_.count(account_id));
-  AccountStatus* status =
-      new AccountStatus(signin_error_controller_, account_id, refresh_token);
-  refresh_tokens_[account_id].reset(status);
-  status->Initialize();
-  status->SetLastAuthError(error);
-  FireAuthErrorChanged(account_id, status->GetAuthStatus());
+  refresh_tokens_[account_id] = AccountStatus{refresh_token, error};
+  FireAuthErrorChanged(account_id, error);
 }
 
 void MutableProfileOAuth2TokenServiceDelegate::FinishLoadingCredentials() {

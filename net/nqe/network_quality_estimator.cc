@@ -17,6 +17,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/single_thread_task_runner.h"
+#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/stringprintf.h"
@@ -230,6 +231,22 @@ NetworkQualityEstimator::NetworkQualityEstimator(
           tick_clock_,
           params_->weight_multiplier_per_second(),
           params_->weight_multiplier_per_signal_strength_level()),
+      rtt_ms_observations_{
+          ObservationBuffer(
+              params_.get(),
+              tick_clock_,
+              params_->weight_multiplier_per_second(),
+              params_->weight_multiplier_per_signal_strength_level()),
+          ObservationBuffer(
+              params_.get(),
+              tick_clock_,
+              params_->weight_multiplier_per_second(),
+              params_->weight_multiplier_per_signal_strength_level()),
+          ObservationBuffer(
+              params_.get(),
+              tick_clock_,
+              params_->weight_multiplier_per_second(),
+              params_->weight_multiplier_per_signal_strength_level())},
       effective_connection_type_at_last_main_frame_(
           EFFECTIVE_CONNECTION_TYPE_UNKNOWN),
       effective_connection_type_recomputation_interval_(
@@ -246,12 +263,8 @@ NetworkQualityEstimator::NetworkQualityEstimator(
           net::NetLogSourceType::NETWORK_QUALITY_ESTIMATOR)),
       event_creator_(net_log_),
       weak_ptr_factory_(this) {
-  rtt_ms_observations_.reserve(nqe::internal::OBSERVATION_CATEGORY_COUNT);
-  for (int i = 0; i < nqe::internal::OBSERVATION_CATEGORY_COUNT; ++i) {
-    rtt_ms_observations_.push_back(ObservationBuffer(
-        params_.get(), tick_clock_, params_->weight_multiplier_per_second(),
-        params_->weight_multiplier_per_signal_strength_level()));
-  }
+  DCHECK_EQ(nqe::internal::OBSERVATION_CATEGORY_COUNT,
+            base::size(rtt_ms_observations_));
 
   network_quality_store_.reset(new nqe::internal::NetworkQualityStore());
   NetworkChangeNotifier::AddConnectionTypeObserver(this);
@@ -440,7 +453,7 @@ bool NetworkQualityEstimator::IsHangingRequest(
 }
 
 void NetworkQualityEstimator::NotifyHeadersReceived(const URLRequest& request) {
-  TRACE_EVENT0(kNetTracingCategory,
+  TRACE_EVENT0(NetTracingCategory(),
                "NetworkQualityEstimator::NotifyHeadersReceived");
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
@@ -578,7 +591,7 @@ void NetworkQualityEstimator::RecordAccuracyAfterMainFrame(
 
 void NetworkQualityEstimator::NotifyRequestCompleted(const URLRequest& request,
                                                      int net_error) {
-  TRACE_EVENT0(kNetTracingCategory,
+  TRACE_EVENT0(NetTracingCategory(),
                "NetworkQualityEstimator::NotifyRequestCompleted");
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
@@ -695,6 +708,8 @@ bool NetworkQualityEstimator::RequestProvidesRTTObservation(
 void NetworkQualityEstimator::OnConnectionTypeChanged(
     NetworkChangeNotifier::ConnectionType type) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  DCHECK_EQ(nqe::internal::OBSERVATION_CATEGORY_COUNT,
+            base::size(rtt_ms_observations_));
 
   // Write the estimates of the previous network to the cache.
   network_quality_store_->Add(
@@ -1232,6 +1247,8 @@ base::TimeDelta NetworkQualityEstimator::GetRTTEstimateInternal(
     int percentile,
     size_t* observations_count) const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  DCHECK_EQ(nqe::internal::OBSERVATION_CATEGORY_COUNT,
+            base::size(rtt_ms_observations_));
 
   // RTT observations are sorted by duration from shortest to longest, thus
   // a higher percentile RTT will have a longer RTT than a lower percentile.
@@ -1478,8 +1495,10 @@ void NetworkQualityEstimator::OnNewThroughputObservationAvailable(
   AddAndNotifyObserversOfThroughput(throughput_observation);
 }
 
-void NetworkQualityEstimator::MaybeComputeEffectiveConnectionType() {
+bool NetworkQualityEstimator::ShouldComputeEffectiveConnectionType() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  DCHECK_EQ(nqe::internal::OBSERVATION_CATEGORY_COUNT,
+            base::size(rtt_ms_observations_));
 
   const base::TimeTicks now = tick_clock_->NowTicks();
   // Recompute effective connection type only if
@@ -1488,27 +1507,49 @@ void NetworkQualityEstimator::MaybeComputeEffectiveConnectionType() {
   // computation. Strict inequalities are used to ensure that effective
   // connection type is recomputed on connection change events even if the clock
   // has not updated.
-  if (now - last_effective_connection_type_computation_ <
-          effective_connection_type_recomputation_interval_ &&
-      last_connection_change_ < last_effective_connection_type_computation_ &&
-      // Recompute the effective connection type if the previously computed
-      // effective connection type was unknown.
-      effective_connection_type_ != EFFECTIVE_CONNECTION_TYPE_UNKNOWN &&
-      // Recompute the effective connection type if the number of samples
-      // available now are 50% more than the number of samples that were
-      // available when the effective connection type was last computed.
-      rtt_observations_size_at_last_ect_computation_ * 1.5 >=
-          (rtt_ms_observations_[nqe::internal::OBSERVATION_CATEGORY_HTTP]
-               .Size() +
-           rtt_ms_observations_[nqe::internal::OBSERVATION_CATEGORY_TRANSPORT]
-               .Size()) &&
-      throughput_observations_size_at_last_ect_computation_ * 1.5 >=
-          http_downstream_throughput_kbps_observations_.Size() &&
-      (new_rtt_observations_since_last_ect_computation_ +
-       new_throughput_observations_since_last_ect_computation_) <
-          params_->count_new_observations_received_compute_ect()) {
-    return;
+  if (now - last_effective_connection_type_computation_ >=
+      effective_connection_type_recomputation_interval_) {
+    return true;
   }
+
+  if (last_connection_change_ >= last_effective_connection_type_computation_) {
+    return true;
+  }
+
+  // Recompute the effective connection type if the previously computed
+  // effective connection type was unknown.
+  if (effective_connection_type_ == EFFECTIVE_CONNECTION_TYPE_UNKNOWN) {
+    return true;
+  }
+
+  // Recompute the effective connection type if the number of samples
+  // available now are 50% more than the number of samples that were
+  // available when the effective connection type was last computed.
+  if (rtt_observations_size_at_last_ect_computation_ * 1.5 <
+      (rtt_ms_observations_[nqe::internal::OBSERVATION_CATEGORY_HTTP].Size() +
+       rtt_ms_observations_[nqe::internal::OBSERVATION_CATEGORY_TRANSPORT]
+           .Size())) {
+    return true;
+  }
+
+  if (throughput_observations_size_at_last_ect_computation_ * 1.5 <
+      http_downstream_throughput_kbps_observations_.Size()) {
+    return true;
+  }
+
+  if ((new_rtt_observations_since_last_ect_computation_ +
+       new_throughput_observations_since_last_ect_computation_) >=
+      params_->count_new_observations_received_compute_ect()) {
+    return true;
+  }
+  return false;
+}
+
+void NetworkQualityEstimator::MaybeComputeEffectiveConnectionType() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  if (!ShouldComputeEffectiveConnectionType())
+    return;
   ComputeEffectiveConnectionType();
 }
 

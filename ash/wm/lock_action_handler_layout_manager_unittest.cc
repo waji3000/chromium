@@ -32,9 +32,9 @@
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window.h"
 #include "ui/keyboard/keyboard_controller.h"
-#include "ui/keyboard/keyboard_switches.h"
 #include "ui/keyboard/keyboard_ui.h"
 #include "ui/keyboard/keyboard_util.h"
+#include "ui/keyboard/public/keyboard_switches.h"
 #include "ui/keyboard/test/keyboard_test_util.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
@@ -42,8 +42,6 @@
 namespace ash {
 
 namespace {
-
-constexpr int kVirtualKeyboardHeight = 100;
 
 aura::Window* GetContainer(ShellWindowId container_id) {
   return Shell::GetPrimaryRootWindowController()->GetContainer(container_id);
@@ -130,10 +128,7 @@ class LockActionHandlerLayoutManagerTest : public AshTestBase {
 
     if (show) {
       keyboard->ShowKeyboard(true);
-      keyboard->GetKeyboardWindow()->SetBounds(
-          keyboard::KeyboardBoundsFromRootBounds(
-              Shell::GetPrimaryRootWindow()->bounds(), kVirtualKeyboardHeight));
-      keyboard->NotifyKeyboardWindowLoaded();
+      ASSERT_TRUE(keyboard::WaitUntilShown());
     } else {
       keyboard->HideKeyboardByUser();
     }

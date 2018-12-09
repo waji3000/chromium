@@ -6,6 +6,7 @@
 #include "base/json/json_reader.h"
 #include "base/json/string_escape.h"
 #include "base/macros.h"
+#include "base/stl_util.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/login/demo_mode/demo_setup_controller.h"
@@ -32,8 +33,12 @@
 #include "chromeos/dbus/shill_manager_client.h"
 #include "chromeos/dbus/upstart_client.h"
 #include "chromeos/network/network_state_handler.h"
+#include "components/language/core/browser/pref_names.h"
+#include "components/prefs/pref_service.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
+#include "ui/base/ime/chromeos/input_method_manager.h"
+#include "ui/base/ime/chromeos/input_method_util.h"
 
 using chromeos::test::SetupDummyOfflinePolicyDir;
 using testing::_;
@@ -593,6 +598,8 @@ class EnterpriseEnrollmentConfigurationTest
 
     // WebUI exists now, finish the setup.
     InitializeWebContents();
+
+    base::RunLoop().RunUntilIdle();
   }
 
   void SimulateOfflineEnvironment() {
@@ -962,6 +969,29 @@ IN_PROC_BROWSER_TEST_F(EnterpriseEnrollmentConfigurationTest,
   OobeScreenWaiter(OobeScreen::SCREEN_OOBE_NETWORK).Wait();
 }
 
+// Check that language and input methods are set correctly.
+IN_PROC_BROWSER_TEST_F(EnterpriseEnrollmentConfigurationTest,
+                       TestSwitchLanguageIME) {
+  LoadConfiguration();
+  OobeScreenWaiter(OobeScreen::SCREEN_OOBE_NETWORK).Wait();
+
+  chromeos::input_method::InputMethodManager* imm =
+      chromeos::input_method::InputMethodManager::Get();
+
+  // Configuration specified in TestSwitchLanguageIME.json sets non-default
+  // input method fo German (xkb:de:neo:ger) to ensure that input method value
+  // is propagated correctly. We need to migrate public IME name to internal
+  // scheme to be able to compare them.
+
+  const std::string ime_id =
+      imm->GetInputMethodUtil()->MigrateInputMethod("xkb:de:neo:ger");
+  EXPECT_EQ(ime_id, imm->GetActiveIMEState()->GetCurrentInputMethod().id());
+
+  const std::string language_code = g_browser_process->local_state()->GetString(
+      language::prefs::kApplicationLocale);
+  EXPECT_EQ("de", language_code);
+}
+
 // Check that configuration lets correctly start Demo mode setup.
 IN_PROC_BROWSER_TEST_F(EnterpriseEnrollmentConfigurationTest,
                        TestEnableDemoMode) {
@@ -1015,6 +1045,25 @@ IN_PROC_BROWSER_TEST_F(EnterpriseEnrollmentConfigurationTest,
                        TestSelectNetwork) {
   LoadConfiguration();
   OobeScreenWaiter(OobeScreen::SCREEN_OOBE_EULA).Wait();
+}
+
+// Check that configuration would proceed if there is a connected network.
+IN_PROC_BROWSER_TEST_F(EnterpriseEnrollmentConfigurationTest,
+                       TestSelectConnectedNetwork) {
+  StartWizard();
+  LoadConfiguration();
+  OobeScreenWaiter(OobeScreen::SCREEN_OOBE_EULA).Wait();
+}
+
+// Check that configuration would not proceed with connected network if
+// welcome screen is not automated.
+IN_PROC_BROWSER_TEST_F(EnterpriseEnrollmentConfigurationTest,
+                       TestConnectedNetworkNoWelcome) {
+  StartWizard();
+  LoadConfiguration();
+
+  OobeUI* oobe_ui = LoginDisplayHost::default_host()->GetOobeUI();
+  ASSERT_EQ(OobeScreen::SCREEN_OOBE_WELCOME, oobe_ui->current_screen());
 }
 
 // Check that when configuration has ONC and EULA, we get to update screen.

@@ -139,7 +139,7 @@ id<GREYMatcher> PopupBlocker() {
   [[EarlGrey selectElementWithMatcher:test_page_matcher]
       performAction:link_tap];
   [ChromeEarlGrey waitForMainTabCount:2];
-  chrome_test_util::OpenNewTab();
+  [ChromeEarlGrey openNewTab];
   [ChromeEarlGrey waitForMainTabCount:3];
   chrome_test_util::SelectTabAtIndexInCurrentMode(0);
   [[EarlGrey selectElementWithMatcher:test_page_matcher]
@@ -266,7 +266,7 @@ id<GREYMatcher> PopupBlocker() {
   [ChromeEarlGrey waitForMainTabCount:2];
 
   // Ensure that the starting tab hasn't navigated.
-  chrome_test_util::CloseCurrentTab();
+  [ChromeEarlGrey closeCurrentTab];
   const GURL URL = HttpServer::MakeUrl(kTestURL);
   [[EarlGrey selectElementWithMatcher:OmniboxText(URL.GetContent())]
       assertWithMatcher:grey_notNil()];

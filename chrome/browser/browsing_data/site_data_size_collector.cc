@@ -9,6 +9,7 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/storage_usage_info.h"
 #include "content/public/common/content_constants.h"
 
 namespace {
@@ -29,7 +30,6 @@ SiteDataSizeCollector::SiteDataSizeCollector(
     BrowsingDataAppCacheHelper* appcache_helper,
     BrowsingDataIndexedDBHelper* indexed_db_helper,
     BrowsingDataFileSystemHelper* file_system_helper,
-    BrowsingDataChannelIDHelper* channel_id_helper,
     BrowsingDataServiceWorkerHelper* service_worker_helper,
     BrowsingDataCacheStorageHelper* cache_storage_helper,
     BrowsingDataFlashLSOHelper* flash_lso_helper)
@@ -40,7 +40,6 @@ SiteDataSizeCollector::SiteDataSizeCollector(
       local_storage_helper_(local_storage_helper),
       indexed_db_helper_(indexed_db_helper),
       file_system_helper_(file_system_helper),
-      channel_id_helper_(channel_id_helper),
       service_worker_helper_(service_worker_helper),
       cache_storage_helper_(cache_storage_helper),
       flash_lso_helper_(flash_lso_helper),
@@ -92,12 +91,6 @@ void SiteDataSizeCollector::Fetch(const FetchCallback& callback) {
   if (file_system_helper_.get()) {
     file_system_helper_->StartFetching(
         base::Bind(&SiteDataSizeCollector::OnFileSystemModelInfoLoaded,
-                   weak_ptr_factory_.GetWeakPtr()));
-    in_flight_operations_++;
-  }
-  if (channel_id_helper_.get()) {
-    channel_id_helper_->StartFetching(
-        base::Bind(&SiteDataSizeCollector::OnChannelIDModelInfoLoaded,
                    weak_ptr_factory_.GetWeakPtr()));
     in_flight_operations_++;
   }
@@ -172,11 +165,11 @@ void SiteDataSizeCollector::OnLocalStorageModelInfoLoaded(
 }
 
 void SiteDataSizeCollector::OnIndexedDBModelInfoLoaded(
-    const std::list<content::IndexedDBInfo>& indexed_db_info_list) {
+    const std::list<content::StorageUsageInfo>& indexed_db_info_list) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   int64_t total_size = 0;
   for (const auto& indexed_db_info : indexed_db_info_list)
-    total_size += indexed_db_info.size;
+    total_size += indexed_db_info.total_size_bytes;
   OnStorageSizeFetched(total_size);
 }
 
@@ -189,23 +182,6 @@ void SiteDataSizeCollector::OnFileSystemModelInfoLoaded(
       total_size += usage.second;
   }
   OnStorageSizeFetched(total_size);
-}
-
-void SiteDataSizeCollector::OnChannelIDModelInfoLoaded(
-    const ChannelIDList& channel_id_list) {
-  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-
-  if (channel_id_list.empty()) {
-    OnStorageSizeFetched(0);
-    return;
-  }
-  base::FilePath channel_id_file_path = default_storage_partition_path_
-      .Append(chrome::kChannelIDFilename);
-  base::PostTaskWithTraitsAndReplyWithResult(
-      FROM_HERE, {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
-      base::Bind(&GetFileSizeBlocking, channel_id_file_path),
-      base::Bind(&SiteDataSizeCollector::OnStorageSizeFetched,
-                 weak_ptr_factory_.GetWeakPtr()));
 }
 
 void SiteDataSizeCollector::OnServiceWorkerModelInfoLoaded(

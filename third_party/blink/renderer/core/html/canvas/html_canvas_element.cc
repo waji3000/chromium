@@ -134,8 +134,6 @@ inline HTMLCanvasElement::HTMLCanvasElement(Document& document)
       externally_allocated_memory_(0),
       gpu_readback_invoked_in_current_frame_(false),
       gpu_readback_successive_frames_(0) {
-  CanvasRenderingContextHost::RecordCanvasSizeToUMA(
-      size_.Width(), size_.Height(), false /* Canvas */);
   UseCounter::Count(document, WebFeature::kHTMLCanvasElement);
 
   GetDocument().IncrementNumberOfCanvases();
@@ -147,6 +145,9 @@ intptr_t HTMLCanvasElement::global_gpu_memory_usage_ = 0;
 unsigned HTMLCanvasElement::global_accelerated_context_count_ = 0;
 
 HTMLCanvasElement::~HTMLCanvasElement() {
+  CanvasRenderingContextHost::RecordCanvasSizeToUMA(
+      size_.Width(), size_.Height(),
+      CanvasRenderingContextHost::HostType::kCanvasHost);
   if (surface_layer_bridge_ && surface_layer_bridge_->GetCcLayer())
     GraphicsLayer::UnregisterContentsLayer(surface_layer_bridge_->GetCcLayer());
   v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(
@@ -259,7 +260,7 @@ CanvasRenderingContext* HTMLCanvasElement::GetCanvasRenderingContext(
   // Unknown type.
   if (context_type == CanvasRenderingContext::kContextTypeUnknown ||
       (context_type == CanvasRenderingContext::kContextXRPresent &&
-       !OriginTrials::WebXREnabled(&GetDocument()))) {
+       !origin_trials::WebXREnabled(&GetDocument()))) {
     return nullptr;
   }
 
@@ -309,7 +310,7 @@ CanvasRenderingContext* HTMLCanvasElement::GetCanvasRenderingContext(
   }
 
   if (attributes.low_latency &&
-      OriginTrials::LowLatencyCanvasEnabled(&GetDocument())) {
+      origin_trials::LowLatencyCanvasEnabled(&GetDocument())) {
     CreateLayer();
     SetNeedsUnbufferedInputEvents(true);
     frame_dispatcher_ = std::make_unique<CanvasResourceDispatcher>(
@@ -571,9 +572,6 @@ void HTMLCanvasElement::Reset() {
   IntSize old_size = Size();
   IntSize new_size(w, h);
 
-  if (old_size != new_size)
-    CanvasRenderingContextHost::RecordCanvasSizeToUMA(w, h, false /* Canvas */);
-
   // If the size of an existing buffer matches, we can just clear it instead of
   // reallocating.  This optimization is only done for 2D canvases for now.
   if (had_resource_provider && old_size == new_size && Is2d()) {
@@ -834,18 +832,25 @@ String HTMLCanvasElement::ToDataURLInternal(
     String data_url = data_buffer->ToDataURL(encoding_mime_type, quality);
     base::TimeDelta elapsed_time = base::TimeTicks::Now() - start_time;
     float sqrt_pixels =
-        std::sqrt(image_bitmap->width() * image_bitmap->height());
-    int scaled_time =
-        elapsed_time.InMicrosecondsF() / (sqrt_pixels == 0 ? 1 : sqrt_pixels);
+        std::sqrt(image_bitmap->width()) * std::sqrt(image_bitmap->height());
+    float scaled_time_float = elapsed_time.InMicrosecondsF() /
+                              (sqrt_pixels == 0 ? 1.0f : sqrt_pixels);
+
+    // If scaled_time_float overflows as integer, CheckedNumeric will store it
+    // as invalid, then ValueOrDefault will return the maximum int.
+    base::CheckedNumeric<int> checked_scaled_time = scaled_time_float;
+    int scaled_time_int =
+        checked_scaled_time.ValueOrDefault(std::numeric_limits<int>::max());
+
     if (encoding_mime_type == kMimeTypePng) {
       UMA_HISTOGRAM_COUNTS_100000("Blink.Canvas.ToDataURLScaledDuration.PNG",
-                                  scaled_time);
+                                  scaled_time_int);
     } else if (encoding_mime_type == kMimeTypeJpeg) {
       UMA_HISTOGRAM_COUNTS_100000("Blink.Canvas.ToDataURLScaledDuration.JPEG",
-                                  scaled_time);
+                                  scaled_time_int);
     } else if (encoding_mime_type == kMimeTypeWebp) {
       UMA_HISTOGRAM_COUNTS_100000("Blink.Canvas.ToDataURLScaledDuration.WEBP",
-                                  scaled_time);
+                                  scaled_time_int);
     } else {
       // Currently we only support three encoding types.
       NOTREACHED();
@@ -1234,7 +1239,7 @@ scoped_refptr<Image> HTMLCanvasElement::GetSourceImageForCanvas(
   return image;
 }
 
-bool HTMLCanvasElement::WouldTaintOrigin(const SecurityOrigin*) const {
+bool HTMLCanvasElement::WouldTaintOrigin() const {
   return !OriginClean();
 }
 

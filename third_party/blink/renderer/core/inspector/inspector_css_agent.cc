@@ -34,6 +34,7 @@
 #include "third_party/blink/renderer/core/css/css_import_rule.h"
 #include "third_party/blink/renderer/core/css/css_keyframe_rule.h"
 #include "third_party/blink/renderer/core/css/css_media_rule.h"
+#include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/css/css_property_value_set.h"
 #include "third_party/blink/renderer/core/css/css_rule.h"
 #include "third_party/blink/renderer/core/css/css_rule_list.h"
@@ -56,7 +57,6 @@
 #include "third_party/blink/renderer/core/css/style_sheet.h"
 #include "third_party/blink/renderer/core/css/style_sheet_contents.h"
 #include "third_party/blink/renderer/core/css/style_sheet_list.h"
-#include "third_party/blink/renderer/core/css_property_names.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/dom/dom_node_ids.h"
 #include "third_party/blink/renderer/core/dom/node.h"
@@ -90,6 +90,7 @@
 #include "third_party/blink/renderer/platform/fonts/font_cache.h"
 #include "third_party/blink/renderer/platform/fonts/font_custom_platform_data.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/caching_word_shaper.h"
+#include "third_party/blink/renderer/platform/fonts/shaping/shape_result_view.h"
 #include "third_party/blink/renderer/platform/text/text_run.h"
 #include "third_party/blink/renderer/platform/wtf/text/cstring.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_concatenate.h"
@@ -1187,7 +1188,7 @@ void InspectorCSSAgent::CollectPlatformFontsForLayoutObject(
         DCHECK(fragment->PhysicalFragment().IsText());
         const NGPhysicalTextFragment& text_fragment =
             ToNGPhysicalTextFragment(fragment->PhysicalFragment());
-        const ShapeResult* shape_result = text_fragment.TextShapeResult();
+        const ShapeResultView* shape_result = text_fragment.TextShapeResult();
         if (!shape_result)
           continue;
         Vector<ShapeResult::RunFontData> run_font_data_list;
@@ -1280,9 +1281,9 @@ Response InspectorCSSAgent::setStyleSheetText(
     return response;
 
   DummyExceptionStateForTesting exception_state;
-  dom_agent_->History()->Perform(
-      new SetStyleSheetTextAction(inspector_style_sheet, text),
-      exception_state);
+  dom_agent_->History()->Perform(MakeGarbageCollected<SetStyleSheetTextAction>(
+                                     inspector_style_sheet, text),
+                                 exception_state);
   response = InspectorDOMAgent::ToResponse(exception_state);
   if (!response.isSuccess())
     return response;
@@ -1339,9 +1340,9 @@ Response InspectorCSSAgent::setRuleSelector(
     return response;
 
   DummyExceptionStateForTesting exception_state;
-  ModifyRuleAction* action =
-      new ModifyRuleAction(ModifyRuleAction::kSetRuleSelector,
-                           inspector_style_sheet, selector_range, selector);
+  ModifyRuleAction* action = MakeGarbageCollected<ModifyRuleAction>(
+      ModifyRuleAction::kSetRuleSelector, inspector_style_sheet, selector_range,
+      selector);
   bool success = dom_agent_->History()->Perform(action, exception_state);
   if (success) {
     CSSStyleRule* rule = InspectorCSSAgent::AsCSSStyleRule(action->TakeRule());
@@ -1372,9 +1373,9 @@ Response InspectorCSSAgent::setKeyframeKey(
     return response;
 
   DummyExceptionStateForTesting exception_state;
-  ModifyRuleAction* action =
-      new ModifyRuleAction(ModifyRuleAction::kSetKeyframeKey,
-                           inspector_style_sheet, key_range, key_text);
+  ModifyRuleAction* action = MakeGarbageCollected<ModifyRuleAction>(
+      ModifyRuleAction::kSetKeyframeKey, inspector_style_sheet, key_range,
+      key_text);
   bool success = dom_agent_->History()->Perform(action, exception_state);
   if (success) {
     CSSKeyframeRule* rule = ToCSSKeyframeRule(action->TakeRule());
@@ -1422,10 +1423,11 @@ Response InspectorCSSAgent::MultipleStyleTextsActions(
           static_cast<InspectorStyleSheetForInlineStyle*>(
               inspector_style_sheet);
       SetElementStyleAction* action =
-          new SetElementStyleAction(inline_style_sheet, edit->getText());
+          MakeGarbageCollected<SetElementStyleAction>(inline_style_sheet,
+                                                      edit->getText());
       actions->push_back(action);
     } else {
-      ModifyRuleAction* action = new ModifyRuleAction(
+      ModifyRuleAction* action = MakeGarbageCollected<ModifyRuleAction>(
           ModifyRuleAction::kSetStyleText,
           static_cast<InspectorStyleSheet*>(inspector_style_sheet), range,
           edit->getText());
@@ -1484,14 +1486,14 @@ Response InspectorCSSAgent::SetStyleText(
     InspectorStyleSheetForInlineStyle* inline_style_sheet =
         static_cast<InspectorStyleSheetForInlineStyle*>(inspector_style_sheet);
     SetElementStyleAction* action =
-        new SetElementStyleAction(inline_style_sheet, text);
+        MakeGarbageCollected<SetElementStyleAction>(inline_style_sheet, text);
     bool success = dom_agent_->History()->Perform(action, exception_state);
     if (success) {
       result = inline_style_sheet->InlineStyle();
       return Response::OK();
     }
   } else {
-    ModifyRuleAction* action = new ModifyRuleAction(
+    ModifyRuleAction* action = MakeGarbageCollected<ModifyRuleAction>(
         ModifyRuleAction::kSetStyleText,
         static_cast<InspectorStyleSheet*>(inspector_style_sheet), range, text);
     bool success = dom_agent_->History()->Perform(action, exception_state);
@@ -1528,9 +1530,9 @@ Response InspectorCSSAgent::setMediaText(
     return response;
 
   DummyExceptionStateForTesting exception_state;
-  ModifyRuleAction* action =
-      new ModifyRuleAction(ModifyRuleAction::kSetMediaRuleText,
-                           inspector_style_sheet, text_range, text);
+  ModifyRuleAction* action = MakeGarbageCollected<ModifyRuleAction>(
+      ModifyRuleAction::kSetMediaRuleText, inspector_style_sheet, text_range,
+      text);
   bool success = dom_agent_->History()->Perform(action, exception_state);
   if (success) {
     CSSMediaRule* rule = InspectorCSSAgent::AsCSSMediaRule(action->TakeRule());
@@ -1584,8 +1586,8 @@ Response InspectorCSSAgent::addRule(
     return response;
 
   DummyExceptionStateForTesting exception_state;
-  AddRuleAction* action =
-      new AddRuleAction(inspector_style_sheet, rule_text, rule_location);
+  AddRuleAction* action = MakeGarbageCollected<AddRuleAction>(
+      inspector_style_sheet, rule_text, rule_location);
   bool success = dom_agent_->History()->Perform(action, exception_state);
   if (!success)
     return InspectorDOMAgent::ToResponse(exception_state);
@@ -1656,7 +1658,8 @@ std::unique_ptr<protocol::CSS::CSSMedia> InspectorCSSAgent::BuildMediaObject(
     if (Document* document = parent_style_sheet->OwnerDocument())
       frame = document->GetFrame();
   }
-  MediaQueryEvaluator* media_evaluator = new MediaQueryEvaluator(frame);
+  MediaQueryEvaluator* media_evaluator =
+      MakeGarbageCollected<MediaQueryEvaluator>(frame);
 
   InspectorStyleSheet* inspector_style_sheet =
       parent_style_sheet
@@ -2397,7 +2400,7 @@ Response InspectorCSSAgent::getBackgroundColors(
 void InspectorCSSAgent::SetCoverageEnabled(bool enabled) {
   if (enabled == !!tracker_)
     return;
-  tracker_ = enabled ? new StyleRuleUsageTracker() : nullptr;
+  tracker_ = enabled ? MakeGarbageCollected<StyleRuleUsageTracker>() : nullptr;
 
   for (Document* document : dom_agent_->Documents())
     document->GetStyleEngine().SetRuleUsageTracker(tracker_);

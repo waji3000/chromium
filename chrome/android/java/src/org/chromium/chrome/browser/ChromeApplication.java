@@ -42,6 +42,7 @@ import org.chromium.chrome.browser.metrics.UmaUtils;
 import org.chromium.chrome.browser.preferences.ChromePreferenceManager;
 import org.chromium.chrome.browser.vr.OnExitVrRequestListener;
 import org.chromium.chrome.browser.vr.VrModuleProvider;
+import org.chromium.components.module_installer.ModuleInstaller;
 
 /**
  * Basic application functionality that should be shared among all browser applications that use
@@ -101,6 +102,10 @@ public class ChromeApplication extends Application {
             // Not losing much to not cover the below conditional since it just has simple setters.
             TraceEvent.end("ChromeApplication.attachBaseContext");
         }
+
+        // Write installed modules to crash keys. This needs to be done as early as possible so that
+        // these values are set before any crashes are reported.
+        ModuleInstaller.updateCrashKeys();
 
         MemoryPressureMonitor.INSTANCE.registerComponentCallbacks();
 
@@ -223,6 +228,13 @@ public class ChromeApplication extends Application {
                 ModuleFactoryOverrides.getOverrideFor(ChromeAppModule.Factory.class);
         ChromeAppModule module =
                 overriddenFactory == null ? new ChromeAppModule() : overriddenFactory.create();
-        return DaggerChromeAppComponent.builder().chromeAppModule(module).build();
+
+        AppHooksModule.Factory appHooksFactory =
+                ModuleFactoryOverrides.getOverrideFor(AppHooksModule.Factory.class);
+        AppHooksModule appHooksModule =
+                appHooksFactory == null ? new AppHooksModule() : appHooksFactory.create();
+
+        return DaggerChromeAppComponent.builder().chromeAppModule(module)
+                .appHooksModule(appHooksModule).build();
     }
 }

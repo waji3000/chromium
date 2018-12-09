@@ -8,13 +8,13 @@
 #include "third_party/blink/renderer/core/css/properties/computed_style_utils.h"
 
 namespace blink {
-namespace CSSLonghand {
+namespace css_longhand {
 
 const CSSValue* R::ParseSingleValue(CSSParserTokenRange& range,
                                     const CSSParserContext& context,
                                     const CSSParserLocalContext&) const {
-  return CSSPropertyParserHelpers::ConsumeSVGGeometryPropertyLength(range,
-                                                                    context);
+  return css_property_parser_helpers::ConsumeSVGGeometryPropertyLength(
+      range, context, kValueRangeNonNegative);
 }
 
 const CSSValue* R::CSSValueFromComputedStyleInternal(
@@ -27,5 +27,5 @@ const CSSValue* R::CSSValueFromComputedStyleInternal(
                                                              style);
 }
 
-}  // namespace CSSLonghand
+}  // namespace css_longhand
 }  // namespace blink

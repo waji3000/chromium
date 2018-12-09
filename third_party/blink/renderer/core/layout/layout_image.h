@@ -142,6 +142,8 @@ class CORE_EXPORT LayoutImage : public LayoutReplaced {
   FloatSize ImageSizeOverriddenByIntrinsicSize(float multiplier) const;
   IntSize GetOverriddenIntrinsicSize() const;
 
+  void ValidateImagePolicies();
+
   // This member wraps the associated decoded image.
   //
   // This field is set using setImageResource above which can be called in
@@ -159,10 +161,10 @@ class CORE_EXPORT LayoutImage : public LayoutReplaced {
   float image_device_pixel_ratio_;
 
   // These flags indicate if the image violates one or more optimized image
-  // policies. When any policy is violated, the image should be rendered with
-  // inverted color.
-  bool is_legacy_format_or_compressed_image_;
-  bool is_downscaled_image_;
+  // policies. When any policy is violated, the image should be rendered as a
+  // placeholder image.
+  bool is_legacy_format_or_unoptimized_image_;
+  bool is_oversized_image_;
 };
 
 DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutImage, IsLayoutImage());

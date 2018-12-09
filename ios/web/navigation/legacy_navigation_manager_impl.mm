@@ -60,7 +60,7 @@ void LegacyNavigationManagerImpl::OnNavigationItemChanged() {
 
 void LegacyNavigationManagerImpl::OnNavigationItemCommitted() {
   LoadCommittedDetails details;
-  details.item = GetLastCommittedItem();
+  details.item = GetLastCommittedItemInCurrentOrRestoredSession();
   DCHECK(details.item);
   details.previous_item_index = [session_controller_ previousItemIndex];
   if (details.previous_item_index >= 0) {
@@ -87,7 +87,7 @@ void LegacyNavigationManagerImpl::AddTransientItem(const GURL& url) {
   // bug. The workaround should be removed once the bug is fixed.
   NavigationItem* item = GetPendingItem();
   if (!item)
-    item = GetLastCommittedNonAppSpecificItem();
+    item = GetLastCommittedItemWithUserAgentType();
   // |item| may still be nullptr if NTP is the only entry in the session.
   // See https://crbug.com/822908 for details.
   if (item) {
@@ -108,13 +108,13 @@ void LegacyNavigationManagerImpl::AddPendingItem(
                        initiationType:initiation_type
               userAgentOverrideOption:user_agent_override_option];
 
-  if (!GetPendingItem()) {
+  if (!GetPendingItemInCurrentOrRestoredSession()) {
     return;
   }
 
   UpdatePendingItemUserAgentType(user_agent_override_option,
-                                 GetLastCommittedNonAppSpecificItem(),
-                                 GetPendingItem());
+                                 GetLastCommittedItemWithUserAgentType(),
+                                 GetPendingItemInCurrentOrRestoredSession());
 }
 
 void LegacyNavigationManagerImpl::CommitPendingItem() {
@@ -168,7 +168,8 @@ int LegacyNavigationManagerImpl::GetPendingItemIndex() const {
   return -1;
 }
 
-int LegacyNavigationManagerImpl::GetLastCommittedItemIndex() const {
+int LegacyNavigationManagerImpl::
+    GetLastCommittedItemIndexInCurrentOrRestoredSession() const {
   if (GetItemCount() == 0)
     return -1;
   return [session_controller_ lastCommittedItemIndex];
@@ -295,12 +296,14 @@ int LegacyNavigationManagerImpl::GetIndexForOffset(int offset) const {
   return result;
 }
 
-NavigationItemImpl* LegacyNavigationManagerImpl::GetLastCommittedItemImpl()
+NavigationItemImpl*
+LegacyNavigationManagerImpl::GetLastCommittedItemInCurrentOrRestoredSession()
     const {
   return [session_controller_ lastCommittedItem];
 }
 
-NavigationItemImpl* LegacyNavigationManagerImpl::GetPendingItemImpl() const {
+NavigationItemImpl*
+LegacyNavigationManagerImpl::GetPendingItemInCurrentOrRestoredSession() const {
   return [session_controller_ pendingItem];
 }
 
@@ -347,6 +350,10 @@ void LegacyNavigationManagerImpl::AddPushStateItemIfNecessary(
   [session_controller_ pushNewItemWithURL:url
                               stateObject:state_object
                                transition:transition];
+}
+
+bool LegacyNavigationManagerImpl::IsRestoreSessionInProgress() const {
+  return false;  // Session restoration is synchronous.
 }
 
 }  // namespace web

@@ -147,13 +147,17 @@ public abstract class ChromeFeatureList {
     }
 
     // Alphabetical:
+    public static final String ALLOW_REMOTE_CONTEXT_FOR_NOTIFICATIONS =
+            "AllowRemoteContextForNotifications";
+    public static final String ALLOW_STARTING_SERVICE_MANAGER_ONLY =
+            "AllowStartingServiceManagerOnly";
     public static final String AUTOFILL_ALLOW_NON_HTTP_ACTIVATION =
             "AutofillAllowNonHttpActivation";
     public static final String ADJUST_WEBAPK_INSTALLATION_SPACE = "AdjustWebApkInstallationSpace";
     public static final String ANDROID_PAY_INTEGRATION_V1 = "AndroidPayIntegrationV1";
     public static final String ANDROID_PAY_INTEGRATION_V2 = "AndroidPayIntegrationV2";
     public static final String ANDROID_PAYMENT_APPS = "AndroidPaymentApps";
-    public static final String ANDROID_SITE_SETTINGS_UI = "AndroidSiteSettingsUI";
+    public static final String ANDROID_SITE_SETTINGS_UI_REFRESH = "AndroidSiteSettingsUIRefresh";
     public static final String APP_NOTIFICATION_STATUS_MESSAGING = "AppNotificationStatusMessaging";
     public static final String AUTOFILL_ASSISTANT = "AutofillAssistant";
     public static final String AUTOFILL_REFRESH_STYLE_ANDROID = "AutofillRefreshStyleAndroid";
@@ -163,15 +167,15 @@ public abstract class ChromeFeatureList {
     public static final String CCT_BACKGROUND_TAB = "CCTBackgroundTab";
     public static final String CCT_MODULE = "CCTModule";
     public static final String CCT_MODULE_CACHE = "CCTModuleCache";
+    public static final String CCT_MODULE_CUSTOM_HEADER = "CCTModuleCustomHeader";
+    public static final String CCT_MODULE_POST_MESSAGE = "CCTModulePostMessage";
     public static final String CCT_EXTERNAL_LINK_HANDLING = "CCTExternalLinkHandling";
-    public static final String CCT_PARALLEL_REQUEST = "CCTParallelRequest";
     public static final String CCT_POST_MESSAGE_API = "CCTPostMessageAPI";
     public static final String CCT_REDIRECT_PRECONNECT = "CCTRedirectPreconnect";
     public static final String CCT_RESOURCE_PREFETCH = "CCTResourcePrefetch";
     public static final String CCT_REPORT_PARALLEL_REQUEST_STATUS =
             "CCTReportParallelRequestStatus";
     public static final String CHROME_DUET = "ChromeDuet";
-    public static final String CHROME_MEMEX = "ChromeMemex";
     public static final String CHROME_SMART_SELECTION = "ChromeSmartSelection";
     public static final String CLEAR_OLD_BROWSING_DATA = "ClearOldBrowsingData";
     public static final String CLIPBOARD_CONTENT_SETTING = "ClipboardContentSetting";
@@ -191,18 +195,12 @@ public abstract class ChromeFeatureList {
             "ContextualSearchTapDisableOverride";
     public static final String CONTEXTUAL_SEARCH_UNITY_INTEGRATION =
             "ContextualSearchUnityIntegration";
-    public static final String CONTEXTUAL_SUGGESTIONS_ALTERNATE_CARD_LAYOUT =
-            "ContextualSuggestionsAlternateCardLayout";
     public static final String CONTEXTUAL_SUGGESTIONS_BUTTON = "ContextualSuggestionsButton";
     public static final String CONTEXTUAL_SUGGESTIONS_OPT_OUT = "ContextualSuggestionsOptOut";
     public static final String CONTEXTUAL_SUGGESTIONS_IPH_REVERSE_SCROLL =
             "ContextualSuggestionsIPHReverseScroll";
     public static final String CUSTOM_CONTEXT_MENU = "CustomContextMenu";
     public static final String CUSTOM_FEEDBACK_UI = "CustomFeedbackUi";
-    public static final String DEVELOPER_PREFERENCES = "DeveloperPreferences";
-    // Enables the Data Reduction Proxy menu item in the main menu rather than under Settings on
-    // Android.
-    public static final String DATA_REDUCTION_MAIN_MENU = "DataReductionProxyMainMenu";
     public static final String DONT_PREFETCH_LIBRARIES = "DontPrefetchLibraries";
     public static final String DOWNLOAD_HOME_SHOW_STORAGE_INFO = "DownloadHomeShowStorageInfo";
     public static final String DOWNLOAD_PROGRESS_INFOBAR = "DownloadProgressInfoBar";
@@ -217,6 +215,7 @@ public abstract class ChromeFeatureList {
     public static final String FCM_INVALIDATIONS = "FCMInvalidations";
     // When enabled, fullscreen WebContents will be moved to a new Activity. Coming soon...
     public static final String FULLSCREEN_ACTIVITY = "FullscreenActivity";
+    public static final String GESTURE_NAVIGATION = "GestureNavigation";
     public static final String GRANT_NOTIFICATIONS_TO_DSE = "GrantNotificationsToDSE";
     public static final String GENERIC_SENSOR_EXTRA_CLASSES = "GenericSensorExtraClasses";
     public static final String HANDLE_MEDIA_INTENTS = "HandleMediaIntents";
@@ -273,7 +272,6 @@ public abstract class ChromeFeatureList {
     public static final String SERVICE_MANAGER_FOR_DOWNLOAD = "ServiceManagerForDownload";
     public static final String SERVICE_WORKER_PAYMENT_APPS = "ServiceWorkerPaymentApps";
     public static final String SHOW_TRUSTED_PUBLISHER_URL = "ShowTrustedPublisherURL";
-    public static final String SIMPLIFIED_NTP = "SimplifiedNTP";
     public static final String SOLE_INTEGRATION = "SoleIntegration";
     public static final String SOUND_CONTENT_SETTING = "SoundContentSetting";
     public static final String SSL_COMMITTED_INTERSTITIALS = "SSLCommittedInterstitials";
@@ -287,6 +285,7 @@ public abstract class ChromeFeatureList {
     public static final String VIDEO_PERSISTENCE = "VideoPersistence";
     public static final String UNIFIED_CONSENT = "UnifiedConsent";
     public static final String VR_BROWSING_FEEDBACK = "VrBrowsingFeedback";
+    public static final String USER_ACTIVATION_V2 = "UserActivationV2";
     public static final String WEB_AUTH = "WebAuthentication";
     public static final String WEB_PAYMENTS = "WebPayments";
     public static final String WEB_PAYMENTS_METHOD_SECTION_ORDER_V2 =

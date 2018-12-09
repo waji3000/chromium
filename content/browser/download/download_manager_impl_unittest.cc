@@ -69,6 +69,10 @@ class ByteStreamReader;
 
 namespace {
 
+bool URLAlwaysSafe(int render_process_id, const GURL& url) {
+  return true;
+}
+
 class MockDownloadManagerDelegate : public DownloadManagerDelegate {
  public:
   MockDownloadManagerDelegate();
@@ -375,7 +379,8 @@ TestInProgressManager::TestInProgressManager()
     : download::InProgressDownloadManager(
           nullptr,
           base::FilePath(),
-          download::InProgressDownloadManager::IsOriginSecureCallback()) {}
+          download::InProgressDownloadManager::IsOriginSecureCallback(),
+          base::BindRepeating(&URLAlwaysSafe)) {}
 
 void TestInProgressManager::AddDownloadItem(
     std::unique_ptr<download::DownloadItemImpl> item) {
@@ -519,6 +524,11 @@ class DownloadManagerTest : public testing::Test {
 
   void OnInProgressDownloadManagerInitialized() {
     download_manager_->OnInProgressDownloadManagerInitialized();
+  }
+
+  void OnHistoryDBInitialized() {
+    download_manager_->PostInitialization(
+        DownloadManager::DOWNLOAD_INITIALIZATION_DEPENDENCY_HISTORY_DB);
   }
 
   void SetInProgressDownloadManager(
@@ -678,9 +688,11 @@ TEST_F(DownloadManagerTest, GetDownloadByGuid) {
   ASSERT_FALSE(download_manager_->GetDownloadByGuid(""));
 
   const char kGuid[] = "8DF158E8-C980-4618-BB03-EBA3242EB48B";
+  std::vector<GURL> url_chain;
+  url_chain.emplace_back("http://example.com/1.zip");
   download::DownloadItem* persisted_item =
       download_manager_->CreateDownloadItem(
-          kGuid, 10, base::FilePath(), base::FilePath(), std::vector<GURL>(),
+          kGuid, 10, base::FilePath(), base::FilePath(), url_chain,
           GURL("http://example.com/a"), GURL("http://example.com/a"),
           GURL("http://example.com/a"), GURL("http://example.com/a"),
           "application/octet-stream", "application/octet-stream",
@@ -729,16 +741,17 @@ TEST_F(DownloadManagerTest, RemoveDownloadsByURL) {
 TEST_F(DownloadManagerTest, OnInProgressDownloadsLoaded) {
   auto in_progress_manager = std::make_unique<TestInProgressManager>();
   const char kGuid[] = "8DF158E8-C980-4618-BB03-EBA3242EB48B";
+  std::vector<GURL> url_chain;
+  url_chain.emplace_back("http://example.com/1.zip");
   auto in_progress_item = std::make_unique<download::DownloadItemImpl>(
       in_progress_manager.get(), kGuid, 10, base::FilePath(), base::FilePath(),
-      std::vector<GURL>(), GURL("http://example.com/a"),
+      url_chain, GURL("http://example.com/a"), GURL("http://example.com/a"),
       GURL("http://example.com/a"), GURL("http://example.com/a"),
-      GURL("http://example.com/a"), "application/octet-stream",
-      "application/octet-stream", base::Time::Now(), base::Time::Now(),
-      std::string(), std::string(), 10, 10, std::string(),
+      "application/octet-stream", "application/octet-stream", base::Time::Now(),
+      base::Time::Now(), std::string(), std::string(), 10, 10, 0, std::string(),
       download::DownloadItem::INTERRUPTED,
       download::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS,
-      download::DOWNLOAD_INTERRUPT_REASON_SERVER_FAILED, false,
+      download::DOWNLOAD_INTERRUPT_REASON_SERVER_FAILED, false, false, false,
       base::Time::Now(), true,
       std::vector<download::DownloadItem::ReceivedSlice>());
   in_progress_manager->AddDownloadItem(std::move(in_progress_item));
@@ -746,8 +759,10 @@ TEST_F(DownloadManagerTest, OnInProgressDownloadsLoaded) {
   EXPECT_CALL(GetMockObserver(), OnDownloadCreated(download_manager_.get(), _))
       .WillOnce(Return());
   OnInProgressDownloadManagerInitialized();
-  ASSERT_TRUE(download_manager_->GetDownloadByGuid(kGuid));
+  ASSERT_FALSE(download_manager_->GetDownloadByGuid(kGuid));
 
+  OnHistoryDBInitialized();
+  ASSERT_TRUE(download_manager_->GetDownloadByGuid(kGuid));
   download::DownloadItem* download =
       download_manager_->GetDownloadByGuid(kGuid);
   download->Remove();

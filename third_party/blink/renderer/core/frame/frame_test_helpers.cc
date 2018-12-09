@@ -35,7 +35,6 @@
 #include "cc/test/test_ukm_recorder_factory.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_settings.h"
-#include "third_party/blink/public/mojom/page/page_visibility_state.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_data.h"
 #include "third_party/blink/public/platform/web_string.h"
@@ -113,11 +112,12 @@ std::unique_ptr<WebNavigationParams> BuildDummyNavigationParams() {
 }  // namespace
 
 void LoadFrame(WebLocalFrame* frame, const std::string& url) {
+  WebLocalFrameImpl* impl = ToWebLocalFrameImpl(frame);
   WebURL web_url(url_test_helpers::ToKURL(url));
   if (web_url.ProtocolIs("javascript")) {
-    frame->LoadJavaScriptURL(web_url);
+    impl->LoadJavaScriptURL(web_url);
   } else {
-    frame->CommitNavigation(
+    impl->CommitNavigation(
         WebURLRequest(web_url), blink::WebFrameLoadType::kStandard,
         blink::WebHistoryItem(), false, base::UnguessableToken::Create(),
         BuildDummyNavigationParams(), nullptr /* extra_data */);
@@ -128,15 +128,17 @@ void LoadFrame(WebLocalFrame* frame, const std::string& url) {
 void LoadHTMLString(WebLocalFrame* frame,
                     const std::string& html,
                     const WebURL& base_url) {
-  frame->LoadHTMLString(WebData(html.data(), html.size()), base_url);
+  WebLocalFrameImpl* impl = ToWebLocalFrameImpl(frame);
+  impl->LoadHTMLString(WebData(html.data(), html.size()), base_url, WebURL());
   PumpPendingRequestsForFrameToLoad(frame);
 }
 
 void LoadHistoryItem(WebLocalFrame* frame,
                      const WebHistoryItem& item,
                      mojom::FetchCacheMode cache_mode) {
+  WebLocalFrameImpl* impl = ToWebLocalFrameImpl(frame);
   HistoryItem* history_item = item;
-  frame->CommitNavigation(
+  impl->CommitNavigation(
       WrappedResourceRequest(history_item->GenerateResourceRequest(cache_mode)),
       WebFrameLoadType::kBackForward, item, false /* is_client_redirect */,
       base::UnguessableToken::Create(), BuildDummyNavigationParams(),
@@ -376,7 +378,8 @@ void WebViewHelper::LoadAhem() {
 void WebViewHelper::Reset() {
   if (web_view_) {
     DCHECK(!TestWebFrameClient::IsLoading());
-    web_view_->Close();
+    // This closes the WebView also.
+    web_view_->MainFrameWidget()->Close();
     web_view_ = nullptr;
   }
 }
@@ -391,7 +394,7 @@ WebRemoteFrameImpl* WebViewHelper::RemoteMainFrame() const {
 
 void WebViewHelper::Resize(WebSize size) {
   test_web_view_client_->ClearAnimationScheduled();
-  GetWebView()->Resize(size);
+  GetWebView()->MainFrameWidget()->Resize(size);
   EXPECT_FALSE(test_web_view_client_->AnimationScheduled());
   test_web_view_client_->ClearAnimationScheduled();
 }
@@ -402,7 +405,8 @@ void WebViewHelper::InitializeWebView(TestWebViewClient* web_view_client,
       CreateDefaultClientIfNeeded(web_view_client, owned_test_web_view_client_);
   web_view_ = static_cast<WebViewImpl*>(
       WebView::Create(web_view_client, web_view_client,
-                      mojom::PageVisibilityState::kVisible, opener));
+                      /*is_hidden=*/false,
+                      /*compositing_enabled=*/true, opener));
   web_view_->GetSettings()->SetJavaScriptEnabled(true);
   web_view_->GetSettings()->SetPluginsEnabled(true);
   // Enable (mocked) network loads of image URLs, as this simplifies
@@ -412,7 +416,8 @@ void WebViewHelper::InitializeWebView(TestWebViewClient* web_view_client,
   // Consequently, all external image resources must be mocked.
   web_view_->GetSettings()->SetLoadsImagesAutomatically(true);
 
-  web_view_->SetLayerTreeView(web_view_client->layer_tree_view());
+  web_view_->MainFrameWidget()->SetLayerTreeView(
+      web_view_client->layer_tree_view());
   web_view_->SetDeviceScaleFactor(
       web_view_client->GetScreenInfo().device_scale_factor);
   web_view_->SetDefaultPageScaleLimits(1, 4);
@@ -429,7 +434,7 @@ void TestWebFrameClient::Bind(WebLocalFrame* frame,
                               std::unique_ptr<TestWebFrameClient> self_owned) {
   DCHECK(!frame_);
   DCHECK(!self_owned || self_owned.get() == this);
-  frame_ = frame;
+  frame_ = ToWebLocalFrameImpl(frame);
   self_owned_ = std::move(self_owned);
 }
 
@@ -471,6 +476,14 @@ void TestWebFrameClient::DidStopLoading() {
   --loads_in_progress_;
 }
 
+void TestWebFrameClient::BeginNavigation(
+    std::unique_ptr<WebNavigationInfo> info) {
+  frame_->CommitNavigation(
+      info->url_request, info->frame_load_type, blink::WebHistoryItem(),
+      info->is_client_redirect, base::UnguessableToken::Create(),
+      nullptr /* navigation_params */, nullptr /* extra_data */);
+}
+
 void TestWebFrameClient::DidCreateDocumentLoader(
     WebDocumentLoader* document_loader) {
 }
@@ -504,19 +517,19 @@ content::LayerTreeView* LayerTreeViewFactory::Initialize(
   // For web contents, layer transforms should scale up the contents of layers
   // to keep content always crisp when possible.
   settings.layer_transforms_should_scale_layer_contents = true;
-  // Both BlinkGenPropertyTrees and SlimmingPaintV2 should imply layer lists in
-  // the compositor. Some code across the boundaries makes assumptions based on
-  // this so ensure tests run using this configuration as well.
+  // Both BlinkGenPropertyTrees and CompositeAfterPaint should imply layer lists
+  // in the compositor. Some code across the boundaries makes assumptions based
+  // on this so ensure tests run using this configuration as well.
   if (RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled() ||
-      RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+      RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
     settings.use_layer_lists = true;
   }
 
   layer_tree_view_ = std::make_unique<content::LayerTreeView>(
       specified_delegate ? specified_delegate : &delegate_,
-      Platform::Current()->CurrentThread()->GetTaskRunner(),
+      Thread::Current()->GetTaskRunner(),
       /*compositor_thread=*/nullptr, &test_task_graph_runner_,
-      &fake_renderer_scheduler_);
+      &fake_thread_scheduler_);
   layer_tree_view_->Initialize(settings,
                                std::make_unique<cc::TestUkmRecorderFactory>());
   return layer_tree_view_.get();

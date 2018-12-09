@@ -560,6 +560,8 @@ var availableTests = [
           Source: 'User',
           StaticIPConfig: {
             IPAddress: '1.2.3.4',
+            Gateway: '0.0.0.0',
+            RoutingPrefix: 1,
             Type: 'IPv4'
           },
           Type: NetworkType.WI_FI,
@@ -685,6 +687,7 @@ var availableTests = [
             Passphrase: {
               Effective: 'UserSetting',
               UserEditable: true,
+              UserPolicy: 'FAKE_CREDENTIAL_VPaJDV9x',
               UserSetting: 'FAKE_CREDENTIAL_VPaJDV9x'
             },
             SSID: {
@@ -748,7 +751,9 @@ var availableTests = [
             },
             IPAddressConfigType: 'Static',
             StaticIPConfig: {
-              IPAddress: '1.2.3.4'
+              IPAddress: '1.2.3.4',
+              Gateway: '0.0.0.0',
+              RoutingPrefix: 1
             }
           };
           chrome.networkingPrivate.setProperties(
@@ -768,6 +773,8 @@ var availableTests = [
                       assertTrue('StaticIPConfig' in result);
                       assertEq('1.2.3.4',
                                result['StaticIPConfig']['IPAddress']);
+                      assertEq('0.0.0.0', result['StaticIPConfig']['Gateway']);
+                      assertEq(1, result['StaticIPConfig']['RoutingPrefix']);
                     }));
               }));
         }));

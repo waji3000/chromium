@@ -304,15 +304,10 @@ class ServiceWorkerURLRequestJob::NavigationPreloadMetrics {
   DISALLOW_COPY_AND_ASSIGN(NavigationPreloadMetrics);
 };
 
-bool ServiceWorkerURLRequestJob::Delegate::RequestStillValid(
-    ServiceWorkerMetrics::URLRequestJobResult* result) {
-  return true;
-}
-
 ServiceWorkerURLRequestJob::ServiceWorkerURLRequestJob(
     net::URLRequest* request,
     net::NetworkDelegate* network_delegate,
-    const std::string& client_id,
+    base::WeakPtr<ServiceWorkerProviderHost> provider_host,
     base::WeakPtr<storage::BlobStorageContext> blob_storage_context,
     const ResourceContext* resource_context,
     network::mojom::FetchRequestMode request_mode,
@@ -330,7 +325,7 @@ ServiceWorkerURLRequestJob::ServiceWorkerURLRequestJob(
       response_type_(ResponseType::NOT_DETERMINED),
       is_started_(false),
       fetch_response_type_(network::mojom::FetchResponseType::kDefault),
-      client_id_(client_id),
+      provider_host_(std::move(provider_host)),
       blob_storage_context_(blob_storage_context),
       resource_context_(resource_context),
       request_mode_(request_mode),
@@ -576,6 +571,13 @@ ServiceWorkerURLRequestJob::CreateResourceRequest() {
     request->transition_type = info->GetPageTransition();
   request->fetch_integrity = integrity_;
   request->keepalive = keepalive_;
+  // Set the request window id if we have one. If we don't, or the provider
+  // host is gone, it just means client certification authentication may fail
+  // so continue on without it anyway.
+  if (provider_host_ && provider_host_->fetch_request_window_id()) {
+    request->fetch_window_id =
+        base::make_optional(provider_host_->fetch_request_window_id());
+  }
   return request;
 }
 
@@ -668,10 +670,6 @@ void ServiceWorkerURLRequestJob::DidDispatchFetchEvent(
   // calling respondWith().
   if (!did_navigation_preload_) {
     fetch_dispatcher_.reset();
-  }
-  if (IsMainResourceLoad()) {
-    ReportDestination(
-        ServiceWorkerMetrics::MainResourceRequestDestination::kServiceWorker);
   }
   ServiceWorkerMetrics::RecordFetchEventStatus(IsMainResourceLoad(), status);
 
@@ -852,9 +850,9 @@ bool ServiceWorkerURLRequestJob::IsFallbackToRendererNeeded() const {
   // It is because the CORS preflight logic is implemented in the renderer. So
   // we return a fall_back_required response to the renderer.
   return !IsMainResourceLoad() &&
-         (request_mode_ == network::mojom::FetchRequestMode::kCORS ||
+         (request_mode_ == network::mojom::FetchRequestMode::kCors ||
           request_mode_ ==
-              network::mojom::FetchRequestMode::kCORSWithForcedPreflight) &&
+              network::mojom::FetchRequestMode::kCorsWithForcedPreflight) &&
          (!request()->initiator().has_value() ||
           !request()->initiator()->IsSameOriginWith(
               url::Origin::Create(request()->url())));
@@ -955,11 +953,6 @@ void ServiceWorkerURLRequestJob::RequestBodyFileSizesResolved(bool success) {
   if (!success) {
     RecordResult(
         ServiceWorkerMetrics::REQUEST_JOB_ERROR_REQUEST_BODY_BLOB_FAILED);
-    if (IsMainResourceLoad()) {
-      ReportDestination(ServiceWorkerMetrics::MainResourceRequestDestination::
-                            kErrorRequestBodyFailed);
-    }
-
     // TODO(falken): This and below should probably be NotifyStartError, not
     // DeliverErrorResponse. But changing it causes
     // ServiceWorkerURLRequestJobTest.DeletedProviderHostBeforeFetchEvent to
@@ -974,10 +967,12 @@ void ServiceWorkerURLRequestJob::RequestBodyFileSizesResolved(bool success) {
       delegate_->GetServiceWorkerVersion(&result);
   if (!active_worker) {
     RecordResult(result);
-    if (IsMainResourceLoad()) {
-      ReportDestination(ServiceWorkerMetrics::MainResourceRequestDestination::
-                            kErrorNoActiveWorkerFromDelegate);
-    }
+    DeliverErrorResponse();
+    return;
+  }
+
+  if (!provider_host_) {
+    RecordResult(ServiceWorkerMetrics::REQUEST_JOB_ERROR_NO_PROVIDER_HOST);
     DeliverErrorResponse();
     return;
   }
@@ -999,11 +994,10 @@ void ServiceWorkerURLRequestJob::RequestBodyFileSizesResolved(bool success) {
   }
 
   DCHECK(!fetch_dispatcher_);
-  if (IsMainResourceLoad())
-    delegate_->WillDispatchFetchEventForMainResource();
   fetch_dispatcher_ = std::make_unique<ServiceWorkerFetchDispatcher>(
       std::move(resource_request), blob_uuid, blob_size, std::move(blob),
-      client_id_, base::WrapRefCounted(active_worker), request()->net_log(),
+      provider_host_->client_uuid(), base::WrapRefCounted(active_worker),
+      request()->net_log(),
       base::BindOnce(&ServiceWorkerURLRequestJob::DidPrepareFetchEvent,
                      weak_factory_.GetWeakPtr(),
                      base::WrapRefCounted(active_worker)),
@@ -1024,12 +1018,6 @@ void ServiceWorkerURLRequestJob::RequestBodyFileSizesResolved(bool success) {
 
 void ServiceWorkerURLRequestJob::OnNavigationPreloadResponse() {
   nav_preload_metrics_->ReportNavigationPreloadFinished();
-}
-
-void ServiceWorkerURLRequestJob::ReportDestination(
-    ServiceWorkerMetrics::MainResourceRequestDestination destination) {
-  DCHECK(IsMainResourceLoad());
-  delegate_->ReportDestination(destination);
 }
 
 }  // namespace content

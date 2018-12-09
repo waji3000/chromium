@@ -4,13 +4,38 @@
 
 #include "chromeos/services/assistant/public/features.h"
 
+#include "base/feature_list.h"
+
 namespace chromeos {
 namespace assistant {
 namespace features {
 
-// Enables Assistant voice match enrollment.
 const base::Feature kAssistantVoiceMatch{"AssistantVoiceMatch",
                                          base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kAssistantWarmerWelcomeFeature{
+    "AssistantWarmerWelcome", base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kAssistantAppSupport{"AssistantAppSupport",
+                                         base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kEnableDspHotword{"EnableDspHotword",
+                                      base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kEnableStereoAudioInput{"AssistantEnableStereoAudioInput",
+                                            base::FEATURE_DISABLED_BY_DEFAULT};
+
+bool IsDspHotwordEnabled() {
+  return base::FeatureList::IsEnabled(kEnableDspHotword);
+}
+
+bool IsStereoAudioInputEnabled() {
+  return base::FeatureList::IsEnabled(kEnableStereoAudioInput);
+}
+
+bool IsWarmerWelcomeEnabled() {
+  return base::FeatureList::IsEnabled(kAssistantWarmerWelcomeFeature);
+}
 
 }  // namespace features
 }  // namespace assistant

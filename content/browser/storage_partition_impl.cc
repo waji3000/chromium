@@ -22,6 +22,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/syslog_logging.h"
 #include "base/task/post_task.h"
+#include "build/build_config.h"
 #include "content/browser/background_fetch/background_fetch_context.h"
 #include "content/browser/blob_storage/blob_registry_wrapper.h"
 #include "content/browser/blob_storage/chrome_blob_storage_context.h"
@@ -43,10 +44,10 @@
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/dom_storage_context.h"
 #include "content/public/browser/indexed_db_context.h"
-#include "content/public/browser/local_storage_usage_info.h"
 #include "content/public/browser/network_service_instance.h"
 #include "content/public/browser/permission_controller.h"
 #include "content/public/browser/session_storage_usage_info.h"
+#include "content/public/browser/storage_usage_info.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
@@ -153,7 +154,7 @@ void OnLocalStorageUsageInfo(
     const base::Time delete_begin,
     const base::Time delete_end,
     base::OnceClosure callback,
-    const std::vector<LocalStorageUsageInfo>& infos) {
+    const std::vector<StorageUsageInfo>& infos) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   base::OnceClosure done_callback =
@@ -185,19 +186,29 @@ void OnSessionStorageUsageInfo(
     const scoped_refptr<DOMStorageContextWrapper>& dom_storage_context,
     const scoped_refptr<storage::SpecialStoragePolicy>& special_storage_policy,
     const StoragePartition::OriginMatcherFunction& origin_matcher,
+    bool perform_cleanup,
     base::OnceClosure callback,
     const std::vector<SessionStorageUsageInfo>& infos) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
+  base::OnceClosure done_callback =
+      perform_cleanup
+          ? base::BindOnce(
+                &DOMStorageContextWrapper::PerformSessionStorageCleanup,
+                dom_storage_context, std::move(callback))
+          : std::move(callback);
+
+  base::RepeatingClosure barrier =
+      base::BarrierClosure(infos.size(), std::move(done_callback));
+
   for (size_t i = 0; i < infos.size(); ++i) {
     if (!origin_matcher.is_null() &&
         !origin_matcher.Run(infos[i].origin, special_storage_policy.get())) {
+      barrier.Run();
       continue;
     }
-    dom_storage_context->DeleteSessionStorage(infos[i]);
+    dom_storage_context->DeleteSessionStorage(infos[i], barrier);
   }
-
-  std::move(callback).Run();
 }
 
 void ClearLocalStorageOnUIThread(
@@ -233,12 +244,13 @@ void ClearSessionStorageOnUIThread(
     const scoped_refptr<DOMStorageContextWrapper>& dom_storage_context,
     const scoped_refptr<storage::SpecialStoragePolicy>& special_storage_policy,
     const StoragePartition::OriginMatcherFunction& origin_matcher,
+    bool perform_cleanup,
     base::OnceClosure callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   dom_storage_context->GetSessionStorageUsage(base::BindOnce(
       &OnSessionStorageUsageInfo, dom_storage_context, special_storage_policy,
-      origin_matcher, std::move(callback)));
+      origin_matcher, perform_cleanup, std::move(callback)));
 }
 
 }  // namespace
@@ -464,7 +476,6 @@ class StoragePartitionImpl::DataDeletionHelper {
       const OriginMatcherFunction& origin_matcher,
       CookieDeletionFilterPtr cookie_deletion_filter,
       const base::FilePath& path,
-      net::URLRequestContextGetter* rq_context,
       DOMStorageContextWrapper* dom_storage_context,
       storage::QuotaManager* quota_manager,
       storage::SpecialStoragePolicy* special_storage_policy,
@@ -550,6 +561,9 @@ StoragePartitionImpl::~StoragePartitionImpl() {
 
   if (GetServiceWorkerContext())
     GetServiceWorkerContext()->Shutdown();
+
+  if (GetIndexedDBContext())
+    GetIndexedDBContext()->Shutdown();
 
   if (GetCacheStorageContext())
     GetCacheStorageContext()->Shutdown();
@@ -733,11 +747,22 @@ base::FilePath StoragePartitionImpl::GetPath() {
 }
 
 net::URLRequestContextGetter* StoragePartitionImpl::GetURLRequestContext() {
+  // TODO(jam): enable for all, still used on WebView and Chromecast
+#if defined(OS_WIN) || defined(OS_MACOSX) || \
+    (defined(OS_LINUX) && !defined(OS_CHROMEOS))
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService))
+    NOTREACHED();
+#endif
   return url_request_context_.get();
 }
 
 net::URLRequestContextGetter*
 StoragePartitionImpl::GetMediaURLRequestContext() {
+#if defined(OS_WIN) || defined(OS_MACOSX) || \
+    (defined(OS_LINUX) && !defined(OS_CHROMEOS))
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService))
+    NOTREACHED();
+#endif
   return media_url_request_context_.get();
 }
 
@@ -913,6 +938,17 @@ void StoragePartitionImpl::OnCanSendReportingReports(
   std::move(callback).Run(origins_out);
 }
 
+void StoragePartitionImpl::OnCanSendDomainReliabilityUpload(
+    const GURL& origin,
+    OnCanSendDomainReliabilityUploadCallback callback) {
+  PermissionController* permission_controller =
+      BrowserContext::GetPermissionController(browser_context_);
+  std::move(callback).Run(
+      permission_controller->GetPermissionStatus(
+          content::PermissionType::BACKGROUND_SYNC, origin, origin) ==
+      blink::mojom::PermissionStatus::GRANTED);
+}
+
 void StoragePartitionImpl::ClearDataImpl(
     uint32_t remove_mask,
     uint32_t quota_storage_remove_mask,
@@ -933,10 +969,9 @@ void StoragePartitionImpl::ClearDataImpl(
   deletion_helpers_running_++;
   helper->ClearDataOnUIThread(
       storage_origin, origin_matcher, std::move(cookie_deletion_filter),
-      GetPath(), GetURLRequestContext(), dom_storage_context_.get(),
-      quota_manager_.get(), special_storage_policy_.get(),
-      filesystem_context_.get(), GetCookieManagerForBrowserProcess(),
-      perform_cleanup, begin, end);
+      GetPath(), dom_storage_context_.get(), quota_manager_.get(),
+      special_storage_policy_.get(), filesystem_context_.get(),
+      GetCookieManagerForBrowserProcess(), perform_cleanup, begin, end);
 }
 
 void StoragePartitionImpl::DeletionHelperDone(base::OnceClosure callback) {
@@ -1087,7 +1122,6 @@ void StoragePartitionImpl::DataDeletionHelper::ClearDataOnUIThread(
     const OriginMatcherFunction& origin_matcher,
     CookieDeletionFilterPtr cookie_deletion_filter,
     const base::FilePath& path,
-    net::URLRequestContextGetter* rq_context,
     DOMStorageContextWrapper* dom_storage_context,
     storage::QuotaManager* quota_manager,
     storage::SpecialStoragePolicy* special_storage_policy,
@@ -1157,7 +1191,7 @@ void StoragePartitionImpl::DataDeletionHelper::ClearDataOnUIThread(
       ClearSessionStorageOnUIThread(
           base::WrapRefCounted(dom_storage_context),
           base::WrapRefCounted(special_storage_policy), origin_matcher,
-          decrement_callback);
+          perform_cleanup, decrement_callback);
     }
   }
 

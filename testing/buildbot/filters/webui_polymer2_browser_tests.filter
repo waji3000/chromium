@@ -36,7 +36,9 @@
 # failing tests.
 
 ActiveDirectoryJoinTest.*
+AppManagementAppTest.*
 AudioPlayerBrowserTest.*
+AutofillBrowserTest.*
 BluetoothInternalsTest.*
 CertificateViewerModalUITest.*
 CertificateViewerModalUITestAsync.*
@@ -51,6 +53,7 @@ CrElementsActionMenuTest.*
 CrElementsCheckboxTest.*
 CrElementsDialogTest.*
 CrElementsDrawerTest.*
+CrElementsFingerprintProgressArcTest.*
 CrElementsInputTest.*
 CrElementsLazyRenderTest.*
 CrElementsPolicyIndicatorBehaviorTest.*
@@ -67,6 +70,8 @@ CrElementsSliderTest.*
 CrElementsToastTest.*
 CrElementsToggleTest.*
 CrElementsToolbarSearchFieldTest.*
+CrExtensionsActivityLogTest.*
+CrExtensionsActivityLogItemTest.*
 CrExtensionsA11yTest.*
 CrExtensionsA11yTestWithMultipleExensions.*
 CrExtensionsCodeSectionTest.*
@@ -98,6 +103,7 @@ CrSettingsAndroidAppsPageTest.*
 CrSettingsAnimatedPagesTest.*
 CrSettingsAppearanceFontsPageTest.*
 CrSettingsAppearancePageTest.*
+CrSettingsAutofillPageTest.*
 CrSettingsAutofillSectionTest.*
 CrSettingsBluetoothPageTest.*
 CrSettingsCategoryDefaultSettingTest.*
@@ -242,8 +248,8 @@ NetInternalsTest.*
 NoBackgroundTasksTest.*
 NTP4WebUITest.*
 OnboardingWelcomeEmailChooserTest.*
+OnboardingWelcomeWelcomeAppTest.*
 OpenAudioFiles/*
-PasswordsAndFormsBrowserTest.*
 PrintPreviewAdvancedDialogTest.*
 PrintPreviewAdvancedItemTest.*
 PrintPreviewBaseSettingsSectionTest.*
@@ -251,7 +257,8 @@ PrintPreviewCustomMarginsTest.*
 PrintPreviewDestinationDialogTest.*
 PrintPreviewDestinationItemTest.*
 PrintPreviewDestinationListTest.*
-PrintPreviewDestinationSearchTest.*
+PrintPreviewDestinationSelectTest.*
+PrintPreviewDestinationSettingsTest.*
 PrintPreviewHeaderTest.*
 PrintPreviewKeyEventTest.*
 PrintPreviewLinkContainerTest.*
@@ -268,7 +275,7 @@ PrintPreviewSettingsSelectTest.*
 PrintPreviewSystemDialogBrowserTest.*
 RestrictedFileSystemExtensionApiTest.*
 SandboxStatusUITest.*
-SettingsA11yManagePasswords.*
+SettingsA11yPasswords.*
 SettingsA11ySignOut.*
 SettingsAccessibilityTest.*
 SettingsAdvancedPageBrowserTest.*

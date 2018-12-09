@@ -7,13 +7,16 @@
 #include "ash/public/cpp/ash_pref_names.h"
 #include "base/memory/ptr_util.h"
 #include "base/task/task_scheduler/task_scheduler.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/scoped_task_environment.h"
 #include "base/threading/sequenced_task_runner_handle.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/power/auto_screen_brightness/fake_als_reader.h"
 #include "chrome/browser/chromeos/power/auto_screen_brightness/fake_brightness_monitor.h"
 #include "chrome/browser/chromeos/power/auto_screen_brightness/modeller.h"
 #include "chrome/browser/chromeos/power/auto_screen_brightness/monotone_cubic_spline.h"
+#include "chrome/browser/chromeos/power/auto_screen_brightness/utils.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
@@ -145,6 +148,9 @@ class AdapterTest : public testing::Test {
     scoped_refptr<user_prefs::PrefRegistrySyncable> registry(
         new user_prefs::PrefRegistrySyncable);
 
+    chromeos::power::auto_screen_brightness::MetricsReporter::
+        RegisterLocalStatePrefs(registry.get());
+
     // Same default values as used in the actual pref store.
     registry->RegisterIntegerPref(ash::prefs::kPowerAcScreenBrightnessPercent,
                                   -1, PrefRegistry::PUBLIC);
@@ -172,12 +178,14 @@ class AdapterTest : public testing::Test {
     profile_ = profile_builder.Build();
 
     base::test::ScopedFeatureList scoped_feature_list;
-    scoped_feature_list.InitAndEnableFeatureWithParameters(
-        features::kAutoScreenBrightness, params);
+    if (!params.empty()) {
+      scoped_feature_list.InitAndEnableFeatureWithParameters(
+          features::kAutoScreenBrightness, params);
+    }
 
     adapter_ = std::make_unique<Adapter>(
         profile_.get(), &fake_als_reader_, &fake_brightness_monitor_,
-        &fake_modeller_,
+        &fake_modeller_, nullptr /* metrics_reporter */,
         chromeos::DBusThreadManager::Get()->GetPowerManagerClient());
     adapter_->SetTickClockForTesting(
         scoped_task_environment_.GetMockTickClock());
@@ -211,6 +219,8 @@ class AdapterTest : public testing::Test {
   FakeAlsReader fake_als_reader_;
   FakeBrightnessMonitor fake_brightness_monitor_;
   FakeModeller fake_modeller_;
+
+  base::HistogramTester histogram_tester_;
 
   const std::map<std::string, std::string> default_params_ = {
       {"brightening_lux_threshold_ratio", "0.1"},
@@ -385,11 +395,39 @@ TEST_F(AdapterTest, SequenceOfBrightnessUpdatesWithDefaultParams) {
   fake_brightness_monitor_.ReportUserBrightnessChangeRequested();
   scoped_task_environment_.RunUntilIdle();
   EXPECT_EQ(adapter_->GetStatusForTesting(), Adapter::Status::kDisabled);
+
+  // Another user manual adjustment came in.
+  fake_brightness_monitor_.ReportUserBrightnessChangeRequested();
+  scoped_task_environment_.RunUntilIdle();
+  EXPECT_EQ(adapter_->GetStatusForTesting(), Adapter::Status::kDisabled);
+
+}
+
+TEST_F(AdapterTest, UserBrightnessRequestBeforeAnyModelUpdate) {
+  Init(AlsReader::AlsInitStatus::kSuccess, BrightnessMonitor::Status::kSuccess,
+       global_curve_, personal_curve_, default_params_);
+
+  EXPECT_EQ(adapter_->GetStatusForTesting(), Adapter::Status::kSuccess);
+  EXPECT_TRUE(adapter_->GetGlobalCurveForTesting());
+  EXPECT_EQ(*adapter_->GetGlobalCurveForTesting(), *global_curve_);
+  EXPECT_TRUE(adapter_->GetPersonalCurveForTesting());
+  EXPECT_EQ(*adapter_->GetPersonalCurveForTesting(), *personal_curve_);
+
+  // Adapter is disabled after a user manual adjustment.
+  fake_brightness_monitor_.ReportUserBrightnessChangeRequested();
+  scoped_task_environment_.RunUntilIdle();
+  EXPECT_EQ(adapter_->GetStatusForTesting(), Adapter::Status::kDisabled);
+
+  // Another user manual adjustment came in.
+  fake_brightness_monitor_.ReportUserBrightnessChangeRequested();
+  scoped_task_environment_.RunUntilIdle();
+  EXPECT_EQ(adapter_->GetStatusForTesting(), Adapter::Status::kDisabled);
 }
 
 TEST_F(AdapterTest, BrightnessLuxThresholds) {
   Init(AlsReader::AlsInitStatus::kSuccess, BrightnessMonitor::Status::kSuccess,
        global_curve_, personal_curve_, default_params_);
+  EXPECT_EQ(Adapter::kNumberAmbientValuesToTrack, 5);
 
   EXPECT_EQ(adapter_->GetStatusForTesting(), Adapter::Status::kSuccess);
   EXPECT_TRUE(adapter_->GetGlobalCurveForTesting());
@@ -404,6 +442,7 @@ TEST_F(AdapterTest, BrightnessLuxThresholds) {
   fake_als_reader_.ReportAmbientLightUpdate(20);
   scoped_task_environment_.RunUntilIdle();
   EXPECT_EQ(test_observer_.num_changes(), 1);
+  EXPECT_DOUBLE_EQ(adapter_->GetAverageAmbientForTesting(), 20);
   EXPECT_DOUBLE_EQ(adapter_->GetBrighteningThresholdForTesting(), 22);
   EXPECT_DOUBLE_EQ(adapter_->GetDarkeningThresholdForTesting(), 16);
 
@@ -412,12 +451,15 @@ TEST_F(AdapterTest, BrightnessLuxThresholds) {
   scoped_task_environment_.FastForwardBy(base::TimeDelta::FromSeconds(20));
   fake_als_reader_.ReportAmbientLightUpdate(21);
   EXPECT_EQ(1, test_observer_.num_changes());
+  EXPECT_DOUBLE_EQ(adapter_->GetAverageAmbientForTesting(), (20 + 21) / 2.0);
   EXPECT_DOUBLE_EQ(adapter_->GetBrighteningThresholdForTesting(), 22);
   EXPECT_DOUBLE_EQ(adapter_->GetDarkeningThresholdForTesting(), 16);
 
   // A 3rd ALS comes in, but still not enough to trigger brightness change.
   fake_als_reader_.ReportAmbientLightUpdate(15);
   EXPECT_EQ(test_observer_.num_changes(), 1);
+  EXPECT_DOUBLE_EQ(adapter_->GetAverageAmbientForTesting(),
+                   (20 + 21 + 15) / 3.0);
   EXPECT_DOUBLE_EQ(adapter_->GetBrighteningThresholdForTesting(), 22);
   EXPECT_DOUBLE_EQ(adapter_->GetDarkeningThresholdForTesting(), 16);
 
@@ -434,6 +476,19 @@ TEST_F(AdapterTest, BrightnessLuxThresholds) {
                    expected_average_ambient * 1.1);
   EXPECT_DOUBLE_EQ(adapter_->GetDarkeningThresholdForTesting(),
                    expected_average_ambient * 0.8);
+
+  // Next check |ambient_light_values_| has capacity
+  // |Adapter::kNumberAmbientValuesToTrack|.
+  fake_als_reader_.ReportAmbientLightUpdate(8);
+  scoped_task_environment_.RunUntilIdle();
+  EXPECT_DOUBLE_EQ(adapter_->GetAverageAmbientForTesting(),
+                   (20 + 21 + 15 + 7 + 8) / 5.0);
+
+  fake_als_reader_.ReportAmbientLightUpdate(9);
+  scoped_task_environment_.RunUntilIdle();
+
+  EXPECT_DOUBLE_EQ(adapter_->GetAverageAmbientForTesting(),
+                   (21 + 15 + 7 + 8 + 9) / 5.0);
 }
 
 TEST_F(AdapterTest, ImmediateBrightnessTransitionThresholds) {
@@ -488,7 +543,7 @@ TEST_F(AdapterTest, BrightnessNotUpdatedOnStartup) {
   scoped_task_environment_.RunUntilIdle();
   EXPECT_EQ(test_observer_.num_changes(), 0);
 
-  scoped_task_environment_.FastForwardBy(base::TimeDelta::FromSeconds(2));
+  scoped_task_environment_.FastForwardBy(base::TimeDelta::FromSeconds(5));
   EXPECT_EQ(test_observer_.num_changes(), 0);
 
   // 2nd ALS comes in so that we have |kAmbientLightShortHorizonSeconds| of
@@ -583,6 +638,49 @@ TEST_F(AdapterTest, BrightnessSetByPolicy) {
   fake_als_reader_.ReportAmbientLightUpdate(10);
   scoped_task_environment_.RunUntilIdle();
   EXPECT_EQ(test_observer_.num_changes(), 0);
+}
+
+TEST_F(AdapterTest, FeatureDisabled) {
+  // An empty param map will not enable the experiment.
+  std::map<std::string, std::string> empty_params;
+
+  Init(AlsReader::AlsInitStatus::kSuccess, BrightnessMonitor::Status::kSuccess,
+       global_curve_, personal_curve_, empty_params);
+
+  EXPECT_EQ(adapter_->GetStatusForTesting(), Adapter::Status::kDisabled);
+  // Global and personal curves are received, but they won't be used to change
+  // brightness.
+  EXPECT_TRUE(adapter_->GetGlobalCurveForTesting());
+  EXPECT_TRUE(adapter_->GetPersonalCurveForTesting());
+
+  scoped_task_environment_.FastForwardBy(base::TimeDelta::FromSeconds(1));
+
+  // Brightness not changed after the 1st ALS reading comes in.
+  fake_als_reader_.ReportAmbientLightUpdate(10);
+  scoped_task_environment_.RunUntilIdle();
+  EXPECT_EQ(test_observer_.num_changes(), 0);
+}
+
+TEST_F(AdapterTest, ValidParameters) {
+  std::map<std::string, std::string> params = default_params_;
+  params["darkening_lux_threshold_ratio"] = "0.5";
+
+  Init(AlsReader::AlsInitStatus::kSuccess, BrightnessMonitor::Status::kSuccess,
+       global_curve_, personal_curve_, params);
+
+  histogram_tester_.ExpectTotalCount("AutoScreenBrightness.ParameterError", 0);
+}
+
+TEST_F(AdapterTest, InvalidParameters) {
+  std::map<std::string, std::string> params = default_params_;
+  params["darkening_lux_threshold_ratio"] = "2";
+
+  Init(AlsReader::AlsInitStatus::kSuccess, BrightnessMonitor::Status::kSuccess,
+       global_curve_, personal_curve_, params);
+
+  histogram_tester_.ExpectUniqueSample(
+      "AutoScreenBrightness.ParameterError",
+      static_cast<int>(ParameterError::kAdapterError), 1);
 }
 
 }  // namespace auto_screen_brightness

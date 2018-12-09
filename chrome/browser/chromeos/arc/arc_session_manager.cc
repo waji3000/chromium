@@ -23,6 +23,7 @@
 #include "chrome/browser/chromeos/arc/optin/arc_terms_of_service_default_negotiator.h"
 #include "chrome/browser/chromeos/arc/optin/arc_terms_of_service_oobe_negotiator.h"
 #include "chrome/browser/chromeos/arc/policy/arc_android_management_checker.h"
+#include "chrome/browser/chromeos/login/demo_mode/demo_resources.h"
 #include "chrome/browser/chromeos/login/demo_mode/demo_session.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
@@ -337,12 +338,16 @@ void ArcSessionManager::OnProvisioningFinished(ProvisioningResult result) {
       scoped_opt_in_tracker_.reset();
     }
 
-    if (profile_->GetPrefs()->GetBoolean(prefs::kArcSignedIn))
+    PrefService* const prefs = profile_->GetPrefs();
+
+    if (prefs->GetBoolean(prefs::kArcSignedIn))
       return;
 
-    profile_->GetPrefs()->SetBoolean(prefs::kArcSignedIn, true);
+    prefs->SetBoolean(prefs::kArcSignedIn, true);
 
-    if (ShouldLaunchPlayStoreApp(profile_, oobe_or_assistant_wizard_start_)) {
+    if (ShouldLaunchPlayStoreApp(
+            profile_,
+            prefs->GetBoolean(prefs::kArcProvisioningInitiatedFromOobe))) {
       playstore_launcher_ = std::make_unique<ArcAppLauncher>(
           profile_, kPlayStoreAppId,
           GetLaunchIntent(kPlayStorePackage, kPlayStoreActivity,
@@ -350,6 +355,8 @@ void ArcSessionManager::OnProvisioningFinished(ProvisioningResult result) {
           false /* deferred_launch_allowed */, display::kInvalidDisplayId,
           arc::UserInteractionType::NOT_USER_INITIATED);
     }
+
+    prefs->ClearPref(prefs::kArcProvisioningInitiatedFromOobe);
 
     for (auto& observer : observer_list_)
       observer.OnArcInitialStart();
@@ -664,10 +671,21 @@ bool ArcSessionManager::RequestEnableImpl() {
     return false;
   }
 
-  oobe_or_assistant_wizard_start_ =
-      IsArcOobeOptInActive() || IsArcOptInWizardForAssistantActive();
-
   PrefService* const prefs = profile_->GetPrefs();
+
+  // |prefs::kArcProvisioningInitiatedFromOobe| is used to remember
+  // |IsArcOobeOptInActive| or |IsArcOptInWizardForAssistantActive| state when
+  // ARC start request was made initially. |IsArcOobeOptInActive| or
+  // |IsArcOptInWizardForAssistantActive| will be changed by the time when
+  // decision to auto-launch the Play Store would be made.
+  // |IsArcOobeOptInActive| and |IsArcOptInWizardForAssistantActive| are not
+  // preserved on Chrome restart also and in last case
+  // |prefs::kArcProvisioningInitiatedFromOobe| is used to remember the state of
+  // the initial request.
+  // |prefs::kArcProvisioningInitiatedFromOobe| is reset when provisioning is
+  // done or ARC is opted out.
+  if (IsArcOobeOptInActive() || IsArcOptInWizardForAssistantActive())
+    prefs->SetBoolean(prefs::kArcProvisioningInitiatedFromOobe, true);
 
   // If it is marked that sign in has been successfully done or if Play Store is
   // not available, then directly start ARC with skipping Play Store ToS.
@@ -733,7 +751,6 @@ void ArcSessionManager::RequestDisable() {
     return;
   }
 
-  oobe_or_assistant_wizard_start_ = false;
   directly_started_ = false;
   enable_requested_ = false;
   scoped_opt_in_tracker_.reset();
@@ -845,6 +862,7 @@ void ArcSessionManager::OnTermsOfServiceNegotiated(bool accepted) {
   terms_of_service_negotiator_.reset();
 
   if (!accepted) {
+    VLOG(1) << "Terms of services declined";
     // User does not accept the Terms of Service. Disable Google Play Store.
     MaybeUpdateOptInCancelUMA(support_host_.get());
     SetArcPlayStoreEnabledForProfile(profile_, false);
@@ -852,6 +870,7 @@ void ArcSessionManager::OnTermsOfServiceNegotiated(bool accepted) {
   }
 
   // Terms were accepted.
+  VLOG(1) << "Terms of services accepted";
   profile_->GetPrefs()->SetBoolean(prefs::kArcTermsAccepted, true);
   StartAndroidManagementCheck();
 }
@@ -993,9 +1012,9 @@ void ArcSessionManager::StartArc() {
   const chromeos::DemoSession* demo_session = chromeos::DemoSession::Get();
   params.is_demo_session = demo_session && demo_session->started();
   if (params.is_demo_session) {
-    DCHECK(demo_session->offline_resources_loaded());
-    base::FilePath demo_session_apps_path;
-    params.demo_session_apps_path = demo_session->GetDemoAppsPath();
+    DCHECK(demo_session->resources()->loaded());
+    params.demo_session_apps_path =
+        demo_session->resources()->GetDemoAppsPath();
   }
 
   params.supervision_transition = GetSupervisionTransition(profile_);
@@ -1016,6 +1035,8 @@ void ArcSessionManager::StopArc() {
     profile_->GetPrefs()->SetBoolean(prefs::kArcPaiStarted, false);
     profile_->GetPrefs()->SetBoolean(prefs::kArcTermsAccepted, false);
     profile_->GetPrefs()->SetBoolean(prefs::kArcFastAppReinstallStarted, false);
+    profile_->GetPrefs()->SetBoolean(prefs::kArcProvisioningInitiatedFromOobe,
+                                     false);
   }
 
   ShutdownSession();

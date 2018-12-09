@@ -74,6 +74,13 @@ typedef NS_ENUM(NSInteger, CWVPasswordUserDecision) {
              userInitiated:(BOOL)userInitiated
                isMainFrame:(BOOL)isMainFrame;
 
+// Called when a form related element is inserted into the DOM.
+// A form related element includes forms, inputs, selects, and options.
+// This callback is throttled and will group together multiple inserts that are
+// close together in time into one invocation.
+- (void)autofillControllerDidInsertFormElements:
+    (CWVAutofillController*)autofillController;
+
 // Called when user needs to decide on whether or not to save the card locally.
 // This can happen if user is signed out or sync is disabled.
 // Pass final decision to |decisionHandler|. Must only be called once.

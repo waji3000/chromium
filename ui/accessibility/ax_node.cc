@@ -9,6 +9,7 @@
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/accessibility/ax_enums.mojom.h"
+#include "ui/accessibility/ax_language_info.h"
 #include "ui/accessibility/ax_role_properties.h"
 #include "ui/accessibility/ax_table_info.h"
 #include "ui/accessibility/ax_tree.h"
@@ -20,11 +21,14 @@ AXNode::AXNode(AXNode::OwnerTree* tree,
                AXNode* parent,
                int32_t id,
                int32_t index_in_parent)
-    : tree_(tree), index_in_parent_(index_in_parent), parent_(parent) {
+    : tree_(tree),
+      index_in_parent_(index_in_parent),
+      parent_(parent),
+      language_info_(nullptr) {
   data_.id = id;
 }
 
-AXNode::~AXNode() {}
+AXNode::~AXNode() = default;
 
 int AXNode::GetUnignoredChildCount() const {
   int count = 0;
@@ -91,12 +95,12 @@ void AXNode::SetData(const AXNodeData& src) {
 void AXNode::SetLocation(int32_t offset_container_id,
                          const gfx::RectF& location,
                          gfx::Transform* transform) {
-  data_.offset_container_id = offset_container_id;
-  data_.location = location;
+  data_.relative_bounds.offset_container_id = offset_container_id;
+  data_.relative_bounds.bounds = location;
   if (transform)
-    data_.transform.reset(new gfx::Transform(*transform));
+    data_.relative_bounds.transform.reset(new gfx::Transform(*transform));
   else
-    data_.transform.reset(nullptr);
+    data_.relative_bounds.transform.reset(nullptr);
 }
 
 void AXNode::SetIndexInParent(int index_in_parent) {
@@ -175,6 +179,41 @@ base::string16 AXNode::GetInheritedString16Attribute(
   return base::UTF8ToUTF16(GetInheritedStringAttribute(attribute));
 }
 
+const AXLanguageInfo* AXNode::GetLanguageInfo() {
+  if (language_info_)
+    return language_info_.get();
+
+  const auto& lang_attr =
+      GetStringAttribute(ax::mojom::StringAttribute::kLanguage);
+
+  // Promote language attribute to LanguageInfo.
+  if (!lang_attr.empty()) {
+    language_info_.reset(new AXLanguageInfo(this, lang_attr));
+    return language_info_.get();
+  }
+
+  // Try search for language through parent instead.
+  if (!parent())
+    return nullptr;
+
+  const AXLanguageInfo* parent_lang_info = parent()->GetLanguageInfo();
+  if (!parent_lang_info)
+    return nullptr;
+
+  // Cache the results on this node.
+  language_info_.reset(new AXLanguageInfo(parent_lang_info, this));
+  return language_info_.get();
+}
+
+std::string AXNode::GetLanguage() {
+  const AXLanguageInfo* lang_info = GetLanguageInfo();
+
+  if (lang_info)
+    return lang_info->language();
+
+  return "";
+}
+
 std::ostream& operator<<(std::ostream& stream, const AXNode& node) {
   return stream << node.data().ToString();
 }
@@ -197,6 +236,22 @@ int32_t AXNode::GetTableRowCount() const {
     return 0;
 
   return table_info->row_count;
+}
+
+int32_t AXNode::GetTableAriaColCount() const {
+  AXTableInfo* table_info = tree_->GetTableInfo(this);
+  if (!table_info)
+    return 0;
+
+  return table_info->aria_col_count;
+}
+
+int32_t AXNode::GetTableAriaRowCount() const {
+  AXTableInfo* table_info = tree_->GetTableInfo(this);
+  if (!table_info)
+    return 0;
+
+  return table_info->aria_row_count;
 }
 
 int32_t AXNode::GetTableCellCount() const {
@@ -319,17 +374,27 @@ int32_t AXNode::GetTableCellIndex() const {
 }
 
 int32_t AXNode::GetTableCellColIndex() const {
-  // TODO(dmazzoni): Compute from AXTableInfo. http://crbug.com/832289
-  int32_t col_index = 0;
-  GetIntAttribute(ax::mojom::IntAttribute::kTableCellColumnIndex, &col_index);
-  return col_index;
+  AXTableInfo* table_info = GetAncestorTableInfo();
+  if (!table_info)
+    return 0;
+
+  int32_t index = GetTableCellIndex();
+  if (index == -1)
+    return 0;
+
+  return table_info->cell_data_vector[index].col_index;
 }
 
 int32_t AXNode::GetTableCellRowIndex() const {
-  // TODO(dmazzoni): Compute from AXTableInfo. http://crbug.com/832289
-  int32_t row_index = 0;
-  GetIntAttribute(ax::mojom::IntAttribute::kTableCellRowIndex, &row_index);
-  return row_index;
+  AXTableInfo* table_info = GetAncestorTableInfo();
+  if (!table_info)
+    return 0;
+
+  int32_t index = GetTableCellIndex();
+  if (index == -1)
+    return 0;
+
+  return table_info->cell_data_vector[index].row_index;
 }
 
 int32_t AXNode::GetTableCellColSpan() const {
@@ -360,15 +425,27 @@ int32_t AXNode::GetTableCellRowSpan() const {
 }
 
 int32_t AXNode::GetTableCellAriaColIndex() const {
-  int32_t col_index = 0;
-  GetIntAttribute(ax::mojom::IntAttribute::kAriaCellColumnIndex, &col_index);
-  return col_index;
+  AXTableInfo* table_info = GetAncestorTableInfo();
+  if (!table_info)
+    return -0;
+
+  int32_t index = GetTableCellIndex();
+  if (index == -1)
+    return 0;
+
+  return table_info->cell_data_vector[index].aria_col_index;
 }
 
 int32_t AXNode::GetTableCellAriaRowIndex() const {
-  int32_t row_index = 0;
-  GetIntAttribute(ax::mojom::IntAttribute::kAriaCellRowIndex, &row_index);
-  return row_index;
+  AXTableInfo* table_info = GetAncestorTableInfo();
+  if (!table_info)
+    return -0;
+
+  int32_t index = GetTableCellIndex();
+  if (index == -1)
+    return 0;
+
+  return table_info->cell_data_vector[index].aria_row_index;
 }
 
 void AXNode::GetTableCellColHeaderNodeIds(
@@ -433,6 +510,113 @@ void AXNode::IdVectorToNodeVector(std::vector<int32_t>& ids,
     if (node)
       nodes->push_back(node);
   }
+}
+
+// pos_in_set and set_size related functions.
+// Uses AXTree's cache to calculate node's pos_in_set.
+int32_t AXNode::GetPosInSet() {
+  // Only allow this to be called on nodes that can hold pos_in_set values,
+  // which are defined in the ARIA spec.
+  if (!IsItemLike(data().role))
+    return 0;
+
+  const AXNode* ordered_set = GetOrderedSet();
+  if (!ordered_set)
+    return 0;
+
+  // See AXTree::GetPosInSet
+  return tree_->GetPosInSet(id(), ordered_set);
+}
+
+// Uses AXTree's cache to calculate node's set_size.
+int32_t AXNode::GetSetSize() {
+  // Only allow this to be called on nodes that can hold set_size values, which
+  // are defined in the ARIA spec.
+  if (!(IsItemLike(data().role) || IsSetLike(data().role)))
+    return 0;
+
+  // If node is item-like, find its outerlying ordered set. Otherwise,
+  // this node is the ordered set.
+  const AXNode* ordered_set = this;
+  if (IsItemLike(data().role))
+    ordered_set = GetOrderedSet();
+  if (!ordered_set)
+    return 0;
+
+  // See AXTree::GetSetSize
+  return tree_->GetSetSize(id(), ordered_set);
+}
+
+// Returns true if the role of ordered set matches the role of item.
+// Returns false otherwise.
+bool AXNode::SetRoleMatchesItemRole(const AXNode* ordered_set) const {
+  ax::mojom::Role item_role = data().role;
+
+  // Switch on role of ordered set
+  switch (ordered_set->data().role) {
+    case ax::mojom::Role::kFeed:
+      return item_role == ax::mojom::Role::kArticle;
+
+    case ax::mojom::Role::kList:
+      return item_role == ax::mojom::Role::kListItem;
+
+    case ax::mojom::Role::kGroup:
+      return item_role == ax::mojom::Role::kListItem ||
+             item_role == ax::mojom::Role::kMenuItem ||
+             item_role == ax::mojom::Role::kMenuItemRadio ||
+             item_role == ax::mojom::Role::kTreeItem;
+
+    case ax::mojom::Role::kMenu:
+      return item_role == ax::mojom::Role::kMenuItem ||
+             item_role == ax::mojom::Role::kMenuItemRadio ||
+             item_role == ax::mojom::Role::kMenuItemCheckBox;
+
+    case ax::mojom::Role::kMenuBar:
+      return item_role == ax::mojom::Role::kMenuItem ||
+             item_role == ax::mojom::Role::kMenuItemRadio ||
+             item_role == ax::mojom::Role::kMenuItemCheckBox;
+
+    case ax::mojom::Role::kTabList:
+      return item_role == ax::mojom::Role::kTab;
+
+    case ax::mojom::Role::kTree:
+      return item_role == ax::mojom::Role::kTreeItem;
+
+    case ax::mojom::Role::kListBox:
+      return item_role == ax::mojom::Role::kListBoxOption;
+
+    case ax::mojom::Role::kRadioGroup:
+      return item_role == ax::mojom::Role::kRadioButton;
+
+    case ax::mojom::Role::kDescriptionList:
+      // Only the term for each description list entry should receive posinset
+      // and setsize.
+      return item_role == ax::mojom::Role::kDescriptionListTerm ||
+             item_role == ax::mojom::Role::kTerm;
+
+    default:
+      return false;
+  }
+}
+
+// Finds ordered set that immediately contains node.
+// Is not required for set's role to match node's role.
+AXNode* AXNode::GetOrderedSet() const {
+  AXNode* result = parent();
+
+  // Continue walking up while parent is invalid, ignored, or is a generic
+  // container.
+  while (result && (result->data().HasState(ax::mojom::State::kIgnored) ||
+                    result->data().role == ax::mojom::Role::kGenericContainer ||
+                    result->data().role == ax::mojom::Role::kIgnored)) {
+    result = result->parent();
+  }
+
+  // If the parent of this node isn't a valid ordered set, return nullptr
+  if (result && !IsSetLike(result->data().role))
+    return nullptr;
+
+  return result;
 }
 
 }  // namespace ui

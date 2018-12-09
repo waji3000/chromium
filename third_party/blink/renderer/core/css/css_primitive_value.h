@@ -23,8 +23,8 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_CSS_CSS_PRIMITIVE_VALUE_H_
 
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/css/css_value.h"
-#include "third_party/blink/renderer/core/css_property_names.h"
 #include "third_party/blink/renderer/core/css_value_keywords.h"
 #include "third_party/blink/renderer/platform/wtf/bit_vector.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
@@ -220,15 +220,23 @@ class CORE_EXPORT CSSPrimitiveValue : public CSSValue {
 
   static CSSPrimitiveValue* Create(double value, UnitType);
   static CSSPrimitiveValue* Create(const Length& value, float zoom) {
-    return new CSSPrimitiveValue(value, zoom);
+    return MakeGarbageCollected<CSSPrimitiveValue>(value, zoom);
   }
 
   // TODO(sashab): Remove this.
   template <typename T>
   static CSSPrimitiveValue* Create(T value) {
-    return new CSSPrimitiveValue(value);
+    return MakeGarbageCollected<CSSPrimitiveValue>(value);
   }
 
+  CSSPrimitiveValue(const Length&, float zoom);
+  CSSPrimitiveValue(double, UnitType);
+  template <typename T>
+  CSSPrimitiveValue(T);  // Defined in CSSPrimitiveValueMappings.h
+  template <typename T>
+  CSSPrimitiveValue(T* val) : CSSValue(kPrimitiveClass) {
+    Init(val);
+  }
   ~CSSPrimitiveValue();
 
   UnitType TypeWithCalcResolved() const;
@@ -282,17 +290,6 @@ class CORE_EXPORT CSSPrimitiveValue : public CSSValue {
   static UnitType LengthUnitTypeToUnitType(LengthUnitType);
 
  private:
-  CSSPrimitiveValue(const Length&, float zoom);
-  CSSPrimitiveValue(double, UnitType);
-
-  template <typename T>
-  CSSPrimitiveValue(T);  // Defined in CSSPrimitiveValueMappings.h
-
-  template <typename T>
-  CSSPrimitiveValue(T* val) : CSSValue(kPrimitiveClass) {
-    Init(val);
-  }
-
   static void Create(int);       // compile-time guard
   static void Create(unsigned);  // compile-time guard
   template <typename T>

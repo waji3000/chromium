@@ -16,11 +16,8 @@
 #include "base/numerics/safe_conversions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "media/filters/jpeg_parser.h"
+#include "media/gpu/macros.h"
 #include "third_party/libyuv/include/libyuv.h"
-
-#define VLOGF(level) VLOG(level) << __func__ << "(): "
-#define DVLOGF(level) DVLOG(level) << __func__ << "(): "
-#define VPLOGF(level) VPLOG(level) << __func__ << "(): "
 
 #define IOCTL_OR_ERROR_RETURN_VALUE(type, arg, value, type_name)    \
   do {                                                              \
@@ -295,7 +292,7 @@ void V4L2JpegDecodeAccelerator::DecodeTask(
     PostNotifyError(job_record->bitstream_buffer_id, UNREADABLE_INPUT);
     return;
   }
-  input_jobs_.push(make_linked_ptr(job_record.release()));
+  input_jobs_.push(std::move(job_record));
 
   ServiceDeviceTask(false);
 }
@@ -313,7 +310,7 @@ bool V4L2JpegDecodeAccelerator::ShouldRecreateInputBuffers() {
   if (input_jobs_.empty())
     return false;
 
-  linked_ptr<JobRecord> job_record = input_jobs_.front();
+  JobRecord* job_record = input_jobs_.front().get();
   // Check input buffer size is enough
   return (input_buffer_map_.empty() ||
           (job_record->shm.size() + sizeof(kDefaultDhtSeg)) >
@@ -357,7 +354,7 @@ bool V4L2JpegDecodeAccelerator::CreateInputBuffers() {
   DCHECK(decoder_task_runner_->BelongsToCurrentThread());
   DCHECK(!input_streamon_);
   DCHECK(!input_jobs_.empty());
-  linked_ptr<JobRecord> job_record = input_jobs_.front();
+  JobRecord* job_record = input_jobs_.front().get();
   // The input image may miss huffman table. We didn't parse the image before,
   // so we create more to avoid the situation of not enough memory.
   // Reserve twice size to avoid recreating input buffer frequently.
@@ -370,6 +367,7 @@ bool V4L2JpegDecodeAccelerator::CreateInputBuffers() {
   format.fmt.pix_mp.field = V4L2_FIELD_ANY;
   format.fmt.pix_mp.num_planes = kMaxInputPlanes;
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_S_FMT, &format);
+  DCHECK_EQ(format.fmt.pix_mp.pixelformat, V4L2_PIX_FMT_JPEG);
 
   struct v4l2_requestbuffers reqbufs;
   memset(&reqbufs, 0, sizeof(reqbufs));
@@ -419,7 +417,7 @@ bool V4L2JpegDecodeAccelerator::CreateOutputBuffers() {
   DCHECK(decoder_task_runner_->BelongsToCurrentThread());
   DCHECK(!output_streamon_);
   DCHECK(!running_jobs_.empty());
-  linked_ptr<JobRecord> job_record = running_jobs_.front();
+  JobRecord* job_record = running_jobs_.front().get();
 
   size_t frame_size = VideoFrame::AllocationSize(
       PIXEL_FORMAT_I420, job_record->out_frame->coded_size());
@@ -441,7 +439,8 @@ bool V4L2JpegDecodeAccelerator::CreateOutputBuffers() {
   VideoPixelFormat output_format =
       V4L2Device::V4L2PixFmtToVideoPixelFormat(output_buffer_pixelformat_);
   if (output_format == PIXEL_FORMAT_UNKNOWN) {
-    VLOGF(1) << "unknown V4L2 pixel format: " << output_buffer_pixelformat_;
+    VLOGF(1) << "unknown V4L2 pixel format: "
+             << FourccToString(output_buffer_pixelformat_);
     PostNotifyError(kInvalidBitstreamBufferId, PLATFORM_FAILURE);
     return false;
   }
@@ -814,7 +813,7 @@ void V4L2JpegDecodeAccelerator::Dequeue() {
     free_output_buffers_.push_back(dqbuf.index);
 
     // Jobs are always processed in FIFO order.
-    linked_ptr<JobRecord> job_record = running_jobs_.front();
+    std::unique_ptr<JobRecord> job_record = std::move(running_jobs_.front());
     running_jobs_.pop();
 
     if (dqbuf.flags & V4L2_BUF_FLAG_ERROR) {
@@ -924,7 +923,7 @@ bool V4L2JpegDecodeAccelerator::EnqueueInputRecord() {
   DCHECK(!free_input_buffers_.empty());
 
   // Enqueue an input (VIDEO_OUTPUT) buffer for an input video frame.
-  linked_ptr<JobRecord> job_record = input_jobs_.front();
+  std::unique_ptr<JobRecord> job_record = std::move(input_jobs_.front());
   input_jobs_.pop();
   const int index = free_input_buffers_.back();
   BufferRecord& input_record = input_buffer_map_[index];
@@ -950,7 +949,7 @@ bool V4L2JpegDecodeAccelerator::EnqueueInputRecord() {
   qbuf.m.planes = planes;
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_QBUF, &qbuf);
   input_record.at_device = true;
-  running_jobs_.push(job_record);
+  running_jobs_.push(std::move(job_record));
   free_input_buffers_.pop_back();
 
   DVLOGF(3) << "enqueued frame id=" << job_record->bitstream_buffer_id

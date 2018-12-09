@@ -61,7 +61,7 @@
 #include "third_party/blink/public/common/messaging/message_port_channel.h"
 #include "third_party/blink/public/common/messaging/transferable_message.h"
 #include "third_party/blink/public/mojom/choosers/file_chooser.mojom.h"
-#include "third_party/blink/public/platform/modules/fetch/fetch_api_request.mojom.h"
+#include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom.h"
 #include "third_party/blink/public/platform/web_focus_type.h"
 #include "third_party/blink/public/platform/web_insecure_request_policy.h"
 #include "third_party/blink/public/platform/web_intrinsic_sizing_info.h"
@@ -130,8 +130,6 @@ IPC_ENUM_TRAITS(blink::WebSandboxFlags)  // Bitmask.
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebTreeScopeType,
                           blink::WebTreeScopeType::kLast)
 IPC_ENUM_TRAITS_MAX_VALUE(ui::MenuSourceType, ui::MENU_SOURCE_TYPE_LAST)
-IPC_ENUM_TRAITS_MAX_VALUE(blink::mojom::FileChooserParams::Mode,
-                          blink::mojom::FileChooserParams::Mode::kMaxValue)
 IPC_ENUM_TRAITS_MAX_VALUE(content::CSPDirective::Name,
                           content::CSPDirective::NameLast)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::mojom::FeaturePolicyFeature,
@@ -143,7 +141,7 @@ IPC_ENUM_TRAITS_MAX_VALUE(blink::WebTriggeringEventInfo,
 IPC_ENUM_TRAITS_MAX_VALUE(blink::UserActivationUpdateType,
                           blink::UserActivationUpdateType::kMaxValue)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebMediaPlayerAction::Type,
-                          blink::WebMediaPlayerAction::Type::kTypeLast)
+                          blink::WebMediaPlayerAction::Type::kMaxValue)
 IPC_ENUM_TRAITS_MAX_VALUE(content::WasActivatedOption,
                           content::WasActivatedOption::kMaxValue)
 IPC_ENUM_TRAITS_MIN_MAX_VALUE(blink::WebScrollDirection,
@@ -152,6 +150,11 @@ IPC_ENUM_TRAITS_MIN_MAX_VALUE(blink::WebScrollDirection,
 IPC_ENUM_TRAITS_MIN_MAX_VALUE(blink::WebScrollGranularity,
                               blink::kFirstScrollGranularity,
                               blink::kLastScrollGranularity)
+IPC_ENUM_TRAITS_MIN_MAX_VALUE(content::NavigationDownloadPolicy,
+                              content::NavigationDownloadPolicy::kAllow,
+                              content::NavigationDownloadPolicy::kMaxValue)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::mojom::FeaturePolicyDisposition,
+                          blink::mojom::FeaturePolicyDisposition::kMaxValue)
 
 IPC_STRUCT_TRAITS_BEGIN(blink::WebFloatSize)
   IPC_STRUCT_TRAITS_MEMBER(width)
@@ -254,7 +257,8 @@ IPC_STRUCT_TRAITS_BEGIN(content::FrameVisualProperties)
   IPC_STRUCT_TRAITS_MEMBER(local_frame_size)
   IPC_STRUCT_TRAITS_MEMBER(capture_sequence_number)
   IPC_STRUCT_TRAITS_MEMBER(zoom_level)
-  IPC_STRUCT_TRAITS_MEMBER(local_surface_id_allocation_time)
+  IPC_STRUCT_TRAITS_MEMBER(page_scale_factor)
+  IPC_STRUCT_TRAITS_MEMBER(local_surface_id_allocation)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(cc::RenderFrameMetadata)
@@ -265,7 +269,7 @@ IPC_STRUCT_TRAITS_BEGIN(cc::RenderFrameMetadata)
   IPC_STRUCT_TRAITS_MEMBER(is_mobile_optimized)
   IPC_STRUCT_TRAITS_MEMBER(device_scale_factor)
   IPC_STRUCT_TRAITS_MEMBER(viewport_size_in_pixels)
-  IPC_STRUCT_TRAITS_MEMBER(local_surface_id)
+  IPC_STRUCT_TRAITS_MEMBER(local_surface_id_allocation)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(blink::FramePolicy)
@@ -475,7 +479,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::CommonNavigationParams)
   IPC_STRUCT_TRAITS_MEMBER(referrer)
   IPC_STRUCT_TRAITS_MEMBER(transition)
   IPC_STRUCT_TRAITS_MEMBER(navigation_type)
-  IPC_STRUCT_TRAITS_MEMBER(allow_download)
+  IPC_STRUCT_TRAITS_MEMBER(download_policy)
   IPC_STRUCT_TRAITS_MEMBER(should_replace_current_entry)
   IPC_STRUCT_TRAITS_MEMBER(base_url_for_data_url)
   IPC_STRUCT_TRAITS_MEMBER(history_url_for_data_url)
@@ -488,6 +492,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::CommonNavigationParams)
   IPC_STRUCT_TRAITS_MEMBER(started_from_context_menu)
   IPC_STRUCT_TRAITS_MEMBER(initiator_csp_info)
   IPC_STRUCT_TRAITS_MEMBER(origin_policy)
+  IPC_STRUCT_TRAITS_MEMBER(href_translate)
   IPC_STRUCT_TRAITS_MEMBER(input_start)
 IPC_STRUCT_TRAITS_END()
 
@@ -531,6 +536,7 @@ IPC_STRUCT_TRAITS_BEGIN(blink::ParsedFeaturePolicyDeclaration)
   IPC_STRUCT_TRAITS_MEMBER(feature)
   IPC_STRUCT_TRAITS_MEMBER(matches_all_origins)
   IPC_STRUCT_TRAITS_MEMBER(matches_opaque_src)
+  IPC_STRUCT_TRAITS_MEMBER(disposition)
   IPC_STRUCT_TRAITS_MEMBER(origins)
 IPC_STRUCT_TRAITS_END()
 
@@ -567,6 +573,7 @@ IPC_STRUCT_BEGIN(FrameHostMsg_OpenURL_Params)
   IPC_STRUCT_MEMBER(bool, is_history_navigation_in_new_child)
   IPC_STRUCT_MEMBER(blink::WebTriggeringEventInfo, triggering_event_info)
   IPC_STRUCT_MEMBER(mojo::MessagePipeHandle, blob_url_token)
+  IPC_STRUCT_MEMBER(std::string, href_translate)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(FrameHostMsg_DownloadUrl_Params)
@@ -715,16 +722,6 @@ IPC_STRUCT_TRAITS_BEGIN(content::CSPViolationParams)
   IPC_STRUCT_TRAITS_MEMBER(disposition)
   IPC_STRUCT_TRAITS_MEMBER(after_redirect)
   IPC_STRUCT_TRAITS_MEMBER(source_location)
-IPC_STRUCT_TRAITS_END()
-
-IPC_STRUCT_TRAITS_BEGIN(blink::mojom::FileChooserParams)
-  IPC_STRUCT_TRAITS_MEMBER(mode)
-  IPC_STRUCT_TRAITS_MEMBER(title)
-  IPC_STRUCT_TRAITS_MEMBER(default_file_name)
-  IPC_STRUCT_TRAITS_MEMBER(accept_types)
-  IPC_STRUCT_TRAITS_MEMBER(need_local_path)
-  IPC_STRUCT_TRAITS_MEMBER(use_media_capture)
-  IPC_STRUCT_TRAITS_MEMBER(requestor)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_BEGIN(FrameMsg_MixedContentFound_Params)
@@ -1119,9 +1116,6 @@ IPC_MESSAGE_ROUTED1(FrameMsg_UpdateUserActivationState,
 IPC_MESSAGE_ROUTED1(FrameMsg_SetHasReceivedUserGestureBeforeNavigation,
                     bool /* value */)
 
-IPC_MESSAGE_ROUTED1(FrameMsg_RunFileChooserResponse,
-                    std::vector<blink::mojom::FileChooserFileInfoPtr>)
-
 // Updates the renderer with a list of unique blink::UseCounter::Feature values
 // representing Blink features used, performed or encountered by the browser
 // during the current page load happening on the frame.
@@ -1457,7 +1451,7 @@ IPC_MESSAGE_ROUTED0(FrameHostMsg_SwapOut_ACK)
 
 // Tells the browser that a child's visual properties have changed.
 IPC_MESSAGE_ROUTED2(FrameHostMsg_SynchronizeVisualProperties,
-                    viz::SurfaceId /* surface_id */,
+                    viz::FrameSinkId /* frame_sink_id */,
                     content::FrameVisualProperties)
 
 // Sent by a parent frame to update its child's viewport intersection rect for
@@ -1684,11 +1678,6 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_HittestData, FrameHostMsg_HittestData_Params)
 // Request that the host send its overlay routing token for this render frame
 // via SetOverlayRoutingToken.
 IPC_MESSAGE_ROUTED0(FrameHostMsg_RequestOverlayRoutingToken)
-
-// Asks the browser to display the file chooser.  The result is returned in a
-// FrameMsg_RunFileChooserResponse message.
-IPC_MESSAGE_ROUTED1(FrameHostMsg_RunFileChooser,
-                    blink::mojom::FileChooserParams)
 
 // Notification that the urls for the favicon of a site has been determined.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_UpdateFaviconURL,

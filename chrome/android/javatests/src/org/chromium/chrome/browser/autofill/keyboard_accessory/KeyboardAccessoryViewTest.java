@@ -13,12 +13,11 @@ import static android.support.test.espresso.matcher.ViewMatchers.isRoot;
 import static android.support.test.espresso.matcher.ViewMatchers.withContentDescription;
 import static android.support.test.espresso.matcher.ViewMatchers.withText;
 
-import static junit.framework.Assert.assertEquals;
-import static junit.framework.Assert.assertNull;
-
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.core.AllOf.allOf;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import static org.chromium.chrome.browser.autofill.keyboard_accessory.AccessoryAction.AUTOFILL_SUGGESTION;
@@ -35,10 +34,10 @@ import static org.chromium.chrome.test.util.ViewUtils.VIEW_NULL;
 import static org.chromium.chrome.test.util.ViewUtils.waitForView;
 
 import android.support.test.filters.MediumTest;
-import android.support.v7.widget.AppCompatImageView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewStub;
+import android.widget.ImageView;
 
 import org.hamcrest.Matcher;
 import org.junit.Before;
@@ -96,7 +95,7 @@ public class KeyboardAccessoryViewTest {
      */
     private static Matcher<View> isTabWithDescription(String description) {
         return allOf(withContentDescription(description),
-                instanceOf(AppCompatImageView.class)); // Match only the image.
+                instanceOf(ImageView.class)); // Match only the image.
     }
 
     @Before

@@ -328,8 +328,7 @@ void RecordMainFrameNavigationMetric(web::WebState* web_state) {
   if ((self = [super init])) {
     _observers = [TabModelObservers observers];
 
-    _webStateListDelegate =
-        std::make_unique<TabModelWebStateListDelegate>(self);
+    _webStateListDelegate = std::make_unique<TabModelWebStateListDelegate>();
     _webStateList = std::make_unique<WebStateList>(_webStateListDelegate.get());
 
     _browserState = browserState;
@@ -512,6 +511,8 @@ void RecordMainFrameNavigationMetric(web::WebState* web_state) {
                         atIndex:(NSUInteger)index
                    inBackground:(BOOL)inBackground {
   DCHECK(_browserState);
+  DCHECK(index == TabModelConstants::kTabPositionAutomatically ||
+         index <= self.count);
 
   int insertionIndex = WebStateList::kInvalidIndex;
   int insertionFlags = WebStateList::INSERT_NO_FLAGS;
@@ -579,12 +580,11 @@ void RecordMainFrameNavigationMetric(web::WebState* web_state) {
 - (void)notifyTabLoading:(Tab*)tab {
   [_observers tabModel:self willStartLoadingTab:tab];
   [self notifyTabChanged:tab];
-  [_observers tabModel:self didStartLoadingTab:tab];
 }
 
-- (void)notifyTabFinishedLoading:(Tab*)tab success:(BOOL)success {
+- (void)notifyTabFinishedLoading:(Tab*)tab {
   [self notifyTabChanged:tab];
-  [_observers tabModel:self didFinishLoadingTab:tab success:success];
+  [_observers tabModel:self didFinishLoadingTab:tab];
 }
 
 - (void)notifyNewTabWillOpen:(Tab*)tab inBackground:(BOOL)background {
@@ -938,7 +938,7 @@ void RecordMainFrameNavigationMetric(web::WebState* web_state) {
 - (void)webState:(web::WebState*)webState didLoadPageWithSuccess:(BOOL)success {
   DCHECK(!webState->IsLoading());
   Tab* tab = LegacyTabHelper::GetTabForWebState(webState);
-  [self notifyTabFinishedLoading:tab success:success];
+  [self notifyTabFinishedLoading:tab];
 
   RecordInterfaceOrientationMetric();
   RecordMainFrameNavigationMetric(webState);

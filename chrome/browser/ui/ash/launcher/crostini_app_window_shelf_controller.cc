@@ -20,11 +20,11 @@
 #include "chrome/browser/ui/ash/launcher/app_window_launcher_item_controller.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
 #include "chrome/browser/ui/ash/launcher/shelf_spinner_controller.h"
-#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
+#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager_client.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "components/exo/shell_surface.h"
+#include "components/exo/shell_surface_util.h"
 #include "components/user_manager/user_manager.h"
 #include "extensions/browser/app_window/app_window.h"
 #include "ui/aura/client/aura_constants.h"
@@ -124,7 +124,7 @@ ash::ShelfID CrostiniAppWindowShelfController::RemoveFromShelf(
 void CrostiniAppWindowShelfController::ActiveUserChanged(
     const std::string& user_email) {
   for (auto& w : aura_window_to_app_window_) {
-    if (MultiUserWindowManager::GetInstance()
+    if (MultiUserWindowManagerClient::GetInstance()
             ->GetWindowOwner(w.first)
             .GetUserEmail() == user_email) {
       AddToShelf(w.first, w.second.get());
@@ -187,14 +187,13 @@ void CrostiniAppWindowShelfController::OnWindowVisibilityChanging(
   }
 
   // Handle genuine Crostini app windows.
-  const std::string* window_app_id =
-      exo::ShellSurface::GetApplicationId(window);
+  const std::string* window_app_id = exo::GetShellApplicationId(window);
 
   crostini::CrostiniRegistryService* registry_service =
       crostini::CrostiniRegistryServiceFactory::GetForProfile(
           owner()->profile());
   const std::string& shelf_app_id = registry_service->GetCrostiniShelfAppId(
-      window_app_id, exo::ShellSurface::GetStartupId(window));
+      window_app_id, exo::GetShellStartupId(window));
   // Non-crostini apps (i.e. arc++) are filtered out here.
   if (shelf_app_id.empty())
     return;
@@ -219,7 +218,7 @@ void CrostiniAppWindowShelfController::OnWindowVisibilityChanging(
   RegisterAppWindow(window, shelf_app_id);
 
   // Prevent Crostini window from showing up after user switch.
-  MultiUserWindowManager::GetInstance()->SetWindowOwner(
+  MultiUserWindowManagerClient::GetInstance()->SetWindowOwner(
       window,
       user_manager::UserManager::Get()->GetActiveUser()->GetAccountId());
 

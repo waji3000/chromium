@@ -14,11 +14,12 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/synchronization/waitable_event.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/test_mock_time_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "base/time/clock.h"
 #include "base/time/time.h"
 #include "components/offline_items_collection/core/pending_state.h"
 #include "components/offline_pages/core/background/device_conditions.h"
@@ -31,6 +32,8 @@
 #include "components/offline_pages/core/background/save_page_request.h"
 #include "components/offline_pages/core/background/scheduler.h"
 #include "components/offline_pages/core/background/scheduler_stub.h"
+#include "components/offline_pages/core/client_namespace_constants.h"
+#include "components/offline_pages/core/offline_clock.h"
 #include "components/offline_pages/core/offline_page_feature.h"
 #include "services/network/test/test_network_quality_tracker.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -124,6 +127,18 @@ class ObserverStub : public RequestCoordinator::Observer {
   PendingState pending_state_;
 };
 
+class ActiveTabInfoStub : public RequestCoordinator::ActiveTabInfo {
+ public:
+  ~ActiveTabInfoStub() override {}
+  bool DoesActiveTabMatch(const GURL&) override {
+    return does_active_tab_match_;
+  }
+  void set_does_active_tab_match(bool match) { does_active_tab_match_ = match; }
+
+ private:
+  bool does_active_tab_match_ = false;
+};
+
 }  // namespace
 
 // This class is a friend of RequestCoordinator, and can't be in the anonymous
@@ -146,6 +161,10 @@ class RequestCoordinatorTest : public testing::Test {
 
   RequestCoordinator* coordinator() const {
     return coordinator_taco_->request_coordinator();
+  }
+  OfflinerStub* offliner() const { return offliner_; }
+  SchedulerStub* scheduler_stub() const {
+    return reinterpret_cast<SchedulerStub*>(coordinator()->scheduler());
   }
   RequestQueue* queue() {
     return coordinator_taco_->request_coordinator()->queue_for_testing();
@@ -207,6 +226,8 @@ class RequestCoordinatorTest : public testing::Test {
     offliner_->enable_snapshot_on_last_retry();
   }
 
+  bool OfflinerCalled() const { return offliner_->load_and_save_called(); }
+
   void SetEffectiveConnectionTypeForTest(net::EffectiveConnectionType type) {
     network_quality_tracker_->ReportEffectiveConnectionTypeForTesting(type);
   }
@@ -258,7 +279,8 @@ class RequestCoordinatorTest : public testing::Test {
     else
       coordinator()->disabled_requests_.clear();
 
-    coordinator()->RequestNotPicked(non_user_requested_tasks_remaining, false);
+    coordinator()->RequestNotPicked(non_user_requested_tasks_remaining, false,
+                                    base::Time());
   }
 
   void SetDeviceConditionsForTest(DeviceConditions device_conditions) {
@@ -312,6 +334,11 @@ class RequestCoordinatorTest : public testing::Test {
     return coordinator()->last_offlining_status_;
   }
 
+  // Calls the private method |StopProcessing| on |coordinator()|.
+  void StopProcessing(Offliner::RequestStatus stop_status) {
+    coordinator()->StopProcessing(stop_status);
+  }
+
   bool OfflinerWasCanceled() const { return offliner_->cancel_called(); }
 
   void ResetOfflinerWasCanceled() { offliner_->reset_cancel_called(); }
@@ -347,6 +374,13 @@ class RequestCoordinatorTest : public testing::Test {
   }
 
   bool add_request_callback_called() { return add_request_callback_called_; }
+
+  scoped_refptr<base::TestMockTimeTaskRunner> task_runner() const {
+    return task_runner_;
+  }
+
+ protected:
+  ActiveTabInfoStub* active_tab_info_ = nullptr;
 
  private:
   GetRequestsResult last_get_requests_result_;
@@ -400,6 +434,9 @@ void RequestCoordinatorTest::SetUp() {
   network_quality_tracker_ = test_network_quality_tracker.get();
   coordinator_taco_->SetNetworkQualityProvider(
       std::move(test_network_quality_tracker));
+  auto delegate = std::make_unique<ActiveTabInfoStub>();
+  active_tab_info_ = delegate.get();
+  coordinator_taco_->SetRequestCoordinatorDelegate(std::move(delegate));
 
   coordinator_taco_->CreateRequestCoordinator();
 
@@ -447,7 +484,7 @@ void RequestCoordinatorTest::SetupForOfflinerDoneCallbackTest(
     offline_pages::SavePageRequest* request) {
   // Mark request as started and add it to the queue,
   // then wait for callback to finish.
-  request->MarkAttemptStarted(base::Time::Now());
+  request->MarkAttemptStarted(OfflineClock()->Now());
   queue()->AddRequest(*request,
                       base::BindOnce(&RequestCoordinatorTest::AddRequestDone,
                                      base::Unretained(this)));
@@ -462,7 +499,7 @@ void RequestCoordinatorTest::SetupForOfflinerDoneCallbackTest(
   // Mock that coordinator is in actively processing state starting now.
   SetProcessingStateForTest(
       RequestCoordinator::ProcessingWindowState::IMMEDIATE_WINDOW);
-  SetOperationStartTimeForTest(base::Time::Now());
+  SetOperationStartTimeForTest(OfflineClock()->Now());
 }
 
 void RequestCoordinatorTest::SendOfflinerDoneCallback(
@@ -473,8 +510,8 @@ void RequestCoordinatorTest::SendOfflinerDoneCallback(
 }
 
 SavePageRequest RequestCoordinatorTest::AddRequest1() {
-  offline_pages::SavePageRequest request1(kRequestId1, kUrl1, kClientId1,
-                                          base::Time::Now(), kUserRequested);
+  offline_pages::SavePageRequest request1(
+      kRequestId1, kUrl1, kClientId1, OfflineClock()->Now(), kUserRequested);
   queue()->AddRequest(request1,
                       base::BindOnce(&RequestCoordinatorTest::AddRequestDone,
                                      base::Unretained(this)));
@@ -482,8 +519,8 @@ SavePageRequest RequestCoordinatorTest::AddRequest1() {
 }
 
 SavePageRequest RequestCoordinatorTest::AddRequest2() {
-  offline_pages::SavePageRequest request2(kRequestId2, kUrl2, kClientId2,
-                                          base::Time::Now(), kUserRequested);
+  offline_pages::SavePageRequest request2(
+      kRequestId2, kUrl2, kClientId2, OfflineClock()->Now(), kUserRequested);
   queue()->AddRequest(request2,
                       base::BindOnce(&RequestCoordinatorTest::AddRequestDone,
                                      base::Unretained(this)));
@@ -629,13 +666,11 @@ TEST_F(RequestCoordinatorTest, SavePageLater) {
   EXPECT_EQ(kRequestOrigin, last_requests().at(0)->request_origin());
 
   // Expect that the scheduler got notified.
-  SchedulerStub* scheduler_stub =
-      reinterpret_cast<SchedulerStub*>(coordinator()->scheduler());
-  EXPECT_TRUE(scheduler_stub->schedule_called());
+  EXPECT_TRUE(scheduler_stub()->schedule_called());
   EXPECT_EQ(coordinator()
                 ->GetTriggerConditions(last_requests()[0]->user_requested())
                 .minimum_battery_percentage,
-            scheduler_stub->trigger_conditions()->minimum_battery_percentage);
+            scheduler_stub()->trigger_conditions()->minimum_battery_percentage);
 
   // Check that the observer got the notification that a page is available
   EXPECT_TRUE(observer().added_called());
@@ -679,13 +714,11 @@ TEST_F(RequestCoordinatorTest, SavePageLaterFailed) {
   EXPECT_EQ(kClientId1, last_requests().at(0)->client_id());
 
   // Expect that the scheduler got notified.
-  SchedulerStub* scheduler_stub =
-      reinterpret_cast<SchedulerStub*>(coordinator()->scheduler());
-  EXPECT_TRUE(scheduler_stub->schedule_called());
+  EXPECT_TRUE(scheduler_stub()->schedule_called());
   EXPECT_EQ(coordinator()
                 ->GetTriggerConditions(last_requests()[0]->user_requested())
                 .minimum_battery_percentage,
-            scheduler_stub->trigger_conditions()->minimum_battery_percentage);
+            scheduler_stub()->trigger_conditions()->minimum_battery_percentage);
 
   // Check that the observer got the notification that a page is available
   EXPECT_TRUE(observer().added_called());
@@ -694,7 +727,7 @@ TEST_F(RequestCoordinatorTest, SavePageLaterFailed) {
 TEST_F(RequestCoordinatorTest, OfflinerDoneRequestSucceeded) {
   // Add a request to the queue, wait for callbacks to finish.
   offline_pages::SavePageRequest request(kRequestId1, kUrl1, kClientId1,
-                                         base::Time::Now(), kUserRequested);
+                                         OfflineClock()->Now(), kUserRequested);
   SetupForOfflinerDoneCallbackTest(&request);
 
   // Call the OfflinerDoneCallback to simulate the page being completed, wait
@@ -725,7 +758,7 @@ TEST_F(RequestCoordinatorTest, OfflinerDoneRequestSucceeded) {
 TEST_F(RequestCoordinatorTest, OfflinerDoneRequestSucceededButLostNetwork) {
   // Add a request to the queue and set offliner done callback for it.
   offline_pages::SavePageRequest request(kRequestId1, kUrl1, kClientId1,
-                                         base::Time::Now(), kUserRequested);
+                                         OfflineClock()->Now(), kUserRequested);
   SetupForOfflinerDoneCallbackTest(&request);
   EnableOfflinerCallback(false);
 
@@ -754,7 +787,7 @@ TEST_F(RequestCoordinatorTest, OfflinerDoneRequestSucceededButLostNetwork) {
 TEST_F(RequestCoordinatorTest, OfflinerDoneRequestFailed) {
   // Add a request to the queue, wait for callbacks to finish.
   offline_pages::SavePageRequest request(kRequestId1, kUrl1, kClientId1,
-                                         base::Time::Now(), kUserRequested);
+                                         OfflineClock()->Now(), kUserRequested);
   request.set_completed_attempt_count(kMaxCompletedTries - 1);
   SetupForOfflinerDoneCallbackTest(&request);
   // Stop processing before completing the second request on the queue.
@@ -797,7 +830,7 @@ TEST_F(RequestCoordinatorTest, OfflinerDoneRequestFailed) {
 TEST_F(RequestCoordinatorTest, OfflinerDoneRequestFailedNoRetryFailure) {
   // Add a request to the queue, wait for callbacks to finish.
   offline_pages::SavePageRequest request(kRequestId1, kUrl1, kClientId1,
-                                         base::Time::Now(), kUserRequested);
+                                         OfflineClock()->Now(), kUserRequested);
   SetupForOfflinerDoneCallbackTest(&request);
   EnableOfflinerCallback(false);
 
@@ -840,7 +873,7 @@ TEST_F(RequestCoordinatorTest, OfflinerDoneRequestFailedNoRetryFailure) {
 TEST_F(RequestCoordinatorTest, OfflinerDoneRequestFailedNoNextFailure) {
   // Add a request to the queue, wait for callbacks to finish.
   offline_pages::SavePageRequest request(kRequestId1, kUrl1, kClientId1,
-                                         base::Time::Now(), kUserRequested);
+                                         OfflineClock()->Now(), kUserRequested);
   SetupForOfflinerDoneCallbackTest(&request);
   EnableOfflinerCallback(false);
 
@@ -872,7 +905,7 @@ TEST_F(RequestCoordinatorTest, OfflinerDoneRequestFailedNoNextFailure) {
 TEST_F(RequestCoordinatorTest, OfflinerDoneForegroundCancel) {
   // Add a request to the queue, wait for callbacks to finish.
   offline_pages::SavePageRequest request(kRequestId1, kUrl1, kClientId1,
-                                         base::Time::Now(), kUserRequested);
+                                         OfflineClock()->Now(), kUserRequested);
   SetupForOfflinerDoneCallbackTest(&request);
 
   // Call the OfflinerDoneCallback to simulate the request failed, wait
@@ -893,17 +926,16 @@ TEST_F(RequestCoordinatorTest, OfflinerDoneForegroundCancel) {
   EXPECT_EQ(0L, last_requests().at(0)->completed_attempt_count());
 }
 
-TEST_F(RequestCoordinatorTest, OfflinerDoneOffliningCancel) {
-  // Add a request to the queue, wait for callbacks to finish.
-  offline_pages::SavePageRequest request(kRequestId1, kUrl1, kClientId1,
-                                         base::Time::Now(), kUserRequested);
-  SetupForOfflinerDoneCallbackTest(&request);
-
-  // Call the OfflinerDoneCallback to simulate the request failed, wait
-  // for callbacks.
-  SendOfflinerDoneCallback(request, Offliner::RequestStatus::LOADING_CANCELED);
+TEST_F(RequestCoordinatorTest, RequestDeferred) {
+  // Test handling of requests that can be deferred due to
+  // defer_while_page_is_active.
+  active_tab_info_->set_does_active_tab_match(true);
+  RequestCoordinator::SavePageLaterParams params;
+  params.url = kUrl1;
+  // Auto-async uses defer_background_fetch_while_page_is_active.
+  params.client_id = ClientId(kAutoAsyncNamespace, "1");
+  coordinator()->SavePageLater(params, base::DoNothing());
   PumpLoop();
-  EXPECT_TRUE(processing_callback_called());
 
   // Verify the request is not removed from the queue, and wait for callbacks.
   queue()->GetRequests(base::BindOnce(&RequestCoordinatorTest::GetRequestsDone,
@@ -911,11 +943,42 @@ TEST_F(RequestCoordinatorTest, OfflinerDoneOffliningCancel) {
   PumpLoop();
 
   // Request still in the queue.
-  EXPECT_EQ(1UL, last_requests().size());
-  // Verify offlining cancel not counted as an attempt after all.
-  const std::unique_ptr<SavePageRequest>& found_request =
-      last_requests().front();
-  EXPECT_EQ(0L, found_request->completed_attempt_count());
+  ASSERT_EQ(1UL, last_requests().size());
+  EXPECT_EQ(1L, last_requests()[0]->started_attempt_count());
+  EXPECT_EQ(1L, last_requests()[0]->completed_attempt_count());
+
+  // The scheduler is called. Simulate the scheduler calling us back.
+  // This time, the request was tried recently, and will not be retried again.
+  // Since there are no requests this time, backup_schedule is called with a
+  // delay that matches the deferral interval.
+  ASSERT_TRUE(scheduler_stub()->schedule_called());
+  coordinator()->StartScheduledProcessing(device_conditions(),
+                                          processing_callback());
+
+  PumpLoop();
+  EXPECT_TRUE(scheduler_stub()->backup_schedule_called());
+  // Add plenty of tolerance to avoid flakes.
+  EXPECT_LT(PickRequestTask::kDeferInterval.InSeconds() - 10,
+            scheduler_stub()->schedule_delay());
+}
+
+TEST_F(RequestCoordinatorTest, RequestNotDeferred) {
+  // Test defer_while_page_is_active=true, but the DoesActiveTabMatch returns
+  // false. The page should be offlined.
+  active_tab_info_->set_does_active_tab_match(false);
+  RequestCoordinator::SavePageLaterParams params;
+  params.url = kUrl1;
+  // Auto-async uses defer_background_fetch_while_page_is_active.
+  params.client_id = ClientId(kAutoAsyncNamespace, "1");
+  coordinator()->SavePageLater(params, base::DoNothing());
+  PumpLoop();
+
+  queue()->GetRequests(base::BindOnce(&RequestCoordinatorTest::GetRequestsDone,
+                                      base::Unretained(this)));
+  PumpLoop();
+
+  // Request was completed.
+  ASSERT_EQ(0UL, last_requests().size());
 }
 
 // If one item completes, and there are no more user requeted items left,
@@ -933,10 +996,8 @@ TEST_F(RequestCoordinatorTest, RequestNotPickedDisabledItemsRemain) {
 
   // The scheduler should have been called to schedule the disabled task for
   // 5 minutes from now.
-  SchedulerStub* scheduler_stub =
-      reinterpret_cast<SchedulerStub*>(coordinator()->scheduler());
-  EXPECT_TRUE(scheduler_stub->backup_schedule_called());
-  EXPECT_TRUE(scheduler_stub->unschedule_called());
+  EXPECT_TRUE(scheduler_stub()->backup_schedule_called());
+  EXPECT_TRUE(scheduler_stub()->unschedule_called());
 }
 
 // If one item completes, and there are no more user requeted items left,
@@ -956,12 +1017,10 @@ TEST_F(RequestCoordinatorTest, RequestNotPickedNonUserRequestedItemsRemain) {
 
   // The scheduler should have been called to schedule the non-user requested
   // task.
-  SchedulerStub* scheduler_stub =
-      reinterpret_cast<SchedulerStub*>(coordinator()->scheduler());
-  EXPECT_TRUE(scheduler_stub->schedule_called());
-  EXPECT_TRUE(scheduler_stub->unschedule_called());
+  EXPECT_TRUE(scheduler_stub()->schedule_called());
+  EXPECT_TRUE(scheduler_stub()->unschedule_called());
   const Scheduler::TriggerConditions* conditions =
-      scheduler_stub->trigger_conditions();
+      scheduler_stub()->trigger_conditions();
   EXPECT_EQ(conditions->require_power_connected,
             coordinator()->policy()->PowerRequired(!kUserRequested));
   EXPECT_EQ(
@@ -975,8 +1034,8 @@ TEST_F(RequestCoordinatorTest, SchedulerGetsLeastRestrictiveConditions) {
   // Put two requests on the queue - The first is user requested, and
   // the second is not user requested.
   AddRequest1();
-  offline_pages::SavePageRequest request2(kRequestId2, kUrl2, kClientId2,
-                                          base::Time::Now(), !kUserRequested);
+  offline_pages::SavePageRequest request2(
+      kRequestId2, kUrl2, kClientId2, OfflineClock()->Now(), !kUserRequested);
   queue()->AddRequest(request2,
                       base::BindOnce(&RequestCoordinatorTest::AddRequestDone,
                                      base::Unretained(this)));
@@ -988,11 +1047,9 @@ TEST_F(RequestCoordinatorTest, SchedulerGetsLeastRestrictiveConditions) {
 
   // Expect that the scheduler got notified, and it is at user_requested
   // priority.
-  SchedulerStub* scheduler_stub =
-      reinterpret_cast<SchedulerStub*>(coordinator()->scheduler());
   const Scheduler::TriggerConditions* conditions =
-      scheduler_stub->trigger_conditions();
-  EXPECT_TRUE(scheduler_stub->schedule_called());
+      scheduler_stub()->trigger_conditions();
+  EXPECT_TRUE(scheduler_stub()->schedule_called());
   EXPECT_EQ(conditions->require_power_connected,
             coordinator()->policy()->PowerRequired(kUserRequested));
   EXPECT_EQ(conditions->minimum_battery_percentage,
@@ -1033,9 +1090,9 @@ TEST_F(RequestCoordinatorTest,
                                                       processing_callback()));
   EXPECT_TRUE(state() == RequestCoordinatorState::PICKING);
 
-  // Now, quick, before it can do much (we haven't called PumpLoop), cancel it.
-  coordinator()->StopProcessing(
-      Offliner::RequestStatus::REQUEST_COORDINATOR_CANCELED);
+  // Now, quick, before it can do much (we haven't called PumpLoop), cancel it
+  // with a status that precludes trying again.
+  StopProcessing(Offliner::RequestStatus::BACKGROUND_SCHEDULER_CANCELED);
 
   // Let the async callbacks in the request coordinator run.
   PumpLoop();
@@ -1045,7 +1102,7 @@ TEST_F(RequestCoordinatorTest,
 
   // OfflinerDoneCallback will not end up getting called with status SAVED,
   // since we cancelled the event before it called offliner_->LoadAndSave().
-  EXPECT_EQ(Offliner::RequestStatus::REQUEST_COORDINATOR_CANCELED,
+  EXPECT_EQ(Offliner::RequestStatus::BACKGROUND_SCHEDULER_CANCELED,
             last_offlining_status());
 
   // Since offliner was not started, it will not have seen cancel call.
@@ -1083,8 +1140,7 @@ TEST_F(RequestCoordinatorTest,
   EXPECT_FALSE(state() == RequestCoordinatorState::PICKING);
 
   // Now we cancel it while the background loader is busy.
-  coordinator()->StopProcessing(
-      Offliner::RequestStatus::REQUEST_COORDINATOR_CANCELED);
+  StopProcessing(Offliner::RequestStatus::BACKGROUND_SCHEDULER_CANCELED);
 
   // Let the async callbacks in the cancel run.
   PumpLoop();
@@ -1098,11 +1154,59 @@ TEST_F(RequestCoordinatorTest,
 
   // OfflinerDoneCallback will not end up getting called with status SAVED,
   // since we cancelled the event before the LoadAndSave completed.
-  EXPECT_EQ(Offliner::RequestStatus::REQUEST_COORDINATOR_CANCELED,
+  EXPECT_EQ(Offliner::RequestStatus::BACKGROUND_SCHEDULER_CANCELED,
             last_offlining_status());
 
   // Since offliner was started, it will have seen cancel call.
   EXPECT_TRUE(OfflinerWasCanceled());
+}
+
+// Test handling of StartScheduledProcessing before a previous attempt has been
+// fully stopped.
+TEST_F(RequestCoordinatorTest, StartAttemptBeforeFullyStopped) {
+  // Add a request to the queue, wait for callbacks to finish.
+  AddRequest1();
+  PumpLoop();
+
+  // Ensure the start processing request stops before the completion callback.
+  EnableOfflinerCallback(false);
+
+  ASSERT_TRUE(coordinator()->StartScheduledProcessing(device_conditions(),
+                                                      processing_callback()));
+  // Let all the async parts of the start processing pipeline run to completion.
+  PumpLoop();
+
+  // Observer called for starting processing.
+  ASSERT_TRUE(observer().changed_called());
+  ASSERT_EQ(SavePageRequest::RequestState::OFFLINING, observer().state());
+  observer().Clear();
+
+  // Now we cancel it while the background loader is busy, and attempt to start
+  // another request. Because the previous request hasn't completely stopped,
+  // the second request will not start.
+  StopProcessing(Offliner::RequestStatus::BACKGROUND_SCHEDULER_CANCELED);
+
+  AddRequest2();
+  EXPECT_FALSE(coordinator()->StartScheduledProcessing(device_conditions(),
+                                                       processing_callback()));
+  PumpLoop();
+  EXPECT_FALSE(offliner()->has_pending_request());
+}
+
+// Verify the request coordinator can stop while in the picking state.
+TEST_F(RequestCoordinatorTest, StopProcessingWhilePicking) {
+  // Add a request and start processing.
+  AddRequest1();
+  ASSERT_TRUE(coordinator()->StartScheduledProcessing(device_conditions(),
+                                                      processing_callback()));
+  ASSERT_EQ(RequestCoordinatorState::PICKING, state());
+
+  StopProcessing(Offliner::RequestStatus::BACKGROUND_SCHEDULER_CANCELED);
+
+  // Let all the async parts of the start processing pipeline run to completion.
+  // The offliner should have never been called.
+  PumpLoop();
+  EXPECT_FALSE(OfflinerCalled());
 }
 
 // This tests that canceling a request will result in TryNextRequest() getting
@@ -1134,6 +1238,44 @@ TEST_F(RequestCoordinatorTest, RemoveInflightRequest) {
 
   // Since offliner was started, it will have seen cancel call.
   EXPECT_TRUE(OfflinerWasCanceled());
+}
+
+TEST_F(RequestCoordinatorTest, RemoveInflightRequestAndAddAnother) {
+  // Add a request to the queue, wait for callbacks to finish.
+  AddRequest1();
+  PumpLoop();
+  // Test a different ordering of tasks, by delaying the offliner cancellation.
+  offliner()->set_cancel_delay(base::TimeDelta::FromSeconds(1));
+  // Ensure the start processing request stops before the completion callback.
+  EnableOfflinerCallback(false);
+
+  EXPECT_TRUE(coordinator()->StartScheduledProcessing(device_conditions(),
+                                                      processing_callback()));
+
+  // Let all the async parts of the start processing pipeline run to completion.
+  PumpLoop();
+  // Since the offliner is disabled, this callback should not be called.
+  EXPECT_FALSE(processing_callback_called());
+
+  // Add a new request, and remove current request while it is processing.
+  RequestCoordinator::SavePageLaterParams request2;
+  request2.url = kUrl2;
+  request2.client_id = kClientId2;
+  request2.user_requested = true;
+  coordinator()->SavePageLater(request2, base::DoNothing());
+
+  std::vector<int64_t> request_ids{kRequestId1};
+  coordinator()->RemoveRequests(
+      request_ids, base::BindOnce(&RequestCoordinatorTest::RemoveRequestsDone,
+                                  base::Unretained(this)));
+
+  AdvanceClockBy(base::TimeDelta::FromSeconds(2));
+
+  // Since offliner was started, it will have seen cancel call.
+  EXPECT_TRUE(OfflinerWasCanceled());
+  // The second request should be offlining now.
+  EXPECT_TRUE(offliner()->has_pending_request());
+  EXPECT_TRUE(state() == RequestCoordinatorState::OFFLINING);
 }
 
 TEST_F(RequestCoordinatorTest, MarkRequestCompleted) {
@@ -1194,7 +1336,7 @@ TEST_F(RequestCoordinatorTest,
        WatchdogTimeoutForScheduledProcessingNoLastSnapshot) {
   // Build a request to use with the pre-renderer, and put it on the queue.
   offline_pages::SavePageRequest request(kRequestId1, kUrl1, kClientId1,
-                                         base::Time::Now(), kUserRequested);
+                                         OfflineClock()->Now(), kUserRequested);
   // Set request to allow one more completed attempt.
   int max_tries = coordinator()->policy()->GetMaxCompletedTries();
   request.set_completed_attempt_count(max_tries - 1);
@@ -1269,7 +1411,8 @@ TEST_F(RequestCoordinatorTest, TimeBudgetExceeded) {
   AddRequest1();
   // The second request will have a larger completed attempt count.
   offline_pages::SavePageRequest request2(kRequestId1 + 1, kUrl1, kClientId1,
-                                          base::Time::Now(), kUserRequested);
+                                          OfflineClock()->Now(),
+                                          kUserRequested);
   request2.set_completed_attempt_count(kAttemptCount);
   queue()->AddRequest(request2,
                       base::BindOnce(&RequestCoordinatorTest::AddRequestDone,
@@ -1541,7 +1684,7 @@ TEST_F(RequestCoordinatorTest,
 TEST_F(RequestCoordinatorTest, SnapshotOnLastTryForScheduledProcessing) {
   // Build a request to use with the pre-renderer, and put it on the queue.
   offline_pages::SavePageRequest request(kRequestId1, kUrl1, kClientId1,
-                                         base::Time::Now(), kUserRequested);
+                                         OfflineClock()->Now(), kUserRequested);
   // Set request to allow one more completed attempt. So that the next try would
   // be the last retry.
   int max_tries = coordinator()->policy()->GetMaxCompletedTries();

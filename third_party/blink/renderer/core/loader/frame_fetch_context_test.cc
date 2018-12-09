@@ -39,8 +39,8 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/device_memory/approximated_device_memory.h"
 #include "third_party/blink/public/common/features.h"
+#include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-shared.h"
 #include "third_party/blink/public/mojom/net/ip_address_space.mojom-blink.h"
-#include "third_party/blink/public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
 #include "third_party/blink/public/platform/web_client_hints_type.h"
 #include "third_party/blink/public/platform/web_document_subresource_filter.h"
 #include "third_party/blink/public/platform/web_insecure_request_policy.h"
@@ -77,8 +77,10 @@ using Checkpoint = testing::StrictMock<testing::MockFunction<void(int)>>;
 class StubLocalFrameClientWithParent final : public EmptyLocalFrameClient {
  public:
   static StubLocalFrameClientWithParent* Create(Frame* parent) {
-    return new StubLocalFrameClientWithParent(parent);
+    return MakeGarbageCollected<StubLocalFrameClientWithParent>(parent);
   }
+
+  explicit StubLocalFrameClientWithParent(Frame* parent) : parent_(parent) {}
 
   void Trace(blink::Visitor* visitor) override {
     visitor->Trace(parent_);
@@ -88,8 +90,6 @@ class StubLocalFrameClientWithParent final : public EmptyLocalFrameClient {
   Frame* Parent() const override { return parent_.Get(); }
 
  private:
-  explicit StubLocalFrameClientWithParent(Frame* parent) : parent_(parent) {}
-
   Member<Frame> parent_;
 };
 
@@ -140,7 +140,7 @@ class FrameFetchContextTest : public testing::Test {
     fetch_context =
         static_cast<FrameFetchContext*>(&document->Fetcher()->Context());
     owner = DummyFrameOwner::Create();
-    FrameFetchContext::ProvideDocumentToContext(*fetch_context, document.Get());
+    fetch_context->ProvideDocumentToContext(document.Get());
   }
 
   void TearDown() override {
@@ -158,8 +158,7 @@ class FrameFetchContextTest : public testing::Test {
     child_document = child_frame->GetDocument();
     FrameFetchContext* child_fetch_context = static_cast<FrameFetchContext*>(
         &child_frame->Loader().GetDocumentLoader()->Fetcher()->Context());
-    FrameFetchContext::ProvideDocumentToContext(*child_fetch_context,
-                                                child_document.Get());
+    child_fetch_context->ProvideDocumentToContext(child_document.Get());
     return child_fetch_context;
   }
 
@@ -280,7 +279,8 @@ class FrameFetchContextMockedLocalFrameClientTest
     http_url = KURL("http://example.test/foo");
     main_resource_url = KURL("https://example.test");
     different_host_url = KURL("https://different.example.test/foo");
-    client = new testing::NiceMock<FrameFetchContextMockLocalFrameClient>();
+    client = MakeGarbageCollected<
+        testing::NiceMock<FrameFetchContextMockLocalFrameClient>>();
     dummy_page_holder =
         DummyPageHolder::Create(IntSize(500, 500), nullptr, client);
     dummy_page_holder->GetPage().SetDeviceScaleFactorDeprecated(1.0);
@@ -290,7 +290,7 @@ class FrameFetchContextMockedLocalFrameClientTest
     fetch_context =
         static_cast<FrameFetchContext*>(&document->Fetcher()->Context());
     owner = DummyFrameOwner::Create();
-    FrameFetchContext::ProvideDocumentToContext(*fetch_context, document.Get());
+    fetch_context->ProvideDocumentToContext(document.Get());
   }
 
   KURL url;
@@ -431,7 +431,7 @@ TEST_F(FrameFetchContextModifyRequestTest, UpgradeInsecureResourceRequests) {
        "ftp://example.test:1212/image.png"},
   };
 
-  FrameFetchContext::ProvideDocumentToContext(*fetch_context, document.Get());
+  fetch_context->ProvideDocumentToContext(document.Get());
   document->SetInsecureRequestPolicy(kUpgradeInsecureRequests);
 
   for (const auto& test : tests) {
@@ -479,7 +479,7 @@ TEST_F(FrameFetchContextModifyRequestTest, UpgradeInsecureResourceRequests) {
 
 TEST_F(FrameFetchContextModifyRequestTest,
        DoNotUpgradeInsecureResourceRequests) {
-  FrameFetchContext::ProvideDocumentToContext(*fetch_context, document.Get());
+  fetch_context->ProvideDocumentToContext(document.Get());
   document->SetSecurityOrigin(secure_origin);
   document->SetInsecureRequestPolicy(kLeaveInsecureRequestsAlone);
 
@@ -564,7 +564,7 @@ TEST_F(FrameFetchContextModifyRequestTest, SendUpgradeInsecureRequestHeader) {
                                        test.should_prefer);
   }
 
-  FrameFetchContext::ProvideDocumentToContext(*fetch_context, document.Get());
+  fetch_context->ProvideDocumentToContext(document.Get());
 
   for (const auto& test : tests) {
     document->SetInsecureRequestPolicy(kLeaveInsecureRequestsAlone);
@@ -1108,7 +1108,7 @@ TEST_F(FrameFetchContextMockedLocalFrameClientTest,
                                 network::mojom::RequestContextFrameType::kNone),
               testing::Property(&ResourceRequest::GetRequestContext,
                                 mojom::RequestContextType::IMAGE)),
-          ResourceResponse()));
+          testing::Property(&ResourceResponse::IsNull, true)));
   fetch_context->DispatchDidLoadResourceFromMemoryCache(
       CreateUniqueIdentifier(), resource_request, resource->GetResponse());
 }
@@ -1189,7 +1189,7 @@ TEST_F(FrameFetchContextTest, AddAdditionalRequestHeadersWhenDetached) {
   GetNetworkStateNotifier().SetSaveDataEnabledOverride(true);
   document->SetSecurityOrigin(SecurityOrigin::Create(KURL(origin)));
   document->SetURL(document_url);
-  document->SetReferrerPolicy(kReferrerPolicyOrigin);
+  document->SetReferrerPolicy(network::mojom::ReferrerPolicy::kOrigin);
   document->SetAddressSpace(mojom::IPAddressSpace::kPublic);
 
   dummy_page_holder = nullptr;

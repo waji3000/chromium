@@ -39,6 +39,7 @@
 #include "third_party/blink/public/web/web_frame_load_type.h"
 #include "third_party/blink/public/web/web_navigation_type.h"
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
 #include "third_party/blink/renderer/core/frame/frame_types.h"
 #include "third_party/blink/renderer/core/frame/sandbox_flags.h"
 #include "third_party/blink/renderer/core/loader/frame_loader_state_machine.h"
@@ -131,6 +132,22 @@ class CORE_EXPORT FrameLoader final {
       Document* origin_document,
       bool has_event,
       std::unique_ptr<WebDocumentLoader::ExtraData> extra_data = nullptr);
+
+  // Called when the browser process is handling the navigation, to
+  // create a "placeholder" document loader and mark the frame as loading.
+  // This placeholder document loader will be later abandoned, and only
+  // lives temporarily so that the rest of Blink code knows the navigation
+  // is in place.
+  // See DocumentLoader::devtools_navigation_token_ for documentation on
+  // the token.
+  bool CreatePlaceholderDocumentLoader(
+      const ResourceRequest&,
+      ClientRedirectPolicy,
+      const base::UnguessableToken& devtools_navigation_token,
+      WebFrameLoadType,
+      WebNavigationType,
+      std::unique_ptr<WebNavigationParams>,
+      std::unique_ptr<WebDocumentLoader::ExtraData>);
 
   // This runs the "stop document loading" algorithm in HTML:
   // https://html.spec.whatwg.org/C/browsing-the-web.html#stop-document-loading
@@ -237,6 +254,10 @@ class CORE_EXPORT FrameLoader final {
   void ClientDroppedNavigation();
   void MarkAsLoading();
 
+  ContentSecurityPolicy* GetLastOriginDocumentCSP() {
+    return last_origin_document_csp_.Get();
+  }
+
  private:
   bool PrepareRequestForThisFrame(FrameLoadRequest&);
   WebFrameLoadType DetermineFrameLoadType(
@@ -319,6 +340,8 @@ class CORE_EXPORT FrameLoader final {
   bool detached_;
 
   WebScopedVirtualTimePauser virtual_time_pauser_;
+
+  Member<ContentSecurityPolicy> last_origin_document_csp_;
 
   DISALLOW_COPY_AND_ASSIGN(FrameLoader);
 };

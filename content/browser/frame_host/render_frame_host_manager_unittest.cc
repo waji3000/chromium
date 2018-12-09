@@ -40,7 +40,6 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_ui_controller.h"
 #include "content/public/common/bindings_policy.h"
-#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/javascript_dialog_type.h"
 #include "content/public/common/previews_state.h"
@@ -1728,7 +1727,7 @@ TEST_F(RenderFrameHostManagerTest, DeleteFrameAfterSwapOutACK) {
 
   // Simulate the swap out ack, unexpectedly early (before commit).  It should
   // have no effect.
-  rfh1->OnSwappedOut();
+  rfh1->SimulateSwapOutACK();
   EXPECT_TRUE(contents()->CrossProcessNavigationPending());
   EXPECT_TRUE(rfh1->is_active());
 
@@ -1742,7 +1741,7 @@ TEST_F(RenderFrameHostManagerTest, DeleteFrameAfterSwapOutACK) {
   EXPECT_FALSE(rfh1->is_active());
 
   // Simulate the swap out ack.
-  rfh1->OnSwappedOut();
+  rfh1->SimulateSwapOutACK();
 
   // rfh1 should have been deleted.
   EXPECT_TRUE(rfh_deleted_observer.deleted());

@@ -4,15 +4,17 @@
 
 #include "extensions/renderer/scoped_web_frame.h"
 
-#include "third_party/blink/public/mojom/page/page_visibility_state.mojom.h"
 #include "third_party/blink/public/web/web_heap.h"
+#include "third_party/blink/public/web/web_view.h"
+#include "third_party/blink/public/web/web_widget.h"
 
 namespace extensions {
 
 ScopedWebFrame::ScopedWebFrame()
     : view_(blink::WebView::Create(/*client=*/nullptr,
                                    /*widget_client=*/nullptr,
-                                   blink::mojom::PageVisibilityState::kVisible,
+                                   /*is_hidden=*/false,
+                                   /*compositing_enabled=*/false,
                                    /*opener=*/nullptr)),
       frame_(blink::WebLocalFrame::CreateMainFrame(view_,
                                                    &frame_client_,
@@ -20,7 +22,7 @@ ScopedWebFrame::ScopedWebFrame()
                                                    nullptr)) {}
 
 ScopedWebFrame::~ScopedWebFrame() {
-  view_->Close();
+  view_->MainFrameWidget()->Close();
   blink::WebHeap::CollectAllGarbageForTesting();
 }
 

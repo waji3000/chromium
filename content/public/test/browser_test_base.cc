@@ -19,7 +19,7 @@
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "base/task/post_task.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/thread_restrictions.h"
@@ -57,8 +57,19 @@
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_switches.h"
 
+#if defined(OS_MACOSX)
+#include "ui/events/test/event_generator.h"
+#include "ui/views/test/event_generator_delegate_mac.h"
+#endif
+
 #if defined(OS_POSIX)
 #include "base/process/process_handle.h"
+#endif
+
+#if defined(OS_CHROMEOS)
+#include "content/public/browser/network_service_instance.h"
+#include "net/base/network_change_notifier.h"
+#include "net/base/network_change_notifier_chromeos.h"
 #endif
 
 #if defined(USE_AURA)
@@ -148,13 +159,16 @@ BrowserTestBase::BrowserTestBase()
 #if defined(USE_AURA)
   ui::test::EventGeneratorDelegate::SetFactoryFunction(base::BindRepeating(
       &aura::test::EventGeneratorDelegateAura::Create, nullptr));
+#elif defined(OS_MACOSX)
+  ui::test::EventGeneratorDelegate::SetFactoryFunction(
+      base::BindRepeating(&views::test::CreateEventGeneratorDelegateMac));
 #endif
 }
 
 BrowserTestBase::~BrowserTestBase() {
 #if defined(OS_ANDROID)
   // RemoteTestServer can cause wait on the UI thread.
-  base::ThreadRestrictions::ScopedAllowWait allow_wait;
+  base::ScopedAllowBaseSyncPrimitivesForTesting allow_wait;
   spawned_test_server_.reset();
 #endif
 
@@ -338,7 +352,7 @@ void BrowserTestBase::SetUp() {
 }
 
 void BrowserTestBase::TearDown() {
-#if defined(USE_AURA)
+#if defined(USE_AURA) || defined(OS_MACOSX)
   ui::test::EventGeneratorDelegate::SetFactoryFunction(
       ui::test::EventGeneratorDelegate::FactoryFunction());
 #endif
@@ -378,6 +392,17 @@ void BrowserTestBase::ProxyRunTestOnMainThreadLoop() {
   if (handle_sigterm_)
     signal(SIGTERM, DumpStackTraceSignalHandler);
 #endif  // defined(OS_POSIX)
+
+#if defined(OS_CHROMEOS)
+  // Manually set the connection type since ChromeOS's NetworkChangeNotifier
+  // implementation relies on some other class controlling it (normally
+  // NetworkChangeManagerClient), which may not be set up in all browser tests.
+  net::NetworkChangeNotifierChromeos* network_change_notifier =
+      static_cast<net::NetworkChangeNotifierChromeos*>(
+          content::GetNetworkChangeNotifier());
+  network_change_notifier->OnConnectionChanged(
+      net::NetworkChangeNotifier::CONNECTION_ETHERNET);
+#endif
 
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableTracing)) {

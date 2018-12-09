@@ -25,6 +25,7 @@
 
 #include <algorithm>
 
+#include "base/numerics/safe_conversions.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_buffer_source_node.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_buffer_source_options.h"
@@ -93,7 +94,7 @@ AudioBufferSourceHandler::~AudioBufferSourceHandler() {
   Uninitialize();
 }
 
-void AudioBufferSourceHandler::Process(size_t frames_to_process) {
+void AudioBufferSourceHandler::Process(uint32_t frames_to_process) {
   AudioBus* output_bus = Output(0).Bus();
 
   if (!IsInitialized()) {
@@ -119,8 +120,8 @@ void AudioBufferSourceHandler::Process(size_t frames_to_process) {
       return;
     }
 
-    size_t quantum_frame_offset;
-    size_t buffer_frames_to_process;
+    uint32_t quantum_frame_offset;
+    uint32_t buffer_frames_to_process;
     double start_time_offset;
 
     std::tie(quantum_frame_offset, buffer_frames_to_process,
@@ -154,7 +155,7 @@ void AudioBufferSourceHandler::Process(size_t frames_to_process) {
 bool AudioBufferSourceHandler::RenderSilenceAndFinishIfNotLooping(
     AudioBus*,
     unsigned index,
-    size_t frames_to_process) {
+    uint32_t frames_to_process) {
   if (!Loop()) {
     // If we're not looping, then stop playing when we get to the end.
 
@@ -176,7 +177,7 @@ bool AudioBufferSourceHandler::RenderSilenceAndFinishIfNotLooping(
 bool AudioBufferSourceHandler::RenderFromBuffer(
     AudioBus* bus,
     unsigned destination_frame_offset,
-    size_t number_of_frames) {
+    uint32_t number_of_frames) {
   DCHECK(Context()->IsAudioThread());
 
   // Basic sanity checking
@@ -221,15 +222,16 @@ bool AudioBufferSourceHandler::RenderFromBuffer(
   // Offset the pointers to the correct offset frame.
   unsigned write_index = destination_frame_offset;
 
-  size_t buffer_length = Buffer()->length();
+  uint32_t buffer_length = Buffer()->length();
   double buffer_sample_rate = Buffer()->sampleRate();
 
   // Avoid converting from time to sample-frames twice by computing
   // the grain end time first before computing the sample frame.
   unsigned end_frame =
-      is_grain_ ? audio_utilities::TimeToSampleFrame(
-                      grain_offset_ + grain_duration_, buffer_sample_rate)
-                : buffer_length;
+      is_grain_
+          ? base::saturated_cast<uint32_t>(audio_utilities::TimeToSampleFrame(
+                grain_offset_ + grain_duration_, buffer_sample_rate))
+          : buffer_length;
 
   // Do some sanity checking.
   if (end_frame > buffer_length)
@@ -682,7 +684,7 @@ AudioBufferSourceNode* AudioBufferSourceNode::Create(
     return nullptr;
   }
 
-  return new AudioBufferSourceNode(context);
+  return MakeGarbageCollected<AudioBufferSourceNode>(context);
 }
 
 AudioBufferSourceNode* AudioBufferSourceNode::Create(

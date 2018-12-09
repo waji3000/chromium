@@ -516,27 +516,6 @@ locale.  The strings in this file are specific to iOS.
       <message name="IDS_IOS_CLEAR_SAVED_PASSWORDS" desc="Label for the option in settings to clear saved passwords. In titlecase. [Length: 20em] [iOS only]">
         Saved Passwords
       </message>
-      <message name="IDS_IOS_CONSENT_BUMP_IM_IN" desc="Title for the Consent Bump 'accept' button. If the user press this button, then the users agrees to the consent bump prompt.">
-        Yes, I'm in
-      </message>
-      <message name="IDS_IOS_CONSENT_BUMP_NO_CHANGE_TEXT" desc="Text for the Consent Bump personalization option to not make any change to the existing sync options. [iOS only]">
-        The data sync to Google and the features you use will not change
-      </message>
-      <message name="IDS_IOS_CONSENT_BUMP_NO_CHANGE_TITLE" desc="Title for the Consent Bump personalization option to not make any change to the existing sync options. [iOS only]">
-        Make no changes
-      </message>
-      <message name="IDS_IOS_CONSENT_BUMP_MORE" desc="Title for the button in the ConsentBump to display more options for personalizing the sync settings. [iOS only]">
-        More Options
-      </message>
-      <message name="IDS_IOS_CONSENT_BUMP_PERSONALIZATION_TITLE" desc="Title for the Consent Bump personalization menu, presented when the user wants more informations and control over the sync personalization. [iOS only]">
-        Control Sync, Personalization, and More
-      </message>
-      <message name="IDS_IOS_CONSENT_BUMP_REVIEW_TITLE" desc="Title for the Consent Bump personalization option to review the existing settings once the current screen is dismissed. [iOS only]">
-        Review your settings on the next screen
-      </message>
-      <message name="IDS_IOS_CONSENT_BUMP_TURN_ON_TITLE" desc="Title for the Consent Bump personalization option to turn on the sync. [iOS only]">
-        Turn on sync, personalization, and other Google services
-      </message>
       <message name="IDS_IOS_CONTENT_CONTEXT_ADDTOREADINGLIST" desc="The iOS menu item for adding a link to the reading list.">
         Read Later
       </message>
@@ -726,12 +705,6 @@ locale.  The strings in this file are specific to iOS.
       <message name="IDS_IOS_GOOGLE_APPS_SM_SETTINGS" desc="Title for the view in Settings for managing Google apps specific settings. Translate 'Google Apps'. [Length: 15em] [iOS only]">
         Google Apps
       </message>
-      <message name="IDS_IOS_GOOGLE_SERVICES_SETTINGS_ACTIVITY_AND_INTERACTIONS_DETAIL" desc="Detail text for a feature in the settings for the user to enable/disable, to personalize the user experience. Related to 'Activity and interactions'. [iOS only]">
-        Uses content on sites you visit and browser activity and interactions for personalization
-      </message>
-      <message name="IDS_IOS_GOOGLE_SERVICES_SETTINGS_ACTIVITY_AND_INTERACTIONS_TEXT" desc="Title for a feature in the settings for the user to enable/disable, to personalize the user experience. Related to 'Uses content on sites you visit and browser activity and interactions for personalization'. [iOS only]">
-        Activity and interactions
-      </message>
       <message name="IDS_IOS_GOOGLE_SERVICES_SETTINGS_AUTOCOMPLETE_SEARCHES_AND_URLS_DETAIL" desc="Feature detail text in the settings for the user to enable/disable, to have autocomplete searches and URLs. Text related to 'Autocomplete Searches and URLs' [iOS only]">
         Sends searches from the address bar and search box, and some cookies to your default search engine
       </message>
@@ -825,6 +798,15 @@ locale.  The strings in this file are specific to iOS.
       <message name="IDS_IOS_ICON_SEARCH" desc="Accessibility label for the search icon [iOS only].">
         Search
       </message>
+      <message name="IDS_IOS_INTENTS_SEARCH_IN_CHROME_DESCRIPTION" desc="Siri Shortcut for search in chrome description [iOS only].">
+        Start a search in a new Chrome tab.
+      </message>
+      <message name="IDS_IOS_INTENTS_SEARCH_IN_CHROME_INVOCATION_PHRASE" desc="Siri Shortcut, spoken suggestion for search in chrome [iOS only].">
+        Search in Chrome
+      </message>
+      <message name="IDS_IOS_INTENTS_SEARCH_IN_CHROME_TITLE" desc="Siri Shortcut for search in chrome title [iOS only].">
+        Search in Chrome
+      </message>
       <message name="IDS_IOS_JAVA_SCRIPT_DIALOG_BLOCKING_BUTTON_TEXT" desc="The text used for the button added to JavaScript dialogs to prevent a page from spamming the user with endless alerts. [Length:27em]">
         Suppress Dialogs
       </message>
@@ -879,11 +861,44 @@ locale.  The strings in this file are specific to iOS.
       <message name="IDS_IOS_MANUAL_FALLBACK_NO_USERNAME" desc="The title for disabled buttons on the manual fallback passwords UI when a credential doesn't contains a username. [30em]">
         No Username
       </message>
-      <message name="IDS_IOS_MANUAL_FALLBACK_USE_OTHER_PASSWORD" desc="The title for the manual fallback UI with all passwords without filter. [30em]">
-        Use Other Password
+      <message name="IDS_IOS_MANUAL_FALLBACK_NO_PASSWORDS_FOR_SITE" desc="The title for disabled buttons when a list of credentials for manual fallback is empty. [30em]">
+        No passwords for this site found
+      </message>
+      <message name="IDS_IOS_MANUAL_FALLBACK_NOT_SECURE_OK_BUTTON" desc="The title of the OK button of the 'Not Secure' alert in manual fallback." meaning="The user will dismiss the alert [20em]">
+        OK
+      </message>
+      <message name="IDS_IOS_MANUAL_FALLBACK_NOT_SECURE_TITLE" desc="The title of the alert informing a user the content they selected won't be filled on the form." meaning="The form is not secure [20em]">
+        Not secure
+      </message>
+      <message name="IDS_IOS_MANUAL_FALLBACK_NOT_SECURE_PASSWORD_BODY" desc="The body of the alert informing a user the password they selected won't be filled on the form." meaning="The field the user is trying to fill is not of password type  [80em]">
+        To protect your privacy, Chrome will not autofill your password in this field.
+      </message>
+      <message name="IDS_IOS_MANUAL_FALLBACK_NOT_SECURE_GENERIC_BODY" desc="The body of the alert informing a user the content they selected won't be filled on the form." meaning="The form is not secure [80em]">
+        To protect your privacy, Chrome will not autofill this field.
+      </message>
+      <message name="IDS_IOS_MANUAL_FALLBACK_USE_OTHER_PASSWORD" desc="The title for the manual fallback UI with all passwords without filter." meaning="The title for a list where the user is about to select a password or username to be filled in a form [Length: 10em]">
+        Passwords
       </message>
       <message name="IDS_IOS_MANUAL_FALLBACK_USE_OTHER_PASSWORD_WITH_DOTS" desc="The title for the button in the manual fallback passwords UI that is used to open a list of all the user credentials where they can select one to fill a form. This button is showed at the same time as a different button with  IDS_IOS_MANUAL_FALLBACK_MANAGE_PASSWORDS as title. [30em]">
         Use Other Password...
+      </message>
+      <message name="IDS_IOS_MANUAL_FALLBACK_MANAGE_CREDIT_CARDS" desc="The title for the button in the manual fallback UI that takes the user to the payments settings. In this screen they see all the credit cards and can erase them. [30em]">
+        Manage Credit Cards...
+      </message>
+      <message name="IDS_IOS_MANUAL_FALLBACK_MANAGE_ADDRESSES" desc="The title for the button in the manual fallback UI that takes the user to the addresses settings. In this screen they see all the addresses and can erase them. [30em]">
+        Manage Addresses...
+      </message>
+      <message name="IDS_IOS_MANUAL_FALLBACK_SHOW_ADDRESSES" desc="Label for the addresses icon in manual fallback. Read by Text To Speech" meaning="Voice Over will read this to the user followed by 'Button' when this button is focused.">
+        Addresses
+      </message>
+      <message name="IDS_IOS_MANUAL_FALLBACK_SHOW_CREDIT_CARDS" desc="Label for the credit cards icon in manual fallback. Read by Text To Speech" meaning="Voice Over will read this to the user followed by 'Button' when this button is focused.">
+        Credit Cards
+      </message>
+      <message name="IDS_IOS_MANUAL_FALLBACK_SHOW_KEYBOARD" desc="Label for the keyboard icon in manual fallback. Read by Text To Speech" meaning="Voice Over will read this to the user followed by 'Button' when this button is focused.">
+        Keyboard
+      </message>
+      <message name="IDS_IOS_MANUAL_FALLBACK_SHOW_PASSWORDS" desc="Label for the password icon in manual fallback. Read by Text To Speech" meaning="Voice Over will read this to the user followed by 'Button' when this button is focused.">
+        Passwords
       </message>
       <message name="IDS_IOS_MICROPHONE_USAGE_DESCRIPTION" desc="Specifies the reason for accessing the user's microphone while the app is in use [Length: unlimited] [iOS only].">
         This lets you search faster using your voice.
@@ -1313,6 +1328,9 @@ Handoff must also be enabled in the General section of Settings, and your device
       <message name="IDS_IOS_SEARCH_ENGINE_SETTING_TITLE" desc="The title for Search Engine selection setting [iOS only]">
         Search Engine
       </message>
+      <message name="IDS_IOS_SEARCH_ENGINE_SETTING_CUSTOM_SECTION_HEADER" desc="The header for custom search engines section in Search Engine selection setting [iOS only]">
+        Recently Visited
+      </message>
       <message name="IDS_IOS_SETTINGS_SITE_COPY_BUTTON" desc="Button that the user can press to copy the site to clipboard. [Length: 12em]">
         Copy
       </message>
@@ -1387,6 +1405,9 @@ Handoff must also be enabled in the General section of Settings, and your device
       </message>
       <message name="IDS_IOS_SETTING_ON" desc="Generic status label displayed in Settings to show that a setting is currently turned on. [Length: 5em] [iOS only]">
         On
+      </message>
+      <message name="IDS_IOS_SETTINGS_TOOLBAR_DELETE" desc="Label of the button displayed on the bottom toolbar of the settings' collections when they are in edit mode. Pressing this button deletes the currently selected items.">
+        Delete
       </message>
       <message name="IDS_IOS_TOGGLE_SETTING_SWITCH_ACCESSIBILITY_HINT" desc="Action hint for any switch in settings. This is spoken by VoiceOver. [iOS only]">
         Double tap to toggle setting
@@ -1852,18 +1873,6 @@ Your data was encrypted with your sync passphrase on <ph name="TIME">$2<ex>Sept 
       </message>
       <message name="IDS_IOS_SIGNIN_PROMO_SETTINGS_WITH_UNITY" desc="Text to inform the user that they can sign in and sync to get tabs shared between devices. [iOS only]">
         To sync and personalize across devices, turn on sync.
-      </message>
-      <message name="IDS_IOS_SYSTEM_MAIL_APP" desc="Name of iOS system-provided Mail app. Note that this is not consistently translated for all locales, e.g. it is still 'Mail' (in English) for French locale, but is translated to '邮件' for Chinese locale. [Length: 10em]">
-        Mail
-      </message>
-      <message name="IDS_IOS_COMPOSE_EMAIL_SETTING" desc="Title for the view and option to select a handler for mailto: URLs. [Length: 20em]">
-        Compose Email
-      </message>
-      <message name="IDS_IOS_CHOOSE_EMAIL_APP" desc="Title for bottom sheet to choose an email client app when user taps on an URL that has a mailto: URL scheme. [Length 40em]">
-        Choose Email App
-      </message>
-      <message name="IDS_IOS_CHOOSE_EMAIL_ASK_TOGGLE" desc="Title for toggle switch to set whether to ask user which Mail client app to use every time a mailto:// URL is tapped. [Length: 50]">
-        Ask me which app to use every time
       </message>
       <message name="IDS_IOS_BOOKMARK_CONTEXT_BAR_NEW_FOLDER" desc="Text on the bookmarks context bar to create new folder">
         New Folder

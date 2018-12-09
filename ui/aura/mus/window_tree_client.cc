@@ -222,6 +222,11 @@ bool WindowTreeClient::WaitForDisplays() {
   return valid_wait;
 }
 
+WindowMus* WindowTreeClient::GetWindowByServerId(ws::Id id) {
+  IdToWindowMap::const_iterator it = windows_.find(id);
+  return it != windows_.end() ? it->second : nullptr;
+}
+
 void WindowTreeClient::SetCanFocus(Window* window, bool can_focus) {
   DCHECK(tree_);
   DCHECK(window);
@@ -372,11 +377,6 @@ void WindowTreeClient::RegisterWindowMus(WindowMus* window) {
     window->GetWindow()->set_frame_sink_id(
         port->GenerateFrameSinkIdFromServerId());
   }
-}
-
-WindowMus* WindowTreeClient::GetWindowByServerId(ws::Id id) {
-  IdToWindowMap::const_iterator it = windows_.find(id);
-  return it != windows_.end() ? it->second : nullptr;
 }
 
 bool WindowTreeClient::IsWindowKnown(aura::Window* window) {
@@ -678,7 +678,8 @@ void WindowTreeClient::ScheduleInFlightBoundsChange(
     const gfx::Rect& new_bounds) {
   const uint32_t change_id =
       ScheduleInFlightChange(std::make_unique<InFlightBoundsChange>(
-          this, window, old_bounds, window->GetLocalSurfaceId()));
+          this, window, old_bounds,
+          window->GetLocalSurfaceIdAllocation().local_surface_id()));
   base::Optional<viz::LocalSurfaceId> local_surface_id;
   if (window->GetWindow()->IsEmbeddingClient() ||
       window->HasLocalLayerTreeFrameSink()) {
@@ -905,6 +906,11 @@ gfx::Point WindowTreeClient::GetCursorScreenPoint() {
                     static_cast<int16_t>(location & 0xFFFF));
 }
 
+void WindowTreeClient::OnEarlyShutdown() {
+  if (compositor_context_factory_)
+    compositor_context_factory_->ResetSharedWorkerContextProvider();
+}
+
 void WindowTreeClient::OnEventObserverAdded(
     ui::EventObserver* observer,
     const std::set<ui::EventType>& types) {
@@ -960,6 +966,10 @@ void WindowTreeClient::SetEventTargetingPolicy(
     ws::mojom::EventTargetingPolicy policy) {
   DCHECK(tree_);
   tree_->SetEventTargetingPolicy(window->server_id(), policy);
+}
+
+void WindowTreeClient::OnClientId(uint32_t client_id) {
+  id_ = client_id;
 }
 
 void WindowTreeClient::OnEmbed(

@@ -13,7 +13,8 @@
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "services/service_manager/public/cpp/service.h"
-#include "services/service_manager/public/cpp/service_context.h"
+#include "services/service_manager/public/cpp/service_binding.h"
+#include "services/service_manager/public/mojom/service.mojom.h"
 #include "services/service_manager/public/mojom/service_factory.mojom.h"
 #include "services/ws/gpu_host/gpu_host.h"
 #include "services/ws/gpu_host/gpu_host_delegate.h"
@@ -35,6 +36,7 @@ namespace ws {
 
 class HostEventQueue;
 class TestHostEventDispatcher;
+class WindowService;
 
 namespace test {
 
@@ -46,7 +48,7 @@ class TestWindowService : public service_manager::Service,
                           public WindowServiceDelegate,
                           public test_ws::mojom::TestWs {
  public:
-  TestWindowService();
+  explicit TestWindowService(service_manager::mojom::ServiceRequest request);
   ~TestWindowService() override;
 
   void InitForInProcess(
@@ -55,6 +57,8 @@ class TestWindowService : public service_manager::Service,
       std::unique_ptr<GpuInterfaceProvider> gpu_interface_provider);
 
  private:
+  class VisibilitySynchronizer;
+
   void InitForOutOfProcess();
 
   // WindowServiceDelegate:
@@ -74,6 +78,7 @@ class TestWindowService : public service_manager::Service,
                    ui::DragDropTypes::DragEventSource source,
                    DragDropCompletedCallback callback) override;
   void CancelDragLoop(aura::Window* window) override;
+  ui::EventTarget* GetGlobalEventTarget() override;
 
   // service_manager::Service:
   void OnStart() override;
@@ -91,6 +96,7 @@ class TestWindowService : public service_manager::Service,
   void OnGpuServiceInitialized() override;
 
   // test_ws::mojom::TestWs:
+  void MaximizeNextWindow(MaximizeNextWindowCallback cb) override;
   void Shutdown(test_ws::mojom::TestWs::ShutdownCallback callback) override;
 
   void BindServiceFactory(
@@ -103,14 +109,14 @@ class TestWindowService : public service_manager::Service,
   void SetupAuraTestHelper(ui::ContextFactory* context_factory,
                            ui::ContextFactoryPrivate* context_factory_private);
 
+  service_manager::ServiceBinding service_binding_;
   service_manager::BinderRegistry registry_;
 
   mojo::BindingSet<service_manager::mojom::ServiceFactory>
       service_factory_bindings_;
   mojo::BindingSet<test_ws::mojom::TestWs> test_ws_bindings_;
 
-  // Handles the ServiceRequest. Owns the WindowService instance.
-  std::unique_ptr<service_manager::ServiceContext> service_context_;
+  std::unique_ptr<WindowService> window_service_;
 
   std::unique_ptr<aura::test::AuraTestHelper> aura_test_helper_;
 
@@ -127,6 +133,7 @@ class TestWindowService : public service_manager::Service,
 
   bool started_ = false;
   bool ui_service_created_ = false;
+  bool maximize_next_window_ = false;
 
   base::OnceClosure pending_create_service_;
 
@@ -140,6 +147,8 @@ class TestWindowService : public service_manager::Service,
   std::unique_ptr<TestHostEventDispatcher> test_host_event_dispatcher_;
 
   std::unique_ptr<HostEventQueue> host_event_queue_;
+
+  std::unique_ptr<VisibilitySynchronizer> visibility_synchronizer_;
 
   DISALLOW_COPY_AND_ASSIGN(TestWindowService);
 };

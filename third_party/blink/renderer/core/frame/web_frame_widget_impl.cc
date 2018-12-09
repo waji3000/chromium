@@ -37,7 +37,6 @@
 #include "base/optional.h"
 #include "build/build_config.h"
 #include "cc/layers/picture_layer.h"
-#include "third_party/blink/public/mojom/page/page_visibility_state.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_scroll_into_view_params.h"
 #include "third_party/blink/public/web/web_autofill_client.h"
@@ -72,6 +71,7 @@
 #include "third_party/blink/renderer/core/input/event_handler.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
+#include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/context_menu_controller.h"
 #include "third_party/blink/renderer/core/page/focus_controller.h"
 #include "third_party/blink/renderer/core/page/page.h"
@@ -121,7 +121,8 @@ WebFrameWidget* WebFrameWidget::CreateForMainFrame(WebWidgetClient* client,
   // Note: this isn't a leak, as the object has a self-reference that the
   // caller needs to release by calling Close().
   // TODO(dcheng): Remove the special bridge class for main frame widgets.
-  WebFrameWidgetBase* widget = new WebViewFrameWidget(*client, web_view_impl);
+  WebFrameWidgetBase* widget =
+      MakeGarbageCollected<WebViewFrameWidget>(*client, web_view_impl);
   widget->BindLocalRoot(*main_frame);
   return widget;
 }
@@ -146,7 +147,7 @@ WebFrameWidget* WebFrameWidget::CreateForChildLocalRoot(
 WebFrameWidgetImpl* WebFrameWidgetImpl::Create(WebWidgetClient& client) {
   // Pass the WebFrameWidgetImpl's self-reference from SelfKeepAlive to the
   // caller.
-  return new WebFrameWidgetImpl(client);
+  return MakeGarbageCollected<WebFrameWidgetImpl>(client);
 }
 
 WebFrameWidgetImpl::WebFrameWidgetImpl(WebWidgetClient& client)
@@ -256,7 +257,7 @@ void WebFrameWidgetImpl::ResizeVisualViewport(const WebSize& new_size) {
   // both the WebViewImpl size and the Page's VisualViewport. If there are
   // multiple OOPIFs on a page, this will currently be set redundantly by
   // each of them. See https://crbug.com/599688.
-  View()->Resize(new_size);
+  View()->MainFrameWidget()->Resize(new_size);
 
   View()->DidUpdateFullscreenSize();
 }
@@ -275,11 +276,11 @@ void WebFrameWidgetImpl::UpdateMainFrameLayoutSize() {
 }
 
 void WebFrameWidgetImpl::DidEnterFullscreen() {
-  View()->DidEnterFullscreen();
+  View()->MainFrameWidget()->DidEnterFullscreen();
 }
 
 void WebFrameWidgetImpl::DidExitFullscreen() {
-  View()->DidExitFullscreen();
+  View()->MainFrameWidget()->DidExitFullscreen();
 }
 
 void WebFrameWidgetImpl::SetSuppressFrameRequestsWorkaroundFor704763Only(
@@ -303,7 +304,17 @@ void WebFrameWidgetImpl::BeginFrame(base::TimeTicks last_frame_time) {
     GetPage()->GetValidationMessageClient().LayoutOverlay();
 }
 
-void WebFrameWidgetImpl::UpdateLifecycle(LifecycleUpdate requested_update) {
+void WebFrameWidgetImpl::RecordEndOfFrameMetrics(
+    base::TimeTicks frame_begin_time) {
+  if (!LocalRootImpl())
+    return;
+
+  LocalRootImpl()->GetFrame()->View()->RecordEndOfFrameMetrics(
+      frame_begin_time);
+}
+
+void WebFrameWidgetImpl::UpdateLifecycle(LifecycleUpdate requested_update,
+                                         LifecycleUpdateReason reason) {
   TRACE_EVENT0("blink", "WebFrameWidgetImpl::updateAllLifecyclePhases");
   if (!LocalRootImpl())
     return;
@@ -311,7 +322,7 @@ void WebFrameWidgetImpl::UpdateLifecycle(LifecycleUpdate requested_update) {
   DocumentLifecycle::AllowThrottlingScope throttling_scope(
       LocalRootImpl()->GetFrame()->GetDocument()->Lifecycle());
   PageWidgetDelegate::UpdateLifecycle(*GetPage(), *LocalRootImpl()->GetFrame(),
-                                      requested_update);
+                                      requested_update, reason);
   UpdateLayerTreeBackgroundColor();
 }
 
@@ -395,7 +406,7 @@ void WebFrameWidgetImpl::ThemeChanged() {
   view->InvalidateRect(damaged_rect);
 }
 
-WebHitTestResult WebFrameWidgetImpl::HitTestResultAt(const WebPoint& point) {
+WebHitTestResult WebFrameWidgetImpl::HitTestResultAt(const gfx::Point& point) {
   return CoreHitTestResultAt(point);
 }
 
@@ -892,11 +903,23 @@ WebInputEventResult WebFrameWidgetImpl::HandleGestureEvent(
     case WebInputEvent::kGestureShowPress:
       break;
     case WebInputEvent::kGestureDoubleTap:
-      // Until https://crbug.com/734209 is resolved and OOPIFs learn how to
-      // handle AnimateDoubleTap, we shouldn't pass this event to the event
-      // handler as it will just result in (at best) hitting NOTREACHED() in
-      // debug builds.
-      LOG(INFO) << "DoubleTap zoom animations not yet implemented for OOPIF.";
+      if (GetPage()->GetChromeClient().DoubleTapToZoomEnabled() &&
+          view_impl->MinimumPageScaleFactor() !=
+              view_impl->MaximumPageScaleFactor()) {
+        LocalFrame* frame = LocalRootImpl()->GetFrame();
+        WebGestureEvent scaled_event =
+            TransformWebGestureEvent(frame->View(), event);
+        IntPoint pos_in_local_frame_root =
+            FlooredIntPoint(scaled_event.PositionInRootFrame());
+        WebRect block_bounds =
+            ComputeBlockBound(pos_in_local_frame_root, false);
+
+        // This sends the tap point and bounds to the main frame renderer via
+        // the browser, where their coordinates will be transformed into the
+        // main frame's coordinate space.
+        Client()->AnimateDoubleTapZoomInMainFrame(pos_in_local_frame_root,
+                                                  block_bounds);
+      }
       event_result = WebInputEventResult::kHandledSystem;
       Client()->DidHandleGestureEvent(event, event_cancelled);
       return event_result;
@@ -1081,8 +1104,6 @@ void WebFrameWidgetImpl::SetIsAcceleratedCompositingActive(bool active) {
     TRACE_EVENT0("blink",
                  "WebViewImpl::setIsAcceleratedCompositingActive(true)");
     layer_tree_view_->SetRootLayer(root_layer_);
-
-    layer_tree_view_->SetVisible(GetPage()->IsPageVisible());
     UpdateLayerTreeBackgroundColor();
     UpdateLayerTreeViewport();
     is_accelerated_compositing_active_ = true;
@@ -1135,20 +1156,20 @@ CompositorAnimationHost* WebFrameWidgetImpl::AnimationHost() const {
 }
 
 HitTestResult WebFrameWidgetImpl::CoreHitTestResultAt(
-    const WebPoint& point_in_viewport) {
+    const gfx::Point& point_in_viewport) {
   DocumentLifecycle::AllowThrottlingScope throttling_scope(
       LocalRootImpl()->GetFrame()->GetDocument()->Lifecycle());
   LocalFrameView* view = LocalRootImpl()->GetFrameView();
-  IntPoint point_in_root_frame = view->ViewportToFrame(point_in_viewport);
+  IntPoint point_in_root_frame =
+      view->ViewportToFrame(IntPoint(point_in_viewport));
   return HitTestResultForRootFramePos(point_in_root_frame);
 }
 
-void WebFrameWidgetImpl::SetVisibilityState(
-    mojom::PageVisibilityState visibility_state) {
-  if (layer_tree_view_) {
-    layer_tree_view_->SetVisible(visibility_state ==
-                                 mojom::PageVisibilityState::kVisible);
-  }
+void WebFrameWidgetImpl::ZoomToFindInPageRect(
+    const WebRect& rect_in_root_frame) {
+  // TODO(wjmaclean): add plumbing to send IPC to browser to request
+  // this zoom operation on the main frame's renderer.
+  // https://crbug.com/734209: Add OOPIF support.
 }
 
 HitTestResult WebFrameWidgetImpl::HitTestResultForRootFramePos(

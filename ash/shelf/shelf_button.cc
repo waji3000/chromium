@@ -447,12 +447,13 @@ void ShelfButton::ShowContextMenu(const gfx::Point& p,
   bool destroyed = false;
   destroyed_flag_ = &destroyed;
 
-  Button::ShowContextMenu(p, source_type);
-
   if (source_type == ui::MenuSourceType::MENU_SOURCE_MOUSE ||
       source_type == ui::MenuSourceType::MENU_SOURCE_KEYBOARD) {
     GetInkDrop()->AnimateToState(views::InkDropState::ACTIVATED);
   }
+
+  Button::ShowContextMenu(p, source_type);
+
   if (!destroyed) {
     destroyed_flag_ = nullptr;
     // The menu will not propagate mouse events while its shown. To address,
@@ -605,16 +606,20 @@ void ShelfButton::ChildPreferredSizeChanged(views::View* child) {
 void ShelfButton::OnGestureEvent(ui::GestureEvent* event) {
   switch (event->type()) {
     case ui::ET_GESTURE_TAP_DOWN:
-      AddState(STATE_HOVERED);
-      drag_timer_.Start(
-          FROM_HERE, base::TimeDelta::FromMilliseconds(kDragTimeThresholdMs),
-          base::Bind(&ShelfButton::OnTouchDragTimer, base::Unretained(this)));
-      ripple_activation_timer_.Start(
-          FROM_HERE,
-          base::TimeDelta::FromMilliseconds(kInkDropRippleActivationTimeMs),
-          base::Bind(&ShelfButton::OnRippleTimer, base::Unretained(this)));
-      GetInkDrop()->AnimateToState(views::InkDropState::ACTION_PENDING);
-      event->SetHandled();
+      if (shelf_view_->shelf()->IsVisible()) {
+        AddState(STATE_HOVERED);
+        drag_timer_.Start(
+            FROM_HERE, base::TimeDelta::FromMilliseconds(kDragTimeThresholdMs),
+            base::BindRepeating(&ShelfButton::OnTouchDragTimer,
+                                base::Unretained(this)));
+        ripple_activation_timer_.Start(
+            FROM_HERE,
+            base::TimeDelta::FromMilliseconds(kInkDropRippleActivationTimeMs),
+            base::BindRepeating(&ShelfButton::OnRippleTimer,
+                                base::Unretained(this)));
+        GetInkDrop()->AnimateToState(views::InkDropState::ACTION_PENDING);
+        event->SetHandled();
+      }
       break;
     case ui::ET_GESTURE_END:
       drag_timer_.Stop();

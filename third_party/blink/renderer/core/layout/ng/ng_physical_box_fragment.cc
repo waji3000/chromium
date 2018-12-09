@@ -17,6 +17,19 @@
 
 namespace blink {
 
+namespace {
+
+struct SameSizeAsNGPhysicalBoxFragment : NGPhysicalContainerFragment {
+  NGBaselineList baselines;
+  NGPhysicalBoxStrut box_struts[2];
+};
+
+static_assert(sizeof(NGPhysicalBoxFragment) ==
+                  sizeof(SameSizeAsNGPhysicalBoxFragment),
+              "NGPhysicalBoxFragment should stay small");
+
+}  // namespace
+
 scoped_refptr<const NGPhysicalBoxFragment> NGPhysicalBoxFragment::Create(
     NGBoxFragmentBuilder* builder,
     WritingMode block_or_line_writing_mode) {
@@ -44,26 +57,16 @@ NGPhysicalBoxFragment::NGPhysicalBoxFragment(
               ? kFragmentRenderedLegend
               : kFragmentBox,
           builder->BoxType()),
-      baselines_(std::move(builder->baselines_)),
+      baselines_(builder->baselines_),
       borders_(builder->borders_.ConvertToPhysical(builder->GetWritingMode(),
                                                    builder->Direction())),
       padding_(builder->padding_.ConvertToPhysical(builder->GetWritingMode(),
                                                    builder->Direction())) {
-  DCHECK(builder->baselines_.IsEmpty());  // Ensure move semantics is used.
   is_fieldset_container_ = builder->is_fieldset_container_;
   is_old_layout_root_ = builder->is_old_layout_root_;
   border_edge_ = builder->border_edges_.ToPhysical(builder->GetWritingMode());
   children_inline_ =
       builder->layout_object_ && builder->layout_object_->ChildrenInline();
-}
-
-const NGBaseline* NGPhysicalBoxFragment::Baseline(
-    const NGBaselineRequest& request) const {
-  for (const auto& baseline : baselines_) {
-    if (baseline.request == request)
-      return &baseline;
-  }
-  return nullptr;
 }
 
 bool NGPhysicalBoxFragment::HasSelfPaintingLayer() const {
@@ -170,26 +173,18 @@ void NGPhysicalBoxFragment::AddSelfOutlineRects(
   const LayoutObject* layout_object = GetLayoutObject();
   DCHECK(layout_object);
   if (layout_object->IsLayoutInline()) {
-    Vector<LayoutRect> blockflow_outline_rects;
-    ToLayoutInline(layout_object)
-        ->AddOutlineRects(blockflow_outline_rects, LayoutPoint(), outline_type);
+    Vector<LayoutRect> blockflow_outline_rects =
+        layout_object->PhysicalOutlineRects(LayoutPoint(), outline_type);
     // The rectangles returned are offset from the containing block. We need the
-    // offset from this fragment. Additionally, the rectangles are offset
-    // relatively to the block-start of the container (this matters when
-    // writing-mode is vertical-rl). We want them to be purely physical. Apply
-    // correction.
+    // offset from this fragment.
     if (blockflow_outline_rects.size() > 0) {
-      const LayoutBlock* block_for_flipping = nullptr;
       LayoutPoint first_fragment_offset = blockflow_outline_rects[0].Location();
-      if (UNLIKELY(layout_object->HasFlippedBlocksWritingMode())) {
-        block_for_flipping = layout_object->ContainingBlock();
-        first_fragment_offset.SetX(block_for_flipping->FlipForWritingMode(
-            blockflow_outline_rects[0].MaxX()));
-      }
       LayoutSize corrected_offset = additional_offset - first_fragment_offset;
       for (auto& outline : blockflow_outline_rects) {
-        if (UNLIKELY(block_for_flipping))
-          block_for_flipping->FlipForWritingMode(outline);
+        // Skip if both width and height are zero. Contaning blocks in empty
+        // linebox is one such case.
+        if (outline.Size().IsZero())
+          continue;
         outline.Move(corrected_offset);
         outline_rects->push_back(outline);
       }

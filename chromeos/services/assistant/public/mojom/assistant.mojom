@@ -23,17 +23,26 @@ interface Assistant {
   // |AssistantInteractionSubscriber| interface to registered subscribers.
   StartMetalayerInteraction(gfx.mojom.Rect region);
 
+  // Starts a new Assistant text interaction. If |allow_tts| is true, the
+  // result will contain TTS. Otherwise TTS will not be present in the
+  // generated server response. Results will be returned through registered
+  // |AssistantInteractionSubscriber|.
+  StartTextInteraction(string query, bool allow_tts);
+
   // Starts a new Assistant voice interaction.
   StartVoiceInteraction();
+
+  // Starts a warmer welcome interaction for Assistant launch.
+  // |num_warmer_welcome_triggered| is the count of warmer welcomes
+  // already triggered. If |allow_tts| is true, the result may contain TTS.
+  // Otherwise TTS will not be present in the generated server response.
+  StartWarmerWelcomeInteraction(int32 num_warmer_welcome_triggered,
+      bool allow_tts);
 
   // Stops the active Assistant interaction and cancel the conversation if
   // |cancel_conversation|. If there is no active interaction, this method
   // is a no-op.
   StopActiveInteraction(bool cancel_conversation);
-
-  // Send text query to assistant. Result will be returned through registered
-  // |AssistantInteractionSubscriber|.
-  SendTextQuery(string query);
 
   // Registers assistant interaction event subscriber. Subscribers'
   // implementation is responsible for selecting events of interest.
@@ -160,6 +169,13 @@ interface DeviceActions {
 
   // Enables or disables Night Light.
   SetNightLightEnabled(bool enabled);
+
+  // Open the Android app if the app is available.
+  OpenAndroidApp(AndroidAppInfo app_info) => (bool app_opened);
+
+  // Verify the status of the Android apps.
+  VerifyAndroidApp(array<AndroidAppInfo> apps_info) => (array<AndroidAppInfo>
+                                                        apps_info);
 };
 
 // Enumeration of possible completions for an Assistant interaction.
@@ -223,4 +239,16 @@ struct AssistantNotification {
 
   // Obfuscated Gaia id of the intended recipient of the user.
   string obfuscated_gaia_id;
+};
+
+// Models status of an app.
+enum AppStatus { UNKNOWN, AVAILABLE, UNAVAILABLE, VERSION_MISMATCH, DISABLED };
+
+// Models an Android app.
+struct AndroidAppInfo {
+  string package_name;
+  int32 version;
+  string localized_app_name;
+  string intent;
+  AppStatus status;
 };

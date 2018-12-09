@@ -150,7 +150,9 @@ std::string DoGetCurrentNetworkID(
       case network::mojom::ConnectionType::CONNECTION_ETHERNET:
         break;
       case network::mojom::ConnectionType::CONNECTION_WIFI:
-#if defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_WIN)
+// Get WiFi SSID only on Android since calling it on non-Android
+// platforms may result in hung IO loop. See https://crbg.com/896296.
+#if defined(OS_ANDROID)
         ssid_mccmnc = net::GetWifiSSID();
 #endif
         break;
@@ -228,19 +230,13 @@ void DataReductionProxyConfig::InitializeOnIOThread(
                           base::Unretained(this)),
       ui_task_runner_));
 
-  if (ShouldAddDefaultProxyBypassRules())
-    AddDefaultProxyBypassRules();
+  AddDefaultProxyBypassRules();
 
   network_connection_tracker_->AddNetworkConnectionObserver(this);
   network_connection_tracker_->GetConnectionType(
       &connection_type_,
       base::BindOnce(&DataReductionProxyConfig::OnConnectionChanged,
                      weak_factory_.GetWeakPtr()));
-}
-
-bool DataReductionProxyConfig::ShouldAddDefaultProxyBypassRules() const {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  return true;
 }
 
 void DataReductionProxyConfig::OnNewClientConfigFetched() {
@@ -661,13 +657,13 @@ void DataReductionProxyConfig::ContinueNetworkChanged(
 
 void DataReductionProxyConfig::AddDefaultProxyBypassRules() {
   DCHECK(configurator_);
+  // Under the hood we use an instance of ProxyBypassRules to evaluate these
+  // rules. ProxyBypassRules implicitly bypasses localhost, loopback, and
+  // link-local addresses, so it is not necessary to explicitly add them here.
+  // See ProxyBypassRules::MatchesImplicitRules() for details.
   configurator_->SetBypassRules(
-      // localhost
+      // Hostnames with no dot in them.
       "<local>,"
-
-      // RFC6890 loopback addresses.
-      // TODO(tbansal): Remove this once crbug/446705 is fixed.
-      "127.0.0.0/8,"
 
       // RFC6890 current network (only valid as source address).
       "0.0.0.0/8,"

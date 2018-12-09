@@ -93,7 +93,7 @@ AXNodeObject::AXNodeObject(Node* node, AXObjectCacheImpl& ax_object_cache)
 
 AXNodeObject* AXNodeObject::Create(Node* node,
                                    AXObjectCacheImpl& ax_object_cache) {
-  return new AXNodeObject(node, ax_object_cache);
+  return MakeGarbageCollected<AXNodeObject>(node, ax_object_cache);
 }
 
 AXNodeObject::~AXNodeObject() {
@@ -1422,11 +1422,8 @@ ax::mojom::InvalidState AXNodeObject::GetInvalidState() const {
   if (GetNode() && GetNode()->IsElementNode() &&
       ToElement(GetNode())->IsFormControlElement()) {
     HTMLFormControlElement* element = ToHTMLFormControlElement(GetNode());
-    HeapVector<Member<HTMLFormControlElement>> invalid_controls;
-    bool is_invalid = !element->checkValidity(&invalid_controls,
-                                              kCheckValidityDispatchNoEvent);
-    return is_invalid ? ax::mojom::InvalidState::kTrue
-                      : ax::mojom::InvalidState::kFalse;
+    return element->IsNotCandidateOrValid() ? ax::mojom::InvalidState::kFalse
+                                            : ax::mojom::InvalidState::kTrue;
   }
 
   return AXObject::GetInvalidState();
@@ -2061,9 +2058,8 @@ bool AXNodeObject::NameFromLabelElement() const {
   HTMLElement* html_element = nullptr;
   if (GetNode()->IsHTMLElement())
     html_element = ToHTMLElement(GetNode());
-  if (html_element && IsLabelableElement(html_element)) {
-    if (ToLabelableElement(html_element)->labels() &&
-        ToLabelableElement(html_element)->labels()->length() > 0)
+  if (html_element && html_element->IsLabelable()) {
+    if (html_element->labels() && html_element->labels()->length() > 0)
       return true;
   }
 
@@ -2559,7 +2555,9 @@ void AXNodeObject::SelectedOptions(AXObjectVector& options) const {
   if (IsHTMLSelectElement(GetNode())) {
     HTMLSelectElement* select = ToHTMLSelectElement(GetNode());
     for (auto* const option : *select->selectedOptions()) {
-      options.push_back(AXObjectCache().GetOrCreate(option));
+      AXObject* ax_option = AXObjectCache().GetOrCreate(option);
+      if (ax_option)
+        options.push_back(ax_option);
     }
     return;
   }
@@ -2691,7 +2689,7 @@ String AXNodeObject::NativeTextAlternative(
       name_sources->back().native_source = kAXTextFromNativeHTMLLabel;
     }
 
-    LabelsNodeList* labels = ToLabelableElement(html_element)->labels();
+    LabelsNodeList* labels = html_element->labels();
     if (labels && labels->length() > 0) {
       HeapVector<Member<Element>> label_elements;
       for (unsigned label_index = 0; label_index < labels->length();
@@ -2921,8 +2919,9 @@ String AXNodeObject::NativeTextAlternative(
             RecursiveTextAlternative(*figcaption_ax_object, false, visited);
 
         if (related_objects) {
-          local_related_objects.push_back(new NameSourceRelatedObject(
-              figcaption_ax_object, text_alternative));
+          local_related_objects.push_back(
+              MakeGarbageCollected<NameSourceRelatedObject>(
+                  figcaption_ax_object, text_alternative));
           *related_objects = local_related_objects;
           local_related_objects.clear();
         }
@@ -2983,7 +2982,8 @@ String AXNodeObject::NativeTextAlternative(
             RecursiveTextAlternative(*caption_ax_object, false, visited);
         if (related_objects) {
           local_related_objects.push_back(
-              new NameSourceRelatedObject(caption_ax_object, text_alternative));
+              MakeGarbageCollected<NameSourceRelatedObject>(caption_ax_object,
+                                                            text_alternative));
           *related_objects = local_related_objects;
           local_related_objects.clear();
         }
@@ -3041,7 +3041,8 @@ String AXNodeObject::NativeTextAlternative(
             RecursiveTextAlternative(*title_ax_object, false, visited);
         if (related_objects) {
           local_related_objects.push_back(
-              new NameSourceRelatedObject(title_ax_object, text_alternative));
+              MakeGarbageCollected<NameSourceRelatedObject>(title_ax_object,
+                                                            text_alternative));
           *related_objects = local_related_objects;
           local_related_objects.clear();
         }
@@ -3075,7 +3076,8 @@ String AXNodeObject::NativeTextAlternative(
 
         if (related_objects) {
           local_related_objects.push_back(
-              new NameSourceRelatedObject(legend_ax_object, text_alternative));
+              MakeGarbageCollected<NameSourceRelatedObject>(legend_ax_object,
+                                                            text_alternative));
           *related_objects = local_related_objects;
           local_related_objects.clear();
         }
@@ -3134,7 +3136,8 @@ String AXNodeObject::NativeTextAlternative(
       if (title_ax_object) {
         if (related_objects) {
           local_related_objects.push_back(
-              new NameSourceRelatedObject(title_ax_object, text_alternative));
+              MakeGarbageCollected<NameSourceRelatedObject>(title_ax_object,
+                                                            text_alternative));
           *related_objects = local_related_objects;
           local_related_objects.clear();
         }
@@ -3302,9 +3305,11 @@ String AXNodeObject::Description(ax::mojom::NameFrom name_from,
         AXObjectSet visited;
         description =
             RecursiveTextAlternative(*caption_ax_object, false, visited);
-        if (related_objects)
+        if (related_objects) {
           related_objects->push_back(
-              new NameSourceRelatedObject(caption_ax_object, description));
+              MakeGarbageCollected<NameSourceRelatedObject>(caption_ax_object,
+                                                            description));
+        }
 
         if (description_sources) {
           DescriptionSource& source = description_sources->back();

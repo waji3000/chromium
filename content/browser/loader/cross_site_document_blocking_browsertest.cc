@@ -12,11 +12,13 @@
 #include "base/strings/pattern.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/task/post_task.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "content/browser/loader/cross_site_document_resource_handler.h"
+#include "content/browser/site_instance_impl.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_entry.h"
@@ -39,6 +41,7 @@
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/network_switches.h"
 #include "services/network/test/test_url_loader_client.h"
+#include "services/network/url_loader.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "third_party/blink/public/common/service_worker/service_worker_utils.h"
 
@@ -47,6 +50,8 @@ namespace content {
 using testing::Not;
 using testing::HasSubstr;
 using Action = network::CrossOriginReadBlocking::Action;
+using RequestInitiatorOriginLockCompatibility =
+    network::URLLoader::RequestInitiatorOriginLockCompatibility;
 
 namespace {
 
@@ -85,16 +90,31 @@ std::ostream& operator<<(std::ostream& os, const CorbExpectations& value) {
 
 // Ensure the correct histograms are incremented for blocking events.
 // Assumes the resource type is XHR.
-void InspectHistograms(const base::HistogramTester& histograms,
-                       const CorbExpectations& expectations,
-                       const std::string& resource_name,
-                       ResourceType resource_type) {
+void InspectHistograms(
+    const base::HistogramTester& histograms,
+    const CorbExpectations& expectations,
+    const std::string& resource_name,
+    ResourceType resource_type,
+    bool special_request_initiator_origin_lock_check_for_appcache = false) {
   // //services/network doesn't have access to content::ResourceType and
   // therefore cannot log some CORB UMAs.
   bool is_restricted_uma_expected = false;
   if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
     is_restricted_uma_expected = true;
     FetchHistogramsFromChildProcesses();
+
+    // TODO(lukasza): https://crbug.com/910287: Remove the special case below
+    // after ensuring that |request_initiator| coming through AppCache is
+    // trustworthy (today kBrowserProcess will be reported in
+    // NetworkService.URLLoader.RequestInitiatorOriginLockCompatibility when
+    // AppCache is relaying renderer requests through a browser process).
+    auto expected_lock_compatibility =
+        special_request_initiator_origin_lock_check_for_appcache
+            ? RequestInitiatorOriginLockCompatibility::kBrowserProcess
+            : RequestInitiatorOriginLockCompatibility::kCompatibleLock;
+    histograms.ExpectUniqueSample(
+        "NetworkService.URLLoader.RequestInitiatorOriginLockCompatibility",
+        expected_lock_compatibility, 1);
   }
 
   std::string bucket;
@@ -372,6 +392,9 @@ class CrossSiteDocumentBlockingTestBase : public ContentBrowserTest {
     RequestInterceptor interceptor(resource_url);
     EXPECT_TRUE(NavigateToURL(shell(), GURL("http://foo.com/title1.html")));
 
+    // Make sure that base::HistogramTester below starts with a clean slate.
+    FetchHistogramsFromChildProcesses();
+
     // Issue the request that will be intercepted.
     base::HistogramTester histograms;
     const char kScriptTemplate[] = R"(
@@ -402,11 +425,11 @@ class CrossSiteDocumentBlockingTest
     switch (GetParam()) {
       case TestMode::kWithoutOutOfBlinkCors:
         scoped_feature_list_.InitAndDisableFeature(
-            network::features::kOutOfBlinkCORS);
+            network::features::kOutOfBlinkCors);
         break;
       case TestMode::kWithOutOfBlinkCors:
         scoped_feature_list_.InitAndEnableFeature(
-            network::features::kOutOfBlinkCORS);
+            network::features::kOutOfBlinkCors);
         break;
     }
   }
@@ -502,11 +525,18 @@ IN_PROC_BROWSER_TEST_P(CrossSiteDocumentBlockingTest, BlockFetches) {
                                      "cors.txt"};
   for (const char* resource : allowed_resources) {
     SCOPED_TRACE(base::StringPrintf("... while testing page: %s", resource));
+
+    // Make sure that base::HistogramTester below starts with a clean slate.
+    FetchHistogramsFromChildProcesses();
+
+    // Fetch.
     base::HistogramTester histograms;
     bool was_blocked;
     ASSERT_TRUE(ExecuteScriptAndExtractBool(
         shell(), base::StringPrintf("sendRequest('%s');", resource),
         &was_blocked));
+
+    // Verify results of the fetch.
     EXPECT_FALSE(was_blocked);
     InspectHistograms(histograms, kShouldBeAllowedWithoutSniffing, resource,
                       RESOURCE_TYPE_XHR);
@@ -574,7 +604,7 @@ IN_PROC_BROWSER_TEST_P(CrossSiteDocumentBlockingTest, BlockHeaders) {
   // Note: we want to verify that the blocking prevents the data from being sent
   // over IPC.  Testing later (e.g. via Response/Headers Web APIs) might give a
   // false sense of security, since some sanitization happens inside the
-  // renderer (e.g. via FetchResponseData::CreateCORSFilteredResponse).
+  // renderer (e.g. via FetchResponseData::CreateCorsFilteredResponse).
   GURL bar_url("http://bar.com/cross_site_document_blocking/headers-test.json");
   RequestInterceptor interceptor(bar_url);
 
@@ -619,6 +649,71 @@ IN_PROC_BROWSER_TEST_P(CrossSiteDocumentBlockingTest, BlockHeaders) {
   EXPECT_EQ(0u, interceptor.response_head().content_length);
 }
 
+IN_PROC_BROWSER_TEST_P(CrossSiteDocumentBlockingTest, AppCache) {
+  embedded_test_server()->StartAcceptingConnections();
+
+  // Prepare to intercept the network request at the IPC layer.
+  // This has to be done before the RenderFrameHostImpl is created.
+  GURL cross_site_url("http://cross-origin.com/site_isolation/nosniff.json");
+  RequestInterceptor interceptor(cross_site_url);
+
+  // Set up a separate http server, to allow sanity-checking that AppCache
+  // serves files despite the fact that the original server is down.
+  net::EmbeddedTestServer app_cache_content_server;
+  app_cache_content_server.AddDefaultHandlers(
+      base::FilePath(FILE_PATH_LITERAL("content/test/data")));
+  ASSERT_TRUE(app_cache_content_server.Start());
+
+  // Load the main page twice. The second navigation should have AppCache
+  // initialized for the page.
+  GURL main_url = app_cache_content_server.GetURL(
+      "/appcache/simple_page_with_manifest.html");
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+  base::string16 expected_title = base::ASCIIToUTF16("AppCache updated");
+  content::TitleWatcher title_watcher(shell()->web_contents(), expected_title);
+  EXPECT_EQ(expected_title, title_watcher.WaitAndGetTitle());
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+
+  // Turn off the server and sanity check that the resource is still available
+  // (because of AppCache).
+  ASSERT_TRUE(app_cache_content_server.ShutdownAndWaitUntilComplete());
+  {
+    const char kScriptTemplate[] = R"(
+        new Promise(function (resolve, reject) {
+            var img = document.createElement('img');
+            img.src = '/appcache/' + $1;
+            img.onload = _ => resolve('IMG LOADED');
+            img.onerror = reject;
+        })
+    )";
+    EXPECT_EQ("IMG LOADED",
+              content::EvalJs(shell(),
+                              content::JsReplace(kScriptTemplate, "logo.png")));
+  }
+
+  // Verify that CORB also works in presence of AppCache.
+  {
+    // Make sure that base::HistogramTester below starts with a clean slate.
+    FetchHistogramsFromChildProcesses();
+
+    // Fetch...
+    base::HistogramTester histograms;
+    const char kScriptTemplate[] = R"(
+        var img = document.createElement('img');
+        img.src = $1;
+        document.body.appendChild(img); )";
+    EXPECT_TRUE(ExecJs(shell(), JsReplace(kScriptTemplate, cross_site_url)));
+    interceptor.WaitForRequestCompletion();
+
+    // Verify...
+    bool special_request_initiator_origin_lock_check_for_appcache = true;
+    InspectHistograms(histograms, kShouldBeBlockedWithoutSniffing,
+                      "nosniff.json", RESOURCE_TYPE_IMAGE,
+                      special_request_initiator_origin_lock_check_for_appcache);
+    interceptor.Verify(kShouldBeBlockedWithoutSniffing);
+  }
+}
+
 IN_PROC_BROWSER_TEST_P(CrossSiteDocumentBlockingTest, PrefetchIsNotImpacted) {
   // Prepare for intercepting the resource request for testing prefetching.
   const char* kPrefetchResourcePath = "/prefetch-test";
@@ -631,10 +726,15 @@ IN_PROC_BROWSER_TEST_P(CrossSiteDocumentBlockingTest, PrefetchIsNotImpacted) {
       "a.com", "/cross_site_iframe_factory.html?a(b)"));
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
 
+  // Make sure that base::HistogramTester below starts with a clean slate.
+  FetchHistogramsFromChildProcesses();
+
   // Inject a cross-origin <link rel="prefetch" ...> into the main frame.
   // TODO(lukasza): https://crbug.com/827633#c5: We might need to switch to
   // listening to the onload event below (after/if CORB starts to consistently
   // avoid injecting net errors).
+  FetchHistogramsFromChildProcesses();
+  base::HistogramTester histograms;
   const char* prefetch_injection_script_template = R"(
       var link = document.createElement("link");
       link.rel = "prefetch";
@@ -655,8 +755,6 @@ IN_PROC_BROWSER_TEST_P(CrossSiteDocumentBlockingTest, PrefetchIsNotImpacted) {
   // Respond to the prefetch request in a way that:
   // 1) will enable caching
   // 2) won't finish until after CORB has blocked the response.
-  FetchHistogramsFromChildProcesses();
-  base::HistogramTester histograms;
   std::string response_bytes =
       "HTTP/1.1 200 OK\r\n"
       "Cache-Control: public, max-age=10\r\n"
@@ -764,9 +862,10 @@ class CrossSiteDocumentBlockingServiceWorkerTest : public ContentBrowserTest {
     // Sanity check of test setup - the 2 https servers should be cross-site
     // (the second server should have a different hostname because of the call
     // to SetSSLConfig with CERT_COMMON_NAME_IS_DOMAIN argument).
-    ASSERT_FALSE(SiteInstance::IsSameWebSite(
+    ASSERT_FALSE(SiteInstanceImpl::IsSameWebSite(
         shell()->web_contents()->GetBrowserContext(),
-        GetURLOnServiceWorkerServer("/"), GetURLOnCrossOriginServer("/")));
+        GetURLOnServiceWorkerServer("/"), GetURLOnCrossOriginServer("/"),
+        true /* should_use_effective_urls */));
   }
 
   GURL GetURLOnServiceWorkerServer(const std::string& path) {
@@ -844,6 +943,9 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingServiceWorkerTest, NoNetwork) {
 
   SetUpServiceWorker();
 
+  // Make sure that base::HistogramTester below starts with a clean slate.
+  FetchHistogramsFromChildProcesses();
+
   base::HistogramTester histograms;
   std::string response;
   std::string script = R"(
@@ -893,6 +995,9 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingServiceWorkerTest,
           }); )";
   std::string script =
       base::StringPrintf(script_template, cross_origin_url.spec().c_str());
+
+  // Make sure that base::HistogramTester below starts with a clean slate.
+  FetchHistogramsFromChildProcesses();
 
   // The service worker will forward the request to the network, but a response
   // will be intercepted by the service worker and replaced with a new,

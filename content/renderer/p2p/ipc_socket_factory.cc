@@ -613,8 +613,8 @@ void IpcPacketSocket::OnSendComplete(
         "IpcPacketSocket: sending is unblocked. %d packets in flight.",
         static_cast<int>(in_flight_packet_records_.size())));
 
-    SignalReadyToSend(this);
     writable_signal_expected_ = false;
+    SignalReadyToSend(this);
   }
 }
 
@@ -648,9 +648,8 @@ void IpcPacketSocket::OnDataReceived(const net::IPEndPoint& address,
     }
   }
 
-  rtc::PacketTime packet_time(timestamp.ToInternalValue(), 0);
   SignalReadPacket(this, reinterpret_cast<const char*>(&data[0]), data.size(),
-                   address_lj, packet_time);
+                   address_lj, timestamp.since_origin().InMicroseconds());
 }
 
 AsyncAddressResolverImpl::AsyncAddressResolverImpl(

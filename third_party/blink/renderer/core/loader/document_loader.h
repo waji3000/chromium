@@ -224,8 +224,7 @@ class CORE_EXPORT DocumentLoader
     return service_worker_network_provider_.get();
   }
 
-  // Allows to specify the SourceLocation that triggered the navigation.
-  void ResetSourceLocation();
+  // Returns a SourceLocation that triggered the navigation if any.
   std::unique_ptr<SourceLocation> CopySourceLocation() const;
 
   void LoadFailed(const ResourceError&);
@@ -263,6 +262,8 @@ class CORE_EXPORT DocumentLoader
     return content_security_policy_.Get();
   }
 
+  bool IsListingFtpDirectory() const { return listing_ftp_directory_; }
+
   UseCounter& GetUseCounter() { return use_counter_; }
 
  protected:
@@ -289,7 +290,7 @@ class CORE_EXPORT DocumentLoader
                           InstallNewDocumentReason,
                           ParserSynchronizationPolicy,
                           const KURL& overriding_url);
-  void DidInstallNewDocument(Document*, const ContentSecurityPolicy*);
+  void DidInstallNewDocument(Document*);
   void WillCommitNavigation();
   void DidCommitNavigation(WebGlobalObjectReusePolicy);
 
@@ -341,6 +342,9 @@ class CORE_EXPORT DocumentLoader
   // Processes the data stored in the data_buffer_, used to avoid appending data
   // to the parser in a nested message loop.
   void ProcessDataBuffer();
+
+  // Sends an intervention report if the page is being served as a preview.
+  void ReportPreviewsIntervention() const;
 
   Member<LocalFrame> frame_;
   Member<ResourceFetcher> fetcher_;
@@ -416,6 +420,8 @@ class CORE_EXPORT DocumentLoader
   bool had_sticky_activation_;
   // Whether this load request had a user activation when created.
   bool had_transient_activation_;
+
+  bool listing_ftp_directory_ = false;
 
   // This UseCounter tracks feature usage associated with the lifetime of the
   // document load. Features recorded prior to commit will be recorded locally.

@@ -23,21 +23,21 @@
 #include "content/public/browser/browser_main_runner.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
-#include "content/public/test/layouttest_support.h"
 #include "content/public/test/ppapi_test_utils.h"
+#include "content/public/test/web_test_support.h"
 #include "content/shell/app/blink_test_platform_support.h"
 #include "content/shell/app/shell_crash_reporter_client.h"
-#include "content/shell/browser/layout_test/layout_test_browser_main.h"
-#include "content/shell/browser/layout_test/layout_test_content_browser_client.h"
 #include "content/shell/browser/shell_browser_main.h"
 #include "content/shell/browser/shell_content_browser_client.h"
-#include "content/shell/common/layout_test/layout_test_content_client.h"
-#include "content/shell/common/layout_test/layout_test_switches.h"
+#include "content/shell/browser/web_test/web_test_browser_main.h"
+#include "content/shell/browser/web_test/web_test_content_browser_client.h"
 #include "content/shell/common/shell_content_client.h"
 #include "content/shell/common/shell_switches.h"
+#include "content/shell/common/web_test/web_test_content_client.h"
+#include "content/shell/common/web_test/web_test_switches.h"
 #include "content/shell/gpu/shell_content_gpu_client.h"
-#include "content/shell/renderer/layout_test/layout_test_content_renderer_client.h"
 #include "content/shell/renderer/shell_content_renderer_client.h"
+#include "content/shell/renderer/web_test/web_test_content_renderer_client.h"
 #include "content/shell/utility/shell_content_utility_client.h"
 #include "gpu/config/gpu_switches.h"
 #include "ipc/ipc_buildflags.h"
@@ -68,7 +68,7 @@
 #include "content/shell/android/shell_descriptors.h"
 #endif
 
-#if defined(OS_MACOSX) || defined(OS_WIN)
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(OS_ANDROID)
 #include "components/crash/content/app/crashpad.h"  // nogncheck
 #endif
 
@@ -85,7 +85,7 @@
 #include "content/shell/common/v8_crashpad_support_win.h"
 #endif
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
 #include "components/crash/content/app/breakpad_linux.h"
 #endif
 
@@ -201,7 +201,7 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
       }
     }
 
-    EnableBrowserLayoutTestMode();
+    EnableBrowserWebTestMode();
 
 #if BUILDFLAG(ENABLE_PLUGINS)
     if (!ppapi::RegisterBlinkTestPlugin(&command_line)) {
@@ -304,7 +304,7 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
   }
 
   content_client_.reset(switches::IsRunWebTestsSwitchPresent()
-                            ? new LayoutTestContentClient
+                            ? new WebTestContentClient
                             : new ShellContentClient);
   SetContentClient(content_client_.get());
 
@@ -328,18 +328,13 @@ void ShellMainDelegate::PreSandboxStartup() {
         base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
             switches::kProcessType);
     crash_reporter::SetCrashReporterClient(g_shell_crash_client.Pointer());
-#if defined(OS_MACOSX) || defined(OS_WIN)
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(OS_ANDROID)
     crash_reporter::InitializeCrashpad(process_type.empty(), process_type);
 #elif defined(OS_LINUX)
     // Reporting for sub-processes will be initialized in ZygoteForked.
     if (process_type != service_manager::switches::kZygoteProcess)
       breakpad::InitCrashReporter(process_type);
-#elif defined(OS_ANDROID)
-    if (process_type.empty())
-      breakpad::InitCrashReporter(process_type);
-    else
-      breakpad::InitNonBrowserCrashReporterForAndroid(process_type);
-#endif  // defined(OS_ANDROID)
+#endif  // defined(OS_MACOSX) || defined(OS_WIN) || defined(OS_ANDROID)
   }
 #endif  // !defined(OS_FUCHSIA)
 
@@ -367,7 +362,7 @@ int ShellMainDelegate::RunProcess(
   browser_runner_.reset(BrowserMainRunner::Create());
   base::CommandLine& command_line = *base::CommandLine::ForCurrentProcess();
   return command_line.HasSwitch(switches::kRunWebTests)
-             ? LayoutTestBrowserMain(main_function_params, browser_runner_)
+             ? WebTestBrowserMain(main_function_params, browser_runner_)
              : ShellBrowserMain(main_function_params, browser_runner_);
 }
 
@@ -440,7 +435,7 @@ void ShellMainDelegate::PreCreateMainMessageLoop() {
 
 ContentBrowserClient* ShellMainDelegate::CreateContentBrowserClient() {
   browser_client_.reset(switches::IsRunWebTestsSwitchPresent()
-                            ? new LayoutTestContentBrowserClient
+                            ? new WebTestContentBrowserClient
                             : new ShellContentBrowserClient);
 
   return browser_client_.get();
@@ -453,7 +448,7 @@ ContentGpuClient* ShellMainDelegate::CreateContentGpuClient() {
 
 ContentRendererClient* ShellMainDelegate::CreateContentRendererClient() {
   renderer_client_.reset(switches::IsRunWebTestsSwitchPresent()
-                             ? new LayoutTestContentRendererClient
+                             ? new WebTestContentRendererClient
                              : new ShellContentRendererClient);
 
   return renderer_client_.get();

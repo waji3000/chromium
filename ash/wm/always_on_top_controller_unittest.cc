@@ -13,8 +13,8 @@
 #include "base/command_line.h"
 #include "base/memory/ptr_util.h"
 #include "ui/keyboard/keyboard_controller.h"
-#include "ui/keyboard/keyboard_switches.h"
 #include "ui/keyboard/keyboard_ui.h"
+#include "ui/keyboard/public/keyboard_switches.h"
 #include "ui/keyboard/test/keyboard_test_util.h"
 
 namespace ash {
@@ -74,11 +74,7 @@ TEST_F(VirtualKeyboardAlwaysOnTopControllerTest, NotifyKeyboardBoundsChanging) {
   // Show the keyboard.
   auto* keyboard_controller = keyboard::KeyboardController::Get();
   keyboard_controller->ShowKeyboard(false /* locked */);
-  const int kKeyboardHeight = 200;
-  gfx::Rect keyboard_bounds = keyboard::KeyboardBoundsFromRootBounds(
-      root_window->bounds(), kKeyboardHeight);
-  keyboard_controller->GetKeyboardWindow()->SetBounds(keyboard_bounds);
-  keyboard_controller->NotifyKeyboardWindowLoaded();
+  ASSERT_TRUE(keyboard::WaitUntilShown());
 
   // Verify that test manager was notified of bounds change.
   ASSERT_TRUE(manager->keyboard_bounds_changed());

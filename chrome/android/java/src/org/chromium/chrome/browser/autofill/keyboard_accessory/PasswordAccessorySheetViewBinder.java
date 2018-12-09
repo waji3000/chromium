@@ -4,6 +4,9 @@
 
 package org.chromium.chrome.browser.autofill.keyboard_accessory;
 
+import static org.chromium.chrome.browser.autofill.keyboard_accessory.PasswordAccessorySheetProperties.CREDENTIALS;
+import static org.chromium.chrome.browser.autofill.keyboard_accessory.PasswordAccessorySheetProperties.SCROLL_LISTENER;
+
 import android.content.res.TypedArray;
 import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
@@ -22,7 +25,7 @@ import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.autofill.keyboard_accessory.KeyboardAccessoryData.Item;
 import org.chromium.chrome.browser.modelutil.ListModel;
-import org.chromium.chrome.browser.modelutil.RecyclerViewAdapter;
+import org.chromium.chrome.browser.modelutil.PropertyModel;
 
 /**
  * This stateless class provides methods to bind the items in a {@link ListModel <Item>}
@@ -99,7 +102,7 @@ class PasswordAccessorySheetViewBinder {
         protected void bind(Item item) {
             super.bind(item);
             getTextView().setTransformationMethod(
-                    item.isPassword() ? new PasswordTransformationMethod() : null);
+                    item.isObfuscated() ? new PasswordTransformationMethod() : null);
             getTextView().setText(item.getCaption());
             getTextView().setContentDescription(item.getContentDescription());
             if (item.getItemSelectedCallback() != null) {
@@ -153,7 +156,7 @@ class PasswordAccessorySheetViewBinder {
 
             // Setting the background to selectableItemBackground resets the padding to 0 on
             // Jelly Bean, so the padding should be set after the background.
-            if (!item.isPassword()) {
+            if (!item.isObfuscated()) {
                 setIconForBitmap(null); // Set the default icon, then try to get a better one.
                 item.fetchFavicon(itemView.getContext().getResources().getDimensionPixelSize(
                                           R.dimen.keyboard_accessory_suggestion_icon_size),
@@ -183,10 +186,13 @@ class PasswordAccessorySheetViewBinder {
         }
     }
 
-    static void initializeView(RecyclerView view, RecyclerViewAdapter adapter) {
+    public static void initializeView(RecyclerView view, PropertyModel model) {
         view.setLayoutManager(
                 new LinearLayoutManager(view.getContext(), LinearLayoutManager.VERTICAL, false));
         view.setItemAnimator(null);
-        view.setAdapter(adapter);
+        view.setAdapter(PasswordAccessorySheetCoordinator.createAdapter(model.get(CREDENTIALS)));
+        if (model.get(SCROLL_LISTENER) != null) {
+            view.addOnScrollListener(model.get(SCROLL_LISTENER));
+        }
     }
 }

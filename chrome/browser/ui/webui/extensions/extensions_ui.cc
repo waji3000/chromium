@@ -16,6 +16,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/chrome_extension_browser_constants.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/dark_mode_handler.h"
 #include "chrome/browser/ui/webui/metrics_handler.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -192,6 +193,7 @@ content::WebUIDataSource* CreateMdExtensionsSource(bool in_dev_mode) {
     {"accessibilityErrorLine", IDS_MD_EXTENSIONS_ACCESSIBILITY_ERROR_LINE},
     {"accessibilityErrorMultiLine",
      IDS_MD_EXTENSIONS_ACCESSIBILITY_ERROR_MULTI_LINE},
+    {"activityLogPageHeading", IDS_MD_EXTENSIONS_ACTIVITY_LOG_PAGE_HEADING},
     {"appIcon", IDS_MD_EXTENSIONS_APP_ICON},
     {"extensionIcon", IDS_MD_EXTENSIONS_EXTENSION_ICON},
     {"extensionA11yAssociation", IDS_MD_EXTENSIONS_EXTENSION_A11Y_ASSOCIATION},
@@ -226,6 +228,8 @@ content::WebUIDataSource* CreateMdExtensionsSource(bool in_dev_mode) {
     {"loadErrorFileLabel", IDS_MD_EXTENSIONS_LOAD_ERROR_FILE_LABEL},
     {"loadErrorErrorLabel", IDS_MD_EXTENSIONS_LOAD_ERROR_ERROR_LABEL},
     {"loadErrorRetry", IDS_MD_EXTENSIONS_LOAD_ERROR_RETRY},
+    {"loadingActivities", IDS_MD_EXTENSIONS_LOADING_ACTIVITIES},
+    {"noActivities", IDS_MD_EXTENSIONS_NO_ACTIVITIES},
     {"noErrorsToShow", IDS_EXTENSIONS_ERROR_NO_ERRORS_CODE_MESSAGE},
     {"runtimeHostsDialogInputError",
      IDS_MD_EXTENSIONS_RUNTIME_HOSTS_DIALOG_INPUT_ERROR},
@@ -259,7 +263,7 @@ content::WebUIDataSource* CreateMdExtensionsSource(bool in_dev_mode) {
     {"toolbarUpdatingToast", IDS_MD_EXTENSIONS_TOOLBAR_UPDATING_TOAST},
     {"updateRequiredByPolicy",
      IDS_MD_EXTENSIONS_DISABLED_UPDATE_REQUIRED_BY_POLICY},
-    {"viewActivityLog", IDS_EXTENSIONS_ACTIVITY_LOG},
+    {"viewActivityLog", IDS_EXTENSIONS_VIEW_ACTIVITY_LOG},
     {"viewBackgroundPage", IDS_EXTENSIONS_BACKGROUND_PAGE},
     {"viewIncognito", IDS_EXTENSIONS_VIEW_INCOGNITO},
     {"viewInactive", IDS_EXTENSIONS_VIEW_INACTIVE},
@@ -355,6 +359,7 @@ ExtensionsUI::ExtensionsUI(content::WebUI* web_ui) : WebUIController(web_ui) {
       base::Bind(&ExtensionsUI::OnDevModeChanged, base::Unretained(this)));
 
   source = CreateMdExtensionsSource(*in_dev_mode_);
+  DarkModeHandler::Initialize(web_ui, source);
 
 #if defined(OS_CHROMEOS)
   auto kiosk_app_handler = std::make_unique<chromeos::KioskAppsHandler>(

@@ -68,7 +68,7 @@ class FeaturePolicyParserTest : public testing::Test {
   ~FeaturePolicyParserTest() override = default;
 
   /*void SetUp() override {
-    chrome_client_ = new ConsoleCapturingChromeClient();
+    chrome_client_ = MakeGarbageCollected<ConsoleCapturingChromeClient>();
     Page::PageClients clients;
     FillWithEmptyClients(clients);
     clients.chrome_client = chrome_client_.Get();
@@ -439,10 +439,12 @@ class FeaturePolicyMutationTest : public testing::Test {
   ParsedFeaturePolicy test_policy = {{mojom::FeaturePolicyFeature::kFullscreen,
                                       false,
                                       false,
+                                      mojom::FeaturePolicyDisposition::kEnforce,
                                       {url_origin_a_, url_origin_b_}},
                                      {mojom::FeaturePolicyFeature::kGeolocation,
                                       false,
                                       false,
+                                      mojom::FeaturePolicyDisposition::kEnforce,
                                       {url_origin_a_}}};
   ParsedFeaturePolicy empty_policy = {};
 };

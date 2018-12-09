@@ -61,9 +61,9 @@
 #include "ui/events/test/event_generator.h"
 #include "ui/gfx/geometry/insets.h"
 #include "ui/keyboard/keyboard_controller.h"
-#include "ui/keyboard/keyboard_switches.h"
 #include "ui/keyboard/keyboard_ui.h"
 #include "ui/keyboard/keyboard_util.h"
+#include "ui/keyboard/public/keyboard_switches.h"
 #include "ui/keyboard/test/keyboard_test_util.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
@@ -125,17 +125,11 @@ class ScopedStickyKeyboardEnabler {
  public:
   ScopedStickyKeyboardEnabler()
       : accessibility_controller_(Shell::Get()->accessibility_controller()),
-        enabled_(accessibility_controller_->IsVirtualKeyboardEnabled()) {
+        enabled_(accessibility_controller_->virtual_keyboard_enabled()) {
     accessibility_controller_->SetVirtualKeyboardEnabled(true);
-    keyboard::KeyboardController::Get()->EnableKeyboard(
-        std::make_unique<keyboard::TestKeyboardUI>(
-            Shell::Get()->window_tree_host_manager()->input_method()),
-        nullptr);
-    keyboard::KeyboardController::Get()->set_keyboard_locked(true);
   }
 
   ~ScopedStickyKeyboardEnabler() {
-    keyboard::KeyboardController::Get()->set_keyboard_locked(false);
     accessibility_controller_->SetVirtualKeyboardEnabled(enabled_);
   }
 
@@ -1459,7 +1453,7 @@ TEST_F(WorkspaceLayoutManagerBackdropTest, SpokenFeedbackFullscreenBackground) {
 
   // Enable spoken feedback.
   controller->SetSpokenFeedbackEnabled(true, A11Y_NOTIFICATION_NONE);
-  EXPECT_TRUE(controller->IsSpokenFeedbackEnabled());
+  EXPECT_TRUE(controller->spoken_feedback_enabled());
 
   generator->MoveMouseTo(300, 300);
   generator->ClickLeftButton();
@@ -1473,7 +1467,7 @@ TEST_F(WorkspaceLayoutManagerBackdropTest, SpokenFeedbackFullscreenBackground) {
 
   // Disable spoken feedback. Shadow underlay is restored.
   controller->SetSpokenFeedbackEnabled(false, A11Y_NOTIFICATION_NONE);
-  EXPECT_FALSE(controller->IsSpokenFeedbackEnabled());
+  EXPECT_FALSE(controller->spoken_feedback_enabled());
 
   generator->MoveMouseTo(300, 300);
   generator->ClickLeftButton();
@@ -1522,7 +1516,7 @@ TEST_F(WorkspaceLayoutManagerBackdropTest, SpokenFeedbackForArc) {
   controller->SetClient(client.CreateInterfacePtrAndBind());
 
   controller->SetSpokenFeedbackEnabled(true, A11Y_NOTIFICATION_NONE);
-  EXPECT_TRUE(controller->IsSpokenFeedbackEnabled());
+  EXPECT_TRUE(controller->spoken_feedback_enabled());
 
   aura::test::TestWindowDelegate delegate;
   std::unique_ptr<aura::Window> window_arc(CreateTestWindowInShellWithDelegate(
@@ -1731,9 +1725,6 @@ TEST_F(WorkspaceLayoutManagerKeyboardTest,
 
   // Open keyboard in non-sticky mode.
   kb_controller->ShowKeyboard(false);
-  kb_controller->GetKeyboardWindow()->SetBounds(
-      keyboard::KeyboardBoundsFromRootBounds(
-          Shell::GetPrimaryRootWindow()->bounds(), 100));
 
   // Window should not be shifted up.
   EXPECT_EQ(orig_window_bounds, window->bounds());
@@ -1743,7 +1734,7 @@ TEST_F(WorkspaceLayoutManagerKeyboardTest,
 
   // Open keyboard in sticky mode.
   kb_controller->ShowKeyboard(true);
-  kb_controller->NotifyKeyboardWindowLoaded();
+  ASSERT_TRUE(keyboard::WaitUntilShown());
 
   int shift =
       work_area.height() - kb_controller->GetKeyboardWindow()->bounds().y();
@@ -1873,8 +1864,7 @@ class WorkspaceLayoutManagerSystemUiAreaTest : public AshTestBase {
     base::CommandLine::ForCurrentProcess()->AppendSwitch(
         keyboard::switches::kEnableVirtualKeyboard);
     AshTestBase::SetUp();
-    keyboard::SetTouchKeyboardEnabled(true);
-    Shell::Get()->EnableKeyboard();
+    SetTouchKeyboardEnabled(true);
 
     window_ = CreateTestWindowInShellWithBounds(gfx::Rect(0, 0, 100, 100));
     wm::WindowState* window_state = wm::GetWindowState(window_);
@@ -1884,7 +1874,7 @@ class WorkspaceLayoutManagerSystemUiAreaTest : public AshTestBase {
   }
 
   void TearDown() override {
-    keyboard::SetTouchKeyboardEnabled(false);
+    SetTouchKeyboardEnabled(false);
     AshTestBase::TearDown();
   }
 
@@ -1923,7 +1913,7 @@ TEST_F(WorkspaceLayoutManagerSystemUiAreaTest,
   EXPECT_EQ(0, test_state()->num_system_ui_area_changes());
 
   keyboard_controller->ShowKeyboard(/*lock=*/true);
-  keyboard_controller->NotifyKeyboardWindowLoaded();
+  ASSERT_TRUE(keyboard::WaitUntilShown());
   EXPECT_GE(test_state()->num_system_ui_area_changes(), 1);
   test_state()->reset_num_system_ui_area_changes();
 
@@ -1939,7 +1929,9 @@ TEST_F(WorkspaceLayoutManagerSystemUiAreaTest,
   EXPECT_EQ(0, test_state()->num_system_ui_area_changes());
 
   keyboard_controller->ShowKeyboard(/*lock=*/true);
-  keyboard_controller->NotifyKeyboardWindowLoaded();
+  ASSERT_TRUE(keyboard::WaitUntilShown());
+
+  keyboard_controller->SetKeyboardWindowBounds(gfx::Rect(0, 0, 100, 50));
   EXPECT_GE(test_state()->num_system_ui_area_changes(), 1);
   test_state()->reset_num_system_ui_area_changes();
 
@@ -1955,17 +1947,19 @@ TEST_F(WorkspaceLayoutManagerSystemUiAreaTest,
   EXPECT_EQ(0, test_state()->num_system_ui_area_changes());
 
   keyboard_controller->ShowKeyboard(/*lock=*/true);
-  keyboard_controller->NotifyKeyboardWindowLoaded();
+  ASSERT_TRUE(keyboard::WaitUntilShown());
   EXPECT_GE(test_state()->num_system_ui_area_changes(), 1);
   test_state()->reset_num_system_ui_area_changes();
 
-  keyboard_controller->SetContainerType(keyboard::ContainerType::FLOATING,
-                                        base::nullopt, base::DoNothing());
+  keyboard_controller->SetContainerType(
+      keyboard::mojom::ContainerType::kFloating, base::nullopt,
+      base::DoNothing());
   EXPECT_GE(test_state()->num_system_ui_area_changes(), 1);
   test_state()->reset_num_system_ui_area_changes();
 
-  keyboard_controller->SetContainerType(keyboard::ContainerType::FULL_WIDTH,
-                                        base::nullopt, base::DoNothing());
+  keyboard_controller->SetContainerType(
+      keyboard::mojom::ContainerType::kFullWidth, base::nullopt,
+      base::DoNothing());
   EXPECT_GE(test_state()->num_system_ui_area_changes(), 1);
 }
 

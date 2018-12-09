@@ -12,6 +12,7 @@
 #include "base/stl_util.h"
 #include "base/strings/string16.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/dark_mode_handler.h"
 #include "chrome/browser/ui/webui/md_bookmarks/bookmarks_message_handler.h"
 #include "chrome/browser/ui/webui/metrics_handler.h"
 #include "chrome/browser/ui/webui/plural_string_handler.h"
@@ -127,6 +128,7 @@ content::WebUIDataSource* CreateMdBookmarksUIHTMLSource(Profile* profile) {
                      IDS_MD_BOOKMARK_MANAGER_SIDEBAR_NODE_COLLAPSE_AX_LABEL);
   AddLocalizedString(source, "sidebarNodeExpandAxLabel",
                      IDS_MD_BOOKMARK_MANAGER_SIDEBAR_NODE_EXPAND_AX_LABEL);
+  AddLocalizedString(source, "searchCleared", IDS_SEARCH_CLEARED);
   AddLocalizedString(source, "searchResults", IDS_SEARCH_RESULTS);
   AddLocalizedString(source, "saveEdit", IDS_SAVE);
   AddLocalizedString(source, "title", IDS_MD_BOOKMARK_MANAGER_TITLE);
@@ -224,8 +226,9 @@ content::WebUIDataSource* CreateMdBookmarksUIHTMLSource(Profile* profile) {
 MdBookmarksUI::MdBookmarksUI(content::WebUI* web_ui) : WebUIController(web_ui) {
   // Set up the chrome://bookmarks/ source.
   Profile* profile = Profile::FromWebUI(web_ui);
-  content::WebUIDataSource::Add(profile,
-                                CreateMdBookmarksUIHTMLSource(profile));
+  auto* source = CreateMdBookmarksUIHTMLSource(profile);
+  DarkModeHandler::Initialize(web_ui, source);
+  content::WebUIDataSource::Add(profile, source);
 
   auto plural_string_handler = std::make_unique<PluralStringHandler>();
   plural_string_handler->AddLocalizedString(

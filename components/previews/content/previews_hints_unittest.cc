@@ -4,16 +4,51 @@
 
 #include "components/previews/content/previews_hints.h"
 
+#include <string>
+
+#include "base/command_line.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
-#include "components/optimization_guide/optimization_guide_service_observer.h"
+#include "components/optimization_guide/hints_component_info.h"
 #include "components/optimization_guide/proto/hints.pb.h"
 #include "components/previews/core/previews_features.h"
+#include "components/previews/core/previews_switches.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
 namespace previews {
+
+namespace {
+
+const int kBlackBlacklistBloomFilterNumHashFunctions = 7;
+const int kBlackBlacklistBloomFilterNumBits = 511;
+
+void PopulateBlackBlacklistBloomFilter(BloomFilter* bloom_filter) {
+  bloom_filter->Add("black.com");
+}
+
+void AddBlacklistBloomFilterToConfig(
+    const BloomFilter& blacklist_bloom_filter,
+    int num_hash_functions,
+    int num_bits,
+    optimization_guide::proto::Configuration* config) {
+  std::string blacklist_data((char*)&blacklist_bloom_filter.bytes()[0],
+                             blacklist_bloom_filter.bytes().size());
+  optimization_guide::proto::OptimizationFilter* blacklist_proto =
+      config->add_optimization_blacklists();
+  blacklist_proto->set_optimization_type(
+      optimization_guide::proto::LITE_PAGE_REDIRECT);
+  std::unique_ptr<optimization_guide::proto::BloomFilter> bloom_filter_proto =
+      std::make_unique<optimization_guide::proto::BloomFilter>();
+  bloom_filter_proto->set_num_hash_functions(num_hash_functions);
+  bloom_filter_proto->set_num_bits(num_bits);
+  bloom_filter_proto->set_data(blacklist_data);
+  blacklist_proto->set_allocated_bloom_filter(bloom_filter_proto.release());
+}
+
+}  // namespace
 
 class TestHostFilter : public previews::HostFilter {
  public:
@@ -30,18 +65,18 @@ class TestHostFilter : public previews::HostFilter {
 
 class PreviewsHintsTest : public testing::Test {
  public:
-  explicit PreviewsHintsTest() : previews_hints_(nullptr) {}
+  PreviewsHintsTest() : previews_hints_(nullptr) {}
 
   ~PreviewsHintsTest() override {}
 
   void SetUp() override { ASSERT_TRUE(temp_dir_.CreateUniqueTempDir()); }
 
   void ParseConfig(const optimization_guide::proto::Configuration& config) {
-    optimization_guide::ComponentInfo info(
+    optimization_guide::HintsComponentInfo info(
         base::Version("1.0"),
         temp_dir_.GetPath().Append(FILE_PATH_LITERAL("somefile.pb")));
-    previews_hints_ = PreviewsHints::CreateFromConfig(config, info);
-    previews_hints_->Initialize();
+    ASSERT_NO_FATAL_FAILURE(WriteConfigToFile(config, info.path));
+    previews_hints_ = PreviewsHints::CreateFromHintsComponent(info);
   }
 
   PreviewsHints* previews_hints() { return previews_hints_.get(); }
@@ -51,6 +86,15 @@ class PreviewsHintsTest : public testing::Test {
   }
 
  private:
+  void WriteConfigToFile(const optimization_guide::proto::Configuration& config,
+                         const base::FilePath& filePath) {
+    std::string serialized_config;
+    ASSERT_TRUE(config.SerializeToString(&serialized_config));
+    ASSERT_EQ(static_cast<int32_t>(serialized_config.length()),
+              base::WriteFile(filePath, serialized_config.data(),
+                              serialized_config.length()));
+  }
+
   base::ScopedTempDir temp_dir_;
   std::unique_ptr<PreviewsHints> previews_hints_;
 };
@@ -166,39 +210,20 @@ TEST_F(PreviewsHintsTest, LogHintCacheMatch) {
 }
 
 TEST_F(PreviewsHintsTest, IsBlacklisted) {
-  std::unique_ptr<PreviewsHints> previews_hints =
-      PreviewsHints::CreateForTesting(
-          std::make_unique<TestHostFilter>("black.com"));
-
-  EXPECT_FALSE(previews_hints->IsBlacklisted(GURL("https://black.com/path"),
-                                             PreviewsType::LOFI));
-  EXPECT_TRUE(previews_hints->IsBlacklisted(GURL("https://black.com/path"),
-                                            PreviewsType::LITE_PAGE_REDIRECT));
-  EXPECT_FALSE(previews_hints->IsBlacklisted(GURL("https://nonblack.com"),
-                                             PreviewsType::LITE_PAGE_REDIRECT));
-}
-
-TEST_F(PreviewsHintsTest, IsBlacklistedFromConfig) {
   base::test::ScopedFeatureList scoped_list;
   scoped_list.InitAndEnableFeature(features::kLitePageServerPreviews);
-  BloomFilter blacklist_bloom_filter(7, 511);
-  blacklist_bloom_filter.Add("black.com");
-  std::string blacklist_data((char*)&blacklist_bloom_filter.bytes()[0],
-                             blacklist_bloom_filter.bytes().size());
-  optimization_guide::proto::Configuration config;
-  optimization_guide::proto::OptimizationFilter* blacklist_proto =
-      config.add_optimization_blacklists();
-  blacklist_proto->set_optimization_type(
-      optimization_guide::proto::LITE_PAGE_REDIRECT);
-  std::unique_ptr<optimization_guide::proto::BloomFilter> bloom_filter_proto =
-      std::make_unique<optimization_guide::proto::BloomFilter>();
-  bloom_filter_proto->set_num_hash_functions(7);
-  bloom_filter_proto->set_num_bits(511);
-  bloom_filter_proto->set_data(blacklist_data);
-  blacklist_proto->set_allocated_bloom_filter(bloom_filter_proto.release());
-  ParseConfig(config);
-  EXPECT_TRUE(HasLitePageRedirectBlacklist());
 
+  BloomFilter blacklist_bloom_filter(kBlackBlacklistBloomFilterNumHashFunctions,
+                                     kBlackBlacklistBloomFilterNumBits);
+  PopulateBlackBlacklistBloomFilter(&blacklist_bloom_filter);
+
+  optimization_guide::proto::Configuration config;
+  AddBlacklistBloomFilterToConfig(blacklist_bloom_filter,
+                                  kBlackBlacklistBloomFilterNumHashFunctions,
+                                  kBlackBlacklistBloomFilterNumBits, &config);
+  ParseConfig(config);
+
+  EXPECT_TRUE(HasLitePageRedirectBlacklist());
   EXPECT_FALSE(previews_hints()->IsBlacklisted(GURL("https://black.com/path"),
                                                PreviewsType::LOFI));
   EXPECT_TRUE(previews_hints()->IsBlacklisted(
@@ -209,27 +234,51 @@ TEST_F(PreviewsHintsTest, IsBlacklistedFromConfig) {
       GURL("https://nonblack.com"), PreviewsType::LITE_PAGE_REDIRECT));
 }
 
+TEST_F(PreviewsHintsTest, IgnoreLitePageRedirectBlacklist) {
+  base::test::ScopedFeatureList scoped_list;
+  scoped_list.InitAndEnableFeature(features::kLitePageServerPreviews);
+
+  BloomFilter blacklist_bloom_filter(kBlackBlacklistBloomFilterNumHashFunctions,
+                                     kBlackBlacklistBloomFilterNumBits);
+  PopulateBlackBlacklistBloomFilter(&blacklist_bloom_filter);
+
+  optimization_guide::proto::Configuration config;
+  AddBlacklistBloomFilterToConfig(blacklist_bloom_filter,
+                                  kBlackBlacklistBloomFilterNumHashFunctions,
+                                  kBlackBlacklistBloomFilterNumBits, &config);
+  ParseConfig(config);
+
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kIgnoreLitePageRedirectOptimizationBlacklist);
+
+  EXPECT_FALSE(previews_hints()->IsBlacklisted(GURL("https://black.com/path"),
+                                               PreviewsType::LOFI));
+  EXPECT_FALSE(previews_hints()->IsBlacklisted(
+      GURL("https://black.com/path"), PreviewsType::LITE_PAGE_REDIRECT));
+  EXPECT_FALSE(previews_hints()->IsBlacklisted(
+      GURL("https://joe.black.com/path"), PreviewsType::LITE_PAGE_REDIRECT));
+  EXPECT_FALSE(previews_hints()->IsBlacklisted(
+      GURL("https://nonblack.com"), PreviewsType::LITE_PAGE_REDIRECT));
+}
+
 TEST_F(PreviewsHintsTest, ParseConfigWithInsufficientConfigDetails) {
   base::HistogramTester histogram_tester;
   base::test::ScopedFeatureList scoped_list;
   scoped_list.InitAndEnableFeature(features::kLitePageServerPreviews);
-  BloomFilter blacklist_bloom_filter(7, 511);
-  blacklist_bloom_filter.Add("black.com");
-  std::string blacklist_data((char*)&blacklist_bloom_filter.bytes()[0],
-                             blacklist_bloom_filter.bytes().size());
+
+  BloomFilter blacklist_bloom_filter(kBlackBlacklistBloomFilterNumHashFunctions,
+                                     kBlackBlacklistBloomFilterNumBits);
+  PopulateBlackBlacklistBloomFilter(&blacklist_bloom_filter);
+
+  // Set num_bits in config to one more than the size of the data.
+  int num_bits = blacklist_bloom_filter.bytes().size() * 8 + 1;
+
   optimization_guide::proto::Configuration config;
-  optimization_guide::proto::OptimizationFilter* blacklist_proto =
-      config.add_optimization_blacklists();
-  blacklist_proto->set_optimization_type(
-      optimization_guide::proto::LITE_PAGE_REDIRECT);
-  std::unique_ptr<optimization_guide::proto::BloomFilter> bloom_filter_proto =
-      std::make_unique<optimization_guide::proto::BloomFilter>();
-  bloom_filter_proto->set_num_hash_functions(7);
-  // Set num_bits to one more than the size of the data.
-  bloom_filter_proto->set_num_bits(blacklist_data.size() * 8 + 1);
-  bloom_filter_proto->set_data(blacklist_data);
-  blacklist_proto->set_allocated_bloom_filter(bloom_filter_proto.release());
+  AddBlacklistBloomFilterToConfig(blacklist_bloom_filter,
+                                  kBlackBlacklistBloomFilterNumHashFunctions,
+                                  num_bits, &config);
   ParseConfig(config);
+
   EXPECT_FALSE(HasLitePageRedirectBlacklist());
   histogram_tester.ExpectBucketCount(
       "Previews.OptimizationFilterStatus.LitePageRedirect",
@@ -246,26 +295,22 @@ TEST_F(PreviewsHintsTest, ParseConfigWithTooLargeBlacklist) {
   base::HistogramTester histogram_tester;
   base::test::ScopedFeatureList scoped_list;
   scoped_list.InitAndEnableFeature(features::kLitePageServerPreviews);
+
   int too_many_bits =
       previews::params::LitePageRedirectPreviewMaxServerBlacklistByteSize() *
           8 +
       1;
-  BloomFilter blacklist_bloom_filter(7, too_many_bits);
-  blacklist_bloom_filter.Add("black.com");
-  std::string blacklist_data((char*)&blacklist_bloom_filter.bytes()[0],
-                             blacklist_bloom_filter.bytes().size());
+
+  BloomFilter blacklist_bloom_filter(kBlackBlacklistBloomFilterNumHashFunctions,
+                                     too_many_bits);
+  PopulateBlackBlacklistBloomFilter(&blacklist_bloom_filter);
+
   optimization_guide::proto::Configuration config;
-  optimization_guide::proto::OptimizationFilter* blacklist_proto =
-      config.add_optimization_blacklists();
-  blacklist_proto->set_optimization_type(
-      optimization_guide::proto::LITE_PAGE_REDIRECT);
-  std::unique_ptr<optimization_guide::proto::BloomFilter> bloom_filter_proto =
-      std::make_unique<optimization_guide::proto::BloomFilter>();
-  bloom_filter_proto->set_num_hash_functions(7);
-  bloom_filter_proto->set_num_bits(too_many_bits);
-  bloom_filter_proto->set_data(blacklist_data);
-  blacklist_proto->set_allocated_bloom_filter(bloom_filter_proto.release());
+  AddBlacklistBloomFilterToConfig(blacklist_bloom_filter,
+                                  kBlackBlacklistBloomFilterNumHashFunctions,
+                                  too_many_bits, &config);
   ParseConfig(config);
+
   EXPECT_FALSE(HasLitePageRedirectBlacklist());
   histogram_tester.ExpectBucketCount(
       "Previews.OptimizationFilterStatus.LitePageRedirect",

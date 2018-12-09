@@ -38,6 +38,8 @@ class CORE_EXPORT HTMLTextAreaElement final : public TextControlElement {
  public:
   static HTMLTextAreaElement* Create(Document&);
 
+  explicit HTMLTextAreaElement(Document&);
+
   unsigned cols() const { return cols_; }
   unsigned rows() const { return rows_; }
 
@@ -66,7 +68,6 @@ class CORE_EXPORT HTMLTextAreaElement final : public TextControlElement {
 
  private:
   FRIEND_TEST_ALL_PREFIXES(HTMLTextAreaElementTest, SanitizeUserInputValue);
-  explicit HTMLTextAreaElement(Document&);
 
   enum WrapMethod { kNoWrap, kSoftWrap, kHardWrap };
 
@@ -102,7 +103,7 @@ class CORE_EXPORT HTMLTextAreaElement final : public TextControlElement {
   bool IsEnumeratable() const override { return true; }
   bool IsInteractiveContent() const override;
   bool SupportsAutofocus() const override;
-  bool SupportLabels() const override { return true; }
+  bool IsLabelable() const override { return true; }
 
   const AtomicString& FormControlType() const override;
 

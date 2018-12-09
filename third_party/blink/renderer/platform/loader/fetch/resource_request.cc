@@ -58,6 +58,7 @@ ResourceRequest::ResourceRequest(const KURL& url)
       keepalive_(false),
       should_reset_app_cache_(false),
       allow_stale_response_(false),
+      stale_revalidate_candidate_(false),
       cache_mode_(mojom::FetchCacheMode::kDefault),
       skip_service_worker_(false),
       download_to_cache_only_(false),
@@ -69,17 +70,17 @@ ResourceRequest::ResourceRequest(const KURL& url)
       previews_state_(WebURLRequest::kPreviewsUnspecified),
       request_context_(mojom::RequestContextType::UNSPECIFIED),
       frame_type_(network::mojom::RequestContextFrameType::kNone),
-      fetch_request_mode_(network::mojom::FetchRequestMode::kNoCORS),
+      fetch_request_mode_(network::mojom::FetchRequestMode::kNoCors),
       fetch_importance_mode_(mojom::FetchImportanceMode::kImportanceAuto),
       fetch_credentials_mode_(network::mojom::FetchCredentialsMode::kInclude),
       fetch_redirect_mode_(network::mojom::FetchRedirectMode::kFollow),
       referrer_string_(Referrer::ClientReferrerString()),
-      referrer_policy_(kReferrerPolicyDefault),
+      referrer_policy_(network::mojom::ReferrerPolicy::kDefault),
       did_set_http_referrer_(false),
       was_discarded_(false),
       is_external_request_(false),
       cors_preflight_policy_(
-          network::mojom::CORSPreflightPolicy::kConsiderPreflight),
+          network::mojom::CorsPreflightPolicy::kConsiderPreflight),
       redirect_status_(RedirectStatus::kNoRedirect) {}
 
 ResourceRequest::ResourceRequest(const ResourceRequest&) = default;
@@ -92,20 +93,21 @@ std::unique_ptr<ResourceRequest> ResourceRequest::CreateRedirectRequest(
     const KURL& new_url,
     const AtomicString& new_method,
     const KURL& new_site_for_cookies,
+    scoped_refptr<const SecurityOrigin> new_top_frame_origin,
     const String& new_referrer,
-    ReferrerPolicy new_referrer_policy,
+    network::mojom::ReferrerPolicy new_referrer_policy,
     bool skip_service_worker) const {
   std::unique_ptr<ResourceRequest> request =
       std::make_unique<ResourceRequest>(new_url);
   request->SetRequestorOrigin(RequestorOrigin());
   request->SetHTTPMethod(new_method);
   request->SetSiteForCookies(new_site_for_cookies);
+  request->SetTopFrameOrigin(std::move(new_top_frame_origin));
   String referrer =
       new_referrer.IsEmpty() ? Referrer::NoReferrer() : String(new_referrer);
   // TODO(domfarolino): Stop storing ResourceRequest's generated referrer as a
   // header and instead use a separate member. See https://crbug.com/850813.
-  request->SetHTTPReferrer(
-      Referrer(referrer, static_cast<ReferrerPolicy>(new_referrer_policy)));
+  request->SetHTTPReferrer(Referrer(referrer, new_referrer_policy));
   request->SetSkipServiceWorker(skip_service_worker);
   request->SetRedirectStatus(RedirectStatus::kFollowedRedirect);
 
@@ -123,13 +125,14 @@ std::unique_ptr<ResourceRequest> ResourceRequest::CreateRedirectRequest(
   if (request->HttpMethod() == HttpMethod())
     request->SetHTTPBody(HttpBody());
   request->SetWasDiscarded(WasDiscarded());
-  request->SetCORSPreflightPolicy(CORSPreflightPolicy());
+  request->SetCorsPreflightPolicy(CorsPreflightPolicy());
   if (IsAdResource())
     request->SetIsAdResource();
   request->SetInitiatorCSP(GetInitiatorCSP());
   request->SetUpgradeIfInsecure(UpgradeIfInsecure());
   request->SetIsAutomaticUpgrade(IsAutomaticUpgrade());
-  request->SetRequestedWith(GetRequestedWith());
+  request->SetRequestedWithHeader(GetRequestedWithHeader());
+  request->SetClientDataHeader(GetClientDataHeader());
   request->SetUkmSourceId(GetUkmSourceId());
 
   return request;
@@ -180,6 +183,15 @@ void ResourceRequest::SetSiteForCookies(const KURL& site_for_cookies) {
   site_for_cookies_ = site_for_cookies;
 }
 
+const SecurityOrigin* ResourceRequest::TopFrameOrigin() const {
+  return top_frame_origin_.get();
+}
+
+void ResourceRequest::SetTopFrameOrigin(
+    scoped_refptr<const SecurityOrigin> origin) {
+  top_frame_origin_ = std::move(origin);
+}
+
 const AtomicString& ResourceRequest::HttpMethod() const {
   return http_method_;
 }
@@ -213,7 +225,7 @@ void ResourceRequest::SetHTTPReferrer(const Referrer& referrer) {
 
 void ResourceRequest::ClearHTTPReferrer() {
   http_header_fields_.Remove(http_names::kReferer);
-  referrer_policy_ = kReferrerPolicyDefault;
+  referrer_policy_ = network::mojom::ReferrerPolicy::kDefault;
   did_set_http_referrer_ = false;
 }
 

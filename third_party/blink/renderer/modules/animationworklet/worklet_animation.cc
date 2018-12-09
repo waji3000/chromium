@@ -11,6 +11,7 @@
 #include "third_party/blink/renderer/core/animation/element_animations.h"
 #include "third_party/blink/renderer/core/animation/keyframe_effect_model.h"
 #include "third_party/blink/renderer/core/animation/scroll_timeline.h"
+#include "third_party/blink/renderer/core/animation/scroll_timeline_util.h"
 #include "third_party/blink/renderer/core/animation/timing.h"
 #include "third_party/blink/renderer/core/animation/worklet_animation_controller.h"
 #include "third_party/blink/renderer/core/dom/node.h"
@@ -121,91 +122,6 @@ bool CheckElementComposited(const Node& target) {
              kPaintsIntoOwnBacking;
 }
 
-base::Optional<CompositorElementId> GetCompositorScrollElementId(
-    const Node& node) {
-  if (!node.GetLayoutObject() || !node.GetLayoutObject()->UniqueId())
-    return base::nullopt;
-  return CompositorElementIdFromUniqueObjectId(
-      node.GetLayoutObject()->UniqueId(),
-      CompositorElementIdNamespace::kScroll);
-}
-
-// Convert the blink concept of a ScrollTimeline orientation into the cc one.
-//
-// The compositor does not know about writing modes, so we have to convert the
-// web concepts of 'block' and 'inline' direction into absolute vertical or
-// horizontal directions.
-//
-// TODO(smcgruer): If the writing mode of a scroller changes, we have to update
-// any related cc::ScrollTimeline somehow.
-CompositorScrollTimeline::ScrollDirection ConvertOrientation(
-    ScrollTimeline::ScrollDirection orientation,
-    bool is_horizontal_writing_mode) {
-  switch (orientation) {
-    case ScrollTimeline::Block:
-      return is_horizontal_writing_mode ? CompositorScrollTimeline::Vertical
-                                        : CompositorScrollTimeline::Horizontal;
-    case ScrollTimeline::Inline:
-      return is_horizontal_writing_mode ? CompositorScrollTimeline::Horizontal
-                                        : CompositorScrollTimeline::Vertical;
-    case ScrollTimeline::Horizontal:
-      return CompositorScrollTimeline::Horizontal;
-    case ScrollTimeline::Vertical:
-      return CompositorScrollTimeline::Vertical;
-    default:
-      NOTREACHED();
-      return CompositorScrollTimeline::Vertical;
-  }
-}
-
-// Converts a blink::ScrollTimeline into a cc::ScrollTimeline.
-//
-// If the timeline cannot be converted, returns nullptr.
-std::unique_ptr<CompositorScrollTimeline> ToCompositorScrollTimeline(
-    AnimationTimeline* timeline) {
-  if (!timeline || timeline->IsDocumentTimeline())
-    return nullptr;
-
-  ScrollTimeline* scroll_timeline = ToScrollTimeline(timeline);
-  Node* scroll_source = scroll_timeline->ResolvedScrollSource();
-  base::Optional<CompositorElementId> element_id =
-      GetCompositorScrollElementId(*scroll_source);
-
-  DoubleOrScrollTimelineAutoKeyword time_range;
-  scroll_timeline->timeRange(time_range);
-  // TODO(smcgruer): Handle 'auto' time range value.
-  DCHECK(time_range.IsDouble());
-
-  // TODO(smcgruer): If the scroll source later gets a LayoutBox (e.g. was
-  // display:none and now isn't), we need to update the compositor to have the
-  // correct orientation and start/end offset information.
-  LayoutBox* box = scroll_source->GetLayoutBox();
-
-  CompositorScrollTimeline::ScrollDirection orientation =
-      ConvertOrientation(scroll_timeline->GetOrientation(),
-                         box ? box->IsHorizontalWritingMode() : true);
-
-  base::Optional<double> start_scroll_offset;
-  base::Optional<double> end_scroll_offset;
-  if (box) {
-    double current_offset;
-    double max_offset;
-    scroll_timeline->GetCurrentAndMaxOffset(box, current_offset, max_offset);
-
-    double resolved_start_scroll_offset = 0;
-    double resolved_end_scroll_offset = max_offset;
-    scroll_timeline->ResolveScrollStartAndEnd(box, max_offset,
-                                              resolved_start_scroll_offset,
-                                              resolved_end_scroll_offset);
-    start_scroll_offset = resolved_start_scroll_offset;
-    end_scroll_offset = resolved_end_scroll_offset;
-  }
-
-  return std::make_unique<CompositorScrollTimeline>(
-      element_id, orientation, start_scroll_offset, end_scroll_offset,
-      time_range.GetAsDouble());
-}
-
 void StartEffectOnCompositor(CompositorAnimation* animation,
                              KeyframeEffect* effect) {
   DCHECK(effect);
@@ -280,9 +196,9 @@ WorkletAnimation* WorkletAnimation::Create(
   AnimationTimeline* animation_timeline =
       ConvertAnimationTimeline(document, timeline);
 
-  WorkletAnimation* animation =
-      new WorkletAnimation(id, animator_name, document, keyframe_effects,
-                           animation_timeline, std::move(options));
+  WorkletAnimation* animation = MakeGarbageCollected<WorkletAnimation>(
+      id, animator_name, document, keyframe_effects, animation_timeline,
+      std::move(options));
 
   return animation;
 }
@@ -404,11 +320,12 @@ void WorkletAnimation::Update(TimingUpdateReason reason) {
   if (play_state_ != Animation::kRunning)
     return;
 
-  if (!start_time_)
+  // ScrollTimeline animation doesn't require start_time_ to be set.
+  if (!start_time_ && !timeline_->IsScrollTimeline())
     return;
 
   DCHECK_EQ(effects_.size(), local_times_.size());
-  for (size_t i = 0; i < effects_.size(); ++i) {
+  for (wtf_size_t i = 0; i < effects_.size(); ++i) {
     effects_[i]->UpdateInheritedTime(
         local_times_[i] ? local_times_[i]->InSecondsF() : NullValue(), reason);
   }
@@ -503,8 +420,13 @@ bool WorkletAnimation::StartOnCompositor() {
     return false;
 
   if (!compositor_animation_) {
+    // TODO(smcgruer): If the scroll source later gets a LayoutBox (e.g. was
+    // display:none and now isn't) or the writing mode changes, we need to
+    // update the compositor to have the correct orientation and start/end
+    // offset information.
     compositor_animation_ = CompositorAnimation::CreateWorkletAnimation(
-        id_, animator_name_, ToCompositorScrollTimeline(timeline_),
+        id_, animator_name_,
+        scroll_timeline_util::ToCompositorScrollTimeline(timeline_),
         std::move(options_));
     compositor_animation_->SetAnimationDelegate(this);
   }
@@ -542,7 +464,7 @@ void WorkletAnimation::UpdateOnCompositor() {
 
   if (timeline_->IsScrollTimeline()) {
     Node* scroll_source = ToScrollTimeline(timeline_)->ResolvedScrollSource();
-    LayoutBox* box = scroll_source->GetLayoutBox();
+    LayoutBox* box = scroll_source ? scroll_source->GetLayoutBox() : nullptr;
 
     base::Optional<double> start_scroll_offset;
     base::Optional<double> end_scroll_offset;
@@ -561,8 +483,8 @@ void WorkletAnimation::UpdateOnCompositor() {
       end_scroll_offset = resolved_end_scroll_offset;
     }
     compositor_animation_->UpdateScrollTimeline(
-        GetCompositorScrollElementId(*scroll_source), start_scroll_offset,
-        end_scroll_offset);
+        scroll_timeline_util::GetCompositorScrollElementId(scroll_source),
+        start_scroll_offset, end_scroll_offset);
   }
 }
 
@@ -589,6 +511,17 @@ bool WorkletAnimation::IsActiveAnimation() const {
   return IsActive(play_state_);
 }
 
+base::Optional<double> WorkletAnimation::CurrentTime() const {
+  bool is_null;
+  double timeline_time = timeline_->currentTime(is_null);
+  if (is_null)
+    return base::nullopt;
+  if (timeline_->IsScrollTimeline())
+    return timeline_time;
+  DCHECK(start_time_);
+  return timeline_time - start_time_->InSecondsF();
+}
+
 void WorkletAnimation::UpdateInputState(
     AnimationWorkletDispatcherInput* input_state) {
   if (!running_on_main_thread_) {
@@ -599,15 +532,18 @@ void WorkletAnimation::UpdateInputState(
   bool was_active = IsActive(last_play_state_);
   bool is_active = IsActive(play_state_);
 
-  DCHECK(start_time_);
+  // ScrollTimeline animation doesn't require start_time_ to be set.
+  DCHECK(start_time_ || timeline_->IsScrollTimeline());
   DCHECK(last_current_time_ || !was_active);
-  bool is_null;
-  double current_time = timeline_->currentTime(is_null);
+  double current_time =
+      CurrentTime().value_or(std::numeric_limits<double>::quiet_NaN());
 
   bool did_time_change =
       !last_current_time_ || current_time != last_current_time_->InSecondsF();
+  // TODO(yigu): If current_time becomes newly unresolved and last_current_time_
+  // is resolved, we apply the last current time to the animation if the scroll
+  // timeline becomes newly inactive. See https://crbug.com/906050.
   last_current_time_ = base::TimeDelta::FromSecondsD(current_time);
-
   if (!was_active && is_active) {
     input_state->Add(
         {id_,
@@ -631,7 +567,7 @@ void WorkletAnimation::SetOutputState(
   // peeking state.local_times will be empty.
   DCHECK(local_times_.size() == state.local_times.size() ||
          !running_on_main_thread_);
-  for (size_t i = 0; i < state.local_times.size(); ++i)
+  for (wtf_size_t i = 0; i < state.local_times.size(); ++i)
     local_times_[i] = state.local_times[i];
 }
 

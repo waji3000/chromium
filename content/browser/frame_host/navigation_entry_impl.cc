@@ -25,7 +25,6 @@
 #include "content/common/navigation_params.h"
 #include "content/common/page_state_serialization.h"
 #include "content/public/browser/reload_type.h"
-#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/url_constants.h"
 #include "ui/gfx/text_elider.h"
@@ -71,6 +70,9 @@ void RecursivelyGenerateFrameEntries(
       UTF16ToUTF8(state.target.value_or(base::string16())),
       state.item_sequence_number, state.document_sequence_number, nullptr,
       nullptr, GURL(state.url_string.value_or(base::string16())),
+      // TODO(nasko): Supply valid origin once the value is persisted across
+      // session restore.
+      nullptr /* origin */,
       Referrer(GURL(state.referrer.value_or(base::string16())),
                state.referrer_policy),
       std::vector<GURL>(), PageState::CreateFromEncodedData(data), "GET", -1,
@@ -265,6 +267,7 @@ NavigationEntryImpl::NavigationEntryImpl(
                                    std::move(instance),
                                    nullptr,
                                    url,
+                                   nullptr /* origin */,
                                    referrer,
                                    std::vector<GURL>(),
                                    PageState(),
@@ -688,13 +691,16 @@ CommonNavigationParams NavigationEntryImpl::ConstructCommonNavigationParams(
     PreviewsState previews_state,
     base::TimeTicks navigation_start,
     base::TimeTicks input_start) const {
+  NavigationDownloadPolicy download_policy =
+      IsViewSourceMode() ? NavigationDownloadPolicy::kDisallowViewSource
+                         : NavigationDownloadPolicy::kAllow;
   return CommonNavigationParams(
       dest_url, dest_referrer, GetTransitionType(), navigation_type,
-      !IsViewSourceMode(), should_replace_entry(), GetBaseURLForDataURL(),
+      download_policy, should_replace_entry(), GetBaseURLForDataURL(),
       GetHistoryURLForDataURL(), previews_state, navigation_start,
       frame_entry.method(), post_body ? post_body : post_data_,
       base::Optional<SourceLocation>(), has_started_from_context_menu(),
-      has_user_gesture(), InitiatorCSPInfo(), input_start);
+      has_user_gesture(), InitiatorCSPInfo(), std::string(), input_start);
 }
 
 RequestNavigationParams NavigationEntryImpl::ConstructRequestNavigationParams(
@@ -784,6 +790,7 @@ void NavigationEntryImpl::AddOrUpdateFrameEntry(
     SiteInstanceImpl* site_instance,
     scoped_refptr<SiteInstanceImpl> source_site_instance,
     const GURL& url,
+    const url::Origin& origin,
     const Referrer& referrer,
     const std::vector<GURL>& redirect_chain,
     const PageState& page_state,
@@ -802,7 +809,7 @@ void NavigationEntryImpl::AddOrUpdateFrameEntry(
     root_node()->frame_entry->UpdateEntry(
         frame_tree_node->unique_name(), item_sequence_number,
         document_sequence_number, site_instance,
-        std::move(source_site_instance), url, referrer, redirect_chain,
+        std::move(source_site_instance), url, origin, referrer, redirect_chain,
         page_state, method, post_id, std::move(blob_url_loader_factory));
     return;
   }
@@ -830,7 +837,7 @@ void NavigationEntryImpl::AddOrUpdateFrameEntry(
       // Update the existing FrameNavigationEntry (e.g., for replaceState).
       child->frame_entry->UpdateEntry(
           unique_name, item_sequence_number, document_sequence_number,
-          site_instance, std::move(source_site_instance), url, referrer,
+          site_instance, std::move(source_site_instance), url, origin, referrer,
           redirect_chain, page_state, method, post_id,
           std::move(blob_url_loader_factory));
       return;
@@ -842,7 +849,7 @@ void NavigationEntryImpl::AddOrUpdateFrameEntry(
   // or unique name.
   FrameNavigationEntry* frame_entry = new FrameNavigationEntry(
       unique_name, item_sequence_number, document_sequence_number,
-      site_instance, std::move(source_site_instance), url, referrer,
+      site_instance, std::move(source_site_instance), url, &origin, referrer,
       redirect_chain, page_state, method, post_id,
       std::move(blob_url_loader_factory));
   parent_node->children.push_back(

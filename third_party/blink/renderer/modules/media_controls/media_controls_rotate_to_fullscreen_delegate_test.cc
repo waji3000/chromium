@@ -74,7 +74,9 @@ class MockChromeClient : public EmptyChromeClient {
 
 class StubLocalFrameClient : public EmptyLocalFrameClient {
  public:
-  static StubLocalFrameClient* Create() { return new StubLocalFrameClient; }
+  static StubLocalFrameClient* Create() {
+    return MakeGarbageCollected<StubLocalFrameClient>();
+  }
 
   std::unique_ptr<WebMediaPlayer> CreateWebMediaPlayer(
       HTMLMediaElement&,
@@ -101,7 +103,7 @@ class MediaControlsRotateToFullscreenDelegateTest
       MediaControlsRotateToFullscreenDelegate::SimpleOrientation;
 
   void SetUp() override {
-    chrome_client_ = new MockChromeClient();
+    chrome_client_ = MakeGarbageCollected<MockChromeClient>();
 
     Page::PageClients clients;
     FillWithEmptyClients(clients);
@@ -161,7 +163,7 @@ class MediaControlsRotateToFullscreenDelegateTest
 
   void UpdateVisibilityObserver() {
     // Let IntersectionObserver update.
-    GetDocument().View()->UpdateAllLifecyclePhases();
+    UpdateAllLifecyclePhasesForTest();
     test::RunPendingTasks();
   }
 
@@ -315,7 +317,7 @@ TEST_F(MediaControlsRotateToFullscreenDelegateTest,
   EXPECT_FALSE(ObservedVisibility());
 
   // Should have observed visibility once compositor updates.
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   test::RunPendingTasks();
   EXPECT_TRUE(ObservedVisibility());
 
@@ -336,7 +338,7 @@ TEST_F(MediaControlsRotateToFullscreenDelegateTest,
   EXPECT_FALSE(ObservedVisibility());
 
   // Should have observed visibility once compositor updates.
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   test::RunPendingTasks();
   EXPECT_TRUE(ObservedVisibility());
 }

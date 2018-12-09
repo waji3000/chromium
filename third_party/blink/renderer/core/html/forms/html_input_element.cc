@@ -34,8 +34,8 @@
 #include "third_party/blink/public/platform/web_scroll_into_view_params.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_event_listener.h"
 #include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
+#include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
-#include "third_party/blink/renderer/core/css_property_names.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/events/scoped_event_queue.h"
 #include "third_party/blink/renderer/core/dom/id_target_observer.h"
@@ -84,12 +84,13 @@ class ListAttributeTargetObserver : public IdTargetObserver {
  public:
   static ListAttributeTargetObserver* Create(const AtomicString& id,
                                              HTMLInputElement*);
+
+  ListAttributeTargetObserver(const AtomicString& id, HTMLInputElement*);
+
   void Trace(blink::Visitor*) override;
   void IdTargetChanged() override;
 
  private:
-  ListAttributeTargetObserver(const AtomicString& id, HTMLInputElement*);
-
   Member<HTMLInputElement> element_;
 };
 
@@ -125,7 +126,7 @@ HTMLInputElement::HTMLInputElement(Document& document,
 
 HTMLInputElement* HTMLInputElement::Create(Document& document,
                                            const CreateElementFlags flags) {
-  auto* input_element = new HTMLInputElement(document, flags);
+  auto* input_element = MakeGarbageCollected<HTMLInputElement>(document, flags);
   if (!flags.IsCreatedByParser()) {
     DCHECK(input_element->input_type_view_->NeedsShadowSubtree());
     input_element->CreateUserAgentShadowRoot();
@@ -164,7 +165,7 @@ const AtomicString& HTMLInputElement::GetName() const {
   return name_.IsNull() ? g_empty_atom : name_;
 }
 
-FileChooserFileInfoList HTMLInputElement::FilesFromFileInputFormControlState(
+Vector<String> HTMLInputElement::FilesFromFileInputFormControlState(
     const FormControlState& state) {
   return FileInputType::FilesFromFormControlState(state);
 }
@@ -384,7 +385,7 @@ void HTMLInputElement::InitializeTypeInParsing() {
     CreateShadowSubtree();
   }
 
-  SetNeedsWillValidateCheck();
+  UpdateWillValidateCache();
 
   if (!default_value.IsNull())
     input_type_->WarnIfValueIsInvalid(default_value);
@@ -443,7 +444,7 @@ void HTMLInputElement::UpdateType() {
     CreateShadowSubtree();
   }
 
-  SetNeedsWillValidateCheck();
+  UpdateWillValidateCache();
 
   if (placeholder_changed) {
     // We need to update the UA shadow and then the placeholder visibility flag
@@ -788,10 +789,11 @@ void HTMLInputElement::ParseAttribute(
       size = kDefaultSize;
     if (size_ != size) {
       size_ = size;
-      if (GetLayoutObject())
+      if (GetLayoutObject()) {
         GetLayoutObject()
             ->SetNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(
-                LayoutInvalidationReason::kAttributeChanged);
+                layout_invalidation_reason::kAttributeChanged);
+      }
     }
   } else if (name == kAltAttr) {
     input_type_view_->AltAttributeChanged();
@@ -1699,7 +1701,7 @@ bool HTMLInputElement::IsEnumeratable() const {
   return input_type_->IsEnumeratable();
 }
 
-bool HTMLInputElement::SupportLabels() const {
+bool HTMLInputElement::IsLabelable() const {
   return input_type_->IsInteractiveContent();
 }
 
@@ -1798,7 +1800,7 @@ void HTMLInputElement::setWidth(unsigned width) {
 ListAttributeTargetObserver* ListAttributeTargetObserver::Create(
     const AtomicString& id,
     HTMLInputElement* element) {
-  return new ListAttributeTargetObserver(id, element);
+  return MakeGarbageCollected<ListAttributeTargetObserver>(id, element);
 }
 
 ListAttributeTargetObserver::ListAttributeTargetObserver(

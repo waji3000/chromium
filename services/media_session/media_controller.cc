@@ -45,10 +45,11 @@ void MediaController::ToggleSuspendResume() {
 void MediaController::AddObserver(mojom::MediaSessionObserverPtr observer) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  // Flush the new observer with the latest session info. If there is no info
-  // then we will update |observer| when |MediaSessionInfoChanged| is called.
+  // Flush the new observer with the state. We always flush the metadata as that
+  // is optional so null is a valid value whereas the session info is required.
   if (!session_info_.is_null())
     observer->MediaSessionInfoChanged(session_info_.Clone());
+  observer->MediaSessionMetadataChanged(session_metadata_);
 
   observers_.AddPtr(std::move(observer));
 }
@@ -61,6 +62,17 @@ void MediaController::MediaSessionInfoChanged(mojom::MediaSessionInfoPtr info) {
   });
 
   session_info_ = std::move(info);
+}
+
+void MediaController::MediaSessionMetadataChanged(
+    const base::Optional<MediaMetadata>& metadata) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  observers_.ForAllPtrs([&metadata](mojom::MediaSessionObserver* observer) {
+    observer->MediaSessionMetadataChanged(metadata);
+  });
+
+  session_metadata_ = metadata;
 }
 
 void MediaController::PreviousTrack() {
@@ -77,20 +89,33 @@ void MediaController::NextTrack() {
     session_->NextTrack();
 }
 
-void MediaController::SetMediaSession(mojom::MediaSession* session) {
+void MediaController::Seek(base::TimeDelta seek_time) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  if (session == nullptr) {
+  if (session_)
+    session_->Seek(seek_time);
+}
+
+bool MediaController::SetMediaSession(mojom::MediaSession* session) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  bool changed = session != session_;
+
+  if (changed) {
     session_binding_.Close();
-  } else if (session_ != session) {
-    // Add |this| as an observer for |session|.
-    session_binding_.Close();
-    mojom::MediaSessionObserverPtr observer;
-    session_binding_.Bind(mojo::MakeRequest(&observer));
-    session->AddObserver(std::move(observer));
+    session_info_.reset();
+    session_metadata_.reset();
+
+    if (session) {
+      // Add |this| as an observer for |session|.
+      mojom::MediaSessionObserverPtr observer;
+      session_binding_.Bind(mojo::MakeRequest(&observer));
+      session->AddObserver(std::move(observer));
+    }
   }
 
   session_ = session;
+  return changed;
 }
 
 void MediaController::BindToInterface(mojom::MediaControllerRequest request) {

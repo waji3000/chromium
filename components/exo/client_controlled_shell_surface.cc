@@ -10,9 +10,11 @@
 #include "ash/frame/header_view.h"
 #include "ash/frame/non_client_frame_view_ash.h"
 #include "ash/frame/wide_frame_view.h"
+#include "ash/public/cpp/ash_features.h"
 #include "ash/public/cpp/caption_buttons/caption_button_model.h"
 #include "ash/public/cpp/default_frame_header.h"
 #include "ash/public/cpp/immersive/immersive_fullscreen_controller.h"
+#include "ash/public/cpp/rounded_corner_decorator.h"
 #include "ash/public/cpp/shell_window_ids.h"
 #include "ash/public/cpp/window_properties.h"
 #include "ash/public/cpp/window_state_type.h"
@@ -201,14 +203,14 @@ class CaptionButtonModel : public ash::CaptionButtonModel {
         enabled_button_mask_(enabled_button_mask) {}
 
   // Overridden from ash::CaptionButtonModel:
-  bool IsVisible(ash::CaptionButtonIcon icon) const override {
+  bool IsVisible(views::CaptionButtonIcon icon) const override {
     return visible_button_mask_ & (1 << icon);
   }
-  bool IsEnabled(ash::CaptionButtonIcon icon) const override {
+  bool IsEnabled(views::CaptionButtonIcon icon) const override {
     return enabled_button_mask_ & (1 << icon);
   }
   bool InZoomMode() const override {
-    return visible_button_mask_ & (1 << ash::CAPTION_BUTTON_ICON_ZOOM);
+    return visible_button_mask_ & (1 << views::CAPTION_BUTTON_ICON_ZOOM);
   }
 
  private:
@@ -909,16 +911,13 @@ bool ClientControlledShellSurface::OnPreWidgetCommit() {
 
   // PIP windows should not be able to be active.
   if (pending_window_state_ == ash::mojom::WindowStateType::PIP) {
-    auto* window = widget_->GetNativeWindow();
-    if (wm::IsActiveWindow(window)) {
-      // In the case that a window changed state into PIP while activated,
-      // make sure to deactivate it now.
-      wm::DeactivateWindow(window);
+    if (ash::features::IsPipRoundedCornersEnabled()) {
+      decorator_ = std::make_unique<ash::RoundedCornerDecorator>(
+          window_state->window(), host_window(), host_window()->layer(),
+          ash::kPipRoundedCornerRadius);
     }
-
-    widget_->widget_delegate()->set_can_activate(false);
   } else {
-    widget_->widget_delegate()->set_can_activate(true);
+    decorator_.reset();  // Remove rounded corners.
   }
 
   if (client_controlled_state_->EnterNextState(window_state,

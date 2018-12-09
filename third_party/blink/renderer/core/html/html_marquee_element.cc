@@ -33,9 +33,9 @@
 #include "third_party/blink/renderer/core/animation/optional_effect_timing.h"
 #include "third_party/blink/renderer/core/animation/string_keyframe.h"
 #include "third_party/blink/renderer/core/animation/timing_input.h"
+#include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/css/css_property_value_set.h"
 #include "third_party/blink/renderer/core/css/css_style_declaration.h"
-#include "third_party/blink/renderer/core/css_property_names.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/events/event_listener.h"
 #include "third_party/blink/renderer/core/dom/frame_request_callback_collection.h"
@@ -57,7 +57,8 @@ inline HTMLMarqueeElement::HTMLMarqueeElement(Document& document)
 }
 
 HTMLMarqueeElement* HTMLMarqueeElement::Create(Document& document) {
-  HTMLMarqueeElement* marquee_element = new HTMLMarqueeElement(document);
+  HTMLMarqueeElement* marquee_element =
+      MakeGarbageCollected<HTMLMarqueeElement>(document);
   marquee_element->EnsureUserAgentShadowRoot();
   return marquee_element;
 }
@@ -111,7 +112,7 @@ class HTMLMarqueeElement::AnimationFinished final : public EventListener {
     return this == &that;
   }
 
-  void handleEvent(ExecutionContext*, Event*) override {
+  void Invoke(ExecutionContext*, Event*) override {
     ++marquee_->loop_count_;
     marquee_->start();
   }
@@ -201,7 +202,7 @@ void HTMLMarqueeElement::start() {
     return;
 
   RequestAnimationFrameCallback* callback =
-      new RequestAnimationFrameCallback(this);
+      MakeGarbageCollected<RequestAnimationFrameCallback>(this);
   continue_callback_request_id_ = GetDocument().RequestAnimationFrame(callback);
 }
 
@@ -310,7 +311,7 @@ void HTMLMarqueeElement::ContinueAnimation() {
       KeyframeEffect::Create(mover_, effect_model, timing);
   Animation* player = mover_->GetDocument().Timeline().Play(keyframe_effect);
   player->setId(g_empty_string);
-  player->setOnfinish(new AnimationFinished(this));
+  player->setOnfinish(MakeGarbageCollected<AnimationFinished>(this));
 
   player_ = player;
 }

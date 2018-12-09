@@ -24,8 +24,8 @@ namespace net {
 class CanonicalCookie;
 }
 
-namespace policy {
-class TempCertsCacheNSS;
+namespace network {
+class NSSTempCertsCacheChromeOS;
 }
 
 namespace chromeos {
@@ -152,8 +152,10 @@ class GaiaScreenHandler : public BaseScreenHandler,
                                        const std::string& typed_email,
                                        const std::string& gaia_id);
   void HandleUpdateSigninUIState(int state);
-  void HandleShowGuestForGaiaScreen(bool allow_guest_login,
-                                    bool can_show_for_gaia);
+
+  // Allows WebUI to control the login shelf's guest button visibility during
+  // OOBE.
+  void HandleShowGuestInOobe(bool show);
 
   void OnShowAddUser();
 
@@ -302,7 +304,8 @@ class GaiaScreenHandler : public BaseScreenHandler,
 
   // Makes untrusted authority certificates from device policy available for
   // client certificate discovery.
-  std::unique_ptr<policy::TempCertsCacheNSS> untrusted_authority_certs_cache_;
+  std::unique_ptr<network::NSSTempCertsCacheChromeOS>
+      untrusted_authority_certs_cache_;
 
   base::WeakPtrFactory<GaiaScreenHandler> weak_factory_;
 

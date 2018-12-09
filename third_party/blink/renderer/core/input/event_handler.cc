@@ -153,20 +153,24 @@ EventHandler::EventHandler(LocalFrame& frame)
       should_only_fire_drag_over_event_(false),
       event_handler_registry_(
           frame_->IsLocalRoot()
-              ? new EventHandlerRegistry(*frame_)
+              ? MakeGarbageCollected<EventHandlerRegistry>(*frame_)
               : &frame_->LocalFrameRoot().GetEventHandlerRegistry()),
-      scroll_manager_(new ScrollManager(frame)),
-      mouse_event_manager_(new MouseEventManager(frame, *scroll_manager_)),
-      mouse_wheel_event_manager_(new MouseWheelEventManager(frame)),
+      scroll_manager_(MakeGarbageCollected<ScrollManager>(frame)),
+      mouse_event_manager_(
+          MakeGarbageCollected<MouseEventManager>(frame, *scroll_manager_)),
+      mouse_wheel_event_manager_(
+          MakeGarbageCollected<MouseWheelEventManager>(frame)),
       keyboard_event_manager_(
-          new KeyboardEventManager(frame, *scroll_manager_)),
+          MakeGarbageCollected<KeyboardEventManager>(frame, *scroll_manager_)),
       pointer_event_manager_(
-          new PointerEventManager(frame, *mouse_event_manager_)),
-      gesture_manager_(new GestureManager(frame,
-                                          *scroll_manager_,
-                                          *mouse_event_manager_,
-                                          *pointer_event_manager_,
-                                          *selection_controller_)),
+          MakeGarbageCollected<PointerEventManager>(frame,
+                                                    *mouse_event_manager_)),
+      gesture_manager_(
+          MakeGarbageCollected<GestureManager>(frame,
+                                               *scroll_manager_,
+                                               *mouse_event_manager_,
+                                               *pointer_event_manager_,
+                                               *selection_controller_)),
       active_interval_timer_(frame.GetTaskRunner(TaskType::kUserInteraction),
                              this,
                              &EventHandler::ActiveIntervalTimerFired) {}
@@ -807,6 +811,7 @@ void EventHandler::HandleMouseLeaveEvent(const WebMouseEvent& event) {
   HandleMouseMoveOrLeaveEvent(event, Vector<WebMouseEvent>(),
                               Vector<WebMouseEvent>(), nullptr, nullptr, false,
                               true);
+  pointer_event_manager_->RemoveLastMousePosition();
 }
 
 WebInputEventResult EventHandler::HandleMouseMoveOrLeaveEvent(
@@ -1124,7 +1129,7 @@ WebInputEventResult EventHandler::UpdateDragAndDrop(
   if (drag_target_ != new_target) {
     // FIXME: this ordering was explicitly chosen to match WinIE. However,
     // it is sometimes incorrect when dragging within subframes, as seen with
-    // LayoutTests/fast/events/drag-in-frames.html.
+    // web_tests/fast/events/drag-in-frames.html.
     //
     // Moreover, this ordering conforms to section 7.9.4 of the HTML 5 spec.
     // <http://dev.w3.org/html5/spec/Overview.html#drag-and-drop-processing-model>.
@@ -1236,6 +1241,10 @@ void EventHandler::ClearDragState() {
 
 void EventHandler::AnimateSnapFling(base::TimeTicks monotonic_time) {
   scroll_manager_->AnimateSnapFling(monotonic_time);
+}
+
+void EventHandler::RecomputeMouseHoverState() {
+  mouse_event_manager_->RecomputeMouseHoverState();
 }
 
 void EventHandler::SetCapturingMouseEventsNode(Node* n) {
@@ -1895,7 +1904,7 @@ WebInputEventResult EventHandler::SendContextMenuEvent(
   return mouse_event_manager_->DispatchMouseEvent(
       EffectiveMouseEventTargetNode(target_node),
       event_type_names::kContextmenu, event,
-      mev.GetHitTestResult().CanvasRegionId(), nullptr);
+      mev.GetHitTestResult().CanvasRegionId(), nullptr, nullptr);
 }
 
 static bool ShouldShowContextMenuAtSelection(const FrameSelection& selection) {
@@ -2028,6 +2037,11 @@ bool EventHandler::FakeMouseMovePending() const {
 
 void EventHandler::MayUpdateHoverWhenContentUnderMouseChanged(
     MouseEventManager::UpdateHoverReason update_hover_reason) {
+  if (update_hover_reason ==
+          MouseEventManager::UpdateHoverReason::kScrollOffsetChanged &&
+      RuntimeEnabledFeatures::NoHoverDuringScrollEnabled()) {
+    return;
+  }
   mouse_event_manager_->MayUpdateHoverWhenContentUnderMouseChanged(
       update_hover_reason);
 }

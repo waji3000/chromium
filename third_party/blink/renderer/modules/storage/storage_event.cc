@@ -32,7 +32,7 @@
 namespace blink {
 
 StorageEvent* StorageEvent::Create() {
-  return new StorageEvent;
+  return MakeGarbageCollected<StorageEvent>();
 }
 
 StorageEvent::StorageEvent() = default;
@@ -45,12 +45,13 @@ StorageEvent* StorageEvent::Create(const AtomicString& type,
                                    const String& new_value,
                                    const String& url,
                                    StorageArea* storage_area) {
-  return new StorageEvent(type, key, old_value, new_value, url, storage_area);
+  return MakeGarbageCollected<StorageEvent>(type, key, old_value, new_value,
+                                            url, storage_area);
 }
 
 StorageEvent* StorageEvent::Create(const AtomicString& type,
                                    const StorageEventInit* initializer) {
-  return new StorageEvent(type, initializer);
+  return MakeGarbageCollected<StorageEvent>(type, initializer);
 }
 
 StorageEvent::StorageEvent(const AtomicString& type,
@@ -102,7 +103,7 @@ void StorageEvent::initStorageEvent(const AtomicString& type,
 }
 
 const AtomicString& StorageEvent::InterfaceName() const {
-  return EventNames::StorageEvent;
+  return event_interface_names::kStorageEvent;
 }
 
 void StorageEvent::Trace(blink::Visitor* visitor) {

@@ -220,6 +220,8 @@
       'mac-rel',
     ],
   },
+  # Note: keep experiment percentages the same as
+  # network_service_chrome_public_test_apk.
   'chrome_public_test_apk': {
     'modifications': {
       # chromium.android
@@ -247,7 +249,9 @@
         },
       },
       'Oreo Phone Tester': {
-        'experiment_percentage': 100,
+        # TODO(https://crbug.com/884413): Re-enable this once the tests are
+        # either passing or there is more capacity.
+        'experiment_percentage': 0,
       },
       # chromium.swarm
       'Android N5X Swarm': {
@@ -271,15 +275,21 @@
       'ToTAndroidCFI',
     ],
   },
-  'chrome_sync_shell_test_apk': {
+  'chrome_public_test_vr_apk-vega': {
     'modifications': {
       # chromium.android
-      'KitKat Phone Tester (dbg)': {
+      'Oreo Phone Tester': {
         'swarming': {
-          'shards': 2,
+          'dimension_sets': [
+            {
+              'device_os': 'OVR1.180808.003',
+              'device_type': 'vega',
+              'os': 'Android',
+            },
+          ],
         },
-      },
-    },
+      }
+    }
   },
   'components_unittests': {
     'modifications': {
@@ -598,12 +608,6 @@
       'Linux ASan LSan Tests (1)',  # https://crbug.com/843732
     ],
   },
-  'http_service_tests': {
-    'remove_from': [
-      # chromium.linux
-      'Fuchsia x64',  # https://crbug.com/896884
-    ],
-  },
   'info_collection_tests': {
     'remove_from': [
       # chromium.gpu.fyi
@@ -764,6 +768,37 @@
       },
     },
   },
+  # Note: keep experiment percentages the same as chrome_public_test_apk.
+  'network_service_chrome_public_test_apk': {
+    # Only run these on the phone testers for now due to capacity.
+    'remove_from': [
+      # chromium.android
+      'android-kitkat-arm-rel',
+      'android-marshmallow-arm64-rel',
+      'KitKat Tablet Tester',
+      'Lollipop Tablet Tester',
+      'Marshmallow Tablet Tester',
+      'KitKat Phone Tester (dbg)',
+      # chromium.android.fyi
+      'x86 Cloud Tester',
+      # chromium.memory
+      'Android CFI',
+      # chromium.clang
+      'ToTAndroid',
+      'ToTAndroidCFI',
+    ],
+    'modifications': {
+      # chromium.android
+      'Marshmallow 64 bit Tester': {
+        # TODO(crbug.com/731759): Enable this once we're confident that it
+        # passes.
+        'experiment_percentage': 100,
+      },
+      'Oreo Phone Tester': {
+        'experiment_percentage': 100,
+      },
+    },
+  },
   'network_service_components_browsertests': {
     'remove_from': [
       # chromium.memory
@@ -802,6 +837,25 @@
       'Mac ASan 64 Tests (1)',
       'mac-views-rel',
       'ToTMacASan',
+    ],
+  },
+  'network_service_content_shell_test_apk': {
+    # Only run these on the phone testers for now due to capacity.
+    'remove_from': [
+      # chromium.android
+      'android-kitkat-arm-rel',
+      'android-marshmallow-arm64-rel',
+      'KitKat Tablet Tester',
+      'Lollipop Tablet Tester',
+      'Marshmallow Tablet Tester',
+      'KitKat Phone Tester (dbg)',
+      # chromium.android.fyi
+      'x86 Cloud Tester',
+      # chromium.memory
+      'Android CFI',
+      # chromium.clang
+      'ToTAndroid',
+      'ToTAndroidCFI',
     ],
   },
   'network_service_extensions_browsertests': {
@@ -848,6 +902,14 @@
         'experiment_percentage': 100,  # https://crbug.com/852786
       },
     },
+  },
+  'not_site_per_process_webkit_layout_tests': {
+    'remove_from': [
+      # chromium.linux
+      # TODO(dpranke): Should we be running this step on Linux Tests (dbg)(1)?
+      'Linux Tests (dbg)(1)',
+      'Linux Tests (dbg)(1)(32)',
+    ],
   },
   'notification_helper_unittests': {
     'remove_from': [
@@ -930,14 +992,6 @@
         },
       },
     },
-  },
-  'site_per_process_webkit_layout_tests': {
-    'remove_from': [
-      # chromium.linux
-      # TODO(dpranke): Should we be running this step on Linux Tests (dbg)(1)?
-      'Linux Tests (dbg)(1)',
-      'Linux Tests (dbg)(1)(32)',
-    ],
   },
   'sizes': {
     'remove_from': [
@@ -1219,6 +1273,13 @@
       'Win10 Tests x64',
     ],
   },
+  'vr_android_unittests': {
+    'remove_from': [
+      # chromium.android.fyi
+      'x64 Device Tester',
+      'x86 Cloud Tester',
+    ],
+  },
   'vr_pixeltests': {
     'remove_from': [
       # chromium.fyi
@@ -1292,6 +1353,10 @@
         'args': [
           '--debug',
           '--android',
+          # TODO(crbug.com/912120): Breakpad was entirely disabled on
+          # Android. Remove this when it no longer affects Android crash
+          # log handling.
+          '--disable-breakpad',
           # TODO(crbug.com/875172): run on the real GPU since the
           # software fallback, SwiftShader, isn't yet for 32-bit ARM.
           '--additional-driver-flag=--use-gpu-in-tests',
@@ -1306,7 +1371,7 @@
       'linux-blink-gen-property-trees': {
         'args': [
           '--debug',
-          '--additional-driver-flag=--enable-blink-gen-property-trees',
+          '--additional-driver-flag=--enable-blink-features=BlinkGenPropertyTrees',
         ],
       },
       'linux-blink-heap-incremental-marking': {
@@ -1364,30 +1429,20 @@
           'shards': 12,
         },
       },
+      'WebKit Linux composite_after_paint Dummy Builder': {
+        'args': [
+          '--additional-driver-flag=--enable-blink-features=CompositeAfterPaint',
+        ],
+      },
       'WebKit Linux layout_ng Dummy Builder': {
         'args': [
           '--additional-driver-flag=--enable-blink-features=LayoutNG',
-          '--additional-driver-flag=--enable-slimming-paint-v175',
         ],
-        'swarming': {
-          'shards': 15,
-        },
       },
       'WebKit Linux root_layer_scrolls Dummy Builder': {
         'args': [
           '--additional-driver-flag=--root-layer-scrolls',
         ],
-        'swarming': {
-          'shards': 15,
-        },
-      },
-      'WebKit Linux slimming_paint_v2 Dummy Builder': {
-        'args': [
-          '--additional-driver-flag=--enable-slimming-paint-v2',
-        ],
-        'swarming': {
-          'shards': 15,
-        },
       },
       # chromium.linux
       'Linux Tests': {
@@ -1452,7 +1507,6 @@
         },
       },
       'Mac10.13 Tests': {
-        # TODO(crbug.com/853356): Switch this to 10.13.
         # TODO(kbr): if the Swarming dimensions were explicitly specified for
         # all jobs then this wouldn't be needed.
         'swarming': {
@@ -1463,6 +1517,16 @@
             },
           ],
           'shards': 12,
+          # TODO(crbug.com/853356): Switch this fully to 10.13.
+          # Starting with a 20 minute expiration for now, we will reduce this
+          # later.
+          'optional_dimensions': {
+            1200: [
+              {
+                'os': 'Mac-10.13',
+              }
+            ],
+          },
         },
       },
       'Mac10.13 Tests (dbg)': {
@@ -1474,7 +1538,7 @@
       'WebKit Linux Trusty ASAN': {
         'args': [
           '--additional-expectations',
-          '../../third_party/WebKit/LayoutTests/ASANExpectations',
+          '../../third_party/blink/web_tests/ASANExpectations',
           '--time-out-ms',
           '48000',
           '--enable-sanitizer',
@@ -1491,7 +1555,7 @@
       'WebKit Linux Trusty Leak': {
         'args': [
           '--additional-expectations',
-          '../../third_party/WebKit/LayoutTests/LeakExpectations',
+          '../../third_party/blink/web_tests/LeakExpectations',
           '--time-out-ms',
           '48000',
           '--enable-leak-detection',
@@ -1508,7 +1572,7 @@
       'WebKit Linux Trusty MSAN': {
         'args': [
           '--additional-expectations',
-          '../../third_party/WebKit/LayoutTests/MSANExpectations',
+          '../../third_party/blink/web_tests/MSANExpectations',
           '--time-out-ms',
           '66000',
           '--enable-sanitizer',
@@ -1563,6 +1627,20 @@
           'Debug_x64',
         ],
       },
+      # tryserver.chromium.android
+      'android_blink_rel': {
+        'args': [
+          '--release',
+          '--android',
+          # TODO(crbug.com/912120): Breakpad was entirely disabled on
+          # Android. Remove this when it no longer affects Android crash
+          # log handling.
+          '--disable-breakpad',
+          # TODO(crbug.com/875172): run on the real GPU since the
+          # software fallback, SwiftShader, isn't yet for 32-bit ARM.
+          '--additional-driver-flag=--use-gpu-in-tests',
+        ],
+      },
     },
   },
   'webkit_unit_tests': {
@@ -1615,7 +1693,9 @@
     'modifications': {
       'Oreo Phone Tester': {
         # TODO(crbug.com/863089): Enable this once it's passing.
-        'experiment_percentage': 100,
+        # TODO(https://crbug.com/884413): Re-enable this once the tests are
+        # either passing or there is more capacity.
+        'experiment_percentage': 0,
       },
     },
   },

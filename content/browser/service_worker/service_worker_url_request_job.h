@@ -35,8 +35,8 @@
 #include "services/network/public/mojom/request_context_frame_type.mojom.h"
 #include "storage/common/blob_storage/blob_storage_constants.h"
 #include "third_party/blink/public/common/service_worker/service_worker_status_code.h"
+#include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom.h"
 #include "third_party/blink/public/mojom/fetch/fetch_api_response.mojom.h"
-#include "third_party/blink/public/platform/modules/fetch/fetch_api_request.mojom.h"
 #include "url/gurl.h"
 
 namespace net {
@@ -57,6 +57,7 @@ namespace content {
 class ResourceContext;
 class ServiceWorkerBlobReader;
 class ServiceWorkerDataPipeReader;
+class ServiceWorkerProviderHost;
 class ServiceWorkerVersion;
 
 namespace service_worker_controllee_request_handler_unittest {
@@ -77,7 +78,7 @@ class CONTENT_EXPORT ServiceWorkerURLRequestJob : public net::URLRequestJob {
   ServiceWorkerURLRequestJob(
       net::URLRequest* request,
       net::NetworkDelegate* network_delegate,
-      const std::string& client_id,
+      base::WeakPtr<ServiceWorkerProviderHost> provider_host,
       base::WeakPtr<storage::BlobStorageContext> blob_storage_context,
       const ResourceContext* resource_context,
       network::mojom::FetchRequestMode request_mode,
@@ -253,9 +254,6 @@ class CONTENT_EXPORT ServiceWorkerURLRequestJob : public net::URLRequestJob {
 
   void MaybeReportNavigationPreloadMetrics();
 
-  void ReportDestination(
-      ServiceWorkerMetrics::MainResourceRequestDestination destination);
-
   // Not owned.
   Delegate* delegate_;
 
@@ -310,7 +308,7 @@ class CONTENT_EXPORT ServiceWorkerURLRequestJob : public net::URLRequestJob {
 
   // Used when response type is FORWARD_TO_SERVICE_WORKER.
   std::unique_ptr<ServiceWorkerFetchDispatcher> fetch_dispatcher_;
-  std::string client_id_;
+  base::WeakPtr<ServiceWorkerProviderHost> provider_host_;
   base::WeakPtr<storage::BlobStorageContext> blob_storage_context_;
   const ResourceContext* resource_context_;
   // Only one of |blob_reader_| and |data_pipe_reader_| can be non-null.
@@ -340,9 +338,6 @@ class CONTENT_EXPORT ServiceWorkerURLRequestJob : public net::URLRequestJob {
   ServiceWorkerHeaderList cors_exposed_header_names_;
 
   std::unique_ptr<FileSizeResolver> file_size_resolver_;
-
-  bool started_fetch_dispatch_ = false;
-  bool reported_destination_ = false;
 
   base::WeakPtrFactory<ServiceWorkerURLRequestJob> weak_factory_;
 

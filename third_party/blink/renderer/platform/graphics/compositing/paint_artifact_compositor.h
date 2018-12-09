@@ -11,6 +11,7 @@
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/scoped_refptr.h"
+#include "cc/layers/layer_collections.h"
 #include "third_party/blink/renderer/platform/graphics/compositing/property_tree_manager.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_layer_client.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_controller.h"
@@ -20,6 +21,7 @@
 namespace cc {
 struct ElementId;
 class Layer;
+class LayerTreeHost;
 }
 
 namespace gfx {
@@ -52,7 +54,7 @@ class LayerListBuilder {
 // changes in the paint artifact.
 //
 // PaintArtifactCompositor is the successor to PaintLayerCompositor, reflecting
-// the new home of compositing decisions after paint in Slimming Paint v2.
+// the new home of compositing decisions after paint with CompositeAfterPaint.
 class PLATFORM_EXPORT PaintArtifactCompositor final
     : private PropertyTreeManagerClient {
   USING_FAST_MALLOC(PaintArtifactCompositor);
@@ -111,12 +113,19 @@ class PLATFORM_EXPORT PaintArtifactCompositor final
     return content_layer_clients_;
   }
 
+  // Update the cc::Layer's touch action region from the touch action rects of
+  // the paint chunks.
+  static void UpdateTouchActionRects(cc::Layer*,
+                                     const gfx::Vector2dF& layer_offset,
+                                     const PropertyTreeState& layer_state,
+                                     const PaintChunkSubset& paint_chunks);
+
  private:
   // A pending layer is a collection of paint chunks that will end up in
   // the same cc::Layer.
   struct PLATFORM_EXPORT PendingLayer {
     PendingLayer(const PaintChunk& first_paint_chunk,
-                 size_t first_chunk_index,
+                 wtf_size_t first_chunk_index,
                  bool requires_own_layer);
     // Merge another pending layer after this one, appending all its paint
     // chunks after chunks in this layer, with appropriate space conversion
@@ -132,7 +141,7 @@ class PLATFORM_EXPORT PaintArtifactCompositor final
     void Upcast(const PropertyTreeState&);
 
     FloatRect bounds;
-    Vector<size_t> paint_chunk_indices;
+    Vector<wtf_size_t> paint_chunk_indices;
     FloatRect rect_known_to_be_opaque;
     PropertyTreeState property_tree_state;
     bool requires_own_layer;
@@ -185,6 +194,8 @@ class PLATFORM_EXPORT PaintArtifactCompositor final
           new_content_layer_clients,
       Vector<scoped_refptr<cc::Layer>>& new_scroll_hit_test_layers);
 
+  bool PropertyTreeStateChanged(const PropertyTreeState&) const;
+
   const TransformPaintPropertyNode& ScrollTranslationForPendingLayer(
       const PaintArtifact&,
       const PendingLayer&);
@@ -212,6 +223,9 @@ class PLATFORM_EXPORT PaintArtifactCompositor final
       CompositorElementId& mask_isolation_id,
       CompositorElementId& mask_effect_id) final;
 
+  static void UpdateRenderSurfaceForEffects(cc::LayerTreeHost&,
+                                            const cc::LayerList&);
+
   // Provides a callback for notifying blink of composited scrolling.
   base::RepeatingCallback<void(const gfx::ScrollOffset&, const cc::ElementId&)>
       scroll_callback_;
@@ -232,7 +246,7 @@ class PLATFORM_EXPORT PaintArtifactCompositor final
   bool extra_data_for_testing_enabled_ = false;
   std::unique_ptr<ExtraDataForTesting> extra_data_for_testing_;
 
-  friend class StubChromeClientForSPv2;
+  friend class StubChromeClientForCAP;
   friend class PaintArtifactCompositorTest;
 
   DISALLOW_COPY_AND_ASSIGN(PaintArtifactCompositor);

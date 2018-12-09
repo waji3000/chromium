@@ -13,6 +13,7 @@
 
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/platform/bindings/callback_function_base.h"
+#include "third_party/blink/renderer/platform/wtf/forward.h"
 
 namespace blink {
 
@@ -22,9 +23,11 @@ class ScriptWrappable;
 class CORE_EXPORT V8VoidCallbackFunctionInterfaceArg final : public CallbackFunctionBase {
  public:
   static V8VoidCallbackFunctionInterfaceArg* Create(v8::Local<v8::Function> callback_function) {
-    return new V8VoidCallbackFunctionInterfaceArg(callback_function);
+    return MakeGarbageCollected<V8VoidCallbackFunctionInterfaceArg>(callback_function);
   }
 
+  explicit V8VoidCallbackFunctionInterfaceArg(v8::Local<v8::Function> callback_function)
+      : CallbackFunctionBase(callback_function) {}
   ~V8VoidCallbackFunctionInterfaceArg() override = default;
 
   // NameClient overrides:
@@ -37,10 +40,6 @@ class CORE_EXPORT V8VoidCallbackFunctionInterfaceArg final : public CallbackFunc
   // Performs "invoke", and then reports an exception, if any, to the global
   // error handler such as DevTools' console.
   void InvokeAndReportException(ScriptWrappable* callback_this_value, HTMLDivElement* divElement);
-
- private:
-  explicit V8VoidCallbackFunctionInterfaceArg(v8::Local<v8::Function> callback_function)
-      : CallbackFunctionBase(callback_function) {}
 };
 
 template <>
@@ -48,6 +47,8 @@ class V8PersistentCallbackFunction<V8VoidCallbackFunctionInterfaceArg> final : p
   using V8CallbackFunction = V8VoidCallbackFunctionInterfaceArg;
 
  public:
+  explicit V8PersistentCallbackFunction(V8CallbackFunction* callback_function)
+      : V8PersistentCallbackFunctionBase(callback_function) {}
   ~V8PersistentCallbackFunction() override = default;
 
   // Returns a wrapper-tracing version of this callback function.
@@ -57,9 +58,6 @@ class V8PersistentCallbackFunction<V8VoidCallbackFunctionInterfaceArg> final : p
   CORE_EXPORT void InvokeAndReportException(ScriptWrappable* callback_this_value, HTMLDivElement* divElement);
 
  private:
-  explicit V8PersistentCallbackFunction(V8CallbackFunction* callback_function)
-      : V8PersistentCallbackFunctionBase(callback_function) {}
-
   V8CallbackFunction* Proxy() {
     return As<V8CallbackFunction>();
   }

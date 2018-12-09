@@ -356,39 +356,6 @@ float StyleBuilderConverter::ConvertFontSizeAdjust(StyleResolverState& state,
   return primitive_value.GetFloatValue();
 }
 
-double StyleBuilderConverter::ConvertValueToNumber(
-    const CSSFunctionValue* filter,
-    const CSSPrimitiveValue* value) {
-  switch (filter->FunctionType()) {
-    case CSSValueGrayscale:
-    case CSSValueSepia:
-    case CSSValueSaturate:
-    case CSSValueInvert:
-    case CSSValueBrightness:
-    case CSSValueContrast:
-    case CSSValueOpacity: {
-      double amount = (filter->FunctionType() == CSSValueBrightness ||
-                       filter->FunctionType() == CSSValueInvert)
-                          ? 0
-                          : 1;
-      if (filter->length() == 1) {
-        amount = value->GetDoubleValue();
-        if (value->IsPercentage())
-          amount /= 100;
-      }
-      return amount;
-    }
-    case CSSValueHueRotate: {
-      double angle = 0;
-      if (filter->length() == 1)
-        angle = value->ComputeDegrees();
-      return angle;
-    }
-    default:
-      return 0;
-  }
-}
-
 FontSelectionValue StyleBuilderConverterBase::ConvertFontStretch(
     const blink::CSSValue& value) {
   if (value.IsPrimitiveValue()) {
@@ -1135,6 +1102,11 @@ float StyleBuilderConverter::ConvertNumberOrPercentage(
   return primitive_value.GetFloatValue() / 100.0f;
 }
 
+float StyleBuilderConverter::ConvertAlpha(StyleResolverState& state,
+                                          const CSSValue& value) {
+  return clampTo<float>(ConvertNumberOrPercentage(state, value), 0, 1);
+}
+
 StyleOffsetRotation StyleBuilderConverter::ConvertOffsetRotate(
     StyleResolverState&,
     const CSSValue& value) {
@@ -1510,15 +1482,20 @@ TransformOrigin StyleBuilderConverter::ConvertTransformOrigin(
     StyleResolverState& state,
     const CSSValue& value) {
   const CSSValueList& list = ToCSSValueList(value);
-  DCHECK_EQ(list.length(), 3U);
+  DCHECK_GE(list.length(), 2u);
   DCHECK(list.Item(0).IsPrimitiveValue() || list.Item(0).IsIdentifierValue());
   DCHECK(list.Item(1).IsPrimitiveValue() || list.Item(1).IsIdentifierValue());
-  DCHECK(list.Item(2).IsPrimitiveValue());
+  float z = 0;
+  if (list.length() == 3) {
+    DCHECK(list.Item(2).IsPrimitiveValue());
+    z = StyleBuilderConverter::ConvertComputedLength<float>(state,
+                                                            list.Item(2));
+  }
 
   return TransformOrigin(
       ConvertPositionLength<CSSValueLeft, CSSValueRight>(state, list.Item(0)),
       ConvertPositionLength<CSSValueTop, CSSValueBottom>(state, list.Item(1)),
-      StyleBuilderConverter::ConvertComputedLength<float>(state, list.Item(2)));
+      z);
 }
 
 ScrollSnapType StyleBuilderConverter::ConvertSnapType(StyleResolverState&,

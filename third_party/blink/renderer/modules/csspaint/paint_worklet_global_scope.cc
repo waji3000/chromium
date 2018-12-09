@@ -9,8 +9,8 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_object_parser.h"
 #include "third_party/blink/renderer/bindings/core/v8/worker_or_worklet_script_controller.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_paint_rendering_context_2d_settings.h"
+#include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/css/css_syntax_descriptor.h"
-#include "third_party/blink/renderer/core/css_property_names.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -96,9 +96,9 @@ PaintWorkletGlobalScope* PaintWorkletGlobalScope::Create(
     PaintWorkletPendingGeneratorRegistry* pending_generator_registry,
     size_t global_scope_number) {
   DCHECK(!RuntimeEnabledFeatures::OffMainThreadCSSPaintEnabled());
-  auto* global_scope =
-      new PaintWorkletGlobalScope(frame, std::move(creation_params),
-                                  reporting_proxy, pending_generator_registry);
+  auto* global_scope = MakeGarbageCollected<PaintWorkletGlobalScope>(
+      frame, std::move(creation_params), reporting_proxy,
+      pending_generator_registry);
   String context_name("PaintWorklet #");
   context_name.append(String::Number(global_scope_number));
   global_scope->ScriptController()->InitializeContextIfNeeded(context_name,
@@ -114,7 +114,8 @@ PaintWorkletGlobalScope* PaintWorkletGlobalScope::Create(
     std::unique_ptr<GlobalScopeCreationParams> creation_params,
     WorkerThread* thread) {
   DCHECK(RuntimeEnabledFeatures::OffMainThreadCSSPaintEnabled());
-  return new PaintWorkletGlobalScope(std::move(creation_params), thread);
+  return MakeGarbageCollected<PaintWorkletGlobalScope>(
+      std::move(creation_params), thread);
 }
 
 PaintWorkletGlobalScope::PaintWorkletGlobalScope(
@@ -239,7 +240,7 @@ void PaintWorkletGlobalScope::registerPaint(
         pending_generator_registry_->NotifyGeneratorReady(name);
     } else {
       DocumentPaintDefinition* document_definition =
-          new DocumentPaintDefinition(definition);
+          MakeGarbageCollected<DocumentPaintDefinition>(definition);
       document_definition_map.Set(name, document_definition);
     }
   }

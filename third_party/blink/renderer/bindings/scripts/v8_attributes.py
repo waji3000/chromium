@@ -138,6 +138,7 @@ def attribute_context(interface, attribute, interfaces):
         'activity_logging_world_list_for_setter': v8_utilities.activity_logging_world_list(attribute, 'Setter'),  # [ActivityLogging]
         'activity_logging_world_check': v8_utilities.activity_logging_world_check(attribute),  # [ActivityLogging]
         'cached_attribute_validation_method': cached_attribute_validation_method,
+        'camel_case_name': NameStyleConverter(attribute.name).to_upper_camel_case(),
         'constructor_type': constructor_type,
         'context_enabled_feature_name': v8_utilities.context_enabled_feature_name(attribute),
         'cpp_name': cpp_name(attribute),
@@ -312,11 +313,11 @@ def getter_context(interface, attribute, context):
             context['is_keep_alive_for_gc'] or
             context['is_getter_raises_exception']):
         context['cpp_value_original'] = cpp_value
-        cpp_value = 'cppValue'
+        cpp_value = 'cpp_value'
 
     def v8_set_return_value_statement(for_main_world=False):
         if context['is_keep_alive_for_gc'] or 'CachedAttribute' in extended_attributes:
-            return 'V8SetReturnValue(info, v8Value)'
+            return 'V8SetReturnValue(info, v8_value)'
         return idl_type.v8_set_return_value(
             cpp_value, extended_attributes=extended_attributes, script_wrappable='impl',
             for_main_world=for_main_world, is_static=attribute.is_static)
@@ -349,9 +350,9 @@ def getter_expression(interface, attribute, context):
             not attribute.is_static):
         arguments.append('*impl')
     if attribute.idl_type.is_explicit_nullable:
-        arguments.append('isNull')
+        arguments.append('is_null')
     if context['is_getter_raises_exception']:
-        arguments.append('exceptionState')
+        arguments.append('exception_state')
     if attribute.idl_type.use_output_parameter_for_result:
         arguments.append('result')
 
@@ -445,7 +446,7 @@ def setter_context(interface, attribute, interfaces, context):
         # exception.
         context['cpp_setter'] = (
             'if (info.Holder()->CreateDataProperty(' +
-            'info.GetIsolate()->GetCurrentContext(), propertyName, v8Value).IsNothing())' +
+            'info.GetIsolate()->GetCurrentContext(), property_name, v8_value).IsNothing())' +
             '\n  return')
         return
 
@@ -472,7 +473,7 @@ def setter_context(interface, attribute, interfaces, context):
             attribute, 'SetterCallWith', 'ScriptState'),
         'is_setter_raises_exception': is_setter_raises_exception,
         'v8_value_to_local_cpp_value': idl_type.v8_value_to_local_cpp_value(
-            extended_attributes, 'v8Value', 'cppValue'),
+            extended_attributes, 'v8_value', 'cpp_value'),
     })
 
     # setter_expression() depends on context values we set above.
@@ -506,17 +507,17 @@ def setter_expression(interface, attribute, context):
             handler_type = 'kOnBeforeUnloadEventHandler'
         arguments.append(
             'V8EventListenerHelper::GetEventHandler(' +
-            'ScriptState::ForRelevantRealm(info), v8Value, ' +
+            'ScriptState::ForRelevantRealm(info), v8_value, ' +
             'JSEventHandler::HandlerType::' + handler_type +
             ', kListenerFindOrCreate)')
     elif idl_type.base_type == 'SerializedScriptValue':
-        arguments.append('std::move(cppValue)')
+        arguments.append('std::move(cpp_value)')
     else:
-        arguments.append('cppValue')
+        arguments.append('cpp_value')
     if idl_type.is_explicit_nullable:
-        arguments.append('isNull')
+        arguments.append('is_null')
     if context['is_setter_raises_exception']:
-        arguments.append('exceptionState')
+        arguments.append('exception_state')
 
     return '%s(%s)' % (setter_name, ', '.join(arguments))
 

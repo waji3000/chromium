@@ -22,6 +22,7 @@
 #include "base/run_loop.h"
 #include "base/values.h"
 #include "base/version.h"
+#include "build/build_config.h"
 #include "chrome/browser/chromeos/login/demo_mode/demo_mode_test_helper.h"
 #include "chrome/browser/chromeos/login/demo_mode/demo_session.h"
 #include "chrome/browser/chromeos/login/users/fake_chrome_user_manager.h"
@@ -140,7 +141,8 @@ class DemoExtensionsExternalLoaderTest : public testing::Test {
   DemoExtensionsExternalLoaderTest()
       : test_shared_loader_factory_(
             base::MakeRefCounted<network::WeakWrapperSharedURLLoaderFactory>(
-                &test_url_loader_factory_)) {}
+                &test_url_loader_factory_)),
+        scoped_user_manager_(std::make_unique<FakeChromeUserManager>()) {}
 
   ~DemoExtensionsExternalLoaderTest() override = default;
 
@@ -221,6 +223,8 @@ class DemoExtensionsExternalLoaderTest : public testing::Test {
       test_shared_loader_factory_;
 
   content::InProcessUtilityThreadHelper in_process_utility_thread_helper_;
+
+  user_manager::ScopedUserManager scoped_user_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(DemoExtensionsExternalLoaderTest);
 };
@@ -437,7 +441,7 @@ TEST_F(DemoExtensionsExternalLoaderTest,
   EXPECT_TRUE(external_provider_visitor_.loaded_crx_files().empty());
 }
 
-TEST_F(DemoExtensionsExternalLoaderTest, LoadApp) {
+TEST_F(DemoExtensionsExternalLoaderTest, DISABLED_LoadApp) {
   demo_mode_test_helper_->InitializeSession();
 
   // Create a temporary cache directory.

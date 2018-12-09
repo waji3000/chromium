@@ -129,7 +129,7 @@ inline Range::Range(Document& owner_document)
 }
 
 Range* Range::Create(Document& owner_document) {
-  return new Range(owner_document);
+  return MakeGarbageCollected<Range>(owner_document);
 }
 
 inline Range::Range(Document& owner_document,
@@ -153,17 +153,17 @@ Range* Range::Create(Document& owner_document,
                      unsigned start_offset,
                      Node* end_container,
                      unsigned end_offset) {
-  return new Range(owner_document, start_container, start_offset, end_container,
-                   end_offset);
+  return MakeGarbageCollected<Range>(owner_document, start_container,
+                                     start_offset, end_container, end_offset);
 }
 
 Range* Range::Create(Document& owner_document,
                      const Position& start,
                      const Position& end) {
-  return new Range(owner_document, start.ComputeContainerNode(),
-                   start.ComputeOffsetInContainerNode(),
-                   end.ComputeContainerNode(),
-                   end.ComputeOffsetInContainerNode());
+  return MakeGarbageCollected<Range>(
+      owner_document, start.ComputeContainerNode(),
+      start.ComputeOffsetInContainerNode(), end.ComputeContainerNode(),
+      end.ComputeOffsetInContainerNode());
 }
 
 void Range::Dispose() {
@@ -1618,11 +1618,12 @@ void Range::expand(const String& unit, ExceptionState& exception_state) {
   VisiblePosition start = CreateVisiblePosition(StartPosition());
   VisiblePosition end = CreateVisiblePosition(EndPosition());
   if (unit == "word") {
-    start = StartOfWord(start);
-    end = EndOfWord(end);
+    start = CreateVisiblePosition(StartOfWordPosition(start.DeepEquivalent()));
+    end = CreateVisiblePosition(EndOfWordPosition(end.DeepEquivalent()));
   } else if (unit == "sentence") {
-    start = StartOfSentence(start);
-    end = EndOfSentence(end);
+    start =
+        CreateVisiblePosition(StartOfSentencePosition(start.DeepEquivalent()));
+    end = CreateVisiblePosition(EndOfSentence(end.DeepEquivalent()));
   } else if (unit == "block") {
     start = StartOfParagraph(start);
     end = EndOfParagraph(end);

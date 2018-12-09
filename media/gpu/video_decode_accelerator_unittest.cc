@@ -88,7 +88,6 @@
 #endif  // defined(OS_CHROMEOS)
 
 namespace media {
-
 namespace {
 
 // Values optionally filled in from flags; see main() below.
@@ -122,11 +121,6 @@ double g_rendering_fps = 60;
 
 bool g_use_gl_renderer = true;
 
-// Validate each decoded frame on thumbnail test case.
-// TODO(crbug.com/856562): Enable VideoFrameValidator by default if
-// |g_test_import| is true.
-bool g_frame_validator = false;
-
 // The value is set by the switch "--num_play_throughs". The video will play
 // the specified number of times. In different test cases, we have different
 // values for |num_play_throughs|. This setting will override the value. A
@@ -139,6 +133,10 @@ bool g_fake_decoder = 0;
 // Test buffer import into VDA, providing buffers allocated by us, instead of
 // requesting the VDA itself to allocate buffers.
 bool g_test_import = false;
+
+// VideoFrameValidator flags.
+// If this is set to non-zero, g_test_import becomes true.
+uint32_t g_frame_validator_flags = 0;
 
 // This is the location of the test files. If empty, they're in the current
 // working directory.
@@ -294,7 +292,7 @@ class GLRenderingVDAClient
       std::string encoded_data,
       RenderingHelper* rendering_helper,
       std::unique_ptr<media::test::VideoFrameValidator> video_frame_validator,
-      ClientStateNotification<ClientState>* note);
+      media::test::ClientStateNotification<ClientState>* note);
   ~GLRenderingVDAClient() override;
   void CreateAndStartDecoder();
 
@@ -354,7 +352,7 @@ class GLRenderingVDAClient
   gfx::Size frame_size_;
   size_t outstanding_decodes_;
   int next_bitstream_buffer_id_;
-  ClientStateNotification<ClientState>* const note_;
+  media::test::ClientStateNotification<ClientState>* const note_;
   std::unique_ptr<VideoDecodeAccelerator> decoder_;
   base::WeakPtr<VideoDecodeAccelerator> weak_vda_;
   std::unique_ptr<base::WeakPtrFactory<VideoDecodeAccelerator>>
@@ -415,7 +413,7 @@ GLRenderingVDAClient::GLRenderingVDAClient(
     std::string encoded_data,
     RenderingHelper* rendering_helper,
     std::unique_ptr<media::test::VideoFrameValidator> video_frame_validator,
-    ClientStateNotification<ClientState>* note)
+    media::test::ClientStateNotification<ClientState>* note)
     : config_(std::move(config)),
       rendering_helper_(rendering_helper),
       frame_size_(config_.frame_size),
@@ -605,7 +603,7 @@ void GLRenderingVDAClient::PictureReady(const Picture& picture) {
                  picture.picture_buffer_id()));
   pending_textures_.insert(*texture_it);
   if (video_frame_validator_) {
-    auto video_frame = texture_it->second->CreateVideoFrame(visible_rect);
+    auto video_frame = texture_it->second->ExportVideoFrame(visible_rect);
     ASSERT_NE(video_frame.get(), nullptr);
     video_frame_validator_->EvaluateVideoFrame(std::move(video_frame),
                                                frame_index_);
@@ -928,11 +926,13 @@ class VideoDecodeAcceleratorTest : public ::testing::Test {
                                  TestFilesVector* test_video_files);
 
   void InitializeRenderingHelper(const RenderingHelperParams& helper_params);
-  void CreateAndStartDecoder(GLRenderingVDAClient* client,
-                             ClientStateNotification<ClientState>* note);
+  void CreateAndStartDecoder(
+      GLRenderingVDAClient* client,
+      media::test::ClientStateNotification<ClientState>* note);
 
   // Wait until decode finishes and return the last state.
-  ClientState WaitUntilDecodeFinish(ClientStateNotification<ClientState>* note);
+  ClientState WaitUntilDecodeFinish(
+      media::test::ClientStateNotification<ClientState>* note);
 
   void WaitUntilIdle();
   void OutputLogFile(const base::FilePath::CharType* log_path,
@@ -947,8 +947,8 @@ class VideoDecodeAcceleratorTest : public ::testing::Test {
   static void Delete(T item) {
     // |item| is cleared when the scope of this function is left.
   }
-  using NotesVector =
-      std::vector<std::unique_ptr<ClientStateNotification<ClientState>>>;
+  using NotesVector = std::vector<
+      std::unique_ptr<media::test::ClientStateNotification<ClientState>>>;
   using ClientsVector = std::vector<std::unique_ptr<GLRenderingVDAClient>>;
 
   NotesVector notes_;
@@ -1075,7 +1075,7 @@ void VideoDecodeAcceleratorTest::InitializeRenderingHelper(
 
 void VideoDecodeAcceleratorTest::CreateAndStartDecoder(
     GLRenderingVDAClient* client,
-    ClientStateNotification<ClientState>* note) {
+    media::test::ClientStateNotification<ClientState>* note) {
   g_env->GetRenderingTaskRunner()->PostTask(
       FROM_HERE, base::BindOnce(&GLRenderingVDAClient::CreateAndStartDecoder,
                                 base::Unretained(client)));
@@ -1083,7 +1083,7 @@ void VideoDecodeAcceleratorTest::CreateAndStartDecoder(
 }
 
 ClientState VideoDecodeAcceleratorTest::WaitUntilDecodeFinish(
-    ClientStateNotification<ClientState>* note) {
+    media::test::ClientStateNotification<ClientState>* note) {
   ClientState state = CS_DESTROYED;
   for (int i = 0; i < CS_MAX; i++) {
     state = note->Wait();
@@ -1133,7 +1133,7 @@ class VideoDecodeAcceleratorParamTest
 // Wait for |note| to report a state and if it's not |expected_state| then
 // assert |client| has deleted its decoder.
 static void AssertWaitForStateOrDeleted(
-    ClientStateNotification<ClientState>* note,
+    media::test::ClientStateNotification<ClientState>* note,
     GLRenderingVDAClient* client,
     ClientState expected_state) {
   // Skip waiting state if decoder of |client| is already deleted.
@@ -1150,15 +1150,10 @@ static void AssertWaitForStateOrDeleted(
 std::unique_ptr<media::test::VideoFrameValidator>
 CreateAndInitializeVideoFrameValidator(
     const base::FilePath::StringType& video_file) {
-  // TODO(crbug.com/856562): Add a command line option to stand for outputting
-  // decoded yuv.
-  // Currently decoded yuv is not output.
-  constexpr bool output_yuv = false;
   // Initialize prefix of yuv files.
   base::FilePath prefix_output_yuv;
-
   base::FilePath filepath(video_file);
-  if (output_yuv) {
+  if (g_frame_validator_flags & test::VideoFrameValidator::OUTPUTYUV) {
     if (!g_thumbnail_output_dir.empty() &&
         base::DirectoryExists(g_thumbnail_output_dir)) {
       prefix_output_yuv = g_thumbnail_output_dir.Append(filepath.BaseName());
@@ -1166,9 +1161,14 @@ CreateAndInitializeVideoFrameValidator(
       prefix_output_yuv = GetTestDataFile(filepath);
     }
   }
-  return media::test::VideoFrameValidator::CreateVideoFrameValidator(
-      prefix_output_yuv,
-      filepath.AddExtension(FILE_PATH_LITERAL(".frames.md5")));
+#if BUILDFLAG(USE_VAAPI)
+  bool linear = false;
+#else
+  bool linear = true;
+#endif
+  return media::test::VideoFrameValidator::Create(
+      g_frame_validator_flags, prefix_output_yuv,
+      filepath.AddExtension(FILE_PATH_LITERAL(".frames.md5")), linear);
 }
 
 // Fails on Win only. crbug.com/849368
@@ -1207,7 +1207,7 @@ TEST_P(VideoDecodeAcceleratorParamTest, MAYBE_TestSimpleDecode) {
   notes_.resize(num_concurrent_decoders);
   clients_.resize(num_concurrent_decoders);
 
-  bool use_video_frame_validator = g_frame_validator && g_test_import;
+  bool use_video_frame_validator = g_frame_validator_flags != 0;
   if (use_video_frame_validator) {
     LOG(INFO) << "Using Frame Validator..";
 #if !defined(OS_CHROMEOS)
@@ -1221,8 +1221,8 @@ TEST_P(VideoDecodeAcceleratorParamTest, MAYBE_TestSimpleDecode) {
   for (size_t index = 0; index < num_concurrent_decoders; ++index) {
     TestVideoFile* video_file =
         test_video_files_[index % test_video_files_.size()].get();
-    std::unique_ptr<ClientStateNotification<ClientState>> note =
-        std::make_unique<ClientStateNotification<ClientState>>();
+    std::unique_ptr<media::test::ClientStateNotification<ClientState>> note =
+        std::make_unique<media::test::ClientStateNotification<ClientState>>();
     notes_[index] = std::move(note);
 
     size_t delay_reuse_after_frame_num = std::numeric_limits<size_t>::max();
@@ -1275,7 +1275,7 @@ TEST_P(VideoDecodeAcceleratorParamTest, MAYBE_TestSimpleDecode) {
   // Only check performance & correctness later if we play through only once.
   bool skip_performance_and_correctness_checks = num_play_throughs > 1;
   for (size_t i = 0; i < num_concurrent_decoders; ++i) {
-    ClientStateNotification<ClientState>* note = notes_[i].get();
+    media::test::ClientStateNotification<ClientState>* note = notes_[i].get();
     ClientState state = note->Wait();
     EXPECT_TRUE(delete_decoder_state != CS_DECODER_SET ||
                 state == CS_DESTROYED);
@@ -1598,7 +1598,8 @@ WRAPPED_INSTANTIATE_TEST_CASE_P(
 // Measure the median of the decode time when VDA::Decode is called 30 times per
 // second.
 TEST_F(VideoDecodeAcceleratorTest, TestDecodeTimeMedian) {
-  notes_.push_back(std::make_unique<ClientStateNotification<ClientState>>());
+  notes_.push_back(
+      std::make_unique<media::test::ClientStateNotification<ClientState>>());
 
   const TestVideoFile* video_file = test_video_files_[0].get();
   GLRenderingVDAClient::Config config;
@@ -1633,7 +1634,8 @@ TEST_F(VideoDecodeAcceleratorTest, TestDecodeTimeMedian) {
 // is not considered as a failure because the input may be unsupported or
 // corrupted videos.
 TEST_F(VideoDecodeAcceleratorTest, NoCrash) {
-  notes_.push_back(std::make_unique<ClientStateNotification<ClientState>>());
+  notes_.push_back(
+      std::make_unique<media::test::ClientStateNotification<ClientState>>());
 
   const TestVideoFile* video_file = test_video_files_[0].get();
   GLRenderingVDAClient::Config config;
@@ -1652,6 +1654,41 @@ TEST_F(VideoDecodeAcceleratorTest, NoCrash) {
   CreateAndStartDecoder(clients_[0].get(), notes_[0].get());
   WaitUntilDecodeFinish(notes_[0].get());
 }
+
+#if defined(OS_CHROMEOS)
+// This is the case only for generating md5 values of video frames on stream.
+// This is disabled by default. To run this, you should run this test with
+// --gtest_filter=VideoDecodeAcceleratorTest.DISABLED_GenMD5 and
+// --gtest_also_run_disabled_tests
+TEST_F(VideoDecodeAcceleratorTest, DISABLED_GenMD5) {
+  g_frame_validator_flags = test::VideoFrameValidator::GENMD5;
+  g_test_import = true;
+
+  ASSERT_EQ(test_video_files_.size(), 1u);
+  notes_.push_back(
+      std::make_unique<media::test::ClientStateNotification<ClientState>>());
+  const TestVideoFile* video_file = test_video_files_[0].get();
+  GLRenderingVDAClient::Config config;
+  config.frame_size = gfx::Size(video_file->width, video_file->height);
+  config.profile = video_file->profile;
+  config.fake_decoder = g_fake_decoder;
+  config.num_frames = video_file->num_frames;
+  auto video_frame_validator =
+      CreateAndInitializeVideoFrameValidator(video_file->file_name);
+  clients_.push_back(std::make_unique<GLRenderingVDAClient>(
+      std::move(config), video_file->data_str, &rendering_helper_,
+      std::move(video_frame_validator), notes_[0].get()));
+  RenderingHelperParams helper_params;
+  helper_params.num_windows = 1;
+  InitializeRenderingHelper(helper_params);
+  CreateAndStartDecoder(clients_[0].get(), notes_[0].get());
+  ClientState last_state = WaitUntilDecodeFinish(notes_[0].get());
+  EXPECT_NE(CS_ERROR, last_state);
+
+  g_test_import = false;
+  g_frame_validator_flags = 0;
+}
+#endif
 
 // TODO(fischman, vrk): add more tests!  In particular:
 // - Test life-cycle: Seek/Stop/Pause/Play for a single decoder.
@@ -1753,7 +1790,23 @@ int main(int argc, char** argv) {
       continue;
     }
     if (it->first == "frame_validator") {
-      media::g_frame_validator = true;
+#if defined(OS_CHROMEOS)
+      auto flags = base::SplitString(it->second, ",", base::TRIM_WHITESPACE,
+                                     base::SPLIT_WANT_NONEMPTY);
+      for (auto& f : flags) {
+        if (f == "check") {
+          media::g_frame_validator_flags |=
+              media::test::VideoFrameValidator::CHECK;
+        } else if (f == "dump") {
+          media::g_frame_validator_flags |=
+              media::test::VideoFrameValidator::OUTPUTYUV;
+        } else {
+          LOG(FATAL) << "Unknown flag: " << f;
+        }
+      }
+
+      media::g_test_import = true;
+#endif
       continue;
     }
     if (it->first == "use-test-data-path") {

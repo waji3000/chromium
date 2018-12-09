@@ -18,6 +18,7 @@
 #include "third_party/blink/renderer/modules/device_orientation/device_orientation_data.h"
 #include "third_party/blink/renderer/modules/device_orientation/device_orientation_event.h"
 #include "third_party/blink/renderer/modules/media_controls/media_controls_impl.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 
 namespace blink {
 
@@ -101,7 +102,7 @@ bool MediaControlsRotateToFullscreenDelegate::operator==(
   return this == &other;
 }
 
-void MediaControlsRotateToFullscreenDelegate::handleEvent(
+void MediaControlsRotateToFullscreenDelegate::Invoke(
     ExecutionContext* execution_context,
     Event* event) {
   if (event->type() == event_type_names::kPlay ||
@@ -113,7 +114,8 @@ void MediaControlsRotateToFullscreenDelegate::handleEvent(
   }
   if (event->type() == event_type_names::kDeviceorientation) {
     if (event->isTrusted() &&
-        event->InterfaceName() == EventNames::DeviceOrientationEvent) {
+        event->InterfaceName() ==
+            event_interface_names::kDeviceOrientationEvent) {
       OnDeviceOrientationAvailable(ToDeviceOrientationEvent(event));
     }
     return;
@@ -135,7 +137,7 @@ void MediaControlsRotateToFullscreenDelegate::OnStateChange() {
            << needs_visibility_observer;
 
   if (needs_visibility_observer && !visibility_observer_) {
-    visibility_observer_ = new ElementVisibilityObserver(
+    visibility_observer_ = MakeGarbageCollected<ElementVisibilityObserver>(
         video_element_,
         WTF::BindRepeating(
             &MediaControlsRotateToFullscreenDelegate::OnVisibilityChange,

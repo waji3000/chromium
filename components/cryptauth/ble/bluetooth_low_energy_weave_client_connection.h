@@ -57,7 +57,7 @@ class BluetoothLowEnergyWeaveClientConnection
   class Factory {
    public:
     static std::unique_ptr<Connection> NewInstance(
-        RemoteDeviceRef remote_device,
+        chromeos::multidevice::RemoteDeviceRef remote_device,
         scoped_refptr<device::BluetoothAdapter> adapter,
         const device::BluetoothUUID remote_service_uuid,
         device::BluetoothDevice* bluetooth_device,
@@ -66,7 +66,7 @@ class BluetoothLowEnergyWeaveClientConnection
 
    protected:
     virtual std::unique_ptr<Connection> BuildInstance(
-        RemoteDeviceRef remote_device,
+        chromeos::multidevice::RemoteDeviceRef remote_device,
         scoped_refptr<device::BluetoothAdapter> adapter,
         const device::BluetoothUUID remote_service_uuid,
         device::BluetoothDevice* bluetooth_device,
@@ -92,7 +92,7 @@ class BluetoothLowEnergyWeaveClientConnection
   // Constructs the Connection object; a subsequent call to Connect() is
   // necessary to initiate the BLE connection.
   BluetoothLowEnergyWeaveClientConnection(
-      RemoteDeviceRef remote_device,
+      chromeos::multidevice::RemoteDeviceRef remote_device,
       scoped_refptr<device::BluetoothAdapter> adapter,
       const device::BluetoothUUID remote_service_uuid,
       device::BluetoothDevice* bluetooth_device,
@@ -152,10 +152,9 @@ class BluetoothLowEnergyWeaveClientConnection
   void OnDidSendMessage(const WireMessage& message, bool success) override;
 
   // device::BluetoothAdapter::Observer:
-  void DeviceChanged(device::BluetoothAdapter* adapter,
-                     device::BluetoothDevice* device) override;
-  void DeviceRemoved(device::BluetoothAdapter* adapter,
-                     device::BluetoothDevice* device) override;
+  void DeviceConnectedStateChanged(device::BluetoothAdapter* adapter,
+                                   device::BluetoothDevice* device,
+                                   bool is_now_connected) override;
   void GattCharacteristicValueChanged(
       device::BluetoothAdapter* adapter,
       device::BluetoothRemoteGattCharacteristic* characteristic,
@@ -175,6 +174,8 @@ class BluetoothLowEnergyWeaveClientConnection
                            ConnectSuccess);
   FRIEND_TEST_ALL_PREFIXES(CryptAuthBluetoothLowEnergyWeaveClientConnectionTest,
                            ConnectSuccessDisconnect);
+  FRIEND_TEST_ALL_PREFIXES(CryptAuthBluetoothLowEnergyWeaveClientConnectionTest,
+                           ConnectThenBluetoothDisconnects);
   FRIEND_TEST_ALL_PREFIXES(CryptAuthBluetoothLowEnergyWeaveClientConnectionTest,
                            DisconnectCalledTwice);
   FRIEND_TEST_ALL_PREFIXES(CryptAuthBluetoothLowEnergyWeaveClientConnectionTest,

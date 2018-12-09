@@ -41,6 +41,9 @@ Polymer({
 
     lastFocused_: Object,
 
+    /** @private */
+    listBlurred_: Boolean,
+
     lastSelectedIndex: Number,
 
     /** @type {!QueryState} */
@@ -429,7 +432,7 @@ Polymer({
    */
   needsTimeGap_: function(item, index) {
     const length = this.historyData_.length;
-    if (index >= length - 1 || length == 0)
+    if (index === undefined || index >= length - 1 || length == 0)
       return false;
 
     const currentItem = this.historyData_[index];
@@ -451,7 +454,7 @@ Polymer({
    */
   isCardStart_: function(item, i) {
     const length = this.historyData_.length;
-    if (length == 0 || i > length - 1)
+    if (i === undefined || length == 0 || i > length - 1)
       return false;
     return i == 0 ||
         this.historyData_[i].dateRelativeDay !=
@@ -467,7 +470,7 @@ Polymer({
    */
   isCardEnd_: function(item, i) {
     const length = this.historyData_.length;
-    if (length == 0 || i > length - 1)
+    if (i === undefined || length == 0 || i > length - 1)
       return false;
     return i == length - 1 ||
         this.historyData_[i].dateRelativeDay !=

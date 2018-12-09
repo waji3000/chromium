@@ -209,15 +209,11 @@ void LayoutSVGRoot::UpdateLayout() {
   }
 
   const auto& old_overflow_rect = VisualOverflowRect();
-  overflow_.reset();
+  ClearAllOverflows();
   AddVisualEffectOverflow();
 
-  if (!ShouldApplyViewportClip()) {
-    FloatRect content_visual_rect = VisualRectInLocalSVGCoordinates();
-    content_visual_rect =
-        local_to_border_box_transform_.MapRect(content_visual_rect);
-    AddContentsVisualOverflow(EnclosingLayoutRect(content_visual_rect));
-  }
+  if (!ShouldApplyViewportClip())
+    AddContentsVisualOverflow(ComputeContentsVisualOverflow());
 
   // The scale of one or more of the SVG elements may have changed, content
   // (the entire SVG) could have moved or new content may have been exposed, so
@@ -253,6 +249,19 @@ LayoutRect LayoutSVGRoot::VisualOverflowRect() const {
   if (!ShouldApplyViewportClip())
     rect.Unite(ContentsVisualOverflowRect());
   return rect;
+}
+
+LayoutRect LayoutSVGRoot::ComputeContentsVisualOverflow() const {
+  FloatRect content_visual_rect = VisualRectInLocalSVGCoordinates();
+  content_visual_rect =
+      local_to_border_box_transform_.MapRect(content_visual_rect);
+  // Condition the visual overflow rect to avoid being clipped/culled
+  // out if it is huge. This may sacrifice overflow, but usually only
+  // overflow that would never be seen anyway.
+  // To condition, we intersect with something that we oftentimes
+  // consider to be "infinity".
+  return Intersection(EnclosingLayoutRect(content_visual_rect),
+                      LayoutRect(LayoutRect::InfiniteIntRect()));
 }
 
 void LayoutSVGRoot::PaintReplaced(const PaintInfo& paint_info,
@@ -467,19 +476,6 @@ LayoutRect LayoutSVGRoot::LocalVisualRectIgnoringVisibility() const {
   }
 
   return LayoutRect(EnclosingIntRect(visual_rect));
-}
-
-bool LayoutSVGRoot::PaintedOutputOfObjectHasNoEffectRegardlessOfSize() const {
-  // The rule extends LayoutBox's instead of LayoutReplaced's.
-  if (!LayoutBox::PaintedOutputOfObjectHasNoEffectRegardlessOfSize())
-    return false;
-
-  if (SVGResources* resources =
-          SVGResourcesCache::CachedResourcesForLayoutObject(*this)) {
-    if (resources->Masker())
-      return false;
-  }
-  return true;
 }
 
 // This method expects local CSS box coordinates.

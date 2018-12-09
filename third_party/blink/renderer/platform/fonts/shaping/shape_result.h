@@ -144,8 +144,8 @@ class PLATFORM_EXPORT ShapeResult : public RefCounted<ShapeResult> {
                                   float start_x = 0) const;
 
   // The character start/end index of a range shape result.
-  unsigned StartIndexForResult() const { return start_index_; }
-  unsigned EndIndexForResult() const { return start_index_ + num_characters_; }
+  unsigned StartIndex() const { return start_index_; }
+  unsigned EndIndex() const { return start_index_ + num_characters_; }
   void FallbackFonts(HashSet<const SimpleFontData*>*) const;
   TextDirection Direction() const {
     return static_cast<TextDirection>(direction_);
@@ -164,12 +164,12 @@ class PLATFORM_EXPORT ShapeResult : public RefCounted<ShapeResult> {
   // Returns the next or previous offsets respectively at which it is safe to
   // break without reshaping.
   // The |offset| given and the return value is for the original string, between
-  // |StartIndexForResult| and |EndIndexForResult|.
+  // |StartIndex| and |EndIndex|.
   // TODO(eae): Remove these ones the cached versions are used everywhere.
   unsigned NextSafeToBreakOffset(unsigned offset) const;
   unsigned PreviousSafeToBreakOffset(unsigned offset) const;
 
-  // Returns the offset, relative to StartIndexForResult, whose (origin,
+  // Returns the offset, relative to StartIndex, whose (origin,
   // origin+advance) contains |x|.
   unsigned OffsetForPosition(float x, BreakGlyphsOption) const;
   // Returns the offset whose glyph boundary is nearest to |x|. Depends on
@@ -196,7 +196,7 @@ class PLATFORM_EXPORT ShapeResult : public RefCounted<ShapeResult> {
     return CaretOffsetForHitTest(x, text, break_glyphs_option);
   }
 
-  // Returns the position for a given offset, relative to StartIndexForResult.
+  // Returns the position for a given offset, relative to StartIndex.
   float PositionForOffset(unsigned offset,
                           AdjustMidCluster = AdjustMidCluster::kToEnd) const;
   // Similar to |PositionForOffset| with mid-glyph (mid-ligature) support.
@@ -224,7 +224,7 @@ class PLATFORM_EXPORT ShapeResult : public RefCounted<ShapeResult> {
   // break without reshaping. Operates on a cache (that needs to be pre-computed
   // using EnsurePositionData) and does not take partial glyphs into account.
   // The |offset| given and the return value is for the original string, between
-  // |StartIndexForResult| and |EndIndexForResult|.
+  // |StartIndex| and |EndIndex|.
   unsigned CachedNextSafeToBreakOffset(unsigned offset) const;
   unsigned CachedPreviousSafeToBreakOffset(unsigned offset) const;
 
@@ -232,17 +232,33 @@ class PLATFORM_EXPORT ShapeResult : public RefCounted<ShapeResult> {
   // configured to |ShapeResultSpacing|.
   // |text_start_offset| adjusts the character index in the ShapeResult before
   // giving it to |ShapeResultSpacing|. It can be negative if
-  // |StartIndexForResult()| is larger than the text in |ShapeResultSpacing|.
+  // |StartIndex()| is larger than the text in |ShapeResultSpacing|.
   void ApplySpacing(ShapeResultSpacing<String>&, int text_start_offset = 0);
   scoped_refptr<ShapeResult> ApplySpacingToCopy(ShapeResultSpacing<TextRun>&,
                                          const TextRun&) const;
 
   // Append a copy of a range within an existing result to another result.
-  void CopyRange(unsigned start, unsigned end, ShapeResult*) const;
+  //
+  // For sequential copies the opaque_context in/out parameter can be used to
+  // improve performance by avoding a linear scan to find the first run for the
+  // range. It should be set to zero for the first call and the resulting out
+  // value for one call is the appropiate input value for the next.
+  // NOTE: opaque_context assumes non-overlapping ranges.
+  void CopyRange(unsigned start,
+                 unsigned end,
+                 ShapeResult*,
+                 unsigned* opaque_context = nullptr) const;
 
   // Create a new ShapeResult instance from a range within an existing result.
+  //
+  // For sequential copies the opaque_context in/out parameter can be used to
+  // improve performance by avoding a linear scan to find the first run for the
+  // range. It should be set to zero for the first call and the resulting out
+  // value for one call is the appropiate input value for the next.
+  // NOTE: opaque_context assumes non-overlapping ranges.
   scoped_refptr<ShapeResult> SubRange(unsigned start_offset,
-                                      unsigned end_offset) const;
+                                      unsigned end_offset,
+                                      unsigned* opaque_context = nullptr) const;
 
   // Create a new ShapeResult instance with the start offset adjusted.
   scoped_refptr<ShapeResult> CopyAdjustedOffset(unsigned start_offset) const;
@@ -391,8 +407,6 @@ class PLATFORM_EXPORT ShapeResult : public RefCounted<ShapeResult> {
                              unsigned start_glyph,
                              unsigned num_glyphs,
                              hb_buffer_t*);
-  template <bool is_horizontal_run>
-  void ComputeGlyphBounds(const ShapeResult::RunInfo&);
   void InsertRun(scoped_refptr<ShapeResult::RunInfo>,
                  unsigned start_glyph,
                  unsigned num_glyphs,

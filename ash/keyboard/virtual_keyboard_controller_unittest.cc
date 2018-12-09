@@ -23,7 +23,7 @@
 #include "ui/display/test/display_manager_test_api.h"
 #include "ui/events/devices/input_device.h"
 #include "ui/events/devices/touchscreen_device.h"
-#include "ui/keyboard/keyboard_switches.h"
+#include "ui/keyboard/public/keyboard_switches.h"
 #include "ui/keyboard/test/keyboard_test_util.h"
 
 using keyboard::mojom::KeyboardEnableFlag;
@@ -118,7 +118,7 @@ TEST_F(VirtualKeyboardControllerTest,
   AccessibilityController* accessibility_controller =
       Shell::Get()->accessibility_controller();
   accessibility_controller->SetVirtualKeyboardEnabled(true);
-  ASSERT_TRUE(accessibility_controller->IsVirtualKeyboardEnabled());
+  ASSERT_TRUE(accessibility_controller->virtual_keyboard_enabled());
 
   // Set up a mock ImeControllerClient to test keyset changes.
   TestImeControllerClient client;
@@ -128,7 +128,7 @@ TEST_F(VirtualKeyboardControllerTest,
   GetVirtualKeyboardController()->ForceShowKeyboardWithKeyset(
       chromeos::input_method::mojom::ImeKeyset::kEmoji);
   Shell::Get()->ime_controller()->FlushMojoForTesting();
-  EXPECT_TRUE(accessibility_controller->IsVirtualKeyboardEnabled());
+  EXPECT_TRUE(accessibility_controller->virtual_keyboard_enabled());
 
   // Keyset should be emoji.
   Shell::Get()->ime_controller()->FlushMojoForTesting();
@@ -143,7 +143,7 @@ TEST_F(VirtualKeyboardControllerTest,
   base::RunLoop().RunUntilIdle();
 
   // The keyboard should still be enabled.
-  EXPECT_TRUE(accessibility_controller->IsVirtualKeyboardEnabled());
+  EXPECT_TRUE(accessibility_controller->virtual_keyboard_enabled());
 
   // Reset the accessibility prefs.
   accessibility_controller->SetVirtualKeyboardEnabled(false);
@@ -589,8 +589,8 @@ TEST_F(VirtualKeyboardControllerAlwaysEnabledTest,
 
   // Load in the primary display.
   keyboard_controller_->LoadKeyboardWindowInBackground();
-  keyboard_controller_->GetKeyboardWindow()->SetBounds(gfx::Rect(0, 0, 10, 10));
-  keyboard_controller_->NotifyKeyboardWindowLoaded();
+  // Wait for the keyboard window to load.
+  base::RunLoop().RunUntilIdle();
 
   // Show in secondary display.
   keyboard_controller_->ShowKeyboardInDisplay(GetSecondaryDisplay());

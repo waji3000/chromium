@@ -60,7 +60,7 @@ Main.Main = class {
 
   async _loaded() {
     console.timeStamp('Main._loaded');
-    await Runtime.runtimeReady();
+    await Runtime.appStarted();
     Runtime.setPlatform(Host.platform());
     InspectorFrontendHost.getPreferences(this._gotPreferences.bind(this));
   }
@@ -119,6 +119,7 @@ Main.Main = class {
     Runtime.experiments.register('protocolMonitor', 'Protocol Monitor');
     Runtime.experiments.register('samplingHeapProfilerTimeline', 'Sampling heap profiler timeline', true);
     Runtime.experiments.register('sourceDiff', 'Source diff');
+    Runtime.experiments.register('sourcesLogpoints', 'Sources: logpoints');
     Runtime.experiments.register('sourcesPrettyPrint', 'Automatically pretty print in the Sources Panel');
     Runtime.experiments.register(
         'stepIntoAsync', 'Introduce separate step action, stepInto becomes powerful enough to go inside async call');
@@ -129,7 +130,6 @@ Main.Main = class {
     Runtime.experiments.register('timelineEventInitiators', 'Timeline: event initiators');
     Runtime.experiments.register('timelineFlowEvents', 'Timeline: flow events', true);
     Runtime.experiments.register('timelineInvalidationTracking', 'Timeline: invalidation tracking', true);
-    Runtime.experiments.register('timelinePaintTimingMarkers', 'Timeline: paint timing markers', true);
     Runtime.experiments.register('timelineShowAllEvents', 'Timeline: show all events', true);
     Runtime.experiments.register('timelineTracingJSProfile', 'Timeline: tracing based JS profiler', true);
     Runtime.experiments.register('timelineV8RuntimeCallStats', 'Timeline: V8 Runtime Call Stats on Timeline', true);
@@ -152,7 +152,7 @@ Main.Main = class {
 
     Runtime.experiments.setDefaultExperiments([
       'colorContrastRatio', 'stepIntoAsync', 'oopifInlineDOM', 'consoleBelowPrompt', 'timelineTracingJSProfile',
-      'pinnedExpressions'
+      'pinnedExpressions', 'consoleKeyboardNavigation'
     ]);
   }
 
@@ -615,7 +615,7 @@ Main.Main.PauseListener = class {
  */
 Main.sendOverProtocol = function(method, params) {
   return new Promise((resolve, reject) => {
-    Protocol.InspectorBackend.sendRawMessageForTesting(method, params, (err, ...results) => {
+    Protocol.test.sendRawMessage(method, params, (err, ...results) => {
       if (err)
         return reject(err);
       return resolve(results);

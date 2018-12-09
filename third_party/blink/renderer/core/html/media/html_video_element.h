@@ -53,6 +53,8 @@ class CORE_EXPORT HTMLVideoElement final : public HTMLMediaElement,
 
  public:
   static HTMLVideoElement* Create(Document&);
+
+  HTMLVideoElement(Document&);
   void Trace(blink::Visitor*) override;
 
   bool HasPendingActivity() const final;
@@ -146,9 +148,8 @@ class CORE_EXPORT HTMLVideoElement final : public HTMLMediaElement,
                                                AccelerationHint,
                                                const FloatSize&) override;
   bool IsVideoElement() const override { return true; }
-  bool WouldTaintOrigin(const SecurityOrigin*) const override;
+  bool WouldTaintOrigin() const override;
   FloatSize ElementSize(const FloatSize&) const override;
-  const KURL& SourceURL() const override { return currentSrc(); }
   bool IsHTMLVideoElement() const override { return true; }
   // Video elements currently always go through RAM when used as a canvas image
   // source.
@@ -206,8 +207,6 @@ class CORE_EXPORT HTMLVideoElement final : public HTMLMediaElement,
   friend class MediaCustomControlsFullscreenDetectorTest;
   friend class HTMLMediaElementEventListenersTest;
   friend class HTMLVideoElementPersistentTest;
-
-  HTMLVideoElement(Document&);
 
   // PausableObject functions.
   void ContextDestroyed(ExecutionContext*) final;

@@ -5,6 +5,7 @@
 #include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/run_loop.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/test_timeouts.h"
 #include "build/build_config.h"
@@ -15,24 +16,29 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/common/chrome_features.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/network_session_configurator/common/network_switches.h"
+#include "components/prefs/pref_service.h"
 #include "components/url_formatter/url_formatter.h"
+#include "content/public/browser/download_manager_delegate.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/reload_type.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/context_menu_params.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/download_test_observer.h"
 #include "content/public/test/navigation_handle_observer.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/url_loader_interceptor.h"
@@ -52,7 +58,12 @@ class ChromeNavigationBrowserTest : public InProcessBrowserTest {
     // tests don't time out.
     command_line->AppendSwitch(switches::kDisableRendererBackgrounding);
 
+    embedded_test_server()->ServeFilesFromSourceDirectory("content/test/data");
     ASSERT_TRUE(embedded_test_server()->Start());
+  }
+
+  void SetUpOnMainThread() override {
+    host_resolver()->AddRule("*", "127.0.0.1");
   }
 
   void StartServerWithExpiredCert() {
@@ -112,9 +123,13 @@ class DidStartNavigationObserver : public content::WebContentsObserver {
 // Test to verify that navigations are not deleting the transient
 // NavigationEntry when showing an interstitial page and the old renderer
 // process is trying to navigate. See https://crbug.com/600046.
+// With committed interstitials, interstitials are no longer transient
+// navigations, so this test does not apply.
 IN_PROC_BROWSER_TEST_F(
     ChromeNavigationBrowserTest,
     MAYBE_TransientEntryPreservedOnMultipleNavigationsDuringInterstitial) {
+  if (base::FeatureList::IsEnabled(features::kSSLCommittedInterstitials))
+    return;
   StartServerWithExpiredCert();
 
   GURL setup_url =
@@ -363,11 +378,6 @@ class CtrlClickShouldEndUpInSameProcessTest : public CtrlClickProcessTest {
     CtrlClickProcessTest::SetUpCommandLine(command_line);
     content::IsolateAllSitesForTesting(command_line);
     content::RenderProcessHost::SetMaxRendererProcessCount(1);
-  }
-
-  void SetUpOnMainThread() override {
-    CtrlClickProcessTest::SetUpOnMainThread();
-    host_resolver()->AddRule("*", "127.0.0.1");
   }
 
  protected:
@@ -752,7 +762,6 @@ class SignInIsolationBrowserTest : public ChromeNavigationBrowserTest {
   }
 
   void SetUpOnMainThread() override {
-    host_resolver()->AddRule("*", "127.0.0.1");
     https_server_.StartAcceptingConnections();
     ChromeNavigationBrowserTest::SetUpOnMainThread();
   }
@@ -841,9 +850,8 @@ class WillProcessResponseObserver : public content::WebContentsObserver {
 // submitted to load an iframe.
 // See https://crbug.com/757809.
 // Note: This test couldn't be a content_browsertests, since there would be
-// not handler defined for the "ftp" protocol in
+// no handler defined for the "ftp" protocol in
 // URLRequestJobFactoryImpl::protocol_handler_map_.
-// Flaky on Mac only.  http://crbug.com/816646
 IN_PROC_BROWSER_TEST_F(ChromeNavigationBrowserTest, BlockLegacySubresources) {
   net::SpawnedTestServer ftp_server(
       net::SpawnedTestServer::TYPE_FTP,
@@ -851,7 +859,6 @@ IN_PROC_BROWSER_TEST_F(ChromeNavigationBrowserTest, BlockLegacySubresources) {
   ASSERT_TRUE(ftp_server.Start());
 
   GURL main_url_http(embedded_test_server()->GetURL("/iframe.html"));
-  GURL main_url_ftp(ftp_server.GetURL("iframe.html"));
   GURL iframe_url_http(embedded_test_server()->GetURL("/simple.html"));
   GURL iframe_url_ftp(ftp_server.GetURL("simple.html"));
   GURL redirect_url(embedded_test_server()->GetURL("/server-redirect?"));
@@ -863,8 +870,6 @@ IN_PROC_BROWSER_TEST_F(ChromeNavigationBrowserTest, BlockLegacySubresources) {
   } kTestCases[] = {
       {main_url_http, iframe_url_http, true},
       {main_url_http, iframe_url_ftp, false},
-      {main_url_ftp, iframe_url_http, true},
-      {main_url_ftp, iframe_url_ftp, true},
   };
   for (const auto test_case : kTestCases) {
     // Blocking the request should work, even after a redirect.
@@ -939,6 +944,137 @@ IN_PROC_BROWSER_TEST_F(ChromeNavigationBrowserTest, CrossSiteRedirectionToPDF) {
                          ->tab_strip_model()
                          ->GetActiveWebContents()
                          ->GetLastCommittedURL());
+}
+
+// Check that clicking on a link doesn't carry the transient user activation
+// from the original page to the navigated page (crbug.com/865243).
+IN_PROC_BROWSER_TEST_F(ChromeNavigationBrowserTest,
+                       WindowOpenBlockedAfterClickNavigation) {
+  // Navigate to a test page with links.
+  ui_test_utils::NavigateToURL(browser(),
+                               embedded_test_server()->GetURL("/links.html"));
+
+  // Click to navigate to title1.html.
+  content::WebContents* main_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  content::TestNavigationObserver observer(main_contents);
+  ASSERT_TRUE(ExecuteScript(main_contents,
+                            "document.getElementById('title1').click();"));
+  observer.Wait();
+
+  // Make sure popup attempt fails due to lack of transient user activation.
+  bool opened = false;
+  EXPECT_TRUE(content::ExecuteScriptWithoutUserGestureAndExtractBool(
+      main_contents, "window.domAutomationController.send(!!window.open());",
+      &opened));
+  EXPECT_FALSE(opened);
+
+  EXPECT_EQ(embedded_test_server()->GetURL("/title1.html"),
+            main_contents->GetLastCommittedURL());
+  EXPECT_EQ(1, browser()->tab_strip_model()->count());
+}
+
+// TODO(http://crbug.com/632514): This test currently expects opener downloads
+// go through and UMA is logged, but when the linked bug is resolved the
+// download should be disallowed.
+IN_PROC_BROWSER_TEST_F(ChromeNavigationBrowserTest,
+                       OpenerNavigation_DownloadPolicy) {
+  browser()->profile()->GetPrefs()->SetBoolean(prefs::kPromptForDownload,
+                                               false);
+  ui_test_utils::NavigateToURL(
+      browser(), embedded_test_server()->GetURL("a.com", "/title1.html"));
+
+  // Open a popup.
+  bool opened = false;
+  content::WebContents* opener =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  const char* kScriptFormat =
+      "window.domAutomationController.send(!!window.open('%s'));";
+  GURL popup_url = embedded_test_server()->GetURL("a.com", "/title1.html");
+  content::TestNavigationObserver popup_waiter(nullptr, 1);
+  popup_waiter.StartWatchingNewWebContents();
+  EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
+      opener, base::StringPrintf(kScriptFormat, popup_url.spec().c_str()),
+      &opened));
+  EXPECT_TRUE(opened);
+  popup_waiter.Wait();
+  EXPECT_EQ(2, browser()->tab_strip_model()->count());
+
+  // Using the popup, navigate its opener to a download.
+  base::HistogramTester histograms;
+  content::WebContents* popup =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  EXPECT_NE(popup, opener);
+  content::DownloadTestObserverInProgress observer(
+      content::BrowserContext::GetDownloadManager(browser()->profile()),
+      1 /* wait_count */);
+  EXPECT_TRUE(content::ExecuteScriptWithoutUserGesture(
+      popup,
+      "window.opener.location ='data:html/text;base64,'+btoa('payload');"));
+  observer.WaitForFinished();
+  histograms.ExpectBucketCount(
+      "Blink.UseCounter.Features",
+      blink::mojom::WebFeature::kOpenerNavigationDownloadCrossOriginNoGesture,
+      1);
+
+  // Delete any pending download.
+  std::vector<download::DownloadItem*> download_items;
+  content::DownloadManager* manager =
+      content::BrowserContext::GetDownloadManager(browser()->profile());
+  manager->GetAllDownloads(&download_items);
+  for (auto* item : download_items) {
+    if (!item->IsDone())
+      item->Cancel(true);
+  }
+}
+
+// Test which verifies that a noopener link/window.open() properly focus the
+// newly opened tab. See https://crbug.com/912348.
+IN_PROC_BROWSER_TEST_F(ChromeNavigationBrowserTest,
+                       NoopenerCorrectlyFocusesNewTab) {
+  content::WebContents* main_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+
+  // Navigate to a test page with links.
+  {
+    content::TestNavigationObserver observer(main_contents);
+    ui_test_utils::NavigateToURL(
+        browser(),
+        embedded_test_server()->GetURL("/click-noreferrer-links.html"));
+    observer.Wait();
+    EXPECT_TRUE(observer.last_navigation_succeeded());
+  }
+
+  // Click a link with noopener that navigates in a new window.
+  content::WebContents* link_web_contents = nullptr;
+  {
+    ui_test_utils::WindowedTabAddedNotificationObserver tab_added_observer(
+        content::NotificationService::AllSources());
+    EXPECT_TRUE(
+        content::ExecJs(main_contents, "clickSameSiteNoOpenerTargetedLink();"));
+    tab_added_observer.Wait();
+    link_web_contents = tab_added_observer.GetTab();
+  }
+
+  EXPECT_NE(main_contents, link_web_contents);
+  EXPECT_TRUE(link_web_contents->GetRenderWidgetHostView()->HasFocus());
+
+  // Execute window.open() with noopener.
+  content::WebContents* open_web_contents = nullptr;
+  {
+    ui_test_utils::WindowedTabAddedNotificationObserver tab_added_observer(
+        content::NotificationService::AllSources());
+    EXPECT_TRUE(content::ExecJs(
+        main_contents, content::JsReplace("window.open($1, 'bar', 'noopener');",
+                                          embedded_test_server()->GetURL(
+                                              "a.com", "/title1.html"))));
+    tab_added_observer.Wait();
+    open_web_contents = tab_added_observer.GetTab();
+  }
+
+  EXPECT_NE(main_contents, open_web_contents);
+  EXPECT_NE(link_web_contents, open_web_contents);
+  EXPECT_TRUE(open_web_contents->GetRenderWidgetHostView()->HasFocus());
 }
 
 // TODO(csharrison): These tests should become tentative WPT, once the feature

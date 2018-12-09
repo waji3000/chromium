@@ -18,7 +18,6 @@
 #include "mojo/public/cpp/platform/platform_channel.h"
 #include "mojo/public/cpp/system/invitation.h"
 #include "mojo/public/cpp/system/message_pipe.h"
-#include "services/service_manager/public/cpp/service_context.h"
 #include "services/service_manager/runner/common/client_util.h"
 #include "services/service_manager/runner/common/switches.h"
 #include "services/service_manager/sandbox/sandbox.h"
@@ -26,22 +25,22 @@
 
 #if defined(OS_LINUX)
 #include "base/rand_util.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "services/service_manager/sandbox/linux/sandbox_linux.h"
 #endif
 
 #if defined(OS_MACOSX)
-#include "services/service_manager/public/cpp/standalone_service/mach_broker.h"
+#include "mojo/core/embedder/default_mach_broker.h"
 #endif
 
 namespace service_manager {
 
-void RunStandaloneService(const StandaloneServiceCallback& callback) {
+void RunStandaloneService(StandaloneServiceCallback callback) {
   DCHECK(!base::MessageLoopCurrent::Get());
 
 #if defined(OS_MACOSX)
   // Send our task port to the parent.
-  MachBroker::SendTaskPortToParent();
+  mojo::core::DefaultMachBroker::SendTaskPortToParent();
 #endif
 
   const base::CommandLine& command_line =
@@ -78,7 +77,7 @@ void RunStandaloneService(const StandaloneServiceCallback& callback) {
   auto invitation = mojo::IncomingInvitation::Accept(
       mojo::PlatformChannel::RecoverPassedEndpointFromCommandLine(
           command_line));
-  callback.Run(GetServiceRequestFromCommandLine(&invitation));
+  std::move(callback).Run(GetServiceRequestFromCommandLine(&invitation));
 }
 
 }  // namespace service_manager

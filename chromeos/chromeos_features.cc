@@ -21,13 +21,30 @@ const base::Feature kAndroidMessagesProdEndpoint{
 const base::Feature kAutoScreenBrightness{"AutoScreenBrightness",
                                           base::FEATURE_DISABLED_BY_DEFAULT};
 
+// If enabled, auto-screen-brightness model will continue to adapt brightness
+// (based on ambient light)
+// after user changes brightness. Otherwise, the model will be disabled until
+// Chrome restarts.
+const base::Feature kAutoScreenBrightnessContinuedAdjustment{
+    "AutoScreenBrightnessContinuedAdjustment",
+    base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Enables or disables native ChromeVox support for Arc.
 const base::Feature kChromeVoxArcSupport{"ChromeVoxArcSupport",
                                          base::FEATURE_ENABLED_BY_DEFAULT};
 
+// Enables or disables Crostini Files.
+const base::Feature kCrostiniFiles{"CrostiniFiles",
+                                   base::FEATURE_ENABLED_BY_DEFAULT};
+
 // Enables or disables Crostini support for usb mounting.
 const base::Feature kCrostiniUsbSupport{"CrostiniUsbSupport",
                                         base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Enables or disables Discover Application on Chrome OS.
+// If enabled, Discover App will be shown in launcher.
+const base::Feature kDiscoverApp{"DiscoverApp",
+                                 base::FEATURE_ENABLED_BY_DEFAULT};
 
 // If enabled, DriveFS will be used for Drive sync.
 const base::Feature kDriveFs{"DriveFS", base::FEATURE_DISABLED_BY_DEFAULT};
@@ -45,6 +62,10 @@ const base::Feature kEnableUnifiedMultiDeviceSettings{
 // Enable the device to setup all MultiDevice services in a single workflow.
 const base::Feature kEnableUnifiedMultiDeviceSetup{
     "EnableUnifiedMultiDeviceSetup", base::FEATURE_ENABLED_BY_DEFAULT};
+
+// Enable restriction of symlink traversal on user-supplied filesystems.
+const base::Feature kFsNosymfollow{"FsNosymfollow",
+                                   base::FEATURE_DISABLED_BY_DEFAULT};
 
 // TODO(https://crbug.com/837156): Add this feature to chrome://flags.
 // If enabled, allows the qualified IME extension to connect to IME service.

@@ -28,9 +28,7 @@ void FramebustBlockTabHelper::AddBlockedUrl(const GURL& blocked_url,
   callbacks_.push_back(std::move(click_callback));
   DCHECK_EQ(blocked_urls_.size(), callbacks_.size());
 
-  for (Observer& observer : observers_) {
-    observer.OnBlockedUrlAdded(blocked_url);
-  }
+  manager_.NotifyObservers(0 /* id */, blocked_url);
   UpdateLocationBarUI(web_contents());
 }
 
@@ -49,14 +47,6 @@ void FramebustBlockTabHelper::OnBlockedUrlClicked(size_t index) {
       ui::PAGE_TRANSITION_LINK, false));
 }
 
-void FramebustBlockTabHelper::AddObserver(Observer* observer) {
-  observers_.AddObserver(observer);
-}
-
-void FramebustBlockTabHelper::RemoveObserver(const Observer* observer) {
-  observers_.RemoveObserver(observer);
-}
-
 FramebustBlockTabHelper::FramebustBlockTabHelper(
     content::WebContents* web_contents)
     : content::WebContentsObserver(web_contents) {}
@@ -70,7 +60,8 @@ void FramebustBlockTabHelper::DidFinishNavigation(
   }
   blocked_urls_.clear();
   callbacks_.clear();
-  animation_has_run_ = false;
 
   UpdateLocationBarUI(web_contents());
 }
+
+WEB_CONTENTS_USER_DATA_KEY_IMPL(FramebustBlockTabHelper)

@@ -22,6 +22,7 @@
 #include "third_party/blink/renderer/platform/bindings/exception_messages.h"
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
+#include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 
 namespace blink {
 
@@ -81,7 +82,7 @@ scoped_refptr<AudioWorkletHandler> AudioWorkletHandler::Create(
                                                 param_handler_map, options));
 }
 
-void AudioWorkletHandler::Process(size_t frames_to_process) {
+void AudioWorkletHandler::Process(uint32_t frames_to_process) {
   DCHECK(Context()->IsAudioThread());
 
   // Render and update the node state when the processor is ready with no error.
@@ -104,7 +105,7 @@ void AudioWorkletHandler::Process(size_t frames_to_process) {
       AudioFloatArray* param_values = param_value_map_.at(param_name);
       if (param_handler->HasSampleAccurateValues()) {
         param_handler->CalculateSampleAccurateValues(
-            param_values->Data(), frames_to_process);
+            param_values->Data(), static_cast<uint32_t>(frames_to_process));
       } else {
         std::fill(param_values->Data(),
                   param_values->Data() + frames_to_process,
@@ -241,7 +242,7 @@ AudioWorkletNode::AudioWorkletNode(
       }
     }
   }
-  parameter_map_ = new AudioParamMap(audio_param_map);
+  parameter_map_ = MakeGarbageCollected<AudioParamMap>(audio_param_map);
 
   SetHandler(AudioWorkletHandler::Create(*this,
                                          context.sampleRate(),
@@ -319,10 +320,10 @@ AudioWorkletNode* AudioWorkletNode::Create(
       MessageChannel::Create(context->GetExecutionContext());
   MessagePortChannel processor_port_channel = channel->port2()->Disentangle();
 
-  AudioWorkletNode* node =
-      new AudioWorkletNode(*context, name, options,
-          context->audioWorklet()->GetParamInfoListForProcessor(name),
-          channel->port1());
+  AudioWorkletNode* node = MakeGarbageCollected<AudioWorkletNode>(
+      *context, name, options,
+      context->audioWorklet()->GetParamInfoListForProcessor(name),
+      channel->port1());
 
   if (!node) {
     exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,

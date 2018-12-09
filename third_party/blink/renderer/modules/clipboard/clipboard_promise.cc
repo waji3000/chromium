@@ -5,7 +5,6 @@
 #include "third_party/blink/renderer/modules/clipboard/clipboard_promise.h"
 
 #include "base/single_thread_task_runner.h"
-#include "third_party/blink/public/mojom/page/page_visibility_state.mojom-blink.h"
 #include "third_party/blink/public/platform/modules/permissions/permission.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
@@ -21,6 +20,7 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/modules/permissions/permission_utils.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 
 // And now, a brief note about clipboard permissions.
 //
@@ -38,10 +38,10 @@ namespace blink {
 
 using mojom::blink::PermissionStatus;
 using mojom::blink::PermissionService;
-using mojom::PageVisibilityState;
 
 ScriptPromise ClipboardPromise::CreateForRead(ScriptState* script_state) {
-  ClipboardPromise* clipboard_promise = new ClipboardPromise(script_state);
+  ClipboardPromise* clipboard_promise =
+      MakeGarbageCollected<ClipboardPromise>(script_state);
   clipboard_promise->GetTaskRunner()->PostTask(
       FROM_HERE, WTF::Bind(&ClipboardPromise::HandleRead,
                            WrapPersistent(clipboard_promise)));
@@ -49,7 +49,8 @@ ScriptPromise ClipboardPromise::CreateForRead(ScriptState* script_state) {
 }
 
 ScriptPromise ClipboardPromise::CreateForReadText(ScriptState* script_state) {
-  ClipboardPromise* clipboard_promise = new ClipboardPromise(script_state);
+  ClipboardPromise* clipboard_promise =
+      MakeGarbageCollected<ClipboardPromise>(script_state);
   clipboard_promise->GetTaskRunner()->PostTask(
       FROM_HERE, WTF::Bind(&ClipboardPromise::HandleReadText,
                            WrapPersistent(clipboard_promise)));
@@ -58,7 +59,8 @@ ScriptPromise ClipboardPromise::CreateForReadText(ScriptState* script_state) {
 
 ScriptPromise ClipboardPromise::CreateForWrite(ScriptState* script_state,
                                                DataTransfer* data) {
-  ClipboardPromise* clipboard_promise = new ClipboardPromise(script_state);
+  ClipboardPromise* clipboard_promise =
+      MakeGarbageCollected<ClipboardPromise>(script_state);
   clipboard_promise->GetTaskRunner()->PostTask(
       FROM_HERE,
       WTF::Bind(&ClipboardPromise::HandleWrite,
@@ -68,7 +70,8 @@ ScriptPromise ClipboardPromise::CreateForWrite(ScriptState* script_state,
 
 ScriptPromise ClipboardPromise::CreateForWriteText(ScriptState* script_state,
                                                    const String& data) {
-  ClipboardPromise* clipboard_promise = new ClipboardPromise(script_state);
+  ClipboardPromise* clipboard_promise =
+      MakeGarbageCollected<ClipboardPromise>(script_state);
   clipboard_promise->GetTaskRunner()->PostTask(
       FROM_HERE, WTF::Bind(&ClipboardPromise::HandleWriteText,
                            WrapPersistent(clipboard_promise), data));

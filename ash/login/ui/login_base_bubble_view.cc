@@ -26,6 +26,10 @@ constexpr int kBubbleBottomMarginDp = 18;
 }  // namespace
 
 LoginBaseBubbleView::LoginBaseBubbleView(views::View* anchor_view)
+    : LoginBaseBubbleView(anchor_view, nullptr) {}
+
+LoginBaseBubbleView::LoginBaseBubbleView(views::View* anchor_view,
+                                         aura::Window* parent_window)
     : BubbleDialogDelegateView(anchor_view, views::BubbleBorder::NONE) {
   set_margins(gfx::Insets(kBubbleTopMarginDp, kBubbleHorizontalMarginDp,
                           kBubbleBottomMarginDp, kBubbleHorizontalMarginDp));
@@ -36,22 +40,30 @@ LoginBaseBubbleView::LoginBaseBubbleView(views::View* anchor_view)
   // Layer rendering is needed for animation.
   SetPaintToLayer();
   layer()->SetFillsBoundsOpaquely(false);
+
+  set_parent_window(parent_window);
 }
 
 LoginBaseBubbleView::~LoginBaseBubbleView() = default;
 
+LoginButton* LoginBaseBubbleView::GetBubbleOpener() const {
+  return nullptr;
+}
+
+bool LoginBaseBubbleView::IsPersistent() const {
+  return false;
+}
+
 void LoginBaseBubbleView::OnBeforeBubbleWidgetInit(
     views::Widget::InitParams* params,
     views::Widget* widget) const {
-  // Login bubbles must always be associated with the lock screen container,
-  // otherwise they may not show up as other containers are hidden.
-  //
-  // params->parent may be already set if the bubble has an anchor view.
-
-  // Shell may be null in tests.
+  // This case only gets called if the bubble has no anchor and no parent
+  // container was specified. In this case, the parent container should default
+  // to MenuContainer, so that login bubbles are visible over the shelf and
+  // virtual keyboard. Shell may be null in tests.
   if (!params->parent && Shell::HasInstance()) {
     params->parent = Shell::GetContainer(Shell::GetPrimaryRootWindow(),
-                                         kShellWindowId_LockScreenContainer);
+                                         kShellWindowId_MenuContainer);
   }
 }
 
@@ -60,8 +72,9 @@ int LoginBaseBubbleView::GetDialogButtons() const {
 }
 
 gfx::Size LoginBaseBubbleView::CalculatePreferredSize() const {
-  gfx::Size size = views::BubbleDialogDelegateView::CalculatePreferredSize();
+  gfx::Size size;
   size.set_width(kBubbleTotalWidthDp);
+  size.set_height(GetHeightForWidth(kBubbleTotalWidthDp));
   return size;
 }
 

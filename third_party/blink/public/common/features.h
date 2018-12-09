@@ -16,13 +16,21 @@ BLINK_COMMON_EXPORT extern const base::Feature
     kEagerCacheStorageSetupForServiceWorkers;
 BLINK_COMMON_EXPORT extern const base::Feature
     kEnableGpuRasterizationViewportRestriction;
+BLINK_COMMON_EXPORT extern const base::Feature kScriptStreaming;
+BLINK_COMMON_EXPORT extern const base::Feature kFirstContentfulPaintPlusPlus;
+BLINK_COMMON_EXPORT extern const base::Feature kImplicitRootScroller;
+BLINK_COMMON_EXPORT extern const base::Feature kJankTracking;
+BLINK_COMMON_EXPORT extern const base::Feature kBlinkGenPropertyTrees;
 BLINK_COMMON_EXPORT extern const base::Feature kLayoutNG;
+BLINK_COMMON_EXPORT extern const base::Feature kMixedContentAutoupgrade;
 BLINK_COMMON_EXPORT extern const base::Feature kMojoBlobURLs;
-BLINK_COMMON_EXPORT extern const base::Feature kNestedWorkers;
 BLINK_COMMON_EXPORT extern const base::Feature kOnionSoupDOMStorage;
 BLINK_COMMON_EXPORT extern const base::Feature kPortals;
+BLINK_COMMON_EXPORT extern const base::Feature kRTCGetDisplayMedia;
+BLINK_COMMON_EXPORT extern const base::Feature kRTCUnifiedPlanByDefault;
 BLINK_COMMON_EXPORT extern const base::Feature kRecordAnchorMetricsClicked;
 BLINK_COMMON_EXPORT extern const base::Feature kRecordAnchorMetricsVisible;
+BLINK_COMMON_EXPORT extern const base::Feature kResourceLoadViaDataPipe;
 BLINK_COMMON_EXPORT extern const base::Feature
     kServiceWorkerImportedScriptUpdateCheck;
 BLINK_COMMON_EXPORT extern const base::Feature
@@ -30,10 +38,8 @@ BLINK_COMMON_EXPORT extern const base::Feature
 BLINK_COMMON_EXPORT extern const base::Feature kServiceWorkerServicification;
 BLINK_COMMON_EXPORT extern const base::Feature kStopInBackground;
 BLINK_COMMON_EXPORT extern const base::Feature kStopNonTimersInBackground;
+BLINK_COMMON_EXPORT extern const base::Feature kWasmCodeCache;
 BLINK_COMMON_EXPORT extern const base::Feature kWritableFilesAPI;
-BLINK_COMMON_EXPORT extern const base::Feature kMixedContentAutoupgrade;
-BLINK_COMMON_EXPORT extern const base::Feature kJankTracking;
-BLINK_COMMON_EXPORT extern const base::Feature kRTCUnifiedPlanByDefault;
 
 BLINK_COMMON_EXPORT extern const char
     kAutofillPreviewStyleExperimentBgColorParameterName[];
@@ -44,6 +50,8 @@ BLINK_COMMON_EXPORT extern const char kMixedContentAutoupgradeModeParamName[];
 BLINK_COMMON_EXPORT extern const char kMixedContentAutoupgradeModeBlockable[];
 BLINK_COMMON_EXPORT extern const char
     kMixedContentAutoupgradeModeOptionallyBlockable[];
+
+BLINK_COMMON_EXPORT extern const base::Feature kDecodeLossyWebPImagesToYUV;
 
 }  // namespace features
 }  // namespace blink

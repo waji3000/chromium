@@ -13,6 +13,7 @@
 
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/platform/bindings/callback_function_base.h"
+#include "third_party/blink/renderer/platform/wtf/forward.h"
 
 namespace blink {
 
@@ -22,9 +23,11 @@ class TestDictionary;
 class CORE_EXPORT V8VoidCallbackFunctionDictionaryArg final : public CallbackFunctionBase {
  public:
   static V8VoidCallbackFunctionDictionaryArg* Create(v8::Local<v8::Function> callback_function) {
-    return new V8VoidCallbackFunctionDictionaryArg(callback_function);
+    return MakeGarbageCollected<V8VoidCallbackFunctionDictionaryArg>(callback_function);
   }
 
+  explicit V8VoidCallbackFunctionDictionaryArg(v8::Local<v8::Function> callback_function)
+      : CallbackFunctionBase(callback_function) {}
   ~V8VoidCallbackFunctionDictionaryArg() override = default;
 
   // NameClient overrides:
@@ -37,10 +40,6 @@ class CORE_EXPORT V8VoidCallbackFunctionDictionaryArg final : public CallbackFun
   // Performs "invoke", and then reports an exception, if any, to the global
   // error handler such as DevTools' console.
   void InvokeAndReportException(ScriptWrappable* callback_this_value, const TestDictionary*& arg);
-
- private:
-  explicit V8VoidCallbackFunctionDictionaryArg(v8::Local<v8::Function> callback_function)
-      : CallbackFunctionBase(callback_function) {}
 };
 
 template <>
@@ -48,6 +47,8 @@ class V8PersistentCallbackFunction<V8VoidCallbackFunctionDictionaryArg> final : 
   using V8CallbackFunction = V8VoidCallbackFunctionDictionaryArg;
 
  public:
+  explicit V8PersistentCallbackFunction(V8CallbackFunction* callback_function)
+      : V8PersistentCallbackFunctionBase(callback_function) {}
   ~V8PersistentCallbackFunction() override = default;
 
   // Returns a wrapper-tracing version of this callback function.
@@ -57,9 +58,6 @@ class V8PersistentCallbackFunction<V8VoidCallbackFunctionDictionaryArg> final : 
   CORE_EXPORT void InvokeAndReportException(ScriptWrappable* callback_this_value, const TestDictionary*& arg);
 
  private:
-  explicit V8PersistentCallbackFunction(V8CallbackFunction* callback_function)
-      : V8PersistentCallbackFunctionBase(callback_function) {}
-
   V8CallbackFunction* Proxy() {
     return As<V8CallbackFunction>();
   }

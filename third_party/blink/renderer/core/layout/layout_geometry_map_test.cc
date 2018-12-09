@@ -161,6 +161,11 @@ class LayoutGeometryMapTest : public testing::Test {
         WebString::FromUTF8(file_name));
   }
 
+  void UpdateAllLifecyclePhases(WebView* web_view) {
+    web_view->MainFrameWidget()->UpdateAllLifecyclePhases(
+        WebWidget::LifecycleUpdateReason::kTest);
+  }
+
   const std::string base_url_;
 };
 
@@ -169,8 +174,8 @@ TEST_F(LayoutGeometryMapTest, SimpleGeometryMapTest) {
   frame_test_helpers::WebViewHelper web_view_helper;
   WebView* web_view =
       web_view_helper.InitializeAndLoad(base_url_ + "rgm_test.html");
-  web_view->Resize(WebSize(1000, 1000));
-  web_view->UpdateAllLifecyclePhases();
+  web_view->MainFrameWidget()->Resize(WebSize(1000, 1000));
+  UpdateAllLifecyclePhases(web_view);
 
   // We are going test everything twice. Once with FloatPoints and once with
   // FloatRects. This is because LayoutGeometryMap treats both slightly
@@ -213,8 +218,8 @@ TEST_F(LayoutGeometryMapTest, TransformedGeometryTest)
   frame_test_helpers::WebViewHelper web_view_helper;
   WebView* web_view = web_view_helper.InitializeAndLoad(
       base_url_ + "rgm_transformed_test.html");
-  web_view->Resize(WebSize(1000, 1000));
-  web_view->UpdateAllLifecyclePhases();
+  web_view->MainFrameWidget()->Resize(WebSize(1000, 1000));
+  UpdateAllLifecyclePhases(web_view);
 
   LayoutGeometryMap rgm;
   rgm.PushMappingsToAncestor(GetLayoutBox(web_view, "InitialDiv"), nullptr);
@@ -272,8 +277,8 @@ TEST_F(LayoutGeometryMapTest, FixedGeometryTest) {
   frame_test_helpers::WebViewHelper web_view_helper;
   WebView* web_view = web_view_helper.InitializeAndLoad(
       base_url_ + "rgm_fixed_position_test.html");
-  web_view->Resize(WebSize(1000, 1000));
-  web_view->UpdateAllLifecyclePhases();
+  web_view->MainFrameWidget()->Resize(WebSize(1000, 1000));
+  UpdateAllLifecyclePhases(web_view);
 
   LayoutGeometryMap rgm;
   rgm.PushMappingsToAncestor(GetLayoutBox(web_view, "InitialDiv"), nullptr);
@@ -310,8 +315,8 @@ TEST_F(LayoutGeometryMapTest, ContainsFixedPositionTest) {
   frame_test_helpers::WebViewHelper web_view_helper;
   WebView* web_view = web_view_helper.InitializeAndLoad(
       base_url_ + "rgm_contains_fixed_position_test.html");
-  web_view->Resize(WebSize(1000, 1000));
-  web_view->UpdateAllLifecyclePhases();
+  web_view->MainFrameWidget()->Resize(WebSize(1000, 1000));
+  UpdateAllLifecyclePhases(web_view);
 
   FloatRect rect(0.0f, 0.0f, 100.0f, 100.0f);
   LayoutGeometryMap rgm;
@@ -358,8 +363,8 @@ TEST_F(LayoutGeometryMapTest, IframeTest) {
   frame_test_helpers::WebViewHelper web_view_helper;
   WebView* web_view =
       web_view_helper.InitializeAndLoad(base_url_ + "rgm_iframe_test.html");
-  web_view->Resize(WebSize(1000, 1000));
-  web_view->UpdateAllLifecyclePhases();
+  web_view->MainFrameWidget()->Resize(WebSize(1000, 1000));
+  UpdateAllLifecyclePhases(web_view);
 
   LayoutGeometryMap rgm(kTraverseDocumentBoundaries);
   LayoutGeometryMap rgm_no_frame;
@@ -454,8 +459,8 @@ TEST_F(LayoutGeometryMapTest, ColumnTest) {
   frame_test_helpers::WebViewHelper web_view_helper;
   WebView* web_view =
       web_view_helper.InitializeAndLoad(base_url_ + "rgm_column_test.html");
-  web_view->Resize(WebSize(1000, 1000));
-  web_view->UpdateAllLifecyclePhases();
+  web_view->MainFrameWidget()->Resize(WebSize(1000, 1000));
+  UpdateAllLifecyclePhases(web_view);
 
   // The document is 1000f wide (we resized to that size).
   // We have a 8px margin on either side of the document.
@@ -502,8 +507,8 @@ TEST_F(LayoutGeometryMapTest, FloatUnderInlineLayer) {
   frame_test_helpers::WebViewHelper web_view_helper;
   WebView* web_view = web_view_helper.InitializeAndLoad(
       base_url_ + "rgm_float_under_inline.html");
-  web_view->Resize(WebSize(1000, 1000));
-  web_view->UpdateAllLifecyclePhases();
+  web_view->MainFrameWidget()->Resize(WebSize(1000, 1000));
+  UpdateAllLifecyclePhases(web_view);
 
   LayoutGeometryMap rgm;
   auto* layer_under_float = GetLayoutBox(web_view, "layer-under-float");

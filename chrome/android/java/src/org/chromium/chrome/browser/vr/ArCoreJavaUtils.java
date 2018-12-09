@@ -66,7 +66,7 @@ public class ArCoreJavaUtils {
     private int mAppMinArCoreApkVersionCode = ARCORE_NOT_INSTALLED_VERSION_CODE;
 
     @UsedByReflection("ArDelegate.java")
-    /* package */ static void installArCoreDeviceProviderFactory() {
+    public static void installArCoreDeviceProviderFactory() {
         nativeInstallArCoreDeviceProviderFactory();
     }
 
@@ -78,17 +78,6 @@ public class ArCoreJavaUtils {
     @CalledByNative
     private static Context getApplicationContext() {
         return ContextUtils.getApplicationContext();
-    }
-
-    /**
-     * Determines whether ARCore's SDK should be loaded. Currently, this only
-     * depends on the OS version, but could be more sophisticated.
-     *
-     * @return true if the SDK should be loaded.
-     */
-    @CalledByNative
-    private static boolean shouldLoadArCoreSdk() {
-        return Build.VERSION.SDK_INT >= MIN_SDK_VERSION;
     }
 
     @CalledByNative

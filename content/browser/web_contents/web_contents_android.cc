@@ -200,7 +200,6 @@ WebContents* WebContents::FromJavaWebContents(
 // static
 static void JNI_WebContentsImpl_DestroyWebContents(
     JNIEnv* env,
-    const JavaParamRef<jclass>& clazz,
     jlong jweb_contents_android_ptr) {
   WebContentsAndroid* web_contents_android =
       reinterpret_cast<WebContentsAndroid*>(jweb_contents_android_ptr);
@@ -217,7 +216,6 @@ static void JNI_WebContentsImpl_DestroyWebContents(
 // static
 ScopedJavaLocalRef<jobject> JNI_WebContentsImpl_FromNativePtr(
     JNIEnv* env,
-    const JavaParamRef<jclass>& clazz,
     jlong web_contents_ptr) {
   WebContentsAndroid* web_contents_android =
       reinterpret_cast<WebContentsAndroid*>(web_contents_ptr);
@@ -854,7 +852,7 @@ void WebContentsAndroid::OnScaleFactorChanged(
     // |SendScreenRects()| indirectly calls GetViewSize() that asks Java layer.
     web_contents_->SendScreenRects();
     rwhva->SynchronizeVisualProperties(cc::DeadlinePolicy::UseDefaultDeadline(),
-                                       base::nullopt, base::nullopt);
+                                       base::nullopt);
   }
 }
 

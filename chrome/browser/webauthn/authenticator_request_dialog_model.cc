@@ -11,8 +11,18 @@
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_task_runner_handle.h"
+#include "build/build_config.h"
 
 namespace {
+
+bool ShouldShowBlePairingUI(
+    bool previously_paired_with_bluetooth_authenticator,
+    bool pair_with_new_device_for_bluetooth_low_energy) {
+  if (pair_with_new_device_for_bluetooth_low_energy)
+    return true;
+
+  return !previously_paired_with_bluetooth_authenticator;
+}
 
 // Attempts to auto-select the most likely transport that will be used to
 // service this request, or returns base::nullopt if unsure.
@@ -86,8 +96,10 @@ void AuthenticatorRequestDialogModel::SetCurrentStep(Step step) {
 
 void AuthenticatorRequestDialogModel::StartFlow(
     TransportAvailabilityInfo transport_availability,
-    base::Optional<device::FidoTransportProtocol> last_used_transport) {
+    base::Optional<device::FidoTransportProtocol> last_used_transport,
+    const base::ListValue* previously_paired_bluetooth_device_list) {
   DCHECK_EQ(current_step(), Step::kNotStarted);
+  DCHECK(!transport_availability.disable_embedder_ui);
 
   transport_availability_ = std::move(transport_availability);
   last_used_transport_ = last_used_transport;
@@ -95,6 +107,9 @@ void AuthenticatorRequestDialogModel::StartFlow(
     available_transports_.emplace_back(transport);
   }
 
+  previously_paired_with_bluetooth_authenticator_ =
+      previously_paired_bluetooth_device_list &&
+      !previously_paired_bluetooth_device_list->GetList().empty();
   StartGuidedFlowForMostLikelyTransportOrShowTransportSelection();
 }
 
@@ -115,7 +130,8 @@ void AuthenticatorRequestDialogModel::
 }
 
 void AuthenticatorRequestDialogModel::StartGuidedFlowForTransport(
-    AuthenticatorTransport transport) {
+    AuthenticatorTransport transport,
+    bool pair_with_new_device_for_bluetooth_low_energy) {
   DCHECK(current_step() == Step::kTransportSelection ||
          current_step() == Step::kWelcomeScreen ||
          current_step() == Step::kUsbInsertAndActivate ||
@@ -133,9 +149,15 @@ void AuthenticatorRequestDialogModel::StartGuidedFlowForTransport(
     case AuthenticatorTransport::kInternal:
       StartTouchIdFlow();
       break;
-    case AuthenticatorTransport::kBluetoothLowEnergy:
-      EnsureBleAdapterIsPoweredBeforeContinuingWithStep(Step::kBleActivate);
+    case AuthenticatorTransport::kBluetoothLowEnergy: {
+      Step next_step = ShouldShowBlePairingUI(
+                           previously_paired_with_bluetooth_authenticator_,
+                           pair_with_new_device_for_bluetooth_low_energy)
+                           ? Step::kBlePairingBegin
+                           : Step::kBleActivate;
+      EnsureBleAdapterIsPoweredBeforeContinuingWithStep(next_step);
       break;
+    }
     case AuthenticatorTransport::kCloudAssistedBluetoothLowEnergy:
       EnsureBleAdapterIsPoweredBeforeContinuingWithStep(Step::kCableActivate);
       break;
@@ -188,16 +210,28 @@ void AuthenticatorRequestDialogModel::StartBleDiscovery() {
 void AuthenticatorRequestDialogModel::InitiatePairingDevice(
     base::StringPiece authenticator_id) {
   DCHECK_EQ(current_step(), Step::kBleDeviceSelection);
-  DCHECK(saved_authenticators_.GetAuthenticator(authenticator_id));
+  auto* selected_authenticator =
+      saved_authenticators_.GetAuthenticator(authenticator_id);
+  DCHECK(selected_authenticator);
   selected_authenticator_id_ = authenticator_id.as_string();
+
+// For MacOS, Bluetooth pin pairing is done via system native UI, which is
+// triggered by a write attempt to GATT characteristic. Thus, simply resume
+// with WebAuthn request for MacOS.
+#if defined(OS_MACOSX)
+  SetCurrentStep(Step::kBleVerifying);
+  DispatchRequestAsync(selected_authenticator, base::TimeDelta());
+#else
   SetCurrentStep(Step::kBlePinEntry);
+#endif
 }
 
 void AuthenticatorRequestDialogModel::FinishPairingWithPin(
     const base::string16& pin) {
   DCHECK_EQ(current_step(), Step::kBlePinEntry);
+  DCHECK(selected_authenticator_id_);
   const auto* selected_authenticator =
-      saved_authenticators_.GetAuthenticator(selected_authenticator_id_);
+      saved_authenticators_.GetAuthenticator(*selected_authenticator_id_);
   if (!selected_authenticator) {
     // TODO(hongjunchoi): Implement an error screen for error encountered when
     // pairing.
@@ -208,27 +242,32 @@ void AuthenticatorRequestDialogModel::FinishPairingWithPin(
   DCHECK_EQ(device::FidoTransportProtocol::kBluetoothLowEnergy,
             selected_authenticator->transport());
   ble_pairing_callback_.Run(
-      selected_authenticator_id_, base::UTF16ToUTF8(pin),
+      *selected_authenticator_id_, base::UTF16ToUTF8(pin),
       base::BindOnce(&AuthenticatorRequestDialogModel::OnPairingSuccess,
-                     weak_factory_.GetWeakPtr(), selected_authenticator_id_),
+                     weak_factory_.GetWeakPtr()),
       base::BindOnce(&AuthenticatorRequestDialogModel::OnPairingFailure,
                      weak_factory_.GetWeakPtr()));
   SetCurrentStep(Step::kBleVerifying);
 }
 
-void AuthenticatorRequestDialogModel::OnPairingSuccess(
-    base::StringPiece authenticator_id) {
+void AuthenticatorRequestDialogModel::OnPairingSuccess() {
   DCHECK_EQ(current_step(), Step::kBleVerifying);
+  DCHECK(selected_authenticator_id_);
   auto* authenticator =
-      saved_authenticators_.GetAuthenticator(authenticator_id);
-  if (authenticator)
+      saved_authenticators_.GetAuthenticator(*selected_authenticator_id_);
+  if (!authenticator)
     return;
+
+  authenticator->SetIsPaired(true /* is_paired */);
+  DCHECK(ble_device_paired_callback_);
+  ble_device_paired_callback_.Run(*selected_authenticator_id_);
 
   DispatchRequestAsync(authenticator, base::TimeDelta());
 }
 
 void AuthenticatorRequestDialogModel::OnPairingFailure() {
   DCHECK_EQ(current_step(), Step::kBleVerifying);
+  selected_authenticator_id_.reset();
   SetCurrentStep(Step::kBleDeviceSelection);
 }
 
@@ -343,15 +382,42 @@ void AuthenticatorRequestDialogModel::SetBluetoothAdapterPowerOnCallback(
 void AuthenticatorRequestDialogModel::UpdateAuthenticatorReferenceId(
     base::StringPiece old_authenticator_id,
     std::string new_authenticator_id) {
+  // Bluetooth authenticator address may be changed during pairing process after
+  // the user chose device to pair during device selection UI. Thus, change
+  // |selected_authenticator_id_| as well.
+  if (selected_authenticator_id_ &&
+      *selected_authenticator_id_ == old_authenticator_id)
+    selected_authenticator_id_ = new_authenticator_id;
+
   saved_authenticators_.ChangeAuthenticatorId(old_authenticator_id,
                                               std::move(new_authenticator_id));
 }
 
+void AuthenticatorRequestDialogModel::SetBleDevicePairedCallback(
+    BleDevicePairedCallback ble_device_paired_callback) {
+  ble_device_paired_callback_ = std::move(ble_device_paired_callback);
+}
+
 void AuthenticatorRequestDialogModel::AddAuthenticator(
     const device::FidoAuthenticator& authenticator) {
-  saved_authenticators_.AddAuthenticator(AuthenticatorReference(
+  if (!authenticator.AuthenticatorTransport()) {
+    // AuthenticatorTransport is nullopt if we cannot determine the transport
+    // upfront, i.e. for the Windows API authenticator. The UI will be
+    // suppressed for this authenticator, so we can simply ignore it here.
+    return;
+  }
+
+  AuthenticatorReference authenticator_reference(
       authenticator.GetId(), authenticator.GetDisplayName(),
-      authenticator.AuthenticatorTransport(), authenticator.IsInPairingMode()));
+      *authenticator.AuthenticatorTransport(), authenticator.IsInPairingMode(),
+      authenticator.IsPaired());
+
+  if (authenticator_reference.is_paired() &&
+      authenticator_reference.transport() ==
+          AuthenticatorTransport::kBluetoothLowEnergy) {
+    DispatchRequestAsync(&authenticator_reference, base::TimeDelta());
+  }
+  saved_authenticators_.AddAuthenticator(std::move(authenticator_reference));
 }
 
 void AuthenticatorRequestDialogModel::RemoveAuthenticator(

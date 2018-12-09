@@ -33,9 +33,20 @@
 #include <memory>
 
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
+#include "third_party/blink/renderer/core/event_interface_names.h"
 #include "v8/include/v8.h"
 
 namespace blink {
+
+ErrorEvent* ErrorEvent::CreateSanitizedError(ScriptState* script_state) {
+  // "6. If script's muted errors is true, then set message to "Script error.",
+  // urlString to the empty string, line and col to 0, and errorValue to null."
+  // https://html.spec.whatwg.org/multipage/webappapis.html#runtime-script-errors:muted-errors
+  DCHECK(script_state);
+  return MakeGarbageCollected<ErrorEvent>(
+      "Script error.", SourceLocation::Create(String(), 0, 0, nullptr),
+      ScriptValue::CreateNull(script_state), &script_state->World());
+}
 
 ErrorEvent::ErrorEvent()
     : sanitized_message_(),
@@ -80,7 +91,7 @@ void ErrorEvent::SetUnsanitizedMessage(const String& message) {
 ErrorEvent::~ErrorEvent() = default;
 
 const AtomicString& ErrorEvent::InterfaceName() const {
-  return EventNames::ErrorEvent;
+  return event_interface_names::kErrorEvent;
 }
 
 bool ErrorEvent::IsErrorEvent() const {

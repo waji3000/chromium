@@ -6,8 +6,8 @@ package org.chromium.chrome.browser.payments;
 
 import android.app.Activity;
 import android.content.Context;
-import android.content.Intent;
 import android.os.Handler;
+import android.support.annotation.Nullable;
 import android.support.v4.util.ArrayMap;
 import android.text.TextUtils;
 
@@ -27,8 +27,7 @@ import org.chromium.chrome.browser.page_info.CertificateChainHelper;
 import org.chromium.chrome.browser.payments.ui.ContactDetailsSection;
 import org.chromium.chrome.browser.payments.ui.LineItem;
 import org.chromium.chrome.browser.payments.ui.PaymentInformation;
-import org.chromium.chrome.browser.payments.ui.PaymentRequestSection.OptionSection
-        .FocusChangedObserver;
+import org.chromium.chrome.browser.payments.ui.PaymentRequestSection.OptionSection.FocusChangedObserver;
 import org.chromium.chrome.browser.payments.ui.PaymentRequestUI;
 import org.chromium.chrome.browser.payments.ui.SectionInformation;
 import org.chromium.chrome.browser.payments.ui.ShoppingCart;
@@ -83,8 +82,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-
-import javax.annotation.Nullable;
 
 /**
  * Android implementation of the PaymentRequest service defined in
@@ -730,6 +727,14 @@ public class PaymentRequestImpl
             String canDedupedApplicationId = canDedupedApplicationIdUri.toString();
             if (TextUtils.isEmpty(canDedupedApplicationId)) continue;
             canDedupedApplicationIds.add(canDedupedApplicationId);
+            // Add the trailing slash, because Service worker registration scope is a directory path
+            // that must end with a '/' (e.g., "https://google.com/pay/"), whereas
+            // "canDedupedApplicationIdUri" is derived from the native Android payment app's default
+            // URL-based payment method name that may not necessarily specify the trailing slash
+            // (e.g., "https://google.com/pay").
+            if (canDedupedApplicationId.charAt(canDedupedApplicationId.length() - 1) != '/') {
+                canDedupedApplicationIds.add(canDedupedApplicationId + '/');
+            }
         }
         for (String appId : canDedupedApplicationIds) {
             for (int i = 0; i < mApps.size(); i++) {
@@ -841,7 +846,9 @@ public class PaymentRequestImpl
         }
         mRawLineItems = Collections.unmodifiableList(Arrays.asList(details.displayItems));
 
-        mUiShippingOptions = getShippingOptions(details.shippingOptions);
+        if (mUiShippingOptions == null || details.shippingOptions != null) {
+            mUiShippingOptions = getShippingOptions(details.shippingOptions);
+        }
 
         for (int i = 0; i < details.modifiers.length; i++) {
             PaymentDetailsModifier modifier = details.modifiers[i];
@@ -1434,9 +1441,7 @@ public class PaymentRequestImpl
             return;
         }
 
-        Intent intent = PreferencesLauncher.createIntentForSettingsPage(
-                context, MainPreferences.class.getName());
-        context.startActivity(intent);
+        PreferencesLauncher.launchSettingsPage(context, MainPreferences.class);
     }
 
     @Override

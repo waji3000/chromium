@@ -2,6 +2,7 @@
 <!DOCTYPE translationbundle>
 <translationbundle lang="lv">
 <translation id="1002108253973310084">Tika konstatēta nesaderīga protokola versija. Lūdzu, pārbaudiet, vai abos datoros ir instalēta programmatūras jaunākā versija, un mēģiniet vēlreiz.</translation>
+<translation id="1008557486741366299">Vēlāk</translation>
 <translation id="1050693411695664090">vājš</translation>
 <translation id="1152528166145813711">Atlasīt...</translation>
 <translation id="1199593201721843963">Atspējot attālos savienojumus</translation>
@@ -62,6 +63,7 @@ Lai saņemtu informāciju par konfidencialitāti, skatiet Google konfidencialit�
 <translation id="2314101195544969792">Jūsu <ph name="APPLICATION_NAME" /> sesija jau kādu laiku nav aktīva, un drīzumā tiks pārtraukts savienojums.</translation>
 <translation id="2317666076142640974">Izmēģiniet jauno <ph name="LINK_BEGIN" />Chrome attālās darbvirsmas tīmekļa lietotni<ph name="LINK_END" />. Mēs labprāt saņemtu atsauksmes no jums.</translation>
 <translation id="2320166752086256636">Paslēpt tastatūru</translation>
+<translation id="2332192922827071008">Atvērt preferences</translation>
 <translation id="2353140552984634198">Varat izveidot drošu savienojumu ar šo datoru, izmantojot Chrome saiti.</translation>
 <translation id="2359808026110333948">Turpināt</translation>
 <translation id="2366718077645204424">Nevar sasniegt saimniekdatoru. Iespējamais iemesls var būt tīkla konfigurācija, kuru izmantojat.</translation>
@@ -82,6 +84,7 @@ Lai saņemtu informāciju par konfidencialitāti, skatiet Google konfidencialit�
 <translation id="2841013758207633010">Laiks</translation>
 <translation id="2851754573186462851">Chromium lietotnes straumēšana</translation>
 <translation id="2888969873284818612">Radās tīkla kļūda. Kad ierīce atkal darbosies tiešsaistē, lietotne tiks restartēta.</translation>
+<translation id="2891243864890517178">Operētājsistēmai Mac (OS X Yosemite 10.10 un jaunākas versijas)</translation>
 <translation id="289405675947420287">Droši piekļūstiet savam datoram no iOS ierīces. Tas ir ātri, ērti un bez maksas.
 
 • Datorā, kuram vēlaties attāli piekļūt, Chrome interneta veikalā lejupielādējiet lietotni “Chrome attālā darbvirsma”.
@@ -188,6 +191,9 @@ dators</translation>
 <translation id="4973800994433240357">Lejupielādējot Chrome saites saimniekdatora instalēšanas programmu, jūs piekrītat Google <ph name="LINK_BEGIN" />pakalpojumu sniegšanas noteikumiem<ph name="LINK_END" />.</translation>
 <translation id="4974476491460646149">Savienojums ar “<ph name="HOSTNAME" />” ir pārtraukts</translation>
 <translation id="4985296110227979402">Vispirms datorā ir jāiestata attālā piekļuve.</translation>
+<translation id="5059773780693835145">Lai varētu kontrolēt šo iekārtu attāli, izmantojot <ph name="PRODUCT_NAME" />, ir jāveic papildu konfigurēšanas darbība.
+
+Lai iespējotu šo funkcionalitāti, atlasiet “<ph name="BUTTON_NAME" />”, lai tiktu parādīta preferenču rūts “Drošība un konfidencialitāte”, pēc tam atzīmējiet izvēles rūtiņu blakus “<ph name="SERVICE_SCRIPT_NAME" />”.</translation>
 <translation id="5064360042339518108"><ph name="HOSTNAME" /> (bezsaistē)</translation>
 <translation id="5070121137485264635">Attālajā saimniekdatorā tiek pieprasīts, lai veicat autentificēšanu trešās puses vietnē. Lai turpinātu, jums jāpiešķir Chrome attālajai darbvirsmai papildu atļaujas piekļūt šai adresei:</translation>
 <translation id="507204348399810022">Vai tiešām vēlaties atspējot attālos savienojumus ar saimniekdatoru <ph name="HOSTNAME" />?</translation>
@@ -312,6 +318,7 @@ dators</translation>
 <translation id="809687642899217504">Mani datori</translation>
 <translation id="811307782653349804">Piekļūstiet savam datoram, atrodoties jebkurā vietā.</translation>
 <translation id="8116630183974937060">Radās tīkla kļūda. Lūdzu, pārbaudiet, vai ierīcē ir izveidots savienojumus, un mēģiniet vēlreiz.</translation>
+<translation id="8123581458650016326">Atļaujiet attālajiem lietotājiem kontrolēt šo iekārtu</translation>
 <translation id="8178433417677596899">Ekrāna koplietošana — ideāli piemērota, lai saņemtu attālo tehnisko atbalstu.</translation>
 <translation id="8187079423890319756">Autortiesības 2013 Chromium autori. Visas tiesības paturētas.</translation>
 <translation id="8196755618196986400">Lai mēs varētu ar jums sazināties un iegūt papildu informāciju, iesniegtajās atsauksmēs tiks ietverta jūsu e-pasta adrese.</translation>

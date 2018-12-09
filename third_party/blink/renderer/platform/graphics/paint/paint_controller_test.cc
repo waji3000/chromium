@@ -35,10 +35,10 @@ INSTANTIATE_TEST_CASE_P(
     PaintControllerTest,
     testing::Values(0,
                     kBlinkGenPropertyTrees,
-                    kSlimmingPaintV2,
+                    kCompositeAfterPaint,
                     kUnderInvalidationChecking,
                     kBlinkGenPropertyTrees | kUnderInvalidationChecking,
-                    kSlimmingPaintV2 | kUnderInvalidationChecking));
+                    kCompositeAfterPaint | kUnderInvalidationChecking));
 
 TEST_P(PaintControllerTest, NestedRecorders) {
   GraphicsContext context(GetPaintController());
@@ -1453,7 +1453,7 @@ TEST_P(PaintControllerTest, BeginAndEndFrame) {
 }
 
 TEST_P(PaintControllerTest, InvalidateAll) {
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
     return;
 
   EXPECT_TRUE(GetPaintController().CacheIsAllInvalid());
@@ -1554,6 +1554,56 @@ TEST_P(PaintControllerTest, InsertValidItemInFront) {
   EXPECT_TRUE(second.IsValid());
   EXPECT_TRUE(third.IsValid());
   EXPECT_TRUE(fourth.IsValid());
+}
+
+TEST_P(PaintControllerTest, TransientPaintControllerIncompleteCycle) {
+  auto paint_controller = PaintController::Create(PaintController::kTransient);
+  GraphicsContext context(*paint_controller);
+  FakeDisplayItemClient client("client", LayoutRect(100, 100, 50, 50));
+  InitRootChunk(*paint_controller);
+  DrawRect(context, client, kBackgroundType, FloatRect(100, 100, 50, 50));
+  // The client of a transient paint controller can abort without
+  // CommintNewDisplayItems() and FinishCycle(). This should not crash.
+  paint_controller = nullptr;
+}
+
+TEST_P(PaintControllerTest, AllowDuplicatedIdForUncacheableItem) {
+  if (RuntimeEnabledFeatures::PaintUnderInvalidationCheckingEnabled())
+    return;
+
+  LayoutRect r(100, 100, 300, 300);
+  FakeDisplayItemClient cacheable("cacheable", r);
+  FakeDisplayItemClient uncacheable("uncacheable", r);
+  GraphicsContext context(GetPaintController());
+
+  uncacheable.Invalidate(PaintInvalidationReason::kUncacheable);
+  EXPECT_TRUE(cacheable.IsCacheable());
+  EXPECT_FALSE(uncacheable.IsCacheable());
+
+  InitRootChunk();
+  {
+    SubsequenceRecorder recorder(context, cacheable);
+    DrawRect(context, cacheable, kBackgroundType, FloatRect(r));
+    DrawRect(context, uncacheable, kBackgroundType, FloatRect(r));
+    // This should not trigger the duplicated id assert.
+    DrawRect(context, uncacheable, kBackgroundType, FloatRect(r));
+  }
+
+  CommitAndFinishCycle();
+  EXPECT_TRUE(GetPaintController().GetDisplayItemList()[0].IsCacheable());
+  EXPECT_FALSE(GetPaintController().GetDisplayItemList()[1].IsCacheable());
+  EXPECT_FALSE(GetPaintController().GetDisplayItemList()[2].IsCacheable());
+  EXPECT_TRUE(cacheable.IsCacheable());
+  EXPECT_FALSE(uncacheable.IsCacheable());
+
+  InitRootChunk();
+  EXPECT_TRUE(GetPaintController().UseCachedSubsequenceIfPossible(cacheable));
+  CommitAndFinishCycle();
+  EXPECT_TRUE(GetPaintController().GetDisplayItemList()[0].IsCacheable());
+  EXPECT_FALSE(GetPaintController().GetDisplayItemList()[1].IsCacheable());
+  EXPECT_FALSE(GetPaintController().GetDisplayItemList()[2].IsCacheable());
+  EXPECT_TRUE(cacheable.IsCacheable());
+  EXPECT_FALSE(uncacheable.IsCacheable());
 }
 
 // Death tests don't work properly on Android.

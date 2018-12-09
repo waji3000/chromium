@@ -12,15 +12,14 @@
 #include "base/callback_forward.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "base/observer_list.h"
 #include "build/build_config.h"
 #include "chrome/browser/chromeos/login/easy_unlock/chrome_proximity_auth_client.h"
 #include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_auth_attempt.h"
 #include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_metrics.h"
 #include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_screenlock_state_handler.h"
 #include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_types.h"
+#include "chromeos/components/multidevice/remote_device_ref.h"
 #include "chromeos/components/proximity_auth/screenlock_state.h"
-#include "components/cryptauth/remote_device_ref.h"
 #include "components/keyed_service/core/keyed_service.h"
 
 class AccountId;
@@ -50,8 +49,6 @@ namespace chromeos {
 namespace secure_channel {
 class SecureChannelClient;
 }  // namespace secure_channel
-
-class EasyUnlockServiceObserver;
 
 class EasyUnlockService : public KeyedService {
  public:
@@ -163,9 +160,6 @@ class EasyUnlockService : public KeyedService {
   // hardlock state if the two do not match.
   void CheckCryptohomeKeysAndMaybeHardlock();
 
-  void AddObserver(EasyUnlockServiceObserver* observer);
-  void RemoveObserver(EasyUnlockServiceObserver* observer);
-
   ChromeProximityAuthClient* proximity_auth_client() {
     return &proximity_auth_client_;
   }
@@ -195,6 +189,10 @@ class EasyUnlockService : public KeyedService {
 
   // Called when the state of the Bluetooth adapter changes.
   virtual void OnBluetoothAdapterPresentChanged();
+
+  // Called when the user enters password before easy unlock succeeds or fails
+  // definitively.
+  virtual void OnUserEnteredPassword();
 
   // KeyedService override:
   void Shutdown() override;
@@ -230,8 +228,8 @@ class EasyUnlockService : public KeyedService {
   // are loaded for |account_id|.
   void SetProximityAuthDevices(
       const AccountId& account_id,
-      const cryptauth::RemoteDeviceRefList& remote_devices,
-      base::Optional<cryptauth::RemoteDeviceRef> local_device);
+      const multidevice::RemoteDeviceRefList& remote_devices,
+      base::Optional<multidevice::RemoteDeviceRef> local_device);
 
  private:
   // A class to detect whether a bluetooth adapter is present.
@@ -286,8 +284,6 @@ class EasyUnlockService : public KeyedService {
   bool shut_down_;
 
   bool tpm_key_checked_;
-
-  base::ObserverList<EasyUnlockServiceObserver>::Unchecked observers_;
 
   base::WeakPtrFactory<EasyUnlockService> weak_ptr_factory_;
 

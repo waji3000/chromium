@@ -26,6 +26,8 @@ namespace tracing {
 
 namespace {
 
+const size_t kTraceEventBufferSizeInBytes = 100 * 1024;
+
 void AppendProtoArrayAsJSON(std::string* out,
                             const perfetto::protos::ChromeTracedValue& array);
 
@@ -294,6 +296,12 @@ JSONTraceExporter::JSONTraceExporter(const std::string& config,
   auto* chrome_config = trace_event_config->mutable_chrome_config();
   chrome_config->set_trace_config(config_);
 
+  auto* system_trace_config = trace_config.add_data_sources()->mutable_config();
+  system_trace_config->set_name(mojom::kSystemTraceDataSourceName);
+  system_trace_config->set_target_buffer(0);
+  auto* system_chrome_config = system_trace_config->mutable_chrome_config();
+  system_chrome_config->set_trace_config(config_);
+
   auto* trace_metadata_config =
       trace_config.add_data_sources()->mutable_config();
   trace_metadata_config->set_name(mojom::kMetaDataSourceName);
@@ -327,7 +335,12 @@ void JSONTraceExporter::OnTraceData(std::vector<perfetto::TracePacket> packets,
   DCHECK(json_callback_);
   DCHECK(!packets.empty() || !has_more);
 
+  // Since we write each event before checking the limit, we'll
+  // always go slightly over and hence we reserve some extra space
+  // to avoid most reallocs.
+  const size_t kReserveCapacity = kTraceEventBufferSizeInBytes * 5 / 4;
   std::string out;
+  out.reserve(kReserveCapacity);
 
   if (!has_output_json_preamble_) {
     out = "{\"traceEvents\":[";
@@ -351,8 +364,13 @@ void JSONTraceExporter::OnTraceData(std::vector<perfetto::TracePacket> packets,
     }
 
     for (auto& event : bundle.trace_events()) {
+      if (out.size() > kTraceEventBufferSizeInBytes) {
+        json_callback_.Run(out, nullptr, true);
+        out.clear();
+      }
+
       if (has_output_first_event_) {
-        out += ",";
+        out += ",\n";
       } else {
         has_output_first_event_ = true;
       }
@@ -375,10 +393,56 @@ void JSONTraceExporter::OnTraceData(std::vector<perfetto::TracePacket> packets,
         NOTREACHED();
       }
     }
+
+    for (auto& legacy_ftrace_output : bundle.legacy_ftrace_output()) {
+      legacy_system_ftrace_output_ += legacy_ftrace_output;
+    }
+
+    for (auto& legacy_json_trace : bundle.legacy_json_trace()) {
+      // Tracing agents should only add this field when there is some data.
+      DCHECK(!legacy_json_trace.data().empty());
+      switch (legacy_json_trace.type()) {
+        case perfetto::protos::ChromeLegacyJsonTrace::USER_TRACE:
+          if (has_output_first_event_) {
+            out += ",\n";
+          } else {
+            has_output_first_event_ = true;
+          }
+          out += legacy_json_trace.data();
+          break;
+        case perfetto::protos::ChromeLegacyJsonTrace::SYSTEM_TRACE:
+          if (legacy_system_trace_events_.empty()) {
+            legacy_system_trace_events_ = "{";
+          } else {
+            legacy_system_trace_events_ += ",";
+          }
+          legacy_system_trace_events_ += legacy_json_trace.data();
+          break;
+        default:
+          NOTREACHED();
+      }
+    }
   }
 
   if (!has_more) {
     out += "]";
+
+    if (!legacy_system_ftrace_output_.empty() ||
+        !legacy_system_trace_events_.empty()) {
+      // Should only have system events (e.g. ETW) or system ftrace output.
+      DCHECK(legacy_system_ftrace_output_.empty() ||
+             legacy_system_trace_events_.empty());
+      out += ",\"systemTraceEvents\":";
+      if (!legacy_system_ftrace_output_.empty()) {
+        std::string escaped;
+        base::EscapeJSONString(legacy_system_ftrace_output_,
+                               true /* put_in_quotes */, &escaped);
+        out += escaped;
+      } else {
+        out += legacy_system_trace_events_ + "}";
+      }
+    }
+
     if (!metadata_->empty()) {
       out += ",\"metadata\":";
       std::string json_value;

@@ -76,7 +76,9 @@ namespace blink {
 
 class CORE_EXPORT EmptyChromeClient : public ChromeClient {
  public:
-  static EmptyChromeClient* Create() { return new EmptyChromeClient; }
+  static EmptyChromeClient* Create() {
+    return MakeGarbageCollected<EmptyChromeClient>();
+  }
 
   ~EmptyChromeClient() override = default;
   void ChromeDestroyed() override {}
@@ -93,14 +95,6 @@ class CORE_EXPORT EmptyChromeClient : public ChromeClient {
   void TakeFocus(WebFocusType) override {}
 
   void FocusedNodeChanged(Node*, Node*) override {}
-  Page* CreateWindow(LocalFrame*,
-                     const FrameLoadRequest&,
-                     const WebWindowFeatures&,
-                     NavigationPolicy,
-                     SandboxFlags,
-                     const SessionStorageNamespaceId&) override {
-    return nullptr;
-  }
   void Show(NavigationPolicy) override {}
 
   void DidOverscroll(const FloatSize&,
@@ -117,7 +111,7 @@ class CORE_EXPORT EmptyChromeClient : public ChromeClient {
                      const WebDragData&,
                      WebDragOperationsMask,
                      const SkBitmap& drag_image,
-                     const WebPoint& drag_image_offset) override {}
+                     const gfx::Point& drag_image_offset) override {}
   bool AcceptsLoadDrops() const override { return true; }
 
   bool ShouldReportDetailedMessageForSource(LocalFrame&,
@@ -138,6 +132,15 @@ class CORE_EXPORT EmptyChromeClient : public ChromeClient {
   }
 
   void CloseWindowSoon() override {}
+
+  Page* CreateWindowDelegate(LocalFrame*,
+                             const FrameLoadRequest&,
+                             const WebWindowFeatures&,
+                             NavigationPolicy,
+                             SandboxFlags,
+                             const SessionStorageNamespaceId&) override {
+    return nullptr;
+  }
 
   bool OpenJavaScriptAlertDelegate(LocalFrame*, const String&) override {
     return false;
@@ -176,8 +179,6 @@ class CORE_EXPORT EmptyChromeClient : public ChromeClient {
   void SetToolTip(LocalFrame&, const String&, TextDirection) override {}
 
   void PrintDelegate(LocalFrame*) override {}
-
-  void EnumerateChosenDirectory(FileChooser*) override {}
 
   ColorChooser* OpenColorChooser(LocalFrame*,
                                  ColorChooserClient*,
@@ -225,7 +226,11 @@ class CORE_EXPORT EmptyChromeClient : public ChromeClient {
 
 class CORE_EXPORT EmptyLocalFrameClient : public LocalFrameClient {
  public:
-  static EmptyLocalFrameClient* Create() { return new EmptyLocalFrameClient; }
+  static EmptyLocalFrameClient* Create() {
+    return MakeGarbageCollected<EmptyLocalFrameClient>();
+  }
+
+  EmptyLocalFrameClient() = default;
   ~EmptyLocalFrameClient() override = default;
 
   bool HasWebView() const override { return true; }  // mainly for assertions
@@ -251,10 +256,8 @@ class CORE_EXPORT EmptyLocalFrameClient : public LocalFrameClient {
 
   void DispatchDidHandleOnloadEvents() override {}
   void DispatchWillCommitProvisionalLoad() override {}
-  void DispatchDidStartProvisionalLoad(
-      DocumentLoader*,
-      ResourceRequest&,
-      mojo::ScopedMessagePipeHandle navigation_initiator_handle) override {}
+  void DispatchDidStartProvisionalLoad(DocumentLoader*,
+                                       const ResourceRequest&) override {}
   void DispatchDidReceiveTitle(const String&) override {}
   void DispatchDidChangeIcons(IconType) override {}
   void DispatchDidCommitLoad(HistoryItem*,
@@ -268,19 +271,21 @@ class CORE_EXPORT EmptyLocalFrameClient : public LocalFrameClient {
   void DispatchDidFinishLoad() override {}
   void DispatchDidChangeThemeColor() override {}
 
-  NavigationPolicy DecidePolicyForNavigation(const ResourceRequest&,
-                                             Document* origin_document,
-                                             DocumentLoader*,
-                                             WebNavigationType,
-                                             NavigationPolicy,
-                                             bool,
-                                             bool,
-                                             bool,
-                                             WebTriggeringEventInfo,
-                                             HTMLFormElement*,
-                                             ContentSecurityPolicyDisposition,
-                                             mojom::blink::BlobURLTokenPtr,
-                                             base::TimeTicks) override;
+  void BeginNavigation(const ResourceRequest&,
+                       Document* origin_document,
+                       DocumentLoader*,
+                       WebNavigationType,
+                       NavigationPolicy,
+                       bool,
+                       WebFrameLoadType,
+                       bool,
+                       WebTriggeringEventInfo,
+                       HTMLFormElement*,
+                       ContentSecurityPolicyDisposition,
+                       mojom::blink::BlobURLTokenPtr,
+                       base::TimeTicks,
+                       const String&,
+                       mojom::blink::NavigationInitiatorPtr) override;
 
   void DispatchWillSendSubmitEvent(HTMLFormElement*) override;
 
@@ -372,7 +377,13 @@ class CORE_EXPORT EmptyLocalFrameClient : public LocalFrameClient {
   WebTextCheckClient* GetTextCheckerClient() const override;
 
   std::unique_ptr<WebURLLoaderFactory> CreateURLLoaderFactory() override {
-    return Platform::Current()->CreateDefaultURLLoaderFactory();
+    // Most consumers of EmptyLocalFrameClient should not make network requests.
+    // If an exception needs to be made (e.g. in test code), then the consumer
+    // should define their own subclass of LocalFrameClient or
+    // EmptyLocalFrameClient and override the CreateURLLoaderFactory method.
+    // See also https://crbug.com/891872.
+    NOTREACHED();
+    return nullptr;
   }
 
   void BubbleLogicalScrollInParentFrame(
@@ -390,8 +401,6 @@ class CORE_EXPORT EmptyLocalFrameClient : public LocalFrameClient {
   Frame* FindFrame(const AtomicString& name) const override;
 
  protected:
-  EmptyLocalFrameClient() = default;
-
   // Not owned
   WebTextCheckClient* text_check_client_;
 

@@ -173,9 +173,11 @@ class CONTENT_EXPORT NavigationHandle {
   virtual net::Error GetNetErrorCode() = 0;
 
   // Returns the RenderFrameHost this navigation is committing in.  The
-  // RenderFrameHost returned will be the final host for the navigation.  This
-  // can only be accessed after a response has been delivered for processing,
-  // or after the navigation fails with an error page.
+  // RenderFrameHost returned will be the final host for the navigation. (Use
+  // WebContentsObserver::RenderFrameHostChanged() to observe RenderFrameHost
+  // changes that occur during navigation.) This can only be accessed after a
+  // response has been delivered for processing, or after the navigation fails
+  // with an error page.
   virtual RenderFrameHost* GetRenderFrameHost() = 0;
 
   // Whether the navigation happened without changing document. Examples of
@@ -278,6 +280,10 @@ class CONTENT_EXPORT NavigationHandle {
 
   // Returns the proxy server used for this navigation, if any.
   virtual const net::ProxyServer& GetProxyServer() = 0;
+
+  // Returns the value of the hrefTranslate attribute if this navigation was
+  // initiated from a link that had that attribute set.
+  virtual const std::string& GetHrefTranslate() = 0;
 
   // Testing methods ----------------------------------------------------------
   //

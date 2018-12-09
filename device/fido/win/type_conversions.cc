@@ -4,7 +4,6 @@
 
 #include "device/fido/win/type_conversions.h"
 
-#include <webauthn.h>
 #include <vector>
 
 #include "base/containers/span.h"
@@ -20,7 +19,6 @@
 #include "device/fido/opaque_attestation_statement.h"
 
 namespace device {
-namespace fido {
 
 base::Optional<AuthenticatorMakeCredentialResponse>
 ToAuthenticatorMakeCredentialResponse(
@@ -44,12 +42,32 @@ ToAuthenticatorMakeCredentialResponse(
     return base::nullopt;
   }
 
+  base::Optional<FidoTransportProtocol> transport_used;
+  if (credential_attestation.dwVersion >=
+      WEBAUTHN_CREDENTIAL_ATTESTATION_VERSION_3) {
+    // dwUsedTransport should have exactly one of the
+    // WEBAUTHN_CTAP_TRANSPORT_* values set.
+    switch (credential_attestation.dwUsedTransport) {
+      case WEBAUTHN_CTAP_TRANSPORT_USB:
+        transport_used = FidoTransportProtocol::kUsbHumanInterfaceDevice;
+        break;
+      case WEBAUTHN_CTAP_TRANSPORT_NFC:
+        transport_used = FidoTransportProtocol::kNearFieldCommunication;
+        break;
+      case WEBAUTHN_CTAP_TRANSPORT_BLE:
+        transport_used = FidoTransportProtocol::kBluetoothLowEnergy;
+        break;
+      case WEBAUTHN_CTAP_TRANSPORT_INTERNAL:
+        transport_used = FidoTransportProtocol::kInternal;
+        break;
+      default:
+        // Ignore _TEST and possibly future others.
+        break;
+    }
+  }
+
   return AuthenticatorMakeCredentialResponse(
-      // TODO(martinkr): Ultimately, we cannot be sure that the transport is
-      // really USB. We exclude platform by forcing authenticatorAttachment to
-      // "cross-platform"; but that still leaves NFC vs USB. Perhaps we should
-      // wrap this field in a base::Optional?
-      FidoTransportProtocol::kUsbHumanInterfaceDevice,
+      base::nullopt /* transport_used */,
       AttestationObject(
           std::move(*authenticator_data),
           std::make_unique<OpaqueAttestationStatement>(
@@ -68,10 +86,22 @@ ToAuthenticatorGetAssertionResponse(const WEBAUTHN_ASSERTION& assertion) {
                                    assertion.cbAuthenticatorData);
     return base::nullopt;
   }
-  return AuthenticatorGetAssertionResponse(
+  AuthenticatorGetAssertionResponse response(
       std::move(*authenticator_data),
       std::vector<uint8_t>(assertion.pbSignature,
                            assertion.pbSignature + assertion.cbSignature));
+  if (assertion.Credential.cbId > 0) {
+    response.SetCredential(PublicKeyCredentialDescriptor(
+        CredentialType::kPublicKey,
+        std::vector<uint8_t>(
+            assertion.Credential.pbId,
+            assertion.Credential.pbId + assertion.Credential.cbId)));
+  }
+  if (assertion.cbUserId > 0) {
+    response.SetUserEntity(PublicKeyCredentialUserEntity(std::vector<uint8_t>(
+        assertion.pbUserId, assertion.pbUserId + assertion.cbUserId)));
+  }
+  return response;
 }
 
 uint32_t ToWinUserVerificationRequirement(
@@ -86,6 +116,86 @@ uint32_t ToWinUserVerificationRequirement(
   }
   NOTREACHED();
   return WEBAUTHN_USER_VERIFICATION_REQUIREMENT_REQUIRED;
+}
+
+uint32_t ToWinAuthenticatorAttachment(
+    AuthenticatorAttachment authenticator_attachment) {
+  switch (authenticator_attachment) {
+    case AuthenticatorAttachment::kAny:
+      return WEBAUTHN_AUTHENTICATOR_ATTACHMENT_ANY;
+    case AuthenticatorAttachment::kPlatform:
+      return WEBAUTHN_AUTHENTICATOR_ATTACHMENT_PLATFORM;
+    case AuthenticatorAttachment::kCrossPlatform:
+      return WEBAUTHN_AUTHENTICATOR_ATTACHMENT_CROSS_PLATFORM;
+  }
+  NOTREACHED();
+  return WEBAUTHN_AUTHENTICATOR_ATTACHMENT_ANY;
+}
+
+static uint32_t ToWinTransportsMask(
+    const base::flat_set<FidoTransportProtocol>& transports) {
+  uint32_t result = 0;
+  for (const FidoTransportProtocol transport : transports) {
+    switch (transport) {
+      case FidoTransportProtocol::kUsbHumanInterfaceDevice:
+        result |= WEBAUTHN_CTAP_TRANSPORT_USB;
+        break;
+      case FidoTransportProtocol::kNearFieldCommunication:
+        result |= WEBAUTHN_CTAP_TRANSPORT_NFC;
+        break;
+      case FidoTransportProtocol::kBluetoothLowEnergy:
+        result |= WEBAUTHN_CTAP_TRANSPORT_BLE;
+        break;
+      case FidoTransportProtocol::kCloudAssistedBluetoothLowEnergy:
+        // caBLE is unsupported by the Windows API.
+        break;
+      case FidoTransportProtocol::kInternal:
+        result |= WEBAUTHN_CTAP_TRANSPORT_INTERNAL;
+        break;
+    }
+  }
+  return result;
+}
+
+std::vector<WEBAUTHN_CREDENTIAL> ToWinCredentialVector(
+    const base::Optional<std::vector<PublicKeyCredentialDescriptor>>&
+        credentials) {
+  if (!credentials) {
+    return {};
+  }
+  std::vector<WEBAUTHN_CREDENTIAL> result;
+  for (const auto& credential : *credentials) {
+    if (credential.credential_type() != CredentialType::kPublicKey) {
+      continue;
+    }
+    result.push_back(WEBAUTHN_CREDENTIAL{
+        WEBAUTHN_CREDENTIAL_CURRENT_VERSION,
+        credential.id().size(),
+        const_cast<unsigned char*>(credential.id().data()),
+        WEBAUTHN_CREDENTIAL_TYPE_PUBLIC_KEY,
+    });
+  }
+  return result;
+}
+
+std::vector<WEBAUTHN_CREDENTIAL_EX> ToWinCredentialExVector(
+    const base::Optional<std::vector<PublicKeyCredentialDescriptor>>&
+        credentials) {
+  if (!credentials) {
+    return {};
+  }
+  std::vector<WEBAUTHN_CREDENTIAL_EX> result;
+  for (const auto& credential : *credentials) {
+    if (credential.credential_type() != CredentialType::kPublicKey) {
+      continue;
+    }
+    result.push_back(WEBAUTHN_CREDENTIAL_EX{
+        WEBAUTHN_CREDENTIAL_EX_CURRENT_VERSION, credential.id().size(),
+        const_cast<unsigned char*>(credential.id().data()),
+        WEBAUTHN_CREDENTIAL_TYPE_PUBLIC_KEY,
+        ToWinTransportsMask(credential.transports())});
+  }
+  return result;
 }
 
 CtapDeviceResponseCode WinErrorNameToCtapDeviceResponseCode(
@@ -116,5 +226,4 @@ CtapDeviceResponseCode WinErrorNameToCtapDeviceResponseCode(
              : CtapDeviceResponseCode::kCtap2ErrOther;
 }
 
-}  // namespace fido
 }  // namespace device

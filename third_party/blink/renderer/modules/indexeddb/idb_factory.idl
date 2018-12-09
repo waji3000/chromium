@@ -40,8 +40,8 @@
     [
       CallWith=ScriptState,
       ImplementedAs=GetDatabaseInfo,
-      RaisesException,
-      RuntimeEnabled=IDBGetDatabases
+      Measure,
+      RaisesException
     ] Promise<sequence<IDBDatabaseInfo>> databases();
 };
 

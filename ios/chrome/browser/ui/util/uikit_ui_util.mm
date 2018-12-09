@@ -18,6 +18,7 @@
 #include "base/numerics/math_constants.h"
 #include "ios/chrome/browser/experimental_flags.h"
 #include "ios/chrome/browser/ui/ui_feature_flags.h"
+#include "ios/chrome/browser/ui/util/dynamic_type_util.h"
 #include "ios/chrome/browser/ui/util/rtl_geometry.h"
 #include "ios/chrome/browser/ui/util/ui_util.h"
 #include "ios/web/public/web_thread.h"
@@ -64,18 +65,7 @@ void GetRGBA(UIColor* color, CGFloat* r, CGFloat* g, CGFloat* b, CGFloat* a) {
   }
 }
 
-// Store a reference to the current first responder.
-UIResponder* gFirstResponder = nil;
-
 }  // namespace
-
-@implementation UIResponder (FirstResponder)
-
-- (void)cr_markSelfCurrentFirstResponder {
-  gFirstResponder = self;
-}
-
-@end
 
 void SetA11yLabelAndUiAutomationName(UIView* element,
                                      int idsAccessibilityLabel,
@@ -130,12 +120,8 @@ UIFont* GetUIFont(int fontFace, bool isBold, CGFloat fontSize) {
 }
 
 void SetUILabelScaledFont(UILabel* label, UIFont* font) {
-  if (@available(iOS 11, *)) {
-    label.font = [[UIFontMetrics defaultMetrics] scaledFontForFont:font];
-    label.adjustsFontForContentSizeCategory = YES;
-  } else {
-    label.font = font;
-  }
+  label.font = [[UIFontMetrics defaultMetrics] scaledFontForFont:font];
+  label.adjustsFontForContentSizeCategory = YES;
 }
 
 void MaybeSetUILabelScaledFont(BOOL maybe, UILabel* label, UIFont* font) {
@@ -147,12 +133,8 @@ void MaybeSetUILabelScaledFont(BOOL maybe, UILabel* label, UIFont* font) {
 }
 
 void SetUITextFieldScaledFont(UITextField* textField, UIFont* font) {
-  if (@available(iOS 11, *)) {
-    textField.font = [[UIFontMetrics defaultMetrics] scaledFontForFont:font];
-    textField.adjustsFontForContentSizeCategory = YES;
-  } else {
-    textField.font = font;
-  }
+  textField.font = [[UIFontMetrics defaultMetrics] scaledFontForFont:font];
+  textField.adjustsFontForContentSizeCategory = YES;
 }
 
 void MaybeSetUITextFieldScaledFont(BOOL maybe,
@@ -648,21 +630,8 @@ UIView* GetFirstResponderSubview(UIView* view) {
 }
 
 UIResponder* GetFirstResponder() {
-  UIApplication* application = [UIApplication sharedApplication];
-  if (base::ios::IsRunningOnIOS11OrLater() &&
-      base::FeatureList::IsEnabled(kFirstResponderKeyWindow)) {
-    return GetFirstResponderSubview(application.keyWindow);
-  }
-
   DCHECK_CURRENTLY_ON(web::WebThread::UI);
-  DCHECK(!gFirstResponder);
-  [application sendAction:@selector(cr_markSelfCurrentFirstResponder)
-                       to:nil
-                     from:nil
-                 forEvent:nil];
-  UIResponder* firstResponder = gFirstResponder;
-  gFirstResponder = nil;
-  return firstResponder;
+  return GetFirstResponderSubview([UIApplication sharedApplication].keyWindow);
 }
 
 // Trigger a haptic vibration for the user selecting an action. This is a no-op
@@ -714,14 +683,6 @@ void TriggerHapticFeedbackForNotification(UINotificationFeedbackType type) {
   }
 }
 
-UIEdgeInsets SafeAreaInsetsForView(UIView* view) {
-  if (@available(iOS 11, *)) {
-    return view.safeAreaInsets;
-  } else {
-    return UIEdgeInsetsZero;
-  }
-}
-
 NSString* TextForTabCount(long count) {
   if (count <= 0)
     return @"";
@@ -730,17 +691,19 @@ NSString* TextForTabCount(long count) {
   return [NSString stringWithFormat:@"%ld", count];
 }
 
-BOOL ContentSizeCategoryIsAccessibilityCategory(
-    UIContentSizeCategory category) {
-  if (@available(iOS 11.0, *)) {
-    return UIContentSizeCategoryIsAccessibilityCategory(category);
-  } else {
-    return
-        [category
-            isEqual:UIContentSizeCategoryAccessibilityExtraExtraExtraLarge] ||
-        [category isEqual:UIContentSizeCategoryAccessibilityExtraExtraLarge] ||
-        [category isEqual:UIContentSizeCategoryAccessibilityExtraLarge] ||
-        [category isEqual:UIContentSizeCategoryAccessibilityLarge] ||
-        [category isEqual:UIContentSizeCategoryAccessibilityMedium];
+UIFont* PreferredFontForTextStyleWithMaxCategory(
+    UIFontTextStyle style,
+    UIContentSizeCategory currentCategory,
+    UIContentSizeCategory maxCategory) {
+  CGFloat maxMultiplier = SystemSuggestedFontSizeMultiplier(maxCategory);
+  CGFloat currentMultiplier =
+      SystemSuggestedFontSizeMultiplier(currentCategory);
+  if (currentMultiplier > maxMultiplier) {
+    return [UIFont
+            preferredFontForTextStyle:style
+        compatibleWithTraitCollection:
+            [UITraitCollection
+                traitCollectionWithPreferredContentSizeCategory:maxCategory]];
   }
+  return [UIFont preferredFontForTextStyle:style];
 }

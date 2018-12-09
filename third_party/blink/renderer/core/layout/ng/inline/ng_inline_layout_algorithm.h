@@ -83,14 +83,12 @@ class CORE_EXPORT NGInlineLayoutAlgorithm final
                              UBiDiLevel,
                              NGInlineBoxState*);
   NGInlineBoxState* PlaceAtomicInline(const NGInlineItem&,
-                                      NGInlineItemResult*,
-                                      const NGLineInfo&);
+                                      const NGLineInfo&,
+                                      NGInlineItemResult*);
   void PlaceLayoutResult(NGInlineItemResult*,
                          NGInlineBoxState*,
                          LayoutUnit inline_offset = LayoutUnit());
-  void PlaceOutOfFlowObjects(const NGLineInfo&,
-                             const NGLineHeightMetrics&,
-                             LayoutUnit inline_size);
+  void PlaceOutOfFlowObjects(const NGLineInfo&, const NGLineHeightMetrics&);
   void PlaceListMarker(const NGInlineItem&,
                        NGInlineItemResult*,
                        const NGLineInfo&);

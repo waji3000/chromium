@@ -11,6 +11,8 @@
 #include "components/flags_ui/pref_service_flags_storage.h"
 #include "components/gcm_driver/gcm_channel_status_syncer.h"
 #import "components/handoff/handoff_manager.h"
+#include "components/invalidation/impl/invalidator_registrar_with_memory.h"
+#include "components/invalidation/impl/per_user_topic_registration_manager.h"
 #include "components/language/core/browser/pref_names.h"
 #include "components/metrics/metrics_pref_names.h"
 #include "components/network_time/network_time_tracker.h"
@@ -42,7 +44,6 @@
 #include "components/variations/service/variations_service.h"
 #include "components/web_resource/web_resource_pref_names.h"
 #include "ios/chrome/browser/browser_state/browser_state_info_cache.h"
-#include "ios/chrome/browser/desktop_promotion/desktop_promotion_sync_service.h"
 #include "ios/chrome/browser/first_run/first_run.h"
 #import "ios/chrome/browser/geolocation/omnibox_geolocation_local_state.h"
 #import "ios/chrome/browser/memory/memory_debugger_manager.h"
@@ -103,7 +104,6 @@ void RegisterLocalStatePrefs(PrefRegistrySimple* registry) {
 
 void RegisterBrowserStatePrefs(user_prefs::PrefRegistrySyncable* registry) {
   autofill::prefs::RegisterProfilePrefs(registry);
-  DesktopPromotionSyncService::RegisterDesktopPromotionUserPrefs(registry);
   dom_distiller::DistilledPagePrefs::RegisterProfilePrefs(registry);
   FirstRun::RegisterProfilePrefs(registry);
   gcm::GCMChannelStatusSyncer::RegisterProfilePrefs(registry);
@@ -123,6 +123,8 @@ void RegisterBrowserStatePrefs(user_prefs::PrefRegistrySyncable* registry) {
   RegisterVoiceSearchBrowserStatePrefs(registry);
   sync_sessions::SessionSyncPrefs::RegisterProfilePrefs(registry);
   syncer::SyncPrefs::RegisterProfilePrefs(registry);
+  syncer::PerUserTopicRegistrationManager::RegisterProfilePrefs(registry);
+  syncer::InvalidatorRegistrarWithMemory::RegisterProfilePrefs(registry);
   TemplateURLPrepopulateData::RegisterProfilePrefs(registry);
   translate::TranslatePrefs::RegisterProfilePrefs(registry);
   unified_consent::UnifiedConsentService::RegisterPrefs(registry);

@@ -81,26 +81,6 @@ const CSSValue* ParseCSSValue(const ExecutionContext* context,
                                                          *parser_context);
 }
 
-FontDisplay CSSValueToFontDisplay(const CSSValue* value) {
-  if (value && value->IsIdentifierValue()) {
-    switch (ToCSSIdentifierValue(value)->GetValueID()) {
-      case CSSValueAuto:
-        return kFontDisplayAuto;
-      case CSSValueBlock:
-        return kFontDisplayBlock;
-      case CSSValueSwap:
-        return kFontDisplaySwap;
-      case CSSValueFallback:
-        return kFontDisplayFallback;
-      case CSSValueOptional:
-        return kFontDisplayOptional;
-      default:
-        break;
-    }
-  }
-  return kFontDisplayAuto;
-}
-
 CSSFontFace* CreateCSSFontFace(FontFace* font_face,
                                const CSSValue* unicode_range) {
   Vector<UnicodeRange> ranges;
@@ -113,7 +93,7 @@ CSSFontFace* CreateCSSFontFace(FontFace* font_face,
     }
   }
 
-  return new CSSFontFace(font_face, ranges);
+  return MakeGarbageCollected<CSSFontFace>(font_face, ranges);
 }
 
 }  // namespace
@@ -138,7 +118,8 @@ FontFace* FontFace::Create(ExecutionContext* context,
                            const AtomicString& family,
                            const String& source,
                            const FontFaceDescriptors* descriptors) {
-  FontFace* font_face = new FontFace(context, family, descriptors);
+  FontFace* font_face =
+      MakeGarbageCollected<FontFace>(context, family, descriptors);
 
   const CSSValue* src = ParseCSSValue(context, source, AtRuleDescriptorID::Src);
   if (!src || !src->IsValueList()) {
@@ -156,7 +137,8 @@ FontFace* FontFace::Create(ExecutionContext* context,
                            const AtomicString& family,
                            DOMArrayBuffer* source,
                            const FontFaceDescriptors* descriptors) {
-  FontFace* font_face = new FontFace(context, family, descriptors);
+  FontFace* font_face =
+      MakeGarbageCollected<FontFace>(context, family, descriptors);
   font_face->InitCSSFontFace(static_cast<const unsigned char*>(source->Data()),
                              source->ByteLength());
   return font_face;
@@ -166,7 +148,8 @@ FontFace* FontFace::Create(ExecutionContext* context,
                            const AtomicString& family,
                            DOMArrayBufferView* source,
                            const FontFaceDescriptors* descriptors) {
-  FontFace* font_face = new FontFace(context, family, descriptors);
+  FontFace* font_face =
+      MakeGarbageCollected<FontFace>(context, family, descriptors);
   font_face->InitCSSFontFace(
       static_cast<const unsigned char*>(source->BaseAddress()),
       source->byteLength());
@@ -186,7 +169,7 @@ FontFace* FontFace::Create(Document* document,
   if (!src || !src->IsValueList())
     return nullptr;
 
-  FontFace* font_face = new FontFace(document);
+  FontFace* font_face = MakeGarbageCollected<FontFace>(document);
 
   if (font_face->SetFamilyValue(*family) &&
       font_face->SetPropertyFromStyle(properties,
@@ -473,8 +456,8 @@ void FontFace::SetError(DOMException* error) {
 
 ScriptPromise FontFace::FontStatusPromise(ScriptState* script_state) {
   if (!loaded_property_) {
-    loaded_property_ = new LoadedProperty(ExecutionContext::From(script_state),
-                                          this, LoadedProperty::kLoaded);
+    loaded_property_ = MakeGarbageCollected<LoadedProperty>(
+        ExecutionContext::From(script_state), this, LoadedProperty::kLoaded);
     if (status_ == kLoaded)
       loaded_property_->Resolve(this);
     else if (status_ == kError)
@@ -731,13 +714,15 @@ void FontFace::InitCSSFontFace(ExecutionContext* context, const CSSValue& src) {
           NOTREACHED();
         }
         RemoteFontFaceSource* source =
-            new RemoteFontFaceSource(css_font_face_, font_selector,
-                                     CSSValueToFontDisplay(display_.Get()));
+            MakeGarbageCollected<RemoteFontFaceSource>(
+                css_font_face_, font_selector,
+                CSSValueToFontDisplay(display_.Get()));
         item.Fetch(context, source);
         css_font_face_->AddSource(source);
       }
     } else {
-      css_font_face_->AddSource(new LocalFontFaceSource(item.GetResource()));
+      css_font_face_->AddSource(
+          MakeGarbageCollected<LocalFontFaceSource>(item.GetResource()));
     }
   }
 
@@ -756,7 +741,8 @@ void FontFace::InitCSSFontFace(const unsigned char* data, size_t size) {
 
   scoped_refptr<SharedBuffer> buffer = SharedBuffer::Create(data, size);
   BinaryDataFontFaceSource* source =
-      new BinaryDataFontFaceSource(buffer.get(), ots_parse_message_);
+      MakeGarbageCollected<BinaryDataFontFaceSource>(buffer.get(),
+                                                     ots_parse_message_);
   if (source->IsValid())
     SetLoadStatus(kLoaded);
   else
@@ -787,6 +773,15 @@ bool FontFace::HadBlankText() const {
 
 bool FontFace::HasPendingActivity() const {
   return status_ == kLoading && GetExecutionContext();
+}
+
+FontDisplay FontFace::GetFontDisplayWithFallback() const {
+  if (display_)
+    return CSSValueToFontDisplay(display_.Get());
+  ExecutionContext* context = GetExecutionContext();
+  if (!context || !context->IsDocument())
+    return kFontDisplayAuto;
+  return To<Document>(context)->GetStyleEngine().GetDefaultFontDisplay(family_);
 }
 
 }  // namespace blink

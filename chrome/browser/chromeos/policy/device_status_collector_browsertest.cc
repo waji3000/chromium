@@ -20,7 +20,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/scoped_path_override.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -2792,6 +2792,24 @@ TEST_F(ConsumerDeviceStatusCollectorTimeLimitEnabledTest,
   EXPECT_EQ(time_period1.end_timestamp() - time_period1.start_timestamp(),
             kMillisecondsPerDay);
   ExpectChildScreenTimeMilliseconds(0.5 * ActivePeriodMilliseconds());
+}
+
+TEST_F(ConsumerDeviceStatusCollectorTimeLimitEnabledTest, ClockChanged) {
+  DeviceStateTransitions test_states[1] = {
+      DeviceStateTransitions::kEnterSessionActive};
+  base::Time initial_time =
+      Time::Now().LocalMidnight() + base::TimeDelta::FromHours(1);
+  status_collector_->SetBaselineTime(initial_time);
+  SimulateStateChanges(test_states, 1);
+
+  // Simulate clock change.
+  status_collector_->SetBaselineTime(initial_time - TimeDelta::FromMinutes(30));
+  test_states[0] = DeviceStateTransitions::kLeaveSessionActive;
+  SimulateStateChanges(test_states, 1);
+
+  GetStatus();
+  ASSERT_EQ(1, device_status_.active_period_size());
+  ExpectChildScreenTimeMilliseconds(ActivePeriodMilliseconds());
 }
 
 }  // namespace policy

@@ -16,11 +16,8 @@
 #include "base/strings/string_split.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/ax_export.h"
+#include "ui/accessibility/ax_relative_bounds.h"
 #include "ui/gfx/geometry/rect_f.h"
-
-namespace gfx {
-class Transform;
-};
 
 namespace ui {
 
@@ -96,17 +93,34 @@ struct AX_EXPORT AXNodeData {
   bool GetHtmlAttribute(const char* attribute, base::string16* value) const;
   bool GetHtmlAttribute(const char* attribute, std::string* value) const;
 
+  //
   // Setting accessibility attributes.
+  //
+  // Replaces an attribute if not present. This is safer than crashing via a
+  // DCHECK or doing nothing, because most likely that's what the caller would
+  // have wanted or what existing code already assumes.
+  //
+
   void AddStringAttribute(ax::mojom::StringAttribute attribute,
                           const std::string& value);
   void AddIntAttribute(ax::mojom::IntAttribute attribute, int32_t value);
-  void RemoveIntAttribute(ax::mojom::IntAttribute attribute);
   void AddFloatAttribute(ax::mojom::FloatAttribute attribute, float value);
   void AddBoolAttribute(ax::mojom::BoolAttribute attribute, bool value);
   void AddIntListAttribute(ax::mojom::IntListAttribute attribute,
                            const std::vector<int32_t>& value);
   void AddStringListAttribute(ax::mojom::StringListAttribute attribute,
                               const std::vector<std::string>& value);
+
+  //
+  // Removing accessibility attributes.
+  //
+
+  void RemoveStringAttribute(ax::mojom::StringAttribute attribute);
+  void RemoveIntAttribute(ax::mojom::IntAttribute attribute);
+  void RemoveFloatAttribute(ax::mojom::FloatAttribute attribute);
+  void RemoveBoolAttribute(ax::mojom::BoolAttribute attribute);
+  void RemoveIntListAttribute(ax::mojom::IntListAttribute attribute);
+  void RemoveStringListAttribute(ax::mojom::StringListAttribute attribute);
 
   //
   // Convenience functions.
@@ -181,22 +195,7 @@ struct AX_EXPORT AXNodeData {
   base::StringPairs html_attributes;
   std::vector<int32_t> child_ids;
 
-  // TODO(dmazzoni): replace the following three members with a single
-  // instance of AXRelativeBounds.
-
-  // The id of an ancestor node in the same AXTree that this object's
-  // bounding box is relative to, or -1 if there's no offset container.
-  int32_t offset_container_id = -1;
-
-  // The relative bounding box of this node.
-  gfx::RectF location;
-
-  // An additional transform to apply to position this object and its subtree.
-  // NOTE: this member is a std::unique_ptr because it's rare and gfx::Transform
-  // takes up a fair amount of space. The assignment operator and copy
-  // constructor both make a duplicate of the owned pointer, so it acts more
-  // like a member than a pointer.
-  std::unique_ptr<gfx::Transform> transform;
+  AXRelativeBounds relative_bounds;
 };
 
 }  // namespace ui

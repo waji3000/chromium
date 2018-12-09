@@ -85,6 +85,8 @@ class ASH_EXPORT UnifiedSystemTrayController
   void ShowVPNDetailedView();
   // Show the detailed view of IME. Called from the view.
   void ShowIMEDetailedView();
+  // Show the detailed view of locale. Called from the view.
+  void ShowLocaleDetailedView();
   // Show the detailed view of audio. Called from the view.
   void ShowAudioDetailedView();
   // Show the detailed view of notifier settings. Called from the view.
@@ -126,6 +128,10 @@ class ASH_EXPORT UnifiedSystemTrayController
     TOGGLE_EXPANDED_TYPE_BY_GESTURE,
     TOGGLE_EXPANDED_TYPE_COUNT
   };
+
+  // Type of a help page opened by the "Managed" indicator in the bubble. The
+  // enum is used to back an UMA histogram and should be treated as append-only.
+  enum ManagedType { MANAGED_TYPE_ENTERPRISE = 0, MANAGED_TYPE_COUNT };
 
   // Initialize feature pod controllers and their views.
   // If you want to add a new feature pod item, you have to add here.

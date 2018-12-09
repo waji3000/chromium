@@ -13,7 +13,6 @@
 #include "base/compiler_specific.h"
 #include "base/macros.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
-#include "third_party/blink/renderer/platform/wtf/alignment.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/compiler.h"
 #include "third_party/blink/renderer/platform/wtf/type_traits.h"
@@ -201,7 +200,7 @@ class ContiguousContainer : public ContiguousContainerBase {
   DerivedElementType& AllocateAndConstruct(Args&&... args) {
     static_assert(WTF::IsSubclass<DerivedElementType, BaseElementType>::value,
                   "Must use subclass of BaseElementType.");
-    static_assert(alignment % WTF_ALIGN_OF(DerivedElementType) == 0,
+    static_assert(alignment % alignof(DerivedElementType) == 0,
                   "Derived type requires stronger alignment.");
     return *new (AlignedAllocate(sizeof(DerivedElementType)))
         DerivedElementType(std::forward<Args>(args)...);

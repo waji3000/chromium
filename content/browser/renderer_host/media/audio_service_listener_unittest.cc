@@ -8,6 +8,7 @@
 
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/simple_test_tick_clock.h"
+#include "base/token.h"
 #include "services/audio/public/mojom/constants.mojom.h"
 #include "services/service_manager/public/cpp/identity.h"
 #include "services/service_manager/public/mojom/service_manager.mojom.h"
@@ -19,12 +20,21 @@ namespace content {
 
 namespace {
 
+service_manager::Identity MakeFakeId(const std::string& service_name) {
+  const base::Token kFakeInstanceGroup{1, 1};
+  const base::Token kFakeInstanceId{0, 0};
+  const base::Token kFakeInstanceGuid{1, 1};
+  return service_manager::Identity(service_name, kFakeInstanceGroup,
+                                   kFakeInstanceId, kFakeInstanceGuid);
+}
+
 RunningServiceInfoPtr MakeTestServiceInfo(
     const service_manager::Identity& identity,
     uint32_t pid) {
   RunningServiceInfoPtr info(service_manager::mojom::RunningServiceInfo::New());
   info->identity = identity;
   info->pid = pid;
+  info->state = service_manager::mojom::InstanceState::kStarted;
   return info;
 }
 
@@ -64,6 +74,7 @@ TEST_F(AudioServiceListenerMetricsTest,
        CreateMetricsStartService_LogsInitialDowntime) {
   AudioServiceListener::Metrics metrics(&test_clock);
   test_clock.Advance(base::TimeDelta::FromHours(12));
+  metrics.ServiceCreated();
   metrics.ServiceStarted();
   histogram_tester.ExpectTimeBucketCount(
       "Media.AudioService.ObservedInitialDowntime",
@@ -73,7 +84,8 @@ TEST_F(AudioServiceListenerMetricsTest,
 TEST_F(AudioServiceListenerMetricsTest,
        ServiceAlreadyRunningStopService_LogsUptime) {
   AudioServiceListener::Metrics metrics(&test_clock);
-  metrics.ServiceAlreadyRunning();
+  metrics.ServiceAlreadyRunning(
+      service_manager::mojom::InstanceState::kStarted);
   test_clock.Advance(base::TimeDelta::FromMinutes(42));
   metrics.ServiceStopped();
   histogram_tester.ExpectTimeBucketCount("Media.AudioService.ObservedUptime",
@@ -83,8 +95,10 @@ TEST_F(AudioServiceListenerMetricsTest,
 TEST_F(AudioServiceListenerMetricsTest,
        ServiceAlreadyRunningCreateService_LogsStartupTime) {
   AudioServiceListener::Metrics metrics(&test_clock);
-  metrics.ServiceAlreadyRunning();
+  metrics.ServiceAlreadyRunning(
+      service_manager::mojom::InstanceState::kStarted);
   test_clock.Advance(base::TimeDelta::FromMilliseconds(2));
+  metrics.ServiceStopped();
   metrics.ServiceCreated();
   test_clock.Advance(base::TimeDelta::FromMilliseconds(20));
   metrics.ServiceStarted();
@@ -93,13 +107,14 @@ TEST_F(AudioServiceListenerMetricsTest,
       base::TimeDelta::FromMilliseconds(20), 1);
 }
 
-// Check that if service was already started and ServiceStarted() is called,
+// Check that if service was already created and ServiceStarted() is called,
 // ObservedStartupTime and ObservedInitialDowntime are not logged and start time
 // is reset.
 TEST_F(AudioServiceListenerMetricsTest,
        ServiceAlreadyRunningStartService_ResetStartTime) {
   AudioServiceListener::Metrics metrics(&test_clock);
-  metrics.ServiceAlreadyRunning();
+  metrics.ServiceAlreadyRunning(
+      service_manager::mojom::InstanceState::kCreated);
   test_clock.Advance(base::TimeDelta::FromMilliseconds(20));
   metrics.ServiceStarted();
   histogram_tester.ExpectTotalCount("Media.AudioService.ObservedStartupTime",
@@ -116,7 +131,8 @@ TEST_F(AudioServiceListenerMetricsTest,
 TEST(AudioServiceListenerTest, StartService_LogStartStatus) {
   base::HistogramTester histogram_tester;
   AudioServiceListener audio_service_listener(nullptr);
-  service_manager::Identity audio_service_identity(audio::mojom::kServiceName);
+  service_manager::Identity audio_service_identity =
+      MakeFakeId(audio::mojom::kServiceName);
   constexpr base::ProcessId pid(42);
 
   std::vector<RunningServiceInfoPtr> instances;
@@ -151,7 +167,7 @@ TEST(AudioServiceListenerTest, StartService_LogStartStatus) {
 
 TEST(AudioServiceListenerTest, OnInitWithoutAudioService_ProcessIdNull) {
   AudioServiceListener audio_service_listener(nullptr);
-  service_manager::Identity id("id1");
+  service_manager::Identity id = MakeFakeId("id1");
   constexpr base::ProcessId pid(42);
   std::vector<RunningServiceInfoPtr> instances;
   instances.push_back(MakeTestServiceInfo(id, pid));
@@ -161,21 +177,12 @@ TEST(AudioServiceListenerTest, OnInitWithoutAudioService_ProcessIdNull) {
 
 TEST(AudioServiceListenerTest, OnInitWithAudioService_ProcessIdNotNull) {
   AudioServiceListener audio_service_listener(nullptr);
-  service_manager::Identity audio_service_identity(audio::mojom::kServiceName);
+  service_manager::Identity audio_service_identity =
+      MakeFakeId(audio::mojom::kServiceName);
   constexpr base::ProcessId pid(42);
   std::vector<RunningServiceInfoPtr> instances;
   instances.push_back(MakeTestServiceInfo(audio_service_identity, pid));
   audio_service_listener.OnInit(std::move(instances));
-  EXPECT_EQ(pid, audio_service_listener.GetProcessId());
-}
-
-TEST(AudioServiceListenerTest, OnAudioServiceCreated_ProcessIdNotNull) {
-  AudioServiceListener audio_service_listener(nullptr);
-  service_manager::Identity audio_service_identity(audio::mojom::kServiceName);
-  constexpr base::ProcessId pid(42);
-  audio_service_listener.OnServiceCreated(
-      MakeTestServiceInfo(audio_service_identity, pid));
-  audio_service_listener.OnServiceStarted(audio_service_identity, pid);
   EXPECT_EQ(pid, audio_service_listener.GetProcessId());
 }
 

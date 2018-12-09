@@ -15,7 +15,6 @@
 #include "components/strings/grit/components_strings.h"
 #import "ios/chrome/browser/ui/colors/MDCPalette+CrAdditions.h"
 #import "ios/chrome/browser/ui/infobars/infobar_constants.h"
-#import "ios/chrome/browser/ui/infobars/infobar_view_sizing_delegate.h"
 #import "ios/chrome/browser/ui/util/label_link_controller.h"
 #import "ios/chrome/browser/ui/util/named_guide.h"
 #include "ios/chrome/browser/ui/util/ui_util.h"
@@ -330,6 +329,10 @@ UIImage* InfoBarCloseImage() {
 // Returns the marker delimiting the end of a link.
 + (NSString*)closingMarkerForLink;
 
+// How much of the infobar (in points) is visible (e.g., during showing/hiding
+// animation).
+@property(nonatomic, assign) CGFloat visibleHeight;
+
 @end
 
 @implementation ConfirmInfoBarView {
@@ -363,7 +366,6 @@ UIImage* InfoBarCloseImage() {
 }
 
 @synthesize visibleHeight = visibleHeight_;
-@synthesize sizingDelegate = sizingDelegate_;
 
 - (instancetype)initWithFrame:(CGRect)frame {
   self = [super initWithFrame:frame];
@@ -386,7 +388,7 @@ UIImage* InfoBarCloseImage() {
     leftMargin += metrics_->horizontal_space_between_icon_and_text;
   } else {
     leftMargin += metrics_->left_margin_on_first_line_when_icon_absent;
-    leftMargin += SafeAreaInsetsForView(self).left;
+    leftMargin += self.safeAreaInsets.left;
   }
   return leftMargin;
 }
@@ -394,8 +396,7 @@ UIImage* InfoBarCloseImage() {
 // Returns the width reserved for the close button.
 - (CGFloat)rightMarginOnFirstLine {
   return [closeButton_ imageView].image.size.width +
-         metrics_->close_button_inner_padding * 2 +
-         SafeAreaInsetsForView(self).right;
+         metrics_->close_button_inner_padding * 2 + self.safeAreaInsets.right;
 }
 
 // Returns the horizontal space available between the icon and the close
@@ -531,7 +532,7 @@ UIImage* InfoBarCloseImage() {
             [self layoutWideButtonAlignRight:button1_
                                    rightEdge:CGRectGetWidth(self.bounds) -
                                              metrics_->button_margin -
-                                             SafeAreaInsetsForView(self).right
+                                             self.safeAreaInsets.right
                                            y:heightOfFirstLine];
         [self layoutWideButtonAlignRight:button2_
                                rightEdge:leftOfRightmostButton -
@@ -560,7 +561,7 @@ UIImage* InfoBarCloseImage() {
       [self layoutWideButtonAlignRight:button
                              rightEdge:CGRectGetWidth(self.bounds) -
                                        metrics_->button_margin -
-                                       SafeAreaInsetsForView(self).right
+                                       self.safeAreaInsets.right
                                      y:heightOfFirstLine];
     }
     return metrics_->button_height;
@@ -732,7 +733,7 @@ UIImage* InfoBarCloseImage() {
   // The top safe area is ignored because at rest (i.e. not during animations)
   // the infobar is aligned to the bottom of the screen, and thus should not
   // have its top intersect with any safe area.
-  CGFloat bottomSafeAreaInset = SafeAreaInsetsForView(self).bottom;
+  CGFloat bottomSafeAreaInset = self.safeAreaInsets.bottom;
   requiredHeight += bottomSafeAreaInset;
 
   UILayoutGuide* guide =
@@ -760,10 +761,7 @@ UIImage* InfoBarCloseImage() {
 - (void)layoutSubviews {
   // Lays out the position of the icon.
   [imageView_ setFrame:[self frameOfIcon]];
-  targetHeight_ = [self computeRequiredHeightAndLayoutSubviews:YES];
-
-  if (sizingDelegate_)
-    [sizingDelegate_ didSetInfoBarTargetHeight:targetHeight_];
+  self.visibleHeight = [self computeRequiredHeightAndLayoutSubviews:YES];
   [self resetBackground];
 
   // Asks the BidiContainerView to reposition of all the subviews.
@@ -942,6 +940,8 @@ UIImage* InfoBarCloseImage() {
                              tag:tag1
                           target:target
                           action:action];
+  [button1_
+      setAccessibilityIdentifier:kConfirmInfobarButton1AccessibilityIdentifier];
   [self addSubview:button1_];
 
   button2_ = [self infoBarButton:title2
@@ -950,6 +950,8 @@ UIImage* InfoBarCloseImage() {
                              tag:tag2
                           target:target
                           action:action];
+  [button2_
+      setAccessibilityIdentifier:kConfirmInfobarButton2AccessibilityIdentifier];
   [self addSubview:button2_];
 }
 
@@ -1010,7 +1012,7 @@ UIImage* InfoBarCloseImage() {
   closeButtonSize.width += metrics_->close_button_inner_padding * 2;
   closeButtonSize.height += metrics_->close_button_inner_padding * 2;
   CGFloat x = CGRectGetMaxX(self.frame) - closeButtonSize.width -
-              SafeAreaInsetsForView(self).right;
+              self.safeAreaInsets.right;
   // Aligns the close button at the top (height includes touch padding).
   CGFloat y = 0;
   if (singleLineMode) {
@@ -1024,8 +1026,7 @@ UIImage* InfoBarCloseImage() {
 - (CGRect)frameOfIcon {
   CGSize iconSize = [imageView_ image].size;
   CGFloat y = metrics_->buttons_margin_top;
-  CGFloat x =
-      metrics_->close_button_margin_left + SafeAreaInsetsForView(self).left;
+  CGFloat x = metrics_->close_button_margin_left + self.safeAreaInsets.left;
   return CGRectMake(AlignValueToPixel(x), AlignValueToPixel(y), iconSize.width,
                     iconSize.height);
 }

@@ -9,6 +9,7 @@
 #include <string>
 
 #include "ash/assistant/model/assistant_interaction_model_observer.h"
+#include "ash/assistant/model/assistant_query_history.h"
 #include "ash/assistant/model/assistant_ui_model_observer.h"
 #include "ash/assistant/ui/dialog_plate/action_view.h"
 #include "base/macros.h"
@@ -30,26 +31,18 @@ namespace ash {
 class AssistantController;
 class ActionView;
 
-// DialogPlateButtonId ---------------------------------------------------------
-
-enum class DialogPlateButtonId {
-  kKeyboardInputToggle = 1,
-  kVoiceInputToggle,
-  kSettings,
-};
-
 // DialogPlateObserver ---------------------------------------------------------
 
-class DialogPlateObserver {
+class DialogPlateObserver : public base::CheckedObserver {
  public:
   // Invoked when the dialog plate button identified by |id| is pressed.
-  virtual void OnDialogPlateButtonPressed(DialogPlateButtonId id) {}
+  virtual void OnDialogPlateButtonPressed(AssistantButtonId id) {}
 
   // Invoked on dialog plate contents committed event.
   virtual void OnDialogPlateContentsCommitted(const std::string& text) {}
 
  protected:
-  virtual ~DialogPlateObserver() = default;
+  ~DialogPlateObserver() override = default;
 };
 
 // DialogPlate -----------------------------------------------------------------
@@ -87,11 +80,14 @@ class DialogPlate : public views::View,
 
   // AssistantInteractionModelObserver:
   void OnInputModalityChanged(InputModality input_modality) override;
+  void OnCommittedQueryChanged(const AssistantQuery& committed_query) override;
 
   // AssistantUiModelObserver:
-  void OnUiVisibilityChanged(AssistantVisibility new_visibility,
-                             AssistantVisibility old_visibility,
-                             AssistantSource source) override;
+  void OnUiVisibilityChanged(
+      AssistantVisibility new_visibility,
+      AssistantVisibility old_visibility,
+      base::Optional<AssistantEntryPoint> entry_point,
+      base::Optional<AssistantExitPoint> exit_point) override;
 
   // Returns the first focusable view or nullptr to defer to views::FocusSearch.
   views::View* FindFirstFocusableView();
@@ -101,7 +97,7 @@ class DialogPlate : public views::View,
   void InitKeyboardLayoutContainer();
   void InitVoiceLayoutContainer();
 
-  void OnButtonPressed(DialogPlateButtonId id);
+  void OnButtonPressed(AssistantButtonId id);
 
   void OnAnimationStarted(const ui::CallbackLayerAnimationObserver& observer);
   bool OnAnimationEnded(const ui::CallbackLayerAnimationObserver& observer);
@@ -120,8 +116,9 @@ class DialogPlate : public views::View,
   views::Textfield* textfield_;                      // Owned by view hierarchy.
 
   std::unique_ptr<ui::CallbackLayerAnimationObserver> animation_observer_;
+  std::unique_ptr<AssistantQueryHistory::Iterator> query_history_iterator_;
 
-  base::ObserverList<DialogPlateObserver>::Unchecked observers_;
+  base::ObserverList<DialogPlateObserver> observers_;
 
   DISALLOW_COPY_AND_ASSIGN(DialogPlate);
 };

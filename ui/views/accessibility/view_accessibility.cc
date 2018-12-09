@@ -166,7 +166,7 @@ void ViewAccessibility::GetAccessibleNodeData(ui::AXNodeData* data) const {
     }
   }
 
-  data->location = gfx::RectF(view_->GetBoundsInScreen());
+  data->relative_bounds.bounds = gfx::RectF(view_->GetBoundsInScreen());
   data->AddStringAttribute(ax::mojom::StringAttribute::kClassName,
                            view_->GetClassName());
 
@@ -225,7 +225,7 @@ gfx::NativeViewAccessible ViewAccessibility::GetNativeObject() {
 gfx::NativeViewAccessible ViewAccessibility::GetFocusedDescendant() {
   if (focused_virtual_child_)
     return focused_virtual_child_->GetNativeObject();
-  return GetNativeObject();
+  return view_->GetNativeViewAccessible();
 }
 
 }  // namespace views

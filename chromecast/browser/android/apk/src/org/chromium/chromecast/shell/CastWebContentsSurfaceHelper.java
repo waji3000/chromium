@@ -4,10 +4,8 @@
 
 package org.chromium.chromecast.shell;
 
-import android.app.Activity;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -103,20 +101,21 @@ class CastWebContentsSurfaceHelper {
     }
 
     /**
-     * @param hostActivity Activity hosts the view showing WebContents
      * @param webContentsView A Observer that displays incoming WebContents.
      * @param finishCallback Invoked to tell host to finish.
      */
-    CastWebContentsSurfaceHelper(Activity hostActivity, Observer<WebContents> webContentsView,
-            Consumer<Uri> finishCallback) {
+    CastWebContentsSurfaceHelper(
+            Observer<WebContents> webContentsView, Consumer<Uri> finishCallback) {
         Handler handler = new Handler();
 
         mMediaSessionGetter =
                 (WebContents webContents) -> MediaSessionImpl.fromWebContents(webContents);
 
         Observable<Uri> uriState = mStartParamsState.map(params -> params.uri);
-        Observable<WebContents> webContentsState =
-                mStartParamsState.map(params -> params.webContents);
+        Controller<WebContents> webContentsState = new Controller<>();
+        mStartParamsState.map(params -> params.webContents)
+                .subscribe(Observers.onEnter(webContentsState::set));
+        mCreatedState.subscribe(Observers.onExit(x -> webContentsState.reset()));
 
         // Receive broadcasts indicating the screen turned off while we have active WebContents.
         uriState.subscribe((Uri uri) -> {
@@ -124,6 +123,7 @@ class CastWebContentsSurfaceHelper {
             filter.addAction(CastIntents.ACTION_SCREEN_OFF);
             return new LocalBroadcastReceiverScope(filter, (Intent intent) -> {
                 mStartParamsState.reset();
+                webContentsState.reset();
                 maybeFinishLater(handler, () -> finishCallback.accept(uri));
             });
         });
@@ -140,6 +140,7 @@ class CastWebContentsSurfaceHelper {
                     return;
                 }
                 mStartParamsState.reset();
+                webContentsState.reset();
                 maybeFinishLater(handler, () -> finishCallback.accept(uri));
             });
         });
@@ -170,10 +171,6 @@ class CastWebContentsSurfaceHelper {
 
         // Miscellaneous actions responding to WebContents lifecycle.
         webContentsState.subscribe((WebContents webContents) -> {
-            // Whenever our app is visible, volume controls should modify the music stream.
-            // For more information read:
-            // http://developer.android.com/training/managing-audio/volume-playback.html
-            hostActivity.setVolumeControlStream(AudioManager.STREAM_MUSIC);
             // Notify CastWebContentsComponent when closed.
             return () -> CastWebContentsComponent.onComponentClosed(mSessionId);
         });

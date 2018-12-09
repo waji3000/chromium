@@ -11,8 +11,8 @@
 #import "ios/chrome/browser/ui/infobars/test_infobar_delegate.h"
 #import "ios/chrome/browser/ui/tab_grid/tab_grid_egtest_util.h"
 #import "ios/chrome/browser/ui/toolbar/buttons/toolbar_button.h"
-#import "ios/chrome/browser/ui/toolbar/buttons/toolbar_constants.h"
 #import "ios/chrome/browser/ui/toolbar/primary_toolbar_view.h"
+#import "ios/chrome/browser/ui/toolbar/public/toolbar_constants.h"
 #import "ios/chrome/browser/ui/toolbar/secondary_toolbar_view.h"
 #import "ios/chrome/browser/ui/util/named_guide.h"
 #import "ios/chrome/browser/ui/util/top_view_controller.h"
@@ -604,10 +604,7 @@ void FocusOmnibox() {
             [window convertRect:element.frame fromView:element.superview]);
 
         CGFloat bottomSafeArea = CGFLOAT_MAX;
-        if (@available(iOS 11, *)) {
-          bottomSafeArea =
-              CGRectGetMaxY(window.safeAreaLayoutGuide.layoutFrame);
-        }
+        bottomSafeArea = CGRectGetMaxY(window.safeAreaLayoutGuide.layoutFrame);
         CGFloat infobarContentBottomPoint =
             MIN(bottomSafeArea, toolbarTopPoint);
         BOOL buttonIsAbove = buttonBottomPoint < infobarContentBottomPoint - 10;
@@ -765,7 +762,7 @@ void FocusOmnibox() {
   [[GREYUIThreadExecutor sharedInstance] drainUntilIdleWithTimeout:2];
 
   [[self class] closeAllTabs];
-  chrome_test_util::OpenNewTab();
+  [ChromeEarlGrey openNewTab];
 
   // Check that the bottom toolbar is visible.
   [[EarlGrey selectElementWithMatcher:SearchButton()]

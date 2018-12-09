@@ -386,11 +386,8 @@ void BrowserPluginGuest::InitInternal(
   prefs.navigate_on_drag_drop = false;
   GetWebContents()->GetRenderViewHost()->UpdateWebkitPreferences(prefs);
 
-  base::Optional<viz::LocalSurfaceId> child_local_surface_id;
-  if (local_surface_id_.is_valid())
-    child_local_surface_id = local_surface_id_;
   SendMessageToEmbedder(std::make_unique<BrowserPluginMsg_Attach_ACK>(
-      browser_plugin_instance_id(), child_local_surface_id));
+      browser_plugin_instance_id()));
 }
 
 BrowserPluginGuest::~BrowserPluginGuest() {
@@ -617,13 +614,21 @@ std::unique_ptr<IPC::Message> BrowserPluginGuest::UpdateInstanceIdIfNecessary(
   // TODO(wjmaclean): it would be nice if IPC::PickleIterator had a method
   // like 'RemainingBytes()' so that we don't have to include implementation-
   // specific details like sizeof() in the next line.
-  DCHECK(msg->payload_size() > sizeof(int));
+  DCHECK(msg->payload_size() >= sizeof(int));
   size_t remaining_bytes = msg->payload_size() - sizeof(int);
-  const char* data = nullptr;
-  bool read_success = iter.ReadBytes(&data, remaining_bytes);
-  CHECK(read_success)
-      << "Unexpected failure reading remaining IPC::Message payload.";
-  new_msg->WriteBytes(data, remaining_bytes);
+  // Some BrowserPluginMsgs only have the |browser_plugin_instance_id| and no
+  // further payload. It they are enqueued, and require updating of the id, then
+  // this would subsequently fail.
+  // TODO(wjmaclean): It might be nice to enqueue the creation of the
+  // IPC::Messages, rather than the messages themselves. Thus avoiding having to
+  // perform custom read/writes.
+  if (remaining_bytes) {
+    const char* data = nullptr;
+    bool read_success = iter.ReadBytes(&data, remaining_bytes);
+    CHECK(read_success)
+        << "Unexpected failure reading remaining IPC::Message payload.";
+    new_msg->WriteBytes(data, remaining_bytes);
+  }
   return new_msg;
 }
 
@@ -1070,14 +1075,15 @@ void BrowserPluginGuest::OnUnlockMouseAck(int browser_plugin_instance_id) {
 
 void BrowserPluginGuest::OnSynchronizeVisualProperties(
     int browser_plugin_instance_id,
-    const viz::LocalSurfaceId& local_surface_id,
     const FrameVisualProperties& visual_properties) {
-  if (local_surface_id_ > local_surface_id ||
+  if ((local_surface_id_allocation_.local_surface_id() >
+       visual_properties.local_surface_id_allocation.local_surface_id()) ||
       ((frame_rect_.size() != visual_properties.screen_space_rect.size() ||
         screen_info_ != visual_properties.screen_info ||
         capture_sequence_number_ != visual_properties.capture_sequence_number ||
         zoom_level_ != visual_properties.zoom_level) &&
-       local_surface_id_ == local_surface_id)) {
+       local_surface_id_allocation_.local_surface_id() ==
+           visual_properties.local_surface_id_allocation.local_surface_id())) {
     SiteInstance* owner_site_instance = delegate_->GetOwnerSiteInstance();
     bad_message::ReceivedBadMessage(
         owner_site_instance->GetProcess(),
@@ -1090,7 +1096,7 @@ void BrowserPluginGuest::OnSynchronizeVisualProperties(
   zoom_level_ = visual_properties.zoom_level;
 
   GetWebContents()->SendScreenRects();
-  local_surface_id_ = local_surface_id;
+  local_surface_id_allocation_ = visual_properties.local_surface_id_allocation;
   bool capture_sequence_number_changed =
       capture_sequence_number_ != visual_properties.capture_sequence_number;
   capture_sequence_number_ = visual_properties.capture_sequence_number;

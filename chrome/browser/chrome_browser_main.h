@@ -29,17 +29,6 @@ class ShutdownWatcherHelper;
 class ThreadProfiler;
 class WebUsbDetector;
 
-namespace chrome_browser {
-// For use by ShowMissingLocaleMessageBox.
-#if defined(OS_WIN)
-extern const char kMissingLocaleDataTitle[];
-#endif
-
-#if defined(OS_WIN)
-extern const char kMissingLocaleDataMessage[];
-#endif
-}
-
 class ChromeBrowserMainParts : public content::BrowserMainParts {
  public:
   ~ChromeBrowserMainParts() override;
@@ -183,14 +172,17 @@ class ChromeBrowserMainParts : public content::BrowserMainParts {
   // ProcessSingleton.
   std::unique_ptr<ChromeProcessSingleton> process_singleton_;
 
-  // Android's first run is done in Java instead of native.
-  std::unique_ptr<first_run::MasterPrefs> master_prefs_;
-
   ProcessSingleton::NotifyResult notify_result_ =
       ProcessSingleton::PROCESS_NONE;
 
   // Members needed across shutdown methods.
   bool restart_last_session_ = false;
+#endif  // !defined(OS_ANDROID)
+
+#if !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
+  // Android's first run is done in Java instead of native. Chrome OS does not
+  // use master preferences.
+  std::unique_ptr<first_run::MasterPrefs> master_prefs_;
 #endif
 
   Profile* profile_;

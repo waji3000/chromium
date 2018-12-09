@@ -21,15 +21,10 @@ var SHORT_RESCAN_INTERVAL = 100;
  *     service.
  * @param {!VolumeManager} volumeManager The volume manager.
  * @param {!FileOperationManager} fileOperationManager File operation manager.
- * @param {!analytics.Tracker} tracker
  */
 function DirectoryModel(
-    singleSelection,
-    fileFilter,
-    metadataModel,
-    volumeManager,
-    fileOperationManager,
-    tracker) {
+    singleSelection, fileFilter, metadataModel, volumeManager,
+    fileOperationManager) {
   this.fileListSelection_ = singleSelection ?
       new FileListSingleSelectionModel() : new FileListSelectionModel();
 
@@ -82,11 +77,11 @@ function DirectoryModel(
       'entries-changed',
       this.onEntriesChanged_.bind(this));
 
-  /** @private {!analytics.Tracker} */
-  this.tracker_ = tracker;
-
   /** @private {string} */
   this.lastSearchQuery_ = '';
+
+  /** @private {FilesAppDirEntry} */
+  this.myFilesEntry_ = null;
 }
 
 /**
@@ -699,7 +694,7 @@ DirectoryModel.prototype.scan_ = function(
       var locationInfo =
           this.volumeManager_.getLocationInfo(
               assert(dirContents.getDirectoryEntry()));
-      var volumeInfo = locationInfo.volumeInfo;
+      var volumeInfo = locationInfo && locationInfo.volumeInfo;
       if (volumeInfo &&
           volumeInfo.volumeType === VolumeManagerCommon.VolumeType.DOWNLOADS &&
           locationInfo.isRootEntry) {
@@ -762,6 +757,7 @@ DirectoryModel.prototype.replaceDirectoryContents_ = function(dirContents) {
     // Restore leadIndex in case leadName no longer exists.
     var leadIndex = this.fileListSelection_.leadIndex;
     var leadEntry = this.getLeadEntry_();
+    const isCheckSelectMode = this.fileListSelection_.getCheckSelectMode();
 
     var previousDirContents = this.currentDirContents_;
     this.currentDirContents_ = dirContents;
@@ -780,6 +776,10 @@ DirectoryModel.prototype.replaceDirectoryContents_ = function(dirContents) {
       this.selectIndex(Math.min(maxIdx - selectedIndices.length + 2,
                                 this.getFileList().length) - 1);
       forceChangeEvent = true;
+    } else if (isCheckSelectMode) {
+      // Otherwise, ensure check select mode is retained if it was previously
+      // active.
+      this.fileListSelection_.setCheckSelectMode(true);
     }
     return forceChangeEvent;
   }.bind(this));
@@ -950,6 +950,14 @@ DirectoryModel.prototype.updateAndSelectNewDirectory = function(newDirectory) {
 };
 
 /**
+ * Sets the current MyFilesEntry.
+ * @param {FilesAppDirEntry} myFilesEntry
+ */
+DirectoryModel.prototype.setMyFiles = function(myFilesEntry) {
+  this.myFilesEntry_ = myFilesEntry;
+};
+
+/**
  * Changes the current directory to the directory represented by
  * a DirectoryEntry or a fake entry.
  *
@@ -967,17 +975,19 @@ DirectoryModel.prototype.updateAndSelectNewDirectory = function(newDirectory) {
  */
 DirectoryModel.prototype.changeDirectoryEntry = function(
     dirEntry, opt_callback) {
-  // If it's a VolumeEntry which wraps an actual entry, we should use the
-  // unwrapped entry.
-  if (dirEntry instanceof VolumeEntry)
-    dirEntry = assert(dirEntry.rootEntry);
-
-  // TODO(lucmult): Remove this log once flakiness is fixed.
-  console.log('changeDirectoryEntry: ' + dirEntry.name);
-
   // Increment the sequence value.
   this.changeDirectorySequence_++;
   this.clearSearch_();
+
+  // When switching to MyFiles volume, we should use a FilesAppEntry if
+  // available because it returns UI-only entries too, like Linux files and Play
+  // files.
+  const locationInfo = this.volumeManager_.getLocationInfo(dirEntry);
+  if (util.isMyFilesVolumeEnabled() && locationInfo && this.myFilesEntry_ &&
+      locationInfo.rootType === VolumeManagerCommon.RootType.DOWNLOADS &&
+      locationInfo.isRootEntry) {
+    dirEntry = this.myFilesEntry_;
+  }
 
   // If there is on-going scan, cancel it.
   if (this.currentDirContents_.isScanning())
@@ -1025,62 +1035,8 @@ DirectoryModel.prototype.changeDirectoryEntry = function(
           event.newDirEntry = dirEntry;
           event.volumeChanged = previousVolumeInfo !== currentVolumeInfo;
           this.dispatchEvent(event);
-
-          if (currentVolumeInfo && event.volumeChanged) {
-            this.onVolumeChanged_(assert(currentVolumeInfo));
-          }
         }.bind(this));
   }.bind(this, this.changeDirectorySequence_));
-};
-
-/**
- * Handles volume changed by sending an analytics appView event.
- *
- * @param {!VolumeInfo} volumeInfo The new volume info.
- * @return {!Promise} resolves once handling is done.
- * @private
- */
-DirectoryModel.prototype.onVolumeChanged_ = function(volumeInfo) {
-  // NOTE: That dynamic values, like volume name MUST NOT
-  // be sent to GA as that value can contain PII.
-  // VolumeType is an enum.
-  // ...
-  // But we can do stuff like figure out if this is a media device or vanilla
-  // removable device.
-  return Promise.resolve(undefined)
-      .then(
-          (/** @this {DirectoryModel} */
-          function() {
-            switch (volumeInfo.volumeType) {
-              case VolumeManagerCommon.VolumeType.REMOVABLE:
-                return importer.hasMediaDirectory(volumeInfo.fileSystem.root)
-                    .then(
-                        /**
-                         * @param {boolean} hasMedia
-                         * @return {string}
-                         */
-                        function(hasMedia) {
-                          return hasMedia ?
-                              volumeInfo.volumeType + ':with-media-dir' :
-                              volumeInfo.volumeType;
-                        });
-              case VolumeManagerCommon.VolumeType.PROVIDED:
-                var providerId = volumeInfo.providerId;
-                var name = metrics.getFileSystemProviderName(providerId);
-                // Make note of an unrecognized provider id. When we see
-                // high counts for a particular id, we should add it to the
-                // whitelist in metrics_events.js.
-                if (providerId && name == 'unknown') {
-                  this.tracker_.send(
-                      metrics.Internals.UNRECOGNIZED_FILE_SYSTEM_PROVIDER.label(
-                          providerId));
-                }
-                return volumeInfo.volumeType + ':' + name;
-              default:
-                return volumeInfo.volumeType;
-            }
-          }).bind(this))
-      .then(this.tracker_.sendAppView.bind(this.tracker_));
 };
 
 /**
@@ -1199,15 +1155,26 @@ DirectoryModel.prototype.selectIndex = function(index) {
  * @private
  */
 DirectoryModel.prototype.onVolumeInfoListUpdated_ = function(event) {
-  // When the volume where we are is unmounted, fallback to the default volume's
-  // root. If current directory path is empty, stop the fallback
-  // since the current directory is initializing now.
-  const entry = this.getCurrentDirEntry();
-  if (entry && !this.volumeManager_.getVolumeInfo(entry)) {
+  // Fallback to the default volume's root if the current volume is unmounted.
+  if (this.hasCurrentDirEntryBeenUnmounted_(event.removed)) {
     this.volumeManager_.getDefaultDisplayRoot((displayRoot) => {
       if (displayRoot)
         this.changeDirectoryEntry(displayRoot);
     });
+  }
+
+  // If a volume within My files is mounted, rescan the contents.
+  // TODO(crbug.com/901690): Remove this special case.
+  if (this.getCurrentRootType() === VolumeManagerCommon.RootType.MY_FILES) {
+    for (let newVolume of event.added) {
+      if (newVolume.volumeType === VolumeManagerCommon.VolumeType.DOWNLOADS ||
+          newVolume.volumeType ===
+              VolumeManagerCommon.VolumeType.ANDROID_FILES ||
+          newVolume.volumeType === VolumeManagerCommon.VolumeType.CROSTINI) {
+        this.rescan(false);
+        break;
+      }
+    }
   }
 
   // If the current directory is the Drive placeholder and the real Drive is
@@ -1238,6 +1205,32 @@ DirectoryModel.prototype.onVolumeInfoListUpdated_ = function(event) {
       this.changeDirectoryEntry(event.added[0].displayRoot);
     });
   }
+};
+
+/**
+ * Returns whether the current directory entry has been unmounted.
+ *
+ * @param {!Array<!VolumeInfo>} removedVolumes The removed volumes.
+ * @private
+ */
+DirectoryModel.prototype.hasCurrentDirEntryBeenUnmounted_ = function(
+    removedVolumes) {
+  const entry = this.getCurrentDirEntry();
+  if (!entry) {
+    return false;
+  }
+
+  if (util.isNativeEntry(entry)) {
+    return !this.volumeManager_.getVolumeInfo(entry);
+  }
+
+  const rootType = this.getCurrentRootType();
+  for (let volume of removedVolumes) {
+    if (volume.fakeEntries[rootType]) {
+      return true;
+    }
+  }
+  return false;
 };
 
 /**

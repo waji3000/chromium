@@ -39,7 +39,6 @@ scoped_refptr<ResourceResponse> ResourceResponse::DeepCopy() const {
   new_response->head.alpn_negotiated_protocol = head.alpn_negotiated_protocol;
   new_response->head.socket_address = head.socket_address;
   new_response->head.was_fetched_via_cache = head.was_fetched_via_cache;
-  new_response->head.was_fetched_via_proxy = head.was_fetched_via_proxy;
   new_response->head.proxy_server = head.proxy_server;
   new_response->head.was_fetched_via_service_worker =
       head.was_fetched_via_service_worker;
@@ -66,6 +65,7 @@ scoped_refptr<ResourceResponse> ResourceResponse::DeepCopy() const {
   new_response->head.is_signed_exchange_inner_response =
       head.is_signed_exchange_inner_response;
   new_response->head.intercepted_by_plugin = head.intercepted_by_plugin;
+  new_response->head.is_legacy_tls_version = head.is_legacy_tls_version;
   return new_response;
 }
 

@@ -4,17 +4,6 @@
 
 
 /**
- * Alias for document.getElementById.
- * @param {string} id The ID of the element to find.
- * @return {HTMLElement} The found element or null if not found.
- */
-function $(id) {
-  // eslint-disable-next-line no-restricted-properties
-  return document.getElementById(id);
-}
-
-
-/**
  * Enum for ids.
  * @enum {string}
  * @const
@@ -111,6 +100,7 @@ function prepopulateFields(rid) {
     return;
   prepopulatedLink.rid = rid;
   $(IDS.TITLE_FIELD).value = prepopulatedLink.title = data.title;
+  $(IDS.TITLE_FIELD).style.direction = data.direction || 'ltr';
   $(IDS.URL_FIELD).value = prepopulatedLink.url = data.url;
 
   // Set accessibility names.
@@ -145,9 +135,9 @@ function finishEditLink() {
   if (urlValue != prepopulatedLink.url) {
     newUrl = chrome.embeddedSearch.newTabPage.fixupAndValidateUrl(urlValue);
     // Show error message for invalid urls.
-    if (!newUrl) {
+    if (!newUrl || (newUrl && !utils.isSchemeAllowed(newUrl))) {
       showInvalidUrlUntilTextInput();
-      disableSubmitUntilTextInput();
+      $(IDS.DONE).disabled = true;  // Disable submit until text input.
       return;
     }
   }
@@ -186,6 +176,7 @@ function closeDialog() {
   // Small delay to allow the dialog to close before cleaning up.
   window.setTimeout(() => {
     $(IDS.FORM).reset();
+    $(IDS.TITLE_FIELD).style.direction = null;
     $(IDS.URL_FIELD_CONTAINER).classList.remove('invalid');
     $(IDS.DELETE).disabled = false;
     $(IDS.DONE).disabled = false;
@@ -241,22 +232,6 @@ function handlePostMessage(event) {
       $(IDS.TITLE_FIELD).select();
     }, 10);
   }
-}
-
-
-/**
- * Disables the focus outline for |element| on mousedown.
- * @param {Element} element The element to remove the focus outline from.
- */
-function disableOutlineOnMouseClick(element) {
-  element.addEventListener('mousedown', (event) => {
-    element.classList.add('mouse-navigation');
-    let resetOutline = (event) => {
-      element.classList.remove('mouse-navigation');
-      element.removeEventListener('blur', resetOutline);
-    };
-    element.addEventListener('blur', resetOutline);
-  });
 }
 
 
@@ -323,9 +298,11 @@ function init() {
   };
   $(IDS.TITLE_FIELD).onkeydown = finishEditOrClose;
   $(IDS.URL_FIELD).onkeydown = finishEditOrClose;
-  disableOutlineOnMouseClick($(IDS.DELETE));
-  disableOutlineOnMouseClick($(IDS.CANCEL));
-  disableOutlineOnMouseClick($(IDS.DONE));
+  utils.disableOutlineOnMouseClick($(IDS.DELETE));
+  utils.disableOutlineOnMouseClick($(IDS.CANCEL));
+  utils.disableOutlineOnMouseClick($(IDS.DONE));
+
+  animations.addRippleAnimations();
 
   // Change input field name to blue on input field focus.
   let changeColor = (fieldTitle) => {

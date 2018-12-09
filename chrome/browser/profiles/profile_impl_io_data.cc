@@ -49,7 +49,6 @@
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_io_data.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_settings.h"
 #include "components/data_reduction_proxy/core/browser/data_store_impl.h"
-#include "components/domain_reliability/monitor.h"
 #include "components/net_log/chrome_net_log.h"
 #include "components/network_session_configurator/browser/network_session_configurator.h"
 #include "components/offline_pages/buildflags/buildflags.h"
@@ -87,13 +86,6 @@
 #if BUILDFLAG(ENABLE_OFFLINE_PAGES)
 #include "chrome/browser/offline_pages/offline_page_request_interceptor.h"
 #endif
-
-#if BUILDFLAG(ENABLE_REPORTING)
-#include "net/network_error_logging/network_error_logging_delegate.h"
-#include "net/network_error_logging/network_error_logging_service.h"
-#include "net/reporting/reporting_policy.h"
-#include "net/reporting/reporting_service.h"
-#endif  // BUILDFLAG(ENABLE_REPORTING)
 
 namespace {
 
@@ -144,9 +136,8 @@ void ProfileImplIOData::Handle::Init(
     const base::FilePath& extensions_cookie_path,
     const base::FilePath& profile_path,
     storage::SpecialStoragePolicy* special_storage_policy,
-    std::unique_ptr<ReportingPermissionsChecker> reporting_permissions_checker,
-    std::unique_ptr<domain_reliability::DomainReliabilityMonitor>
-        domain_reliability_monitor) {
+    std::unique_ptr<ReportingPermissionsChecker>
+        reporting_permissions_checker) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!io_data_->lazy_params_);
 
@@ -162,8 +153,6 @@ void ProfileImplIOData::Handle::Init(
   lazy_params->special_storage_policy = special_storage_policy;
   lazy_params->reporting_permissions_checker =
       std::move(reporting_permissions_checker);
-  lazy_params->domain_reliability_monitor =
-      std::move(domain_reliability_monitor);
 
   io_data_->lazy_params_.reset(lazy_params);
 
@@ -171,10 +160,6 @@ void ProfileImplIOData::Handle::Init(
   // on demand when creating storage isolated URLRequestContextGetters.
   io_data_->profile_path_ = profile_path;
   io_data_->app_media_cache_max_size_ = media_cache_max_size;
-
-  io_data_->InitializeMetricsEnabledStateOnUIThread();
-  if (io_data_->lazy_params_->domain_reliability_monitor)
-    io_data_->lazy_params_->domain_reliability_monitor->MoveToNetworkThread();
 
   io_data_->set_data_reduction_proxy_io_data(
       CreateDataReductionProxyChromeIOData(
@@ -402,10 +387,6 @@ std::unique_ptr<net::NetworkDelegate>
 ProfileImplIOData::ConfigureNetworkDelegate(
     IOThread* io_thread,
     std::unique_ptr<ChromeNetworkDelegate> chrome_network_delegate) const {
-  if (lazy_params_->domain_reliability_monitor) {
-    chrome_network_delegate->set_domain_reliability_monitor(
-        std::move(lazy_params_->domain_reliability_monitor));
-  }
 
   if (lazy_params_->reporting_permissions_checker) {
     chrome_network_delegate->set_reporting_permissions_checker(

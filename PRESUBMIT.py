@@ -15,7 +15,7 @@ _EXCLUDED_PATHS = (
     r"^native_client_sdk[\\/]src[\\/]tools[\\/].*.mk",
     r"^net[\\/]tools[\\/]spdyshark[\\/].*",
     r"^skia[\\/].*",
-    r"^third_party[\\/](WebKit|blink)[\\/].*",
+    r"^third_party[\\/]blink[\\/].*",
     r"^third_party[\\/]breakpad[\\/].*",
     r"^v8[\\/].*",
     r".*MakeFile$",
@@ -343,6 +343,7 @@ _BANNED_CPP_FUNCTIONS = (
       ),
       True,
       (
+          r'^base[\\/]third_party[\\/]symbolize[\\/].*',
           r'^third_party[\\/]abseil-cpp[\\/].*',
       ),
     ),
@@ -616,8 +617,8 @@ _KNOWN_INVALID_JSON_FILE_PATTERNS = [
     r'test[\\/]data[\\/]',
     r'^components[\\/]policy[\\/]resources[\\/]policy_templates\.json$',
     r'^third_party[\\/]protobuf[\\/]',
-    r'^third_party[\\/]WebKit[\\/]LayoutTests[\\/]external[\\/]wpt[\\/]',
     r'^third_party[\\/]blink[\\/]renderer[\\/]devtools[\\/]protocol\.json$',
+    r'^third_party[\\/]blink[\\/]web_tests[\\/]external[\\/]wpt[\\/]',
 ]
 
 
@@ -629,6 +630,7 @@ _VALID_OS_MACROS = (
     'OS_BSD',
     'OS_CAT',       # For testing.
     'OS_CHROMEOS',
+    'OS_CYGWIN',    # third_party code.
     'OS_FREEBSD',
     'OS_FUCHSIA',
     'OS_IOS',
@@ -660,18 +662,18 @@ _ANDROID_SPECIFIC_PYDEPS_FILES = [
     'build/android/gyp/copy_ex.pydeps',
     'build/android/gyp/create_app_bundle.pydeps',
     'build/android/gyp/create_apk_operations_script.pydeps',
-    'build/android/gyp/create_dist_jar.pydeps',
     'build/android/gyp/create_java_binary_script.pydeps',
     'build/android/gyp/create_stack_script.pydeps',
     'build/android/gyp/create_test_runner_script.pydeps',
     'build/android/gyp/create_tool_wrapper.pydeps',
     'build/android/gyp/desugar.pydeps',
+    'build/android/gyp/dexsplitter.pydeps',
     'build/android/gyp/dex.pydeps',
     'build/android/gyp/dist_aar.pydeps',
     'build/android/gyp/emma_instr.pydeps',
     'build/android/gyp/filter_zip.pydeps',
     'build/android/gyp/gcc_preprocess.pydeps',
-    'build/android/gyp/generate_proguarded_module_jar.pydeps',
+    'build/android/gyp/generate_linker_version_script.pydeps',
     'build/android/gyp/ijar.pydeps',
     'build/android/gyp/java_cpp_enum.pydeps',
     'build/android/gyp/javac.pydeps',
@@ -684,14 +686,15 @@ _ANDROID_SPECIFIC_PYDEPS_FILES = [
     'build/android/gyp/proguard.pydeps',
     'build/android/gyp/write_build_config.pydeps',
     'build/android/gyp/write_ordered_libraries.pydeps',
+    'build/android/gyp/zip.pydeps',
     'build/android/incremental_install/generate_android_manifest.pydeps',
     'build/android/incremental_install/write_installer_json.pydeps',
     'build/android/resource_sizes.pydeps',
     'build/android/test_runner.pydeps',
     'build/android/test_wrapper/logdog_wrapper.pydeps',
     'build/protoc_java.pydeps',
-    'build/secondary/third_party/android_platform/'
-        'development/scripts/stack.pydeps',
+    ('build/secondary/third_party/android_platform/'
+     'development/scripts/stack.pydeps'),
     'net/tools/testserver/testserver.pydeps',
 ]
 
@@ -1549,7 +1552,7 @@ def _CheckAddedDepsHaveTargetApprovals(input_api, output_api):
   virtual_depended_on_files = set()
 
   file_filter = lambda f: not input_api.re.match(
-      r"^third_party[\\/](WebKit|blink)[\\/].*", f.LocalPath())
+      r"^third_party[\\/]blink[\\/].*", f.LocalPath())
   for f in input_api.AffectedFiles(include_deletes=False,
                                    file_filter=file_filter):
     filename = input_api.os_path.basename(f.LocalPath())
@@ -1659,6 +1662,7 @@ def _CheckSpamLogging(input_api, output_api):
                  r"^ui[\\/]base[\\/]resource[\\/]data_pack.cc$",
                  r"^ui[\\/]aura[\\/]bench[\\/]bench_main\.cc$",
                  r"^ui[\\/]ozone[\\/]platform[\\/]cast[\\/]",
+                 r"^webrunner[\\/]browser[\\/]frame_impl.cc$",
                  r"^storage[\\/]browser[\\/]fileapi[\\/]" +
                      r"dump_file_system.cc$",
                  r"^headless[\\/]app[\\/]headless_shell\.cc$"))
@@ -2175,9 +2179,7 @@ def _CheckUselessForwardDeclarations(input_api, output_api):
   for f in input_api.AffectedFiles(include_deletes=False):
     if (f.LocalPath().startswith('third_party') and
         not f.LocalPath().startswith('third_party/blink') and
-        not f.LocalPath().startswith('third_party\\blink') and
-        not f.LocalPath().startswith('third_party/WebKit') and
-        not f.LocalPath().startswith('third_party\\WebKit')):
+        not f.LocalPath().startswith('third_party\\blink')):
       continue
 
     if not f.LocalPath().endswith('.h'):
@@ -2716,70 +2718,6 @@ def _CheckNoDeprecatedJs(input_api, output_api):
   return results
 
 
-def _CheckForRiskyJsArrowFunction(line_number, line):
-  if ' => ' in line:
-    return "line %d, is using an => (arrow) function\n %s\n" % (
-        line_number, line)
-  return ''
-
-
-def _CheckForRiskyJsConstLet(input_api, line_number, line):
-  if input_api.re.match('^\s*(const|let)\s', line):
-    return "line %d, is using const/let keyword\n %s\n" % (
-        line_number, line)
-  return ''
-
-
-def _CheckForRiskyJsFeatures(input_api, output_api):
-  maybe_ios_js = [r"^(ios|components|ui\/webui\/resources)\/.+\.js$"]
-  # 'ui/webui/resources/cr_components are not allowed on ios'
-  not_ios_filter = (r".*ui\/webui\/resources\/cr_components.*", )
-  file_filter = lambda f: input_api.FilterSourceFile(f, white_list=maybe_ios_js,
-                                                     black_list=not_ios_filter)
-  results = []
-  for f in input_api.AffectedFiles(file_filter=file_filter):
-    arrow_error_lines = []
-    const_let_error_lines = []
-    for lnum, line in f.ChangedContents():
-      arrow_error_lines += filter(None, [
-        _CheckForRiskyJsArrowFunction(lnum, line),
-      ])
-
-      const_let_error_lines += filter(None, [
-        _CheckForRiskyJsConstLet(input_api, lnum, line),
-      ])
-
-    if arrow_error_lines:
-      arrow_error_lines = map(
-          lambda e: "%s:%s" % (f.LocalPath(), e), arrow_error_lines)
-      results.append(
-          output_api.PresubmitPromptWarning('\n'.join(arrow_error_lines + [
-"""
-Use of => (arrow) operator detected in:
-%s
-Please ensure your code does not run on iOS9 (=> (arrow) does not work there).
-https://chromium.googlesource.com/chromium/src/+/master/styleguide/web/es6.md#Arrow-Functions
-""" % f.LocalPath()
-          ])))
-
-    if const_let_error_lines:
-      const_let_error_lines = map(
-          lambda e: "%s:%s" % (f.LocalPath(), e), const_let_error_lines)
-      results.append(
-          output_api.PresubmitPromptWarning('\n'.join(const_let_error_lines + [
-"""
-Use of const/let keywords detected in:
-%s
-Please ensure your code does not run on iOS9 because const/let is not fully
-supported.
-https://chromium.googlesource.com/chromium/src/+/master/styleguide/web/es6.md#let-Block_Scoped-Variables
-https://chromium.googlesource.com/chromium/src/+/master/styleguide/web/es6.md#const-Block_Scoped-Constants
-""" % f.LocalPath()
-          ])))
-
-  return results
-
-
 def _CheckForRelativeIncludes(input_api, output_api):
   # Need to set the sys.path so PRESUBMIT_test.py runs properly
   import sys
@@ -2795,8 +2733,8 @@ def _CheckForRelativeIncludes(input_api, output_api):
   bad_files = {}
   for f in input_api.AffectedFiles(include_deletes=False):
     if (f.LocalPath().startswith('third_party') and
-      not f.LocalPath().startswith('third_party/WebKit') and
-      not f.LocalPath().startswith('third_party\\WebKit')):
+      not f.LocalPath().startswith('third_party/blink') and
+      not f.LocalPath().startswith('third_party\\blink')):
       continue
 
     if not CppChecker.IsCppFile(f.LocalPath()):
@@ -2843,19 +2781,29 @@ def _CheckWatchlistDefinitionsEntrySyntax(key, value, ast):
   return None
 
 
-def _CheckWatchlistsEntrySyntax(key, value, ast):
+def _CheckWatchlistsEntrySyntax(key, value, ast, email_regex):
   if not isinstance(key, ast.Str):
     return 'Key at line %d must be a string literal' % key.lineno
   if not isinstance(value, ast.List):
     return 'Value at line %d must be a list' % value.lineno
+  for element in value.elts:
+    if not isinstance(element, ast.Str):
+      return 'Watchlist elements on line %d is not a string' % key.lineno
+    if not email_regex.match(element.s):
+      return ('Watchlist element on line %d doesn\'t look like a valid ' +
+              'email: %s') % (key.lineno, element.s)
   return None
 
 
-def _CheckWATCHLISTSEntries(wd_dict, w_dict, ast):
+def _CheckWATCHLISTSEntries(wd_dict, w_dict, input_api):
   mismatch_template = (
       'Mismatch between WATCHLIST_DEFINITIONS entry (%s) and WATCHLISTS '
       'entry (%s)')
 
+  email_regex = input_api.re.compile(
+      r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]+$")
+
+  ast = input_api.ast
   i = 0
   last_key = ''
   while True:
@@ -2875,7 +2823,8 @@ def _CheckWATCHLISTSEntries(wd_dict, w_dict, ast):
     if result is not None:
       return 'Bad entry in WATCHLIST_DEFINITIONS dict: %s' % result
 
-    result = _CheckWatchlistsEntrySyntax(w_key, w_dict.values[i], ast)
+    result = _CheckWatchlistsEntrySyntax(
+        w_key, w_dict.values[i], ast, email_regex)
     if result is not None:
       return 'Bad entry in WATCHLISTS dict: %s' % result
 
@@ -2893,7 +2842,8 @@ def _CheckWATCHLISTSEntries(wd_dict, w_dict, ast):
     i = i + 1
 
 
-def _CheckWATCHLISTSSyntax(expression, ast):
+def _CheckWATCHLISTSSyntax(expression, input_api):
+  ast = input_api.ast
   if not isinstance(expression, ast.Expression):
     return 'WATCHLISTS file must contain a valid expression'
   dictionary = expression.body
@@ -2919,7 +2869,7 @@ def _CheckWATCHLISTSSyntax(expression, ast):
         'The second entry of the dict in WATCHLISTS file must be '
         'WATCHLISTS dict')
 
-  return _CheckWATCHLISTSEntries(first_value, second_value, ast)
+  return _CheckWATCHLISTSEntries(first_value, second_value, input_api)
 
 
 def _CheckWATCHLISTS(input_api, output_api):
@@ -2943,7 +2893,7 @@ def _CheckWATCHLISTS(input_api, output_api):
         return [output_api.PresubmitError(
             'Cannot parse WATCHLISTS file', long_text=repr(e))]
 
-      result = _CheckWATCHLISTSSyntax(expression, input_api.ast)
+      result = _CheckWATCHLISTSSyntax(expression, input_api)
       if result is not None:
         return [output_api.PresubmitError(result)]
       break
@@ -3106,7 +3056,6 @@ def _CommonChecks(input_api, output_api):
   results.extend(_CheckJavaStyle(input_api, output_api))
   results.extend(_CheckIpcOwners(input_api, output_api))
   results.extend(_CheckUselessForwardDeclarations(input_api, output_api))
-  results.extend(_CheckForRiskyJsFeatures(input_api, output_api))
   results.extend(_CheckForRelativeIncludes(input_api, output_api))
   results.extend(_CheckWATCHLISTS(input_api, output_api))
   results.extend(input_api.RunTests(
@@ -3223,7 +3172,7 @@ def _CheckForInvalidOSMacrosInFile(input_api, f):
 def _CheckForInvalidOSMacros(input_api, output_api):
   """Check all affected files for invalid OS macros."""
   bad_macros = []
-  for f in input_api.AffectedFiles():
+  for f in input_api.AffectedSourceFiles(None):
     if not f.LocalPath().endswith(('.py', '.js', '.html', '.css', '.md')):
       bad_macros.extend(_CheckForInvalidOSMacrosInFile(input_api, f))
 

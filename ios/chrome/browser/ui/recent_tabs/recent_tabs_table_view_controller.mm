@@ -10,17 +10,16 @@
 #include "base/metrics/user_metrics_action.h"
 #import "base/numerics/safe_conversions.h"
 #include "base/strings/sys_string_conversions.h"
-#include "components/browser_sync/profile_sync_service.h"
 #include "components/sessions/core/tab_restore_service.h"
 #include "components/strings/grit/components_strings.h"
-#include "components/sync/driver/sync_service.h"
 #include "components/sync_sessions/open_tabs_ui_delegate.h"
+#include "components/sync_sessions/session_sync_service.h"
 #include "components/unified_consent/feature.h"
 #include "ios/chrome/browser/browser_state/chrome_browser_state.h"
 #import "ios/chrome/browser/metrics/new_tab_page_uma.h"
 #include "ios/chrome/browser/sessions/tab_restore_service_delegate_impl_ios.h"
 #include "ios/chrome/browser/sessions/tab_restore_service_delegate_impl_ios_factory.h"
-#include "ios/chrome/browser/sync/profile_sync_service_factory.h"
+#include "ios/chrome/browser/sync/session_sync_service_factory.h"
 #import "ios/chrome/browser/ui/authentication/signin_promo_view_configurator.h"
 #import "ios/chrome/browser/ui/authentication/signin_promo_view_consumer.h"
 #import "ios/chrome/browser/ui/authentication/signin_promo_view_mediator.h"
@@ -29,21 +28,21 @@
 #import "ios/chrome/browser/ui/commands/show_signin_command.h"
 #import "ios/chrome/browser/ui/context_menu/context_menu_coordinator.h"
 #import "ios/chrome/browser/ui/recent_tabs/recent_tabs_constants.h"
-#import "ios/chrome/browser/ui/recent_tabs/recent_tabs_image_data_source.h"
 #import "ios/chrome/browser/ui/recent_tabs/recent_tabs_presentation_delegate.h"
 #import "ios/chrome/browser/ui/recent_tabs/recent_tabs_table_view_controller_delegate.h"
 #include "ios/chrome/browser/ui/recent_tabs/synced_sessions.h"
 #import "ios/chrome/browser/ui/settings/sync_utils/sync_presenter.h"
 #import "ios/chrome/browser/ui/settings/sync_utils/sync_util.h"
 #import "ios/chrome/browser/ui/signin_interaction/public/signin_presenter.h"
-#import "ios/chrome/browser/ui/table_view/cells/table_view_accessory_item.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_activity_indicator_header_footer_item.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_cells_constants.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_disclosure_header_footer_item.h"
+#import "ios/chrome/browser/ui/table_view/cells/table_view_image_item.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_signin_promo_item.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_text_button_item.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_text_item.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_url_item.h"
+#import "ios/chrome/browser/ui/table_view/table_view_favicon_data_source.h"
 #import "ios/chrome/browser/ui/url_loader.h"
 #import "ios/chrome/browser/ui/util/top_view_controller.h"
 #include "ios/chrome/browser/ui/util/ui_util.h"
@@ -154,8 +153,7 @@ const int kRecentlyClosedTabsSectionIndex = 0;
   [self.tableView setDelegate:self];
   self.tableView.cellLayoutMarginsFollowReadableWidth = NO;
   self.tableView.estimatedRowHeight = kEstimatedRowHeight;
-  if (@available(iOS 11.0, *))
-    self.tableView.estimatedSectionHeaderHeight = kEstimatedRowHeight;
+  self.tableView.estimatedSectionHeaderHeight = kEstimatedRowHeight;
   self.tableView.rowHeight = UITableViewAutomaticDimension;
   self.tableView.sectionFooterHeight = 0.0;
   self.title = l10n_util::GetNSString(IDS_IOS_CONTENT_SUGGESTIONS_RECENT_TABS);
@@ -224,10 +222,11 @@ const int kRecentlyClosedTabsSectionIndex = 0;
   [self addRecentlyClosedTabItems];
 
   // Add show full history item last.
-  TableViewAccessoryItem* historyItem =
-      [[TableViewAccessoryItem alloc] initWithType:ItemTypeShowFullHistory];
+  TableViewImageItem* historyItem =
+      [[TableViewImageItem alloc] initWithType:ItemTypeShowFullHistory];
   historyItem.title = l10n_util::GetNSString(IDS_HISTORY_SHOWFULLHISTORY_LINK);
   historyItem.image = [UIImage imageNamed:@"show_history"];
+  historyItem.hideChevron = YES;
   historyItem.cellAccessibilityIdentifier =
       kRecentTabsShowFullHistoryCellAccessibilityIdentifier;
   [model addItem:historyItem
@@ -552,8 +551,8 @@ const int kRecentlyClosedTabsSectionIndex = 0;
     // won't change.
     return;
   }
-  syncer::SyncService* syncService =
-      ProfileSyncServiceFactory::GetForBrowserState(self.browserState);
+  sync_sessions::SessionSyncService* syncService =
+      SessionSyncServiceFactory::GetForBrowserState(self.browserState);
   _syncedSessions.reset(new synced_sessions::SyncedSessions(syncService));
 
   if (self.updatesTableView) {
@@ -561,29 +560,17 @@ const int kRecentlyClosedTabsSectionIndex = 0;
     // sessionState.
     // Turn Off animations since UITableViewRowAnimationNone still animates.
     [UIView setAnimationsEnabled:NO];
-    // If iOS11+ use performBatchUpdates: instead of begin/endUpdates.
-    if (@available(iOS 11, *)) {
-      if (newSessionState ==
-          SessionsSyncUserState::USER_SIGNED_IN_SYNC_ON_WITH_SESSIONS) {
-        [self.tableView performBatchUpdates:^{
-          [self updateSessionSections];
-        }
-                                 completion:nil];
-      } else {
-        [self.tableView performBatchUpdates:^{
-          [self updateOtherDevicesSectionForState:newSessionState];
-        }
-                                 completion:nil];
-      }
-    } else {
-      [self.tableView beginUpdates];
-      if (newSessionState ==
-          SessionsSyncUserState::USER_SIGNED_IN_SYNC_ON_WITH_SESSIONS) {
+    if (newSessionState ==
+        SessionsSyncUserState::USER_SIGNED_IN_SYNC_ON_WITH_SESSIONS) {
+      [self.tableView performBatchUpdates:^{
         [self updateSessionSections];
-      } else {
+      }
+                               completion:nil];
+    } else {
+      [self.tableView performBatchUpdates:^{
         [self updateOtherDevicesSectionForState:newSessionState];
       }
-      [self.tableView endUpdates];
+                               completion:nil];
     }
     [UIView setAnimationsEnabled:YES];
   }
@@ -602,16 +589,10 @@ const int kRecentlyClosedTabsSectionIndex = 0;
   if (!self.updatesTableView)
     return;
 
-  if (@available(iOS 11, *)) {
-    [self.tableView performBatchUpdates:^{
-      [self updateRecentlyClosedSection];
-    }
-                             completion:nil];
-  } else {
-    [self.tableView beginUpdates];
+  [self.tableView performBatchUpdates:^{
     [self updateRecentlyClosedSection];
-    [self.tableView endUpdates];
   }
+                           completion:nil];
 }
 
 - (void)setTabRestoreService:(sessions::TabRestoreService*)tabRestoreService {
@@ -652,18 +633,10 @@ const int kRecentlyClosedTabsSectionIndex = 0;
   }
 }
 
-// TODO(crbug.com/850814): Use only dynamic sizing once we stop supporting
-// iOS10.
 - (CGFloat)tableView:(UITableView*)tableView
     heightForHeaderInSection:(NSInteger)section {
   DCHECK_EQ(tableView, self.tableView);
-  if (@available(iOS 11, *)) {
-    return UITableViewAutomaticDimension;
-  } else {
-    TableViewHeaderFooterItem* header =
-        [self.tableViewModel headerForSection:section];
-    return [header headerHeightForWidth:self.view.bounds.size.width];
-  }
+  return UITableViewAutomaticDimension;
 }
 
 - (CGFloat)tableView:(UITableView*)tableView
@@ -887,7 +860,7 @@ const int kRecentlyClosedTabsSectionIndex = 0;
 - (void)openTabWithContentOfDistantTab:
     (synced_sessions::DistantTab const*)distantTab {
   sync_sessions::OpenTabsUIDelegate* openTabs =
-      ProfileSyncServiceFactory::GetForBrowserState(self.browserState)
+      SessionSyncServiceFactory::GetForBrowserState(self.browserState)
           ->GetOpenTabsUIDelegate();
   const sessions::SessionTab* toLoad = nullptr;
   if (openTabs->GetForeignTab(distantTab->session_tag, distantTab->tab_id,
@@ -973,14 +946,7 @@ const int kRecentlyClosedTabsSectionIndex = 0;
     }
   };
 
-  // If iOS11+ use performBatchUpdates: instead of beginUpdates/endUpdates.
-  if (@available(iOS 11, *)) {
-    [self.tableView performBatchUpdates:tableUpdates completion:nil];
-  } else {
-    [self.tableView beginUpdates];
-    tableUpdates();
-    [self.tableView endUpdates];
-  }
+  [self.tableView performBatchUpdates:tableUpdates completion:nil];
 }
 
 #pragma mark - Long press and context menus
@@ -1075,10 +1041,9 @@ const int kRecentlyClosedTabsSectionIndex = 0;
   synced_sessions::DistantSession const* session =
       [self sessionForSection:section];
   std::string sessionTagCopy = session->tag;
-  syncer::SyncService* syncService =
-      ProfileSyncServiceFactory::GetForBrowserState(self.browserState);
   sync_sessions::OpenTabsUIDelegate* openTabs =
-      syncService->GetOpenTabsUIDelegate();
+      SessionSyncServiceFactory::GetForBrowserState(self.browserState)
+          ->GetOpenTabsUIDelegate();
 
   void (^tableUpdates)(void) = ^{
     [self.tableViewModel removeSectionWithIdentifier:sectionIdentifier];
@@ -1087,21 +1052,10 @@ const int kRecentlyClosedTabsSectionIndex = 0;
                   withRowAnimation:UITableViewRowAnimationLeft];
   };
 
-  // If iOS11+ use performBatchUpdates: instead of beginUpdates/endUpdates.
-  if (@available(iOS 11, *)) {
-    [self.tableView performBatchUpdates:tableUpdates
-                             completion:^(BOOL) {
-                               openTabs->DeleteForeignSession(sessionTagCopy);
-                             }];
-  } else {
-    [self.tableView beginUpdates];
-    tableUpdates();
-    // DeleteForeignSession will cause |self refreshUserState:| to be called,
-    // thus refreshing the TableView, running this inside the updates block will
-    // make sure that the tableView animations are performed in order.
-    openTabs->DeleteForeignSession(sessionTagCopy);
-    [self.tableView endUpdates];
-  }
+  [self.tableView performBatchUpdates:tableUpdates
+                           completion:^(BOOL) {
+                             openTabs->DeleteForeignSession(sessionTagCopy);
+                           }];
 }
 
 #pragma mark - SigninPromoViewConsumer

@@ -22,24 +22,29 @@
 #include "base/time/time.h"
 #include "components/autofill/core/browser/autofill_external_delegate.h"
 #include "components/autofill/core/browser/autofill_test_utils.h"
+#include "components/autofill/core/browser/payments/test_payments_client.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/popup_item_ids.h"
+#include "components/autofill/core/browser/sync_utils.h"
 #include "components/autofill/core/browser/test_autofill_client.h"
 #include "components/autofill/core/browser/test_autofill_driver.h"
 #include "components/autofill/core/browser/test_autofill_manager.h"
+#include "components/autofill/core/browser/test_credit_card_save_manager.h"
+#include "components/autofill/core/browser/test_form_data_importer.h"
 #include "components/autofill/core/browser/test_form_structure.h"
 #include "components/autofill/core/browser/test_personal_data_manager.h"
-#include "components/autofill/core/browser/test_sync_service.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/core/common/autofill_clock.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/form_field_data.h"
 #include "components/prefs/pref_service.h"
+#include "components/sync/driver/test_sync_service.h"
 #include "components/ukm/test_ukm_recorder.h"
 #include "components/webdata/common/web_data_results.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "services/metrics/public/cpp/ukm_source.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/geometry/rect.h"
@@ -48,6 +53,7 @@
 using autofill::features::kAutofillEnforceMinRequiredFieldsForHeuristics;
 using autofill::features::kAutofillEnforceMinRequiredFieldsForQuery;
 using autofill::features::kAutofillEnforceMinRequiredFieldsForUpload;
+using SyncSigninState = autofill::AutofillSyncSigninState;
 using base::ASCIIToUTF16;
 using base::Bucket;
 using base::TimeTicks;
@@ -254,7 +260,7 @@ class AutofillMetricsTest : public testing::Test {
   base::test::ScopedTaskEnvironment scoped_task_environment_;
   ukm::TestAutoSetUkmRecorder test_ukm_recorder_;
   MockAutofillClient autofill_client_;
-  TestSyncService sync_service_;
+  syncer::TestSyncService sync_service_;
   std::unique_ptr<TestAutofillDriver> autofill_driver_;
   std::unique_ptr<TestAutofillManager> autofill_manager_;
   std::unique_ptr<TestPersonalDataManager> personal_data_;
@@ -281,6 +287,24 @@ void AutofillMetricsTest::SetUp() {
   personal_data_ = std::make_unique<TestPersonalDataManager>();
   personal_data_->SetPrefService(autofill_client_.GetPrefs());
   personal_data_->SetSyncServiceForTest(&sync_service_);
+
+  payments::TestPaymentsClient* payments_client =
+      new payments::TestPaymentsClient(
+          autofill_driver_->GetURLLoaderFactory(), autofill_client_.GetPrefs(),
+          autofill_client_.GetIdentityManager(), personal_data_.get());
+  autofill_client_.set_test_payments_client(
+      std::unique_ptr<payments::TestPaymentsClient>(payments_client));
+  TestCreditCardSaveManager* credit_card_save_manager =
+      new TestCreditCardSaveManager(autofill_driver_.get(), &autofill_client_,
+                                    payments_client, personal_data_.get());
+  autofill::TestFormDataImporter* test_form_data_importer =
+      new TestFormDataImporter(
+          &autofill_client_, payments_client,
+          std::unique_ptr<CreditCardSaveManager>(credit_card_save_manager),
+          personal_data_.get(), "en-US");
+  autofill_client_.set_test_form_data_importer(
+      std::unique_ptr<TestFormDataImporter>(test_form_data_importer));
+
   autofill_manager_ = std::make_unique<TestAutofillManager>(
       autofill_driver_.get(), &autofill_client_, personal_data_.get());
   external_delegate_ = std::make_unique<AutofillExternalDelegate>(
@@ -2825,6 +2849,7 @@ TEST_F(AutofillMetricsTest, AutofillIsEnabledAtStartup) {
                        /*identity_manager=*/nullptr,
                        /*client_profile_validator=*/nullptr,
                        /*history_service=*/nullptr,
+                       /*cookie_manager_sevice=*/nullptr,
                        /*is_off_the_record=*/false);
   histogram_tester.ExpectUniqueSample("Autofill.IsEnabled.Startup", true, 1);
 }
@@ -2839,6 +2864,7 @@ TEST_F(AutofillMetricsTest, AutofillIsDisabledAtStartup) {
                        /*identity_manager=*/nullptr,
                        /*client_profile_validator=*/nullptr,
                        /*history_service=*/nullptr,
+                       /*cookie_manager_sevice=*/nullptr,
                        /*is_off_the_record=*/false);
   histogram_tester.ExpectUniqueSample("Autofill.IsEnabled.Startup", false, 1);
 }
@@ -6317,8 +6343,12 @@ TEST_F(AutofillMetricsTest, AutofillFormSubmittedState) {
   // of fields enforced.)
   {
     base::test::ScopedFeatureList features;
-    features.InitAndEnableFeature(
-        kAutofillEnforceMinRequiredFieldsForHeuristics);
+    features.InitWithFeatures(
+        // Enabled
+        {kAutofillEnforceMinRequiredFieldsForHeuristics,
+         kAutofillEnforceMinRequiredFieldsForQuery},
+        // Disabled
+        {});
     base::HistogramTester histogram_tester;
     base::UserActionTester user_action_tester;
     autofill_manager_->OnFormSubmitted(
@@ -7848,18 +7878,7 @@ TEST_F(AutofillMetricsTest, DynamicFormMetrics) {
   // initially.
   FormStructure form_structure(form);
   autofill_manager_->ShouldTriggerRefill(form_structure);
-  histogram_tester.ExpectBucketCount(
-      "Autofill.FormEvents.Address",
-      AutofillMetrics::FORM_EVENT_DID_SEE_DYNAMIC_FORM, 1);
-  histogram_tester.ExpectBucketCount(
-      "Autofill.FormEvents.Address",
-      AutofillMetrics::FORM_EVENT_DID_SEE_FILLABLE_DYNAMIC_FORM, 0);
-  histogram_tester.ExpectBucketCount(
-      "Autofill.FormEvents.Address",
-      AutofillMetrics::FORM_EVENT_DID_DYNAMIC_REFILL, 0);
-  histogram_tester.ExpectBucketCount(
-      "Autofill.FormEvents.Address",
-      AutofillMetrics::FORM_EVENT_DYNAMIC_CHANGE_AFTER_REFILL, 0);
+  histogram_tester.ExpectTotalCount("Autofill.FormEvents.Address", 0);
 
   // Simulate filling the form.
   autofill_manager_->FillOrPreviewForm(
@@ -7869,9 +7888,6 @@ TEST_F(AutofillMetricsTest, DynamicFormMetrics) {
   // Simulate checking whether to fill a dynamic form after the form was filled
   // initially.
   autofill_manager_->ShouldTriggerRefill(form_structure);
-  histogram_tester.ExpectBucketCount(
-      "Autofill.FormEvents.Address",
-      AutofillMetrics::FORM_EVENT_DID_SEE_DYNAMIC_FORM, 2);
   histogram_tester.ExpectBucketCount(
       "Autofill.FormEvents.Address",
       AutofillMetrics::FORM_EVENT_DID_SEE_FILLABLE_DYNAMIC_FORM, 1);
@@ -7886,9 +7902,6 @@ TEST_F(AutofillMetricsTest, DynamicFormMetrics) {
   autofill_manager_->TriggerRefill(form);
   histogram_tester.ExpectBucketCount(
       "Autofill.FormEvents.Address",
-      AutofillMetrics::FORM_EVENT_DID_SEE_DYNAMIC_FORM, 2);
-  histogram_tester.ExpectBucketCount(
-      "Autofill.FormEvents.Address",
       AutofillMetrics::FORM_EVENT_DID_SEE_FILLABLE_DYNAMIC_FORM, 1);
   histogram_tester.ExpectBucketCount(
       "Autofill.FormEvents.Address",
@@ -7899,9 +7912,6 @@ TEST_F(AutofillMetricsTest, DynamicFormMetrics) {
 
   // Trigger a check to see whether a refill should happen. The
   autofill_manager_->ShouldTriggerRefill(form_structure);
-  histogram_tester.ExpectBucketCount(
-      "Autofill.FormEvents.Address",
-      AutofillMetrics::FORM_EVENT_DID_SEE_DYNAMIC_FORM, 3);
   histogram_tester.ExpectBucketCount(
       "Autofill.FormEvents.Address",
       AutofillMetrics::FORM_EVENT_DID_SEE_FILLABLE_DYNAMIC_FORM, 2);
@@ -8079,8 +8089,9 @@ TEST_F(AutofillMetricsTest,
         AutofillMetrics::SAVE_CARD_PROMPT_END_NAVIGATION_SHOWING,
         /*is_uploading=*/true, /*is_reshow=*/false,
         /*is_requesting_cardholder_name=*/false,
+        /*is_requesting_expiration_date=*/false,
         /*previous_save_credit_card_prompt_user_decision=*/1,
-        security_state::SecurityLevel::EV_SECURE);
+        security_state::SecurityLevel::EV_SECURE, SyncSigninState::kSignedOut);
     histogram_tester.ExpectBucketCount(
         "Autofill.SaveCreditCardPrompt.Upload.EV_SECURE",
         AutofillMetrics::SAVE_CARD_PROMPT_END_NAVIGATION_SHOWING, 1);
@@ -8091,10 +8102,122 @@ TEST_F(AutofillMetricsTest,
     AutofillMetrics::LogSaveCardPromptMetric(
         AutofillMetrics::SAVE_CARD_PROMPT_SHOWN, /*is_uploading=*/false,
         /*is_reshow=*/true, /*is_requesting_cardholder_name=*/false,
+        /*is_requesting_expiration_date=*/false,
         /*previous_save_credit_card_prompt_user_decision=*/0,
-        security_state::SecurityLevel::SECURE);
+        security_state::SecurityLevel::SECURE, SyncSigninState::kSignedOut);
     histogram_tester.ExpectBucketCount(
         "Autofill.SaveCreditCardPrompt.Local.SECURE",
+        AutofillMetrics::SAVE_CARD_PROMPT_SHOWN, 1);
+  }
+}
+
+TEST_F(AutofillMetricsTest, LogAutocompleteSuggestionAcceptedIndex_WithIndex) {
+  base::HistogramTester histogram_tester;
+  const int test_index = 3;
+  AutofillMetrics::LogAutocompleteSuggestionAcceptedIndex(test_index);
+  histogram_tester.ExpectUniqueSample(
+      "Autofill.SuggestionAcceptedIndex.Autocomplete", test_index,
+      /*expected_count=*/1);
+  histogram_tester.ExpectBucketCount(
+      "Autocomplete.Events", AutofillMetrics::AUTOCOMPLETE_SUGGESTION_SELECTED,
+      /*expected_count=*/1);
+}
+
+TEST_F(AutofillMetricsTest, LogAutocompleteSuggestionAcceptedIndex_IndexCap) {
+  base::HistogramTester histogram_tester;
+  const int test_index = 9000;
+  AutofillMetrics::LogAutocompleteSuggestionAcceptedIndex(test_index);
+  histogram_tester.ExpectUniqueSample(
+      "Autofill.SuggestionAcceptedIndex.Autocomplete", kMaxBucketsCount,
+      /*expected_count=*/1);
+  histogram_tester.ExpectBucketCount(
+      "Autocomplete.Events", AutofillMetrics::AUTOCOMPLETE_SUGGESTION_SELECTED,
+      /*expected_count=*/1);
+}
+
+TEST_F(AutofillMetricsTest, OnAutocompleteSuggestionsShown) {
+  base::HistogramTester histogram_tester;
+  AutofillMetrics::OnAutocompleteSuggestionsShown();
+  histogram_tester.ExpectBucketCount(
+      "Autocomplete.Events", AutofillMetrics::AUTOCOMPLETE_SUGGESTIONS_SHOWN,
+      /*expected_count=*/1);
+}
+
+// Verify that we correctly log FormEvent metrics with the appropriate sync
+// state.
+TEST_F(AutofillMetricsTest, FormEventMetrics_BySyncState) {
+  {
+    base::HistogramTester histogram_tester;
+    AutofillMetrics::FormEventLogger logger(
+        /*is_for_credit_card=*/true, /*is_in_main_frame=*/false,
+        /*form_interactions_ukm_logger=*/nullptr);
+    logger.OnDidSeeFillableDynamicForm(AutofillSyncSigninState::kSignedOut);
+    histogram_tester.ExpectBucketCount(
+        "Autofill.FormEvents.CreditCard.WithNoData.SignedOut",
+        AutofillMetrics::FORM_EVENT_DID_SEE_FILLABLE_DYNAMIC_FORM, 1);
+  }
+  {
+    base::HistogramTester histogram_tester;
+    AutofillMetrics::FormEventLogger logger(
+        /*is_for_credit_card=*/false, /*is_in_main_frame=*/true,
+        /*form_interactions_ukm_logger=*/nullptr);
+    logger.OnDidRefill(AutofillSyncSigninState::kSignedIn);
+    histogram_tester.ExpectBucketCount(
+        "Autofill.FormEvents.Address.WithNoData.SignedIn",
+        AutofillMetrics::FORM_EVENT_DID_DYNAMIC_REFILL, 1);
+  }
+}
+
+// Verify that we correctly log the IsEnabled metrics with the appropriate sync
+// state.
+TEST_F(AutofillMetricsTest, LogIsAutofillEnabledAtPageLoad_BySyncState) {
+  {
+    base::HistogramTester histogram_tester;
+    AutofillMetrics::LogIsAutofillEnabledAtPageLoad(/*enabled=*/true,
+                                                    SyncSigninState::kSignedIn);
+    histogram_tester.ExpectBucketCount("Autofill.IsEnabled.PageLoad.SignedIn",
+                                       true, 1);
+    // Make sure the metric without the sync state is still recorded.
+    histogram_tester.ExpectBucketCount("Autofill.IsEnabled.PageLoad", true, 1);
+  }
+  {
+    base::HistogramTester histogram_tester;
+    AutofillMetrics::LogIsAutofillEnabledAtPageLoad(
+        /*enabled=*/false, SyncSigninState::kSignedOut);
+    histogram_tester.ExpectBucketCount("Autofill.IsEnabled.PageLoad.SignedOut",
+                                       false, 1);
+    // Make sure the metric without the sync state is still recorded.
+    histogram_tester.ExpectBucketCount("Autofill.IsEnabled.PageLoad", false, 1);
+  }
+}
+
+// Verify that we correctly log FormEvent metrics with the appropriate sync
+// state.
+TEST_F(AutofillMetricsTest, LogSaveCardPromptMetric_BySyncState) {
+  {
+    base::HistogramTester histogram_tester;
+    AutofillMetrics::LogSaveCardPromptMetric(
+        AutofillMetrics::SAVE_CARD_PROMPT_END_NAVIGATION_SHOWING,
+        /*is_uploading=*/true, /*is_reshow=*/false,
+        /*is_requesting_cardholder_name=*/false,
+        /*is_requesting_expiration_date_from_user=*/false,
+        /*previous_save_credit_card_prompt_user_decision=*/1,
+        security_state::SecurityLevel::EV_SECURE, SyncSigninState::kSignedIn);
+    histogram_tester.ExpectBucketCount(
+        "Autofill.SaveCreditCardPrompt.Upload.FirstShow.SignedIn",
+        AutofillMetrics::SAVE_CARD_PROMPT_END_NAVIGATION_SHOWING, 1);
+  }
+  {
+    base::HistogramTester histogram_tester;
+    AutofillMetrics::LogSaveCardPromptMetric(
+        AutofillMetrics::SAVE_CARD_PROMPT_SHOWN, /*is_uploading=*/false,
+        /*is_reshow=*/true, /*is_requesting_cardholder_name=*/false,
+        /*is_requesting_expiration_date_from_user=*/false,
+        /*previous_save_credit_card_prompt_user_decision=*/0,
+        security_state::SecurityLevel::SECURE,
+        SyncSigninState::kSignedInAndSyncFeature);
+    histogram_tester.ExpectBucketCount(
+        "Autofill.SaveCreditCardPrompt.Local.Reshows.SignedInAndSyncFeature",
         AutofillMetrics::SAVE_CARD_PROMPT_SHOWN, 1);
   }
 }

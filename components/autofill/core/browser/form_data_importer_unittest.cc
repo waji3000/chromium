@@ -18,7 +18,6 @@
 #include "base/feature_list.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/guid.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
@@ -38,6 +37,7 @@
 #include "components/autofill/core/browser/webdata/autofill_table.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/core/common/autofill_constants.h"
+#include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/autofill_prefs.h"
 #include "components/autofill/core/common/autofill_switches.h"
 #include "components/autofill/core/common/autofill_util.h"
@@ -123,6 +123,7 @@ class FormDataImporterTestBase {
         /*identity_manager=*/nullptr,
         /*client_profile_validator=*/nullptr,
         /*history_service=*/nullptr,
+        /*cookie_manager_sevice=*/nullptr,
         /*is_off_the_record=*/(user_mode == USER_MODE_INCOGNITO));
     personal_data_manager_->AddObserver(&personal_data_observer_);
     personal_data_manager_->OnSyncServiceInitialized(nullptr);
@@ -219,7 +220,8 @@ class FormDataImporterTestBase {
   // The temporary directory should be deleted at the end to ensure that
   // files are not used anymore and deletion succeeds.
   base::ScopedTempDir temp_dir_;
-  base::MessageLoopForUI message_loop_;
+  base::test::ScopedTaskEnvironment task_environment_{
+      base::test::ScopedTaskEnvironment::MainThreadType::UI};
   std::unique_ptr<PrefService> prefs_;
   scoped_refptr<AutofillWebDataService> autofill_database_service_;
   scoped_refptr<WebDatabaseService> web_database_;
@@ -228,6 +230,7 @@ class FormDataImporterTestBase {
   std::unique_ptr<TestAutofillClient> autofill_client_;
   std::unique_ptr<PersonalDataManager> personal_data_manager_;
   std::unique_ptr<FormDataImporter> form_data_importer_;
+  base::test::ScopedFeatureList scoped_feature_list_;
 };
 
 class FormDataImporterTest : public FormDataImporterTestBase,
@@ -1491,6 +1494,49 @@ TEST_F(FormDataImporterTest, ImportCreditCard_InvalidExpiryDate) {
   ResetPersonalDataManager(USER_MODE_NORMAL);
 
   ASSERT_EQ(0U, personal_data_manager_->GetCreditCards().size());
+}
+
+// Tests that an empty credit card expiration is extracted when editable
+// expiration date experiment on.
+TEST_F(FormDataImporterTest,
+       ImportCreditCard_InvalidExpiryDate_EditableExpirationExpOn) {
+  scoped_feature_list_.InitAndEnableFeature(
+      features::kAutofillUpstreamEditableExpirationDate);
+  FormData form;
+  form.origin = GURL("https://wwww.foo.com");
+
+  AddFullCreditCardForm(&form, "Smalls Biggie", "4111-1111-1111-1111", "", "");
+
+  FormStructure form_structure(form);
+  form_structure.DetermineHeuristicTypes();
+  std::unique_ptr<CreditCard> imported_credit_card;
+  base::HistogramTester histogram_tester;
+  EXPECT_TRUE(ImportCreditCard(form_structure, false, &imported_credit_card));
+  ASSERT_TRUE(imported_credit_card);
+  histogram_tester.ExpectUniqueSample("Autofill.SubmittedCardState",
+                                      AutofillMetrics::HAS_CARD_NUMBER_ONLY, 1);
+}
+
+// Tests that an expired credit card is extracted when editable expiration date
+// experiment on.
+TEST_F(FormDataImporterTest,
+       ImportCreditCard_ExpiredExpiryDate_EditableExpirationExpOn) {
+  scoped_feature_list_.InitAndEnableFeature(
+      features::kAutofillUpstreamEditableExpirationDate);
+  FormData form;
+  form.origin = GURL("https://wwww.foo.com");
+
+  AddFullCreditCardForm(&form, "Smalls Biggie", "4111-1111-1111-1111", "01",
+                        "2000");
+
+  FormStructure form_structure(form);
+  form_structure.DetermineHeuristicTypes();
+  std::unique_ptr<CreditCard> imported_credit_card;
+  base::HistogramTester histogram_tester;
+  EXPECT_TRUE(ImportCreditCard(form_structure, false, &imported_credit_card));
+  ASSERT_TRUE(imported_credit_card);
+  histogram_tester.ExpectUniqueSample("Autofill.SubmittedCardState",
+                                      AutofillMetrics::HAS_CARD_NUMBER_ONLY, 1);
 }
 
 // Tests that a valid credit card is extracted when the option text for month
@@ -2871,6 +2917,151 @@ TEST_F(FormDataImporterTest,
   histogram_tester.ExpectUniqueSample(
       "Autofill.SubmittedServerCardExpirationStatus",
       AutofillMetrics::FULL_SERVER_CARD_EXPIRATION_DATE_MATCHED, 1);
+}
+
+// Ensure that we don't offer to save if we already have same card stored as a
+// server card and user submitted an invalid expiration date month.
+TEST_F(FormDataImporterTest,
+       Metrics_SubmittedServerCardExpirationStatus_EmptyExpirationMonth) {
+  scoped_feature_list_.InitAndEnableFeature(
+      features::kAutofillUpstreamEditableExpirationDate);
+  EnableWalletCardImport();
+
+  std::vector<CreditCard> server_cards;
+  server_cards.push_back(CreditCard(CreditCard::FULL_SERVER_CARD, "c789"));
+  test::SetCreditCardInfo(&server_cards.back(), "Clyde Barrow",
+                          "4444333322221111" /* Visa */, "04", "2111", "1");
+
+  test::SetServerCreditCards(autofill_table_, server_cards);
+
+  // Make sure everything is set up correctly.
+  personal_data_manager_->Refresh();
+  WaitForOnPersonalDataChanged();
+  EXPECT_EQ(1U, personal_data_manager_->GetCreditCards().size());
+
+  // A user fills/enters the card's information on a checkout form with an empty
+  // expiration date.
+  FormData form;
+  form.origin = GURL("https://wwww.foo.com");
+
+  FormFieldData field;
+  test::CreateTestFormField("Name on card:", "name_on_card", "Clyde Barrow",
+                            "text", &field);
+  form.fields.push_back(field);
+  test::CreateTestFormField("Card Number:", "card_number", "4444333322221111",
+                            "text", &field);
+  form.fields.push_back(field);
+  test::CreateTestFormField("Exp Month:", "exp_month", "", "text", &field);
+  form.fields.push_back(field);
+  test::CreateTestFormField("Exp Year:", "exp_year", "2111", "text", &field);
+  form.fields.push_back(field);
+
+  FormStructure form_structure(form);
+  form_structure.DetermineHeuristicTypes();
+  std::unique_ptr<CreditCard> imported_credit_card;
+  EXPECT_FALSE(form_data_importer_->ImportFormData(
+      form_structure,
+      /*profile_autofill_enabled=*/true,
+      /*credit_card_autofill_enabled=*/true,
+      /*should_return_local_card=*/false, &imported_credit_card));
+  EXPECT_FALSE(imported_credit_card);
+}
+
+// Ensure that we don't offer to save if we already have same card stored as a
+// server card and user submitted an invalid expiration date year.
+TEST_F(FormDataImporterTest,
+       Metrics_SubmittedServerCardExpirationStatus_EmptyExpirationYear) {
+  scoped_feature_list_.InitAndEnableFeature(
+      features::kAutofillUpstreamEditableExpirationDate);
+  EnableWalletCardImport();
+
+  std::vector<CreditCard> server_cards;
+  server_cards.push_back(CreditCard(CreditCard::FULL_SERVER_CARD, "c789"));
+  test::SetCreditCardInfo(&server_cards.back(), "Clyde Barrow",
+                          "4444333322221111" /* Visa */, "04", "2111", "1");
+
+  test::SetServerCreditCards(autofill_table_, server_cards);
+
+  // Make sure everything is set up correctly.
+  personal_data_manager_->Refresh();
+  WaitForOnPersonalDataChanged();
+  EXPECT_EQ(1U, personal_data_manager_->GetCreditCards().size());
+
+  // A user fills/enters the card's information on a checkout form with an empty
+  // expiration date.
+  FormData form;
+  form.origin = GURL("https://wwww.foo.com");
+
+  FormFieldData field;
+  test::CreateTestFormField("Name on card:", "name_on_card", "Clyde Barrow",
+                            "text", &field);
+  form.fields.push_back(field);
+  test::CreateTestFormField("Card Number:", "card_number", "4444333322221111",
+                            "text", &field);
+  form.fields.push_back(field);
+  test::CreateTestFormField("Exp Month:", "exp_month", "08", "text", &field);
+  form.fields.push_back(field);
+  test::CreateTestFormField("Exp Year:", "exp_year", "", "text", &field);
+  form.fields.push_back(field);
+
+  FormStructure form_structure(form);
+  form_structure.DetermineHeuristicTypes();
+  std::unique_ptr<CreditCard> imported_credit_card;
+  EXPECT_FALSE(form_data_importer_->ImportFormData(
+      form_structure,
+      /*profile_autofill_enabled=*/true,
+      /*credit_card_autofill_enabled=*/true,
+      /*should_return_local_card=*/false, &imported_credit_card));
+  EXPECT_FALSE(imported_credit_card);
+}
+
+// Ensure that we still offer to save if we have different cards stored as a
+// server card and user submitted an invalid expiration date year.
+TEST_F(
+    FormDataImporterTest,
+    Metrics_SubmittedDifferentServerCardExpirationStatus_EmptyExpirationYear) {
+  scoped_feature_list_.InitAndEnableFeature(
+      features::kAutofillUpstreamEditableExpirationDate);
+  EnableWalletCardImport();
+
+  std::vector<CreditCard> server_cards;
+  server_cards.push_back(CreditCard(CreditCard::FULL_SERVER_CARD, "c789"));
+  test::SetCreditCardInfo(&server_cards.back(), "Clyde Barrow",
+                          "4111111111111111" /* Visa */, "04", "2111", "1");
+
+  test::SetServerCreditCards(autofill_table_, server_cards);
+
+  // Make sure everything is set up correctly.
+  personal_data_manager_->Refresh();
+  WaitForOnPersonalDataChanged();
+  EXPECT_EQ(1U, personal_data_manager_->GetCreditCards().size());
+
+  // A user fills/enters the card's information on a checkout form with an empty
+  // expiration date.
+  FormData form;
+  form.origin = GURL("https://wwww.foo.com");
+
+  FormFieldData field;
+  test::CreateTestFormField("Name on card:", "name_on_card", "Clyde Barrow",
+                            "text", &field);
+  form.fields.push_back(field);
+  test::CreateTestFormField("Card Number:", "card_number", "4444333322221111",
+                            "text", &field);
+  form.fields.push_back(field);
+  test::CreateTestFormField("Exp Month:", "exp_month", "08", "text", &field);
+  form.fields.push_back(field);
+  test::CreateTestFormField("Exp Year:", "exp_year", "", "text", &field);
+  form.fields.push_back(field);
+
+  FormStructure form_structure(form);
+  form_structure.DetermineHeuristicTypes();
+  std::unique_ptr<CreditCard> imported_credit_card;
+  EXPECT_TRUE(form_data_importer_->ImportFormData(
+      form_structure,
+      /*profile_autofill_enabled=*/true,
+      /*credit_card_autofill_enabled=*/true,
+      /*should_return_local_card=*/false, &imported_credit_card));
+  EXPECT_TRUE(imported_credit_card);
 }
 
 TEST_F(FormDataImporterTest,

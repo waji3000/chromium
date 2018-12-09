@@ -45,6 +45,12 @@ class AudioFocusManager : public mojom::AudioFocusManager,
                          mojom::MediaSessionInfoPtr session_info,
                          mojom::AudioFocusType type,
                          RequestAudioFocusCallback callback) override;
+  void RequestGroupedAudioFocus(mojom::AudioFocusRequestClientRequest request,
+                                mojom::MediaSessionPtr media_session,
+                                mojom::MediaSessionInfoPtr session_info,
+                                mojom::AudioFocusType type,
+                                const base::UnguessableToken& group_id,
+                                RequestAudioFocusCallback callback) override;
   void GetFocusRequests(GetFocusRequestsCallback callback) override;
   void AddObserver(mojom::AudioFocusObserverPtr observer) override;
   void SetSourceName(const std::string& name) override;
@@ -83,13 +89,13 @@ class AudioFocusManager : public mojom::AudioFocusManager,
   void RequestAudioFocusInternal(std::unique_ptr<StackRow>,
                                  mojom::AudioFocusType,
                                  base::OnceCallback<void()>);
-  void EnforceAudioFocusRequest(mojom::AudioFocusType);
+  void EnforceAudioFocusRequest(mojom::AudioFocusType type,
+                                const base::UnguessableToken& group_id);
 
   void AbandonAudioFocusInternal(RequestId);
   void EnforceAudioFocusAbandon(mojom::AudioFocusType);
 
-  // Get the top most media session with the gain audio focus type.
-  mojom::MediaSession* GetActiveGainSession() const;
+  void MaybeUpdateActiveSession();
 
   std::unique_ptr<StackRow> RemoveFocusEntryIfPresent(RequestId id);
 

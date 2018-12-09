@@ -58,6 +58,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/installer/util/util_constants.h"
+#include "chromeos/assistant/buildflags.h"
 #include "components/browser_sync/profile_sync_service.h"
 #include "components/browser_watcher/stability_paths.h"
 #include "components/crash/core/common/crash_keys.h"
@@ -90,6 +91,7 @@
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/histogram_fetcher.h"
+#include "content/public/browser/network_service_instance.h"
 #include "content/public/browser/notification_service.h"
 #include "ppapi/buildflags/buildflags.h"
 #include "printing/buildflags/buildflags.h"
@@ -120,6 +122,10 @@
 
 #if BUILDFLAG(ENABLE_PLUGINS)
 #include "chrome/browser/metrics/plugin_metrics_provider.h"
+#endif
+
+#if BUILDFLAG(ENABLE_CROS_ASSISTANT)
+#include "chrome/browser/metrics/assistant_service_metrics_provider.h"
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -300,9 +306,6 @@ std::unique_ptr<metrics::FileMetricsProvider> CreateFileMetricsProvider(
   // When metrics reporting is enabled, register the notification_helper metrics
   // files; otherwise delete any existing files in order to preserve user
   // privacy.
-  // TODO(chengx): Investigate if there is a need to update
-  // RegisterOrRemovePreviousRunMetricsFile and apply it here to remove
-  // potential duplicate code.
   if (!user_data_dir.empty()) {
     base::FilePath notification_helper_metrics_upload_dir =
         user_data_dir.AppendASCII(
@@ -606,6 +609,7 @@ void ChromeMetricsServiceClient::RegisterMetricsServiceProviders() {
 
   metrics_service_->RegisterMetricsProvider(
       std::make_unique<metrics::NetworkMetricsProvider>(
+          content::CreateNetworkConnectionTrackerAsyncGetter(),
           std::make_unique<metrics::NetworkQualityEstimatorProviderImpl>()));
 
   // Currently, we configure OmniboxMetricsProvider to not log events to UMA
@@ -722,11 +726,17 @@ void ChromeMetricsServiceClient::RegisterMetricsServiceProviders() {
   metrics_service_->RegisterMetricsProvider(
       std::make_unique<PowerMetricsProvider>());
 #endif
+
+#if BUILDFLAG(ENABLE_CROS_ASSISTANT)
+  metrics_service_->RegisterMetricsProvider(
+      std::make_unique<AssistantServiceMetricsProvider>());
+#endif  // BUILDFLAG(ENABLE_CROS_ASSISTANT)
 }
 
 void ChromeMetricsServiceClient::RegisterUKMProviders() {
   ukm_service_->RegisterMetricsProvider(
       std::make_unique<metrics::NetworkMetricsProvider>(
+          content::CreateNetworkConnectionTrackerAsyncGetter(),
           std::make_unique<metrics::NetworkQualityEstimatorProviderImpl>()));
 
 #if defined(OS_CHROMEOS)

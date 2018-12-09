@@ -32,13 +32,18 @@ enum IDBDataLoss {
   Total,
 };
 
-// Represents key types that hold no data and so cannot be options in the
-// IDBKeyData union.
-// TODO(jsbell): These types should be cleaned up end-to-end, leaving only the
-// dataful options.
-enum IDBDatalessKeyType {
+// In order of the least to the highest precedent in terms of sort order.
+// These values are written to logs. New enum values can be added, but
+// existing enums must never be renumbered or deleted and reused.
+enum IDBKeyType {
   Invalid,
+  Array,
+  Binary,
+  String,
+  Date,
+  Number,
   Null,
+  Min,
 };
 
 union IDBKeyData {
@@ -47,12 +52,24 @@ union IDBKeyData {
   mojo_base.mojom.String16 string;
   double date;
   double number;
-  IDBDatalessKeyType other;
+  // TODO(jsbell): These types should be cleaned up end-to-end, leaving only the
+  // dataful options above.
+  bool other_invalid;
+  bool other_null;
 };
 
 // Defined as a structure so that it can by typemapped with StructTraits.
 struct IDBKey {
   IDBKeyData data;
+};
+
+// In order of the least to the highest precedent in terms of sort order.
+// These values are written to logs. New enum values can be added, but
+// existing enums must never be renumbered or deleted and reused.
+enum IDBKeyPathType {
+  Null,
+  String,
+  Array,
 };
 
 // Represents WebIDBKeyPathTypeString and WebIDBKeyPathTypeArray in a key path.
@@ -120,7 +137,7 @@ struct IDBObjectStoreMetadata {
   IDBKeyPath key_path;
   bool auto_increment;
   int64 max_index_id;
-  array<IDBIndexMetadata> indexes;
+  map<int64, IDBIndexMetadata> indexes;
 };
 
 struct IDBDatabaseMetadata {
@@ -128,7 +145,7 @@ struct IDBDatabaseMetadata {
   mojo_base.mojom.String16 name;
   int64 version;
   int64 max_object_store_id;
-  array<IDBObjectStoreMetadata> object_stores;
+  map<int64, IDBObjectStoreMetadata> object_stores;
 };
 
 struct IDBNameAndVersion {
@@ -156,7 +173,7 @@ struct IDBBlobInfo {
 };
 
 struct IDBValue {
-  string bits;
+  array<uint8> bits;
   array<IDBBlobInfo> blob_or_file_info;
 };
 
@@ -285,7 +302,7 @@ interface IDBDatabase {
               bool include_transaction,
               bool no_records,
               bool values,
-              uint16 operation_types);
+              uint32 operation_types);
   RemoveObservers(array<int32> observers);
   Get(int64 transaction_id,
       int64 object_store_id,

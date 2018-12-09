@@ -67,6 +67,10 @@
         border-top: var(--settings-separator-line);
       }
 
+      #other-sync-items {
+        padding-bottom: 8px;
+      }
+
       #other-sync-items > .list-item {
         border-top: var(--settings-separator-line);
       }
@@ -147,16 +151,6 @@
       </div>
     </template>
 
-     <!-- A change of the unified consent toggle state is automatically handled
-          in the C++ code after a change in the pref is observed. -->
-    <settings-toggle-button id="unifiedConsentToggle" class="first"
-        pref="{{prefs.unified_consent_given}}"
-        label="$i18n{syncUnifiedConsentToggleTitle}"
-        on-settings-boolean-control-change="onUnifiedConsentToggleChange_"
-        hidden="[[!shouldShowUnifiedConsentToggle_(unifiedConsentEnabled,
-                   syncStatus.disabled, syncStatus.signedIn)]]"
-        disabled="[[syncPrefs.encryptAllData]]">
-    </settings-toggle-button>
     <div class="settings-box two-line" id="sync-section-toggle"
         actionable$="[[!syncSectionDisabled_]]"
         on-click="toggleExpandButton_"
@@ -215,7 +209,7 @@
           </div>
         </template>
 
-        <div class="settings-box first" hidden="[[unifiedConsentEnabled]]">
+        <div class="settings-box first">
           <div id="syncEverythingCheckboxLabel" class="start">
             $i18n{syncEverythingCheckboxLabel}
           </div>
@@ -237,21 +231,6 @@
                 disabled="[[shouldSyncCheckboxBeDisabled_(
                     syncPrefs.syncAllDataTypes, syncPrefs.appsEnforced)]]"
                 aria-labelledby="appCheckboxLabel">
-            </cr-toggle>
-          </div>
-
-          <div class="layout horizontal list-item"
-              hidden="[[!syncPrefs.autofillRegistered]]">
-            <div id="autofillCheckboxLabel" class="flex">
-              $i18n{autofillCheckboxLabel}
-            </div>
-            <!-- Autofill has a special on-change handler to deal with
-                 Payments integration. -->
-            <cr-toggle checked="{{syncPrefs.autofillSynced}}"
-                on-change="onAutofillDataTypeChanged_"
-                disabled="[[shouldSyncCheckboxBeDisabled_(
-                    syncPrefs.syncAllDataTypes, syncPrefs.autofillEnforced)]]"
-                aria-labelledby="autofillCheckboxLabel">
             </cr-toggle>
           </div>
 
@@ -298,19 +277,6 @@
           </div>
 
           <div class="layout horizontal list-item"
-              hidden="[[!syncPrefs.passwordsRegistered]]">
-            <div id="passwordsCheckboxLabel" class="flex">
-              $i18n{passwordsCheckboxLabel}
-            </div>
-            <cr-toggle checked="{{syncPrefs.passwordsSynced}}"
-                on-change="onSingleSyncDataTypeChanged_"
-                disabled="[[shouldSyncCheckboxBeDisabled_(
-                    syncPrefs.syncAllDataTypes, syncPrefs.passwordsEnforced)]]"
-                aria-labelledby="passwordsCheckboxLabel">
-            </cr-toggle>
-          </div>
-
-          <div class="layout horizontal list-item"
               hidden="[[!syncPrefs.preferencesRegistered]]">
             <div id="settingsCheckboxLabel" class="flex">
               $i18n{settingsCheckboxLabel}
@@ -351,6 +317,34 @@
           </div>
 
           <div class="layout horizontal list-item"
+              hidden="[[!syncPrefs.passwordsRegistered]]">
+            <div id="passwordsCheckboxLabel" class="flex">
+              $i18n{passwordsCheckboxLabel}
+            </div>
+            <cr-toggle checked="{{syncPrefs.passwordsSynced}}"
+                on-change="onSingleSyncDataTypeChanged_"
+                disabled="[[shouldSyncCheckboxBeDisabled_(
+                    syncPrefs.syncAllDataTypes, syncPrefs.passwordsEnforced)]]"
+                aria-labelledby="passwordsCheckboxLabel">
+            </cr-toggle>
+          </div>
+
+          <div class="layout horizontal list-item"
+              hidden="[[!syncPrefs.autofillRegistered]]">
+            <div id="autofillCheckboxLabel" class="flex">
+              $i18n{autofillCheckboxLabel}
+            </div>
+            <!-- Autofill has a special on-change handler to deal with
+                 Payments integration. -->
+            <cr-toggle checked="{{syncPrefs.autofillSynced}}"
+                on-change="onAutofillDataTypeChanged_"
+                disabled="[[shouldSyncCheckboxBeDisabled_(
+                    syncPrefs.syncAllDataTypes, syncPrefs.autofillEnforced)]]"
+                aria-labelledby="autofillCheckboxLabel">
+            </cr-toggle>
+          </div>
+
+          <div class="layout horizontal list-item"
               hidden="[[!syncPrefs.autofillRegistered]]">
             <!-- The Payments integration checkbox is a special case in many
                  ways. It's visible only if autofill is registered. It's
@@ -369,36 +363,6 @@
                 aria-label="$i18n{enablePaymentsIntegrationCheckboxLabel}">
             </cr-toggle>
           </div>
-
-          <!-- User events is disabled and unchecked if data is encrypted or
-               typed urls are disabled. -->
-          <template is="dom-if" if="[[unifiedConsentEnabled]]">
-            <div hidden="[[!syncPrefs.userEventsRegistered]]"
-                class$="[[getPassphraseHintLines_(syncPrefs.encryptAllData)]]
-                    layout horizontal list-item">
-              <div class="start" id="userEventsCheckboxLabel">
-                $i18n{userEventsCheckboxLabel}
-                <div class="secondary">
-                  $i18n{userEventsCheckboxText}
-                  <div id="reset-sync-message-box-user-events"
-                      hidden="[[!syncPrefs.encryptAllData]]">
-                    <iron-icon icon="settings:info-outline"
-                        class="passphrase-reset-icon">
-                    </iron-icon>
-                    $i18nRaw{passphraseResetHintToggle}
-                  </div>
-                </div>
-              </div>
-              <cr-toggle id="userEventsToggle"
-                  checked="{{userEventsToggleValue}}"
-                  on-change="onUserEventsSyncDataTypeChanged_"
-                  disabled="[[shouldUserEventsCheckboxBeDisabled_(
-                      syncPrefs.syncAllDataTypes, syncPrefs.typedUrlsSynced,
-                      syncPrefs.userEventsEnforced, syncPrefs.encryptAllData)]]"
-                  aria-labelledby="userEventsCheckboxLabel">
-              </cr-toggle>
-            </div>
-          </template>
         </div>
 
         <div id="other-sync-items"
@@ -522,7 +486,6 @@
         <settings-personalization-options class="list-frame" prefs="{{prefs}}"
             page-visibility="[[pageVisibility]]"
             unified-consent-enabled="[[unifiedConsentEnabled]]"
-            unified-consent-given="{{prefs.unified_consent_given.value}}">
         </settings-personalization-options>
       </iron-collapse>
     </template>

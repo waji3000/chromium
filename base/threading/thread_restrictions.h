@@ -132,7 +132,6 @@ class BrowserTestBase;
 class CategorizedWorkerPool;
 class GpuProcessTransportFactory;
 class NestedMessagePumpAndroid;
-class ScopedAllowWaitForAndroidLayoutTests;
 class ScopedAllowWaitForDebugURL;
 class SessionStorageDatabase;
 class SoftwareOutputDeviceMus;
@@ -233,7 +232,7 @@ class TaskTracker;
 
 class AdjustOOMScoreHelper;
 class GetAppOutputScopedAllowBaseSyncPrimitives;
-class MessageLoop;
+class MessageLoopImpl;
 class SimpleThread;
 class StackSamplingProfiler;
 class Thread;
@@ -339,20 +338,35 @@ class BASE_EXPORT ScopedAllowBaseSyncPrimitives {
                            ScopedAllowBaseSyncPrimitivesResetsState);
   FRIEND_TEST_ALL_PREFIXES(ThreadRestrictionsTest,
                            ScopedAllowBaseSyncPrimitivesWithBlockingDisallowed);
+
+  // Allowed usage:
+  friend class ::BrowserProcessImpl;
+  friend class SimpleThread;
+  friend class android_webview::AwFormDatabaseService;
+  friend class android_webview::CookieManager;
   friend class base::GetAppOutputScopedAllowBaseSyncPrimitives;
+  friend class content::BrowserMainLoop;
   friend class content::BrowserProcessSubThread;
+  friend class content::ServiceWorkerSubresourceLoader;
   friend class content::SessionStorageDatabase;
   friend class functions::ExecScriptScopedAllowBaseSyncPrimitives;
+  friend class internal::TaskTracker;
   friend class leveldb::LevelDBMojoProxy;
   friend class media::BlockingUrlProtocol;
   friend class mojo::core::ScopedIPCSupport;
   friend class net::MultiThreadedCertVerifierScopedAllowBaseSyncPrimitives;
+  friend class remoting::AutoThread;
   friend class rlz_lib::FinancialPing;
   friend class shell_integration_linux::
       LaunchXdgUtilityScopedAllowBaseSyncPrimitives;
   friend class webrtc::DesktopConfigurationMonitor;
-  friend class content::ServiceWorkerSubresourceLoader;
-  friend class blink::VideoFrameResourceProvider;
+
+  // Usage that should be fixed:
+  friend class ::NativeBackendKWallet;            // http://crbug.com/125331
+  friend class ::chromeos::system::
+      StatisticsProviderImpl;                      // http://crbug.com/125385
+  friend class content::TextInputClientMac;        // http://crbug.com/121917
+  friend class blink::VideoFrameResourceProvider;  // http://crbug.com/878070
 
   ScopedAllowBaseSyncPrimitives() EMPTY_BODY_IF_DCHECK_IS_OFF;
   ~ScopedAllowBaseSyncPrimitives() EMPTY_BODY_IF_DCHECK_IS_OFF;
@@ -374,15 +388,37 @@ class BASE_EXPORT ScopedAllowBaseSyncPrimitivesOutsideBlockingScope {
   FRIEND_TEST_ALL_PREFIXES(
       ThreadRestrictionsTest,
       ScopedAllowBaseSyncPrimitivesOutsideBlockingScopeResetsState);
+
+  // Allowed usage:
   friend class ::KeyStorageLinux;
-  friend class base::MessageLoop;
+  friend class Thread;
+  friend class android::JavaHandlerThread;
+  friend class base::MessageLoopImpl;
+  friend class base::StackSamplingProfiler;
+  friend class content::ScopedAllowWaitForDebugURL;
   friend class content::SynchronousCompositor;
   friend class content::SynchronousCompositorHost;
   friend class content::SynchronousCompositorSyncCallBridge;
-  friend class midi::TaskService;  // https://crbug.com/796830
+  friend class mojo::SyncCallRestrictions;
+  friend class viz::HostGpuMemoryBufferManager;
+
+  // Usage that should be fixed:
+  friend class ::chromeos::BlockingMethodCaller;  // http://crbug.com/125360
+  friend class cc::CompletionEvent;              // http://crbug.com/902653
+  friend class cc::SingleThreadTaskGraphRunner;  // http://crbug.com/902823
+  friend class content::
+      BrowserGpuChannelHostFactory;                 // http://crbug.com/125248
+  friend class content::CategorizedWorkerPool;      // http://crbug.com/902823
+  friend class dbus::Bus;                           // http://crbug.com/125222
+  friend class disk_cache::BackendImpl;             // http://crbug.com/74623
+  friend class disk_cache::InFlightIO;              // http://crbug.com/74623
+  friend class gpu::GpuChannelHost;                 // http://crbug.com/125264
+  friend class midi::TaskService;                   // https://crbug.com/796830
+  friend class net::NetworkChangeNotifierMac;       // http://crbug.com/125097
+  friend class net::internal::AddressTrackerLinux;  // http://crbug.com/125097
   // Not used in production yet, https://crbug.com/844078.
   friend class service_manager::ServiceProcessLauncher;
-  friend class viz::HostGpuMemoryBufferManager;
+  friend class ui::WindowResizeHelperMac;  // http://crbug.com/902829
 
   ScopedAllowBaseSyncPrimitivesOutsideBlockingScope()
       EMPTY_BODY_IF_DCHECK_IS_OFF;
@@ -479,6 +515,7 @@ class BASE_EXPORT ThreadRestrictions {
 #endif
 
  private:
+  // TODO(etiennep): Remove friendship for ScopedAllowWait.
   // DO NOT ADD ANY OTHER FRIEND STATEMENTS.
   // BEGIN ALLOWED USAGE.
   friend class android_webview::AwFormDatabaseService;
@@ -488,7 +525,6 @@ class BASE_EXPORT ThreadRestrictions {
   friend class content::BrowserShutdownProfileDumper;
   friend class content::BrowserTestBase;
   friend class content::NestedMessagePumpAndroid;
-  friend class content::ScopedAllowWaitForAndroidLayoutTests;
   friend class content::ScopedAllowWaitForDebugURL;
   friend class ::HistogramSynchronizer;
   friend class internal::TaskTracker;

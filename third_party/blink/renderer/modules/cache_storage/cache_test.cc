@@ -13,7 +13,7 @@
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "services/network/public/mojom/fetch_api.mojom-blink.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/public/platform/modules/cache_storage/cache_storage.mojom-blink.h"
+#include "third_party/blink/public/mojom/cache_storage/cache_storage.mojom-blink.h"
 #include "third_party/blink/public/platform/web_url_response.h"
 #include "third_party/blink/renderer/bindings/core/v8/idl_types.h"
 #include "third_party/blink/renderer/bindings/core/v8/native_value_traits_impl.h"
@@ -54,7 +54,11 @@ class ScopedFetcherForTests final
   USING_GARBAGE_COLLECTED_MIXIN(ScopedFetcherForTests);
 
  public:
-  static ScopedFetcherForTests* Create() { return new ScopedFetcherForTests(); }
+  static ScopedFetcherForTests* Create() {
+    return MakeGarbageCollected<ScopedFetcherForTests>();
+  }
+
+  ScopedFetcherForTests() : fetch_count_(0), expected_url_(nullptr) {}
 
   ScriptPromise Fetch(ScriptState* script_state,
                       const RequestInfo& request_info,
@@ -98,8 +102,6 @@ class ScopedFetcherForTests final
   }
 
  private:
-  ScopedFetcherForTests() : fetch_count_(0), expected_url_(nullptr) {}
-
   int fetch_count_;
   const String* expected_url_;
   Member<Response> response_;
@@ -138,34 +140,34 @@ class ErrorCacheForTests : public mojom::blink::CacheStorageCache {
     expected_batch_operations_ = expected_batch_operations;
   }
 
-  void Match(const WebServiceWorkerRequest& request,
+  void Match(mojom::blink::FetchAPIRequestPtr fetch_api_request,
              mojom::blink::QueryParamsPtr query_params,
              MatchCallback callback) override {
     last_error_web_cache_method_called_ = "dispatchMatch";
-    CheckUrlIfProvided(request.Url());
+    CheckUrlIfProvided(fetch_api_request->url);
     CheckQueryParamsIfProvided(query_params);
     mojom::blink::MatchResultPtr result = mojom::blink::MatchResult::New();
     result->set_status(error_);
     std::move(callback).Run(std::move(result));
   }
-  void MatchAll(const base::Optional<WebServiceWorkerRequest>& request,
+  void MatchAll(mojom::blink::FetchAPIRequestPtr fetch_api_request,
                 mojom::blink::QueryParamsPtr query_params,
                 MatchAllCallback callback) override {
     last_error_web_cache_method_called_ = "dispatchMatchAll";
-    if (request)
-      CheckUrlIfProvided(request->Url());
+    if (fetch_api_request)
+      CheckUrlIfProvided(fetch_api_request->url);
     CheckQueryParamsIfProvided(query_params);
     mojom::blink::MatchAllResultPtr result =
         mojom::blink::MatchAllResult::New();
     result->set_status(error_);
     std::move(callback).Run(std::move(result));
   }
-  void Keys(const base::Optional<WebServiceWorkerRequest>& request,
+  void Keys(mojom::blink::FetchAPIRequestPtr fetch_api_request,
             mojom::blink::QueryParamsPtr query_params,
             KeysCallback callback) override {
     last_error_web_cache_method_called_ = "dispatchKeys";
-    if (request && !request->Url().IsEmpty()) {
-      CheckUrlIfProvided(request->Url());
+    if (fetch_api_request && !fetch_api_request->url.IsEmpty()) {
+      CheckUrlIfProvided(fetch_api_request->url);
       CheckQueryParamsIfProvided(query_params);
     }
     mojom::blink::CacheKeysResultPtr result =
@@ -208,8 +210,8 @@ class ErrorCacheForTests : public mojom::blink::CacheStorageCache {
       EXPECT_EQ(expected_batch_operations[i]->operation_type,
                 batch_operations[i]->operation_type);
       const String expected_request_url =
-          KURL(expected_batch_operations[i]->request.Url());
-      EXPECT_EQ(expected_request_url, KURL(batch_operations[i]->request.Url()));
+          expected_batch_operations[i]->request->url;
+      EXPECT_EQ(expected_request_url, batch_operations[i]->request->url);
       if (expected_batch_operations[i]->response) {
         ASSERT_EQ(expected_batch_operations[i]->response->url_list.size(),
                   batch_operations[i]->response->url_list.size());
@@ -328,18 +330,18 @@ class CacheStorageTest : public PageTestBase {
   class UnreachableFunction : public ScriptFunction {
    public:
     static v8::Local<v8::Function> Create(ScriptState* script_state) {
-      UnreachableFunction* self = new UnreachableFunction(script_state);
+      UnreachableFunction* self =
+          MakeGarbageCollected<UnreachableFunction>(script_state);
       return self->BindToV8Function();
     }
+
+    UnreachableFunction(ScriptState* script_state)
+        : ScriptFunction(script_state) {}
 
     ScriptValue Call(ScriptValue value) override {
       ADD_FAILURE() << "Unexpected call to a null ScriptFunction.";
       return value;
     }
-
-   private:
-    UnreachableFunction(ScriptState* script_state)
-        : ScriptFunction(script_state) {}
   };
 
   // A ScriptFunction that saves its parameter; used by tests to assert on
@@ -348,9 +350,13 @@ class CacheStorageTest : public PageTestBase {
    public:
     static v8::Local<v8::Function> Create(ScriptState* script_state,
                                           ScriptValue* out_value) {
-      TestFunction* self = new TestFunction(script_state, out_value);
+      TestFunction* self =
+          MakeGarbageCollected<TestFunction>(script_state, out_value);
       return self->BindToV8Function();
     }
+
+    TestFunction(ScriptState* script_state, ScriptValue* out_value)
+        : ScriptFunction(script_state), value_(out_value) {}
 
     ScriptValue Call(ScriptValue value) override {
       DCHECK(!value.IsEmpty());
@@ -359,9 +365,6 @@ class CacheStorageTest : public PageTestBase {
     }
 
    private:
-    TestFunction(ScriptState* script_state, ScriptValue* out_value)
-        : ScriptFunction(script_state), value_(out_value) {}
-
     ScriptValue* value_;
   };
 
@@ -526,7 +529,7 @@ TEST_F(CacheStorageTest, BatchOperationArguments) {
     expected_delete_operations.push_back(mojom::blink::BatchOperation::New());
     auto& delete_operation = expected_delete_operations.back();
     delete_operation->operation_type = mojom::blink::OperationType::kDelete;
-    request->PopulateWebServiceWorkerRequest(delete_operation->request);
+    delete_operation->request = request->CreateFetchAPIRequest();
     delete_operation->match_params = expected_query_params->Clone();
   }
   test_cache()->SetExpectedBatchOperations(&expected_delete_operations);
@@ -549,7 +552,7 @@ TEST_F(CacheStorageTest, BatchOperationArguments) {
     expected_put_operations.push_back(mojom::blink::BatchOperation::New());
     auto& put_operation = expected_put_operations.back();
     put_operation->operation_type = mojom::blink::OperationType::kPut;
-    request->PopulateWebServiceWorkerRequest(put_operation->request);
+    put_operation->request = request->CreateFetchAPIRequest();
     put_operation->response = response->PopulateFetchAPIResponse();
   }
   test_cache()->SetExpectedBatchOperations(&expected_put_operations);
@@ -578,7 +581,7 @@ class MatchTestCache : public NotImplementedErrorCache {
       : response_(std::move(response)) {}
 
   // From WebServiceWorkerCache:
-  void Match(const WebServiceWorkerRequest& request,
+  void Match(mojom::blink::FetchAPIRequestPtr fetch_api_request,
              mojom::blink::QueryParamsPtr query_params,
              MatchCallback callback) override {
     mojom::blink::MatchResultPtr result = mojom::blink::MatchResult::New();
@@ -620,20 +623,20 @@ TEST_F(CacheStorageTest, MatchResponseTest) {
 
 class KeysTestCache : public NotImplementedErrorCache {
  public:
-  KeysTestCache(Vector<WebServiceWorkerRequest>& requests)
-      : requests_(requests) {}
+  KeysTestCache(Vector<mojom::blink::FetchAPIRequestPtr> requests)
+      : requests_(std::move(requests)) {}
 
-  void Keys(const base::Optional<WebServiceWorkerRequest>& request,
+  void Keys(mojom::blink::FetchAPIRequestPtr fetch_api_request,
             mojom::blink::QueryParamsPtr query_params,
             KeysCallback callback) override {
     mojom::blink::CacheKeysResultPtr result =
         mojom::blink::CacheKeysResult::New();
-    result->set_keys(requests_);
+    result->set_keys(std::move(requests_));
     std::move(callback).Run(std::move(result));
   }
 
  private:
-  Vector<WebServiceWorkerRequest>& requests_;
+  Vector<mojom::blink::FetchAPIRequestPtr> requests_;
 };
 
 TEST_F(CacheStorageTest, KeysResponseTest) {
@@ -647,14 +650,16 @@ TEST_F(CacheStorageTest, KeysResponseTest) {
   expected_urls[0] = url1;
   expected_urls[1] = url2;
 
-  Vector<WebServiceWorkerRequest> web_requests(size_t(2));
-  web_requests[0].SetURL(KURL(url1));
-  web_requests[0].SetMethod("GET");
-  web_requests[1].SetURL(KURL(url2));
-  web_requests[1].SetMethod("GET");
+  Vector<mojom::blink::FetchAPIRequestPtr> fetch_api_requests(size_t(2));
+  fetch_api_requests[0] = mojom::blink::FetchAPIRequest::New();
+  fetch_api_requests[0]->url = KURL(url1);
+  fetch_api_requests[0]->method = String("GET");
+  fetch_api_requests[1] = mojom::blink::FetchAPIRequest::New();
+  fetch_api_requests[1]->url = KURL(url2);
+  fetch_api_requests[1]->method = String("GET");
 
-  Cache* cache =
-      CreateCache(fetcher, std::make_unique<KeysTestCache>(web_requests));
+  Cache* cache = CreateCache(
+      fetcher, std::make_unique<KeysTestCache>(std::move(fetch_api_requests)));
 
   ScriptPromise result = cache->keys(GetScriptState(), exception_state);
   ScriptValue script_value = GetResolveValue(result);
@@ -677,7 +682,7 @@ class MatchAllAndBatchTestCache : public NotImplementedErrorCache {
   MatchAllAndBatchTestCache(Vector<mojom::blink::FetchAPIResponsePtr> responses)
       : responses_(std::move(responses)) {}
 
-  void MatchAll(const base::Optional<WebServiceWorkerRequest>& request,
+  void MatchAll(mojom::blink::FetchAPIRequestPtr fetch_api_request,
                 mojom::blink::QueryParamsPtr query_params,
                 MatchAllCallback callback) override {
     mojom::blink::MatchAllResultPtr result =
@@ -765,8 +770,9 @@ TEST_F(CacheStorageTest, Add) {
   Request* request = NewRequestFromUrl(url);
   Response* response = Response::Create(
       GetScriptState(),
-      new BodyStreamBuffer(GetScriptState(), new FormDataBytesConsumer(content),
-                           nullptr),
+      MakeGarbageCollected<BodyStreamBuffer>(
+          GetScriptState(),
+          MakeGarbageCollected<FormDataBytesConsumer>(content), nullptr),
       content_type, ResponseInit::Create(), exception_state);
   fetcher->SetResponse(response);
 
@@ -776,7 +782,7 @@ TEST_F(CacheStorageTest, Add) {
         mojom::blink::BatchOperation::New();
 
     put_operation->operation_type = mojom::blink::OperationType::kPut;
-    request->PopulateWebServiceWorkerRequest(put_operation->request);
+    put_operation->request = request->CreateFetchAPIRequest();
     put_operation->response = response->PopulateFetchAPIResponse();
     expected_put_operations[0] = std::move(put_operation);
   }

@@ -131,6 +131,14 @@ class DockedMagnifierTest : public NoSessionAshTestBase {
               gfx::ToFlooredPoint(point_of_interest_in_root_f));
   }
 
+  void TouchPoint(const gfx::Point& touch_point_in_screen) {
+    // TODO(oshima): Currently touch event doesn't update the
+    // event dispatcher in the event generator. Fix it and use
+    // touch event insteead.
+    auto* generator = GetEventGenerator();
+    generator->GestureTapAt(touch_point_in_screen);
+  }
+
  private:
   base::test::ScopedFeatureList scoped_feature_list_;
 
@@ -446,7 +454,7 @@ TEST_F(DockedMagnifierTest, TouchEvents) {
   // Generate some touch events in both displays and expect the magnifier
   // viewport moves accordingly.
   gfx::Point touch_point(200, 350);
-  GetEventGenerator()->PressMoveAndReleaseTouchTo(touch_point);
+  TouchPoint(touch_point);
   const views::Widget* viewport_widget =
       controller()->GetViewportWidgetForTesting();
   EXPECT_EQ(root_windows[0], viewport_widget->GetNativeView()->GetRootWindow());
@@ -454,7 +462,8 @@ TEST_F(DockedMagnifierTest, TouchEvents) {
 
   // Touch a new point in the other display.
   touch_point = gfx::Point(900, 200);
-  GetEventGenerator()->PressMoveAndReleaseTouchTo(touch_point);
+  TouchPoint(touch_point);
+
   // New viewport widget is created in the second display.
   ASSERT_NE(viewport_widget, controller()->GetViewportWidgetForTesting());
   viewport_widget = controller()->GetViewportWidgetForTesting();
@@ -686,13 +695,13 @@ TEST_F(DockedMagnifierTest, HighContrastMode) {
   // Enable High Contrast mode, and expect the viewport layer to be inverted.
   Shell::Get()->accessibility_controller()->SetHighContrastEnabled(true);
   EXPECT_TRUE(
-      Shell::Get()->accessibility_controller()->IsHighContrastEnabled());
+      Shell::Get()->accessibility_controller()->high_contrast_enabled());
   EXPECT_TRUE(viewport_layer->layer_inverted());
 
   // Disable High Contrast, the layer should be updated accordingly.
   Shell::Get()->accessibility_controller()->SetHighContrastEnabled(false);
   EXPECT_FALSE(
-      Shell::Get()->accessibility_controller()->IsHighContrastEnabled());
+      Shell::Get()->accessibility_controller()->high_contrast_enabled());
   EXPECT_FALSE(viewport_layer->layer_inverted());
 
   // Now, disable the Docked Magnifier, enable High Contrast, and then re-enable
@@ -701,7 +710,7 @@ TEST_F(DockedMagnifierTest, HighContrastMode) {
   EXPECT_FALSE(magnifier->GetEnabled());
   Shell::Get()->accessibility_controller()->SetHighContrastEnabled(true);
   EXPECT_TRUE(
-      Shell::Get()->accessibility_controller()->IsHighContrastEnabled());
+      Shell::Get()->accessibility_controller()->high_contrast_enabled());
   magnifier->SetEnabled(true);
   EXPECT_TRUE(magnifier->GetEnabled());
   const ui::Layer* new_viewport_layer =

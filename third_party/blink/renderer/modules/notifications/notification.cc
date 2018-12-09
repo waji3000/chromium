@@ -113,8 +113,8 @@ Notification* Notification::Create(ExecutionContext* context,
     return nullptr;
   }
 
-  Notification* notification =
-      new Notification(context, Type::kNonPersistent, std::move(data));
+  Notification* notification = MakeGarbageCollected<Notification>(
+      context, Type::kNonPersistent, std::move(data));
 
   // TODO(https://crbug.com/595685): Make |token| a constructor parameter
   // once persistent notifications have been mojofied too.
@@ -141,8 +141,8 @@ Notification* Notification::Create(ExecutionContext* context,
                                    const String& notification_id,
                                    mojom::blink::NotificationDataPtr data,
                                    bool showing) {
-  Notification* notification =
-      new Notification(context, Type::kPersistent, std::move(data));
+  Notification* notification = MakeGarbageCollected<Notification>(
+      context, Type::kPersistent, std::move(data));
   notification->SetState(showing ? State::kShowing : State::kClosed);
   notification->SetNotificationId(notification_id);
   return notification;
@@ -182,7 +182,7 @@ void Notification::PrepareShow() {
     return;
   }
 
-  loader_ = new NotificationResourcesLoader(
+  loader_ = MakeGarbageCollected<NotificationResourcesLoader>(
       WTF::Bind(&Notification::DidLoadResources, WrapWeakPersistent(this)));
   loader_->Start(GetExecutionContext(), *data_);
 }
@@ -192,7 +192,10 @@ void Notification::DidLoadResources(NotificationResourcesLoader* loader) {
 
   mojom::blink::NonPersistentNotificationListenerPtr event_listener;
 
-  listener_binding_.Bind(mojo::MakeRequest(&event_listener));
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner =
+      GetExecutionContext()->GetTaskRunner(blink::TaskType::kInternalDefault);
+  listener_binding_.Bind(mojo::MakeRequest(&event_listener, task_runner),
+                         task_runner);
 
   NotificationManager::From(GetExecutionContext())
       ->DisplayNonPersistentNotification(token_, data_->Clone(),
@@ -449,7 +452,7 @@ ScriptPromise Notification::requestPermission(
       script_state, deprecated_callback);
 }
 
-size_t Notification::maxActions() {
+uint32_t Notification::maxActions() {
   return kWebNotificationMaxActions;
 }
 

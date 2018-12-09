@@ -11,8 +11,7 @@
 #include <vector>
 
 #include "base/bind.h"
-
-#define VLOGF(level) VLOG(level) << __func__ << "(): "
+#include "media/gpu/macros.h"
 
 namespace media {
 namespace test {
@@ -22,7 +21,8 @@ namespace {
 constexpr size_t kNumOfYUVPlanes = 3;
 
 uint8_t* Mmap(const size_t length, const int fd) {
-  void* addr = mmap(nullptr, length, PROT_READ, MAP_PRIVATE, fd, 0u);
+  void* addr =
+      mmap(nullptr, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0u);
   if (addr == MAP_FAILED) {
     VLOGF(1) << "Failed to mmap.";
     return nullptr;
@@ -51,11 +51,6 @@ scoped_refptr<VideoFrame> CreateMappedVideoFrame(
   int32_t strides[kNumOfYUVPlanes] = {};
   for (size_t i = 0; i < layout.num_planes(); i++) {
     strides[i] = layout.planes()[i].stride;
-  }
-  if (layout.format() == PIXEL_FORMAT_YV12) {
-    // Swap the address of U and V planes, because the order U and V planes is
-    // reversed in YV12.
-    std::swap(plane_addrs[1], plane_addrs[2]);
   }
   auto video_frame = VideoFrame::WrapExternalYuvData(
       layout.format(), layout.coded_size(), visible_rect, visible_rect.size(),

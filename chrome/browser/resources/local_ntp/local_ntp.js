@@ -50,17 +50,6 @@ function disableIframesAndVoiceSearchForTesting() {
 
 
 /**
- * Alias for document.getElementById.
- * @param {string} id The ID of the element to find.
- * @return {HTMLElement} The found element or null if not found.
- */
-function $(id) {
-  // eslint-disable-next-line no-restricted-properties
-  return document.getElementById(id);
-}
-
-
-/**
  * Specifications for an NTP design (not comprehensive).
  *
  * numTitleLines: Number of lines to display in titles.
@@ -98,11 +87,6 @@ var CLASSES = {
                                      // link dialog is open.
   // Applies float animations to the Most Visited notification
   FLOAT_UP: 'float-up',
-  // Applies ripple animation to the element on click
-  RIPPLE: 'ripple',
-  RIPPLE_CONTAINER: 'ripple-container',
-  RIPPLE_EFFECT_MASK: 'ripple-effect-mask',
-  RIPPLE_EFFECT: 'ripple-effect',
   // Applies drag focus style to the fakebox
   FAKEBOX_DRAG_FOCUS: 'fakebox-drag-focused',
   // Applies a different style to the error notification if a link is present.
@@ -111,7 +95,6 @@ var CLASSES = {
   HIDE_NOTIFICATION: 'notice-hide',
   INITED: 'inited',  // Reveals the <body> once init() is done.
   LEFT_ALIGN_ATTRIBUTION: 'left-align-attribution',
-  MATERIAL_DESIGN: 'md',  // Applies Material Design styles to the page
   MATERIAL_DESIGN_ICONS:
       'md-icons',  // Applies Material Design styles to Most Visited.
   // Vertically centers the most visited section for a non-Google provided page.
@@ -132,6 +115,16 @@ var IDS = {
   ATTRIBUTION_TEXT: 'attribution-text',
   CUSTOM_LINKS_EDIT_IFRAME: 'custom-links-edit',
   CUSTOM_LINKS_EDIT_IFRAME_DIALOG: 'custom-links-edit-dialog',
+  DOODLE_SHARE_BUTTON: 'ddlsb',
+  DOODLE_SHARE_BUTTON_IMG: 'ddlsb-img',
+  DOODLE_SHARE_DIALOG: 'ddlsd',
+  DOODLE_SHARE_DIALOG_CLOSE_BUTTON: 'ddlsd-close',
+  DOODLE_SHARE_DIALOG_COPY_LINK_BUTTON: 'ddlsd-copy',
+  DOODLE_SHARE_DIALOG_FACEBOOK_BUTTON: 'ddlsd-fbb',
+  DOODLE_SHARE_DIALOG_LINK: 'ddlsd-text',
+  DOODLE_SHARE_DIALOG_MAIL_BUTTON: 'ddlsd-emb',
+  DOODLE_SHARE_DIALOG_TITLE: 'ddlsd-title',
+  DOODLE_SHARE_DIALOG_TWITTER_BUTTON: 'ddlsd-twb',
   ERROR_NOTIFICATION: 'error-notice',
   ERROR_NOTIFICATION_CONTAINER: 'error-notice-container',
   ERROR_NOTIFICATION_LINK: 'error-notice-link',
@@ -145,6 +138,7 @@ var IDS = {
   LOGO_DOODLE: 'logo-doodle',
   LOGO_DOODLE_IMAGE: 'logo-doodle-image',
   LOGO_DOODLE_IFRAME: 'logo-doodle-iframe',
+  LOGO_DOODLE_CONTAINER: 'logo-doodle-container',
   LOGO_DOODLE_BUTTON: 'logo-doodle-button',
   LOGO_DOODLE_NOTIFIER: 'logo-doodle-notifier',
   MOST_VISITED: 'most-visited',
@@ -153,6 +147,7 @@ var IDS = {
   NOTIFICATION_CLOSE_BUTTON: 'mv-notice-x',
   NOTIFICATION_MESSAGE: 'mv-msg',
   NTP_CONTENTS: 'ntp-contents',
+  PROMO: 'promo',
   RESTORE_ALL_LINK: 'mv-restore',
   TILES: 'mv-tiles',
   TILES_IFRAME: 'mv-single',
@@ -248,17 +243,10 @@ const NOTIFICATION_TIMEOUT = 10000;
 
 
 /**
- * The duration of the ripple animation.
+ * The ID of the doodle app for Facebook. Used to share doodles to Facebook.
  * @type {number}
  */
-const RIPPLE_DURATION_MS = 800;
-
-
-/**
- * The max size of the ripple animation.
- * @type {number}
- */
-const RIPPLE_MAX_RADIUS_PX = 300;
+const FACEBOOK_APP_ID = 738026486351791;
 
 
 /**
@@ -702,6 +690,11 @@ function showErrorNotification(msg, linkName, linkOnClick) {
  * @param {!Element} notificationContainer The notification container element.
  */
 function floatUpNotification(notification, notificationContainer) {
+  // Show middle-slot promo if one is present.
+  if ($(IDS.PROMO) !== null) {
+    $(IDS.PROMO).classList.add(CLASSES.HIDE_NOTIFICATION);
+  }
+
   // Hide pre-existing notification if it was different type. Clear timeout and
   // replace it with the new timeout and new message if it was the same type.
   if (delayedHideNotification) {
@@ -735,6 +728,11 @@ function floatUpNotification(notification, notificationContainer) {
 function floatDownNotification(notification, notificationContainer) {
   if (!notificationContainer.classList.contains(CLASSES.FLOAT_UP))
     return;
+
+  // Hide middle-slot promo if one is present.
+  if ($(IDS.PROMO) !== null) {
+    $(IDS.PROMO).classList.remove(CLASSES.HIDE_NOTIFICATION);
+  }
 
   // Clear the timeout to hide the notification.
   if (delayedHideNotification) {
@@ -888,6 +886,15 @@ function handlePostMessage(event) {
         injectOneGoogleBar(og);
       };
     }
+    if (configData.isGooglePage && !$('promo-loader')) {
+      var promoScript = document.createElement('script');
+      promoScript.id = 'promo-loader';
+      promoScript.src = 'chrome-search://local-ntp/promo.js';
+      document.body.appendChild(promoScript);
+      promoScript.onload = function() {
+        injectPromo(promo);
+      };
+    }
     if (configData.isCustomLinksEnabled) {
       $(customBackgrounds.IDS.CUSTOM_LINKS_RESTORE_DEFAULT)
           .classList.toggle(
@@ -911,9 +918,17 @@ function handlePostMessage(event) {
     let height = args.height || null;
     let duration = args.duration || '0s';
     let iframe = $(IDS.LOGO_DOODLE_IFRAME);
+
+    var transitionCallback = function() {
+      iframe.removeEventListener('webkitTransitionEnd', transitionCallback);
+      iframe.contentWindow.postMessage(
+          {cmd: 'resizeComplete'}, 'https://www.google.com');
+    };
+    iframe.addEventListener('webkitTransitionEnd', transitionCallback, false);
+
+    document.body.style.setProperty('--logo-iframe-resize-duration', duration);
     document.body.style.setProperty('--logo-iframe-height', height);
     document.body.style.setProperty('--logo-iframe-width', width);
-    document.body.style.setProperty('--logo-iframe-resize-duration', duration);
   } else if (cmd === 'startEditLink') {
     $(IDS.CUSTOM_LINKS_EDIT_IFRAME)
         .contentWindow.postMessage({cmd: 'linkData', tid: args.tid}, '*');
@@ -939,103 +954,8 @@ function handlePostMessage(event) {
 function enableMDIcons() {
   $(IDS.MOST_VISITED).classList.add(CLASSES.MATERIAL_DESIGN_ICONS);
   $(IDS.TILES).classList.add(CLASSES.MATERIAL_DESIGN_ICONS);
-  enableMD();
-  addRippleAnimations();
+  animations.addRippleAnimations();
 }
-
-
-/**
- * Enables Material Design styles for all NTP components except Most Visited.
- */
-function enableMD() {
-  document.body.classList.add(CLASSES.MATERIAL_DESIGN);
-}
-
-
-/**
- * Enables ripple animations for elements with CLASSES.RIPPLE. The target
- * element must have position relative or absolute.
- * TODO(kristipark): Remove after migrating to WebUI.
- */
-function addRippleAnimations() {
-  let ripple = (event) => {
-    let target = event.target;
-    const rect = target.getBoundingClientRect();
-    const x = Math.round(event.clientX - rect.left);
-    const y = Math.round(event.clientY - rect.top);
-
-    // Calculate radius
-    const corners = [
-      {x: 0, y: 0},
-      {x: rect.width, y: 0},
-      {x: 0, y: rect.height},
-      {x: rect.width, y: rect.height},
-    ];
-    let distance = (x1, y1, x2, y2) => {
-      var xDelta = x1 - x2;
-      var yDelta = y1 - y2;
-      return Math.sqrt(xDelta * xDelta + yDelta * yDelta);
-    };
-    let cornerDistances = corners.map(function(corner) {
-      return Math.round(distance(x, y, corner.x, corner.y));
-    });
-    const radius =
-        Math.min(RIPPLE_MAX_RADIUS_PX, Math.max.apply(Math, cornerDistances));
-
-    let ripple = document.createElement('div');
-    let rippleMask = document.createElement('div');
-    let rippleContainer = document.createElement('div');
-    ripple.classList.add(CLASSES.RIPPLE_EFFECT);
-    rippleMask.classList.add(CLASSES.RIPPLE_EFFECT_MASK);
-    rippleContainer.classList.add(CLASSES.RIPPLE_CONTAINER);
-    rippleMask.appendChild(ripple);
-    rippleContainer.appendChild(rippleMask);
-    target.appendChild(rippleContainer);
-    // Ripple start location
-    ripple.style.marginLeft = x + 'px';
-    ripple.style.marginTop = y + 'px';
-
-    rippleMask.style.width = target.offsetWidth + 'px';
-    rippleMask.style.height = target.offsetHeight + 'px';
-    rippleMask.style.borderRadius =
-        window.getComputedStyle(target).borderRadius;
-
-    // Start transition/ripple
-    ripple.style.width = radius * 2 + 'px';
-    ripple.style.height = radius * 2 + 'px';
-    ripple.style.marginLeft = x - radius + 'px';
-    ripple.style.marginTop = y - radius + 'px';
-    ripple.style.backgroundColor = 'rgba(0, 0, 0, 0)';
-
-    window.setTimeout(function() {
-      ripple.remove();
-      rippleMask.remove();
-      rippleContainer.remove();
-    }, RIPPLE_DURATION_MS);
-  };
-
-  let rippleElements = document.querySelectorAll('.' + CLASSES.RIPPLE);
-  for (let i = 0; i < rippleElements.length; i++) {
-    rippleElements[i].addEventListener('mousedown', ripple);
-  }
-}
-
-
-/**
- * Disables the focus outline for |element| on mousedown.
- * @param {Element} element The element to remove the focus outline from.
- */
-function disableOutlineOnMouseClick(element) {
-  element.addEventListener('mousedown', (event) => {
-    element.classList.add('mouse-navigation');
-    let resetOutline = (event) => {
-      element.classList.remove('mouse-navigation');
-      element.removeEventListener('blur', resetOutline);
-    };
-    element.addEventListener('blur', resetOutline);
-  });
-}
-
 
 /**
  * Prepares the New Tab Page by adding listeners, the most visited pages
@@ -1091,8 +1011,6 @@ function init() {
   if (configData.isGooglePage) {
     if (configData.isMDIconsEnabled || configData.isCustomLinksEnabled) {
       enableMDIcons();
-    } else if (configData.isMDUIEnabled) {
-      enableMD();
     }
 
     if (configData.isCustomLinksEnabled) {
@@ -1156,7 +1074,7 @@ function init() {
     inputbox.ondragleave = function() {
       setFakeboxDragFocus(false);
     };
-    disableOutlineOnMouseClick($(IDS.FAKEBOX_MICROPHONE));
+    utils.disableOutlineOnMouseClick($(IDS.FAKEBOX_MICROPHONE));
 
     // Update the fakebox style to match the current key capturing state.
     setFakeboxFocus(searchboxApiHandle.isKeyCaptureEnabled);
@@ -1336,6 +1254,21 @@ function listen() {
 
 
 /**
+ * Injects a middle-slot promo into the page. Called asynchronously, so that it
+ * doesn't block the main page load.
+ */
+function injectPromo(promo) {
+  if (promo.promoHtml == '')
+    return;
+
+  let promoContainer = document.createElement('div');
+  promoContainer.id = IDS.PROMO;
+  promoContainer.innerHTML += promo.promoHtml;
+  $(IDS.NTP_CONTENTS).appendChild(promoContainer);
+}
+
+
+/**
  * Injects the One Google Bar into the page. Called asynchronously, so that it
  * doesn't block the main page load.
  */
@@ -1485,8 +1418,8 @@ var isDoodleCurrentlyVisible = function() {
         (logoDoodleIframe.src === targetDoodle.metadata.fullPageUrl);
   } else {
     var logoDoodleImage = $(IDS.LOGO_DOODLE_IMAGE);
-    var logoDoodleButton = $(IDS.LOGO_DOODLE_BUTTON);
-    return logoDoodleButton.classList.contains(CLASSES.SHOW_LOGO) &&
+    var logoDoodleContainer = $(IDS.LOGO_DOODLE_CONTAINER);
+    return logoDoodleContainer.classList.contains(CLASSES.SHOW_LOGO) &&
         ((logoDoodleImage.src === targetDoodle.image) ||
          (logoDoodleImage.src === targetDoodle.metadata.animatedUrl));
   }
@@ -1527,11 +1460,11 @@ var showLogoOrDoodle = function(fromCache) {
   if (targetDoodle.metadata !== null && !cachedInteractiveOffline) {
     applyDoodleMetadata();
     if (targetDoodle.metadata.type === LOGO_TYPE.INTERACTIVE) {
-      $(IDS.LOGO_DOODLE_BUTTON).classList.remove(CLASSES.SHOW_LOGO);
+      $(IDS.LOGO_DOODLE_CONTAINER).classList.remove(CLASSES.SHOW_LOGO);
       $(IDS.LOGO_DOODLE_IFRAME).classList.add(CLASSES.SHOW_LOGO);
     } else {
       $(IDS.LOGO_DOODLE_IMAGE).src = targetDoodle.image;
-      $(IDS.LOGO_DOODLE_BUTTON).classList.add(CLASSES.SHOW_LOGO);
+      $(IDS.LOGO_DOODLE_CONTAINER).classList.add(CLASSES.SHOW_LOGO);
       $(IDS.LOGO_DOODLE_IFRAME).classList.remove(CLASSES.SHOW_LOGO);
 
       // Log the impression in Chrome metrics.
@@ -1619,9 +1552,12 @@ var onDoodleFadeOutComplete = function(e) {
 
 
 var applyDoodleMetadata = function() {
-  var logoDoodleButton = $(IDS.LOGO_DOODLE_BUTTON);
   var logoDoodleImage = $(IDS.LOGO_DOODLE_IMAGE);
+  var logoDoodleButton = $(IDS.LOGO_DOODLE_BUTTON);
   var logoDoodleIframe = $(IDS.LOGO_DOODLE_IFRAME);
+
+  var logoDoodleShareButton = null;
+  var logoDoodleShareDialog = null;
 
   switch (targetDoodle.metadata.type) {
     case LOGO_TYPE.SIMPLE:
@@ -1640,6 +1576,9 @@ var applyDoodleMetadata = function() {
 
         window.location = getDoodleTargetUrl();
       };
+
+      insertShareButton();
+      updateShareDialog();
       break;
 
     case LOGO_TYPE.ANIMATED:
@@ -1679,6 +1618,9 @@ var applyDoodleMetadata = function() {
 
           window.location = getDoodleTargetUrl();
         };
+
+        insertShareButton();
+        updateShareDialog();
       };
       break;
 
@@ -1694,6 +1636,126 @@ var applyDoodleMetadata = function() {
           targetDoodle.metadata.iframeHeightPx + 'px');
       break;
   }
+};
+
+/**
+ * Creates a share button for static/animated doodles which opens the share
+ * dialog upon click.
+ */
+var insertShareButton = function() {
+  // Terminates early if share button data are missing or incomplete.
+  if (!targetDoodle.metadata || !targetDoodle.metadata.shareButtonX ||
+      !targetDoodle.metadata.shareButtonY ||
+      !targetDoodle.metadata.shareButtonBg ||
+      !targetDoodle.metadata.shareButtonIcon) {
+    return;
+  }
+  var shareDialog = $(IDS.DOODLE_SHARE_DIALOG);
+
+  var shareButtonWrapper = document.createElement('button');
+  shareButtonWrapper.id = IDS.DOODLE_SHARE_BUTTON;
+  var shareButtonImg = document.createElement('img');
+  shareButtonImg.id = IDS.DOODLE_SHARE_BUTTON_IMG;
+  shareButtonWrapper.appendChild(shareButtonImg);
+
+  shareButtonWrapper.style.left = targetDoodle.metadata.shareButtonX + 'px';
+  shareButtonWrapper.style.top = targetDoodle.metadata.shareButtonY + 'px';
+
+  // Alpha-less background color represented as an RGB HEX string.
+  // Share button opacity represented as a double between 0 to 1.
+  // Final background color is an RGBA HEX string created by combining
+  // both.
+  var backgroundColor = targetDoodle.metadata.shareButtonBg;
+  if (!!targetDoodle.metadata.shareButtonOpacity ||
+      targetDoodle.metadata.shareButtonOpacity == 0) {
+    var backgroundOpacityHex =
+        parseInt(targetDoodle.metadata.shareButtonOpacity * 255, 10)
+            .toString(16);
+    backgroundColor += backgroundOpacityHex;
+  }
+
+  shareButtonWrapper.style.backgroundColor = backgroundColor;
+  shareButtonImg.src =
+      'data:image/png;base64,' + targetDoodle.metadata.shareButtonIcon;
+  shareButtonWrapper.onclick = function() {
+    shareDialog.showModal();
+  };
+
+  var oldButton = $(IDS.DOODLE_SHARE_BUTTON);
+  if (oldButton) {
+    oldButton.remove();
+  }
+
+  var logoContainer = $(IDS.LOGO_DOODLE_CONTAINER);
+  if (logoContainer) {
+    logoContainer.appendChild(shareButtonWrapper);
+  }
+};
+
+/**
+ * Initiates the buttons on the doodle share dialog. Also updates the doodle
+ * title and short link.
+ */
+var updateShareDialog = function() {
+  var shareDialog = $(IDS.DOODLE_SHARE_DIALOG);
+  var shareDialogTitle = $(IDS.DOODLE_SHARE_DIALOG_TITLE);
+  var closeButton = $(IDS.DOODLE_SHARE_DIALOG_CLOSE_BUTTON);
+  var facebookButton = $(IDS.DOODLE_SHARE_DIALOG_FACEBOOK_BUTTON);
+  var twitterButton = $(IDS.DOODLE_SHARE_DIALOG_TWITTER_BUTTON);
+  var mailButton = $(IDS.DOODLE_SHARE_DIALOG_MAIL_BUTTON);
+  var copyButton = $(IDS.DOODLE_SHARE_DIALOG_COPY_LINK_BUTTON);
+  var linkText = $(IDS.DOODLE_SHARE_DIALOG_LINK);
+
+  if (!targetDoodle.metadata || !targetDoodle.metadata.shortLink ||
+      !targetDoodle.metadata.altText) {
+    return;
+  }
+
+  var closeDialog = function() {
+    shareDialog.close();
+  };
+
+  closeButton.onclick = closeDialog;
+  shareDialog.onclick = function(e) {
+    if (e.target == shareDialog) {
+      closeDialog();
+    }
+  };
+
+  var title = targetDoodle.metadata.altText;
+
+  shareDialogTitle.innerHTML = title;
+  var shortLink = targetDoodle.metadata.shortLink;
+
+  facebookButton.onclick = function() {
+    var url = 'https://www.facebook.com/dialog/share' +
+        '?app_id=' + FACEBOOK_APP_ID +
+        '&href=' + encodeURIComponent(shortLink) +
+        '&hashtag=' + encodeURIComponent('#GoogleDoodle');
+    window.open(url);
+  };
+
+  twitterButton.onclick = function() {
+    var url = 'https://twitter.com/intent/tweet' +
+        '?text=' + encodeURIComponent(title + '\n' + shortLink);
+    window.open(url);
+  };
+
+  mailButton.onclick = function() {
+    var url = 'mailto:?subject=' + encodeURIComponent(title) +
+        '&body=' + encodeURIComponent(shortLink);
+    document.location.href = url;
+  };
+
+  linkText.value = shortLink;
+  linkText.onclick = function() {
+    linkText.select();
+  };
+  linkText.setAttribute('readonly', true);
+  copyButton.onclick = function() {
+    linkText.select();
+    document.execCommand('copy');
+  };
 };
 
 

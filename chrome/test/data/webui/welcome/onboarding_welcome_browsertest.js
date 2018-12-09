@@ -44,11 +44,94 @@ OnboardingWelcomeEmailChooserTest = class extends OnboardingWelcomeBrowserTest {
     return super.extraLibraries.concat([
       'email_chooser_test.js',
       'test_nux_email_proxy.js',
+      'test_metrics_proxy.js',
       'test_bookmark_proxy.js',
     ]);
   }
 };
 
 TEST_F('OnboardingWelcomeEmailChooserTest', 'All', function() {
+  mocha.run();
+});
+
+OnboardingWelcomeWelcomeAppTest = class extends OnboardingWelcomeBrowserTest {
+  /** @override */
+  get browsePreload() {
+    return 'chrome://welcome/welcome_app.html';
+  }
+
+  /** @override */
+  get extraLibraries() {
+    return super.extraLibraries.concat([
+      '../settings/test_util.js',
+      'welcome_app_test.js',
+      'test_bookmark_proxy.js',
+      'test_welcome_browser_proxy.js',
+      'test_nux_set_as_default_proxy.js',
+    ]);
+  }
+};
+
+TEST_F('OnboardingWelcomeWelcomeAppTest', 'All', function() {
+  mocha.run();
+});
+
+OnboardingWelcomeSigninViewTest = class extends OnboardingWelcomeBrowserTest {
+  /** @override */
+  get browsePreload() {
+    return 'chrome://welcome/signin_view.html';
+  }
+
+  /** @override */
+  get extraLibraries() {
+    return super.extraLibraries.concat([
+      'signin_view_test.js',
+      'test_nux_email_proxy.js',
+      'test_welcome_browser_proxy.js',
+    ]);
+  }
+};
+
+TEST_F('OnboardingWelcomeSigninViewTest', 'All', function() {
+  mocha.run();
+});
+
+OnboardingWelcomeNavigationBehaviorTest =
+    class extends OnboardingWelcomeBrowserTest {
+  /** @override */
+  get browsePreload() {
+    return 'chrome://welcome/navigation_behavior.html';
+  }
+
+  /** @override */
+  get extraLibraries() {
+    return super.extraLibraries.concat([
+      '../settings/test_util.js',
+      'navigation_behavior_test.js',
+    ]);
+  }
+};
+
+TEST_F('OnboardingWelcomeNavigationBehaviorTest', 'All', function() {
+  mocha.run();
+});
+
+OnboardingWelcomeModuleMetricsTest =
+    class extends OnboardingWelcomeBrowserTest {
+  /** @override */
+  get browsePreload() {
+    return 'chrome://welcome/shared/module_metrics_proxy.html';
+  }
+
+  /** @override */
+  get extraLibraries() {
+    return super.extraLibraries.concat([
+      'module_metrics_test.js',
+      'test_metrics_proxy.js',
+    ]);
+  }
+};
+
+TEST_F('OnboardingWelcomeModuleMetricsTest', 'All', function() {
   mocha.run();
 });

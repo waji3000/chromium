@@ -41,7 +41,7 @@ namespace blink {
 PseudoElement* PseudoElement::Create(Element* parent, PseudoId pseudo_id) {
   if (pseudo_id == kPseudoIdFirstLetter)
     return FirstLetterPseudoElement::Create(parent);
-  return new PseudoElement(parent, pseudo_id);
+  return MakeGarbageCollected<PseudoElement>(parent, pseudo_id);
 }
 
 const QualifiedName& PseudoElementTagName(PseudoId pseudo_id) {
@@ -182,29 +182,6 @@ void PseudoElement::AttachLayoutTree(AttachContext& context) {
 
 bool PseudoElement::LayoutObjectIsNeeded(const ComputedStyle& style) const {
   return PseudoElementLayoutObjectIsNeeded(&style);
-}
-
-void PseudoElement::DidRecalcStyle(StyleRecalcChange change) {
-  // If the pseudo element is being re-attached, its anonymous LayoutObjects for
-  // generated content will be destroyed and possibly recreated during layout
-  // tree rebuild. Thus, propagating style to generated content now is futile.
-  if (change == kReattach)
-    return;
-  if (!GetLayoutObject())
-    return;
-
-  // The layoutObjects inside pseudo elements are anonymous so they don't get
-  // notified of recalcStyle and must have the style propagated downward
-  // manually similar to LayoutObject::PropagateStyleToAnonymousChildren.
-  LayoutObject* layout_object = GetLayoutObject();
-  for (LayoutObject* child = layout_object->NextInPreOrder(layout_object);
-       child; child = child->NextInPreOrder(layout_object)) {
-    // We only manage the style for the generated content items.
-    if (!child->IsText() && !child->IsQuote() && !child->IsImage())
-      continue;
-
-    child->SetPseudoStyle(layout_object->MutableStyle());
-  }
 }
 
 Node* PseudoElement::InnerNodeForHitTesting() const {

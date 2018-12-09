@@ -9,6 +9,7 @@
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
+#include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/modules/peerconnection/adapters/ice_transport_adapter_cross_thread_factory.h"
 #include "third_party/blink/renderer/modules/peerconnection/adapters/ice_transport_adapter_impl.h"
 #include "third_party/blink/renderer/modules/peerconnection/adapters/ice_transport_proxy.h"
@@ -54,11 +55,11 @@ RTCIceCandidate* ConvertToRtcIceCandidate(const cricket::Candidate& candidate) {
 class DefaultIceTransportAdapterCrossThreadFactory
     : public IceTransportAdapterCrossThreadFactory {
  public:
-  void InitializeOnMainThread() override {
+  void InitializeOnMainThread(LocalFrame& frame) override {
     DCHECK(!port_allocator_);
     DCHECK(!worker_thread_rtc_thread_);
     port_allocator_ = Platform::Current()->CreateWebRtcPortAllocator(
-        WebLocalFrame::FrameForCurrentContext());
+        frame.Client()->GetWebFrame());
     worker_thread_rtc_thread_ =
         Platform::Current()->GetWebRtcWorkerThreadRtcThread();
   }
@@ -84,7 +85,7 @@ RTCIceTransport* RTCIceTransport::Create(ExecutionContext* context) {
       frame->GetTaskRunner(TaskType::kNetworking);
   scoped_refptr<base::SingleThreadTaskRunner> host_thread =
       Platform::Current()->GetWebRtcWorkerThread();
-  return new RTCIceTransport(
+  return MakeGarbageCollected<RTCIceTransport>(
       context, std::move(proxy_thread), std::move(host_thread),
       std::make_unique<DefaultIceTransportAdapterCrossThreadFactory>());
 }
@@ -94,9 +95,9 @@ RTCIceTransport* RTCIceTransport::Create(
     scoped_refptr<base::SingleThreadTaskRunner> proxy_thread,
     scoped_refptr<base::SingleThreadTaskRunner> host_thread,
     std::unique_ptr<IceTransportAdapterCrossThreadFactory> adapter_factory) {
-  return new RTCIceTransport(context, std::move(proxy_thread),
-                             std::move(host_thread),
-                             std::move(adapter_factory));
+  return MakeGarbageCollected<RTCIceTransport>(context, std::move(proxy_thread),
+                                               std::move(host_thread),
+                                               std::move(adapter_factory));
 }
 
 RTCIceTransport::RTCIceTransport(
@@ -113,9 +114,9 @@ RTCIceTransport::RTCIceTransport(
 
   LocalFrame* frame = To<Document>(context)->GetFrame();
   DCHECK(frame);
-  proxy_.reset(new IceTransportProxy(
-      frame->GetFrameScheduler(), std::move(proxy_thread),
-      std::move(host_thread), this, std::move(adapter_factory)));
+  proxy_ = std::make_unique<IceTransportProxy>(*frame, std::move(proxy_thread),
+                                               std::move(host_thread), this,
+                                               std::move(adapter_factory));
 
   GenerateLocalParameters();
 }
@@ -357,7 +358,7 @@ void RTCIceTransport::start(RTCIceParameters* remote_parameters,
     proxy_->Start(ConvertIceParameters(remote_parameters), role,
                   initial_remote_candidates);
     if (consumer_) {
-      consumer_->OnTransportStarted();
+      consumer_->OnIceTransportStarted();
     }
   } else {
     remote_candidates_.clear();
@@ -372,14 +373,7 @@ void RTCIceTransport::stop() {
   if (IsClosed()) {
     return;
   }
-  if (HasConsumer()) {
-    consumer_->stop();
-  }
-  // Stopping the consumer should cause it to disconnect.
-  DCHECK(!HasConsumer());
-  state_ = RTCIceTransportState::kClosed;
-  selected_candidate_pair_ = nullptr;
-  proxy_.reset();
+  Close(CloseReason::kStopped);
 }
 
 void RTCIceTransport::addRemoteCandidate(RTCIceCandidate* remote_candidate,
@@ -475,6 +469,18 @@ void RTCIceTransport::OnSelectedCandidatePairChanged(
   DispatchEvent(*Event::Create(event_type_names::kSelectedcandidatepairchange));
 }
 
+void RTCIceTransport::Close(CloseReason reason) {
+  DCHECK_NE(state_, RTCIceTransportState::kClosed);
+  if (HasConsumer()) {
+    consumer_->OnIceTransportClosed(reason);
+  }
+  // Notifying the consumer that we're closing should cause it to disconnect.
+  DCHECK(!HasConsumer());
+  state_ = RTCIceTransportState::kClosed;
+  selected_candidate_pair_ = nullptr;
+  proxy_.reset();
+}
+
 bool RTCIceTransport::RaiseExceptionIfClosed(
     ExceptionState& exception_state) const {
   if (IsClosed()) {
@@ -495,7 +501,10 @@ ExecutionContext* RTCIceTransport::GetExecutionContext() const {
 }
 
 void RTCIceTransport::ContextDestroyed(ExecutionContext*) {
-  stop();
+  if (IsClosed()) {
+    return;
+  }
+  Close(CloseReason::kContextDestroyed);
 }
 
 bool RTCIceTransport::HasPendingActivity() const {

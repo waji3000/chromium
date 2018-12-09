@@ -78,7 +78,7 @@ class MockWidgetInputHandlerHost : public mojom::WidgetInputHandlerHost {
   MockWidgetInputHandlerHost(
       mojo::InterfaceRequest<mojom::WidgetInputHandlerHost> request)
       : binding_(this, std::move(request)) {}
-  MOCK_METHOD0(CancelTouchTimeout, void());
+  MOCK_METHOD1(SetTouchActionFromMain, void(cc::TouchAction));
 
   MOCK_METHOD3(SetWhiteListedTouchAction,
                void(cc::TouchAction, uint32_t, content::InputEventAckState));
@@ -133,6 +133,9 @@ class StubWebWidget : public blink::WebWidget {
  public:
   void SetLayerTreeView(blink::WebLayerTreeView*) override {}
   blink::WebURL GetURLForDebugTrace() override { return {}; }
+  blink::WebHitTestResult HitTestResultAt(const gfx::Point&) override {
+    return {};
+  }
 };
 
 class MockWebWidget : public StubWebWidget {
@@ -187,8 +190,9 @@ class InteractiveRenderWidget : public RenderWidget {
     return mock_input_handler_host_.get();
   }
 
-  const viz::LocalSurfaceId& local_surface_id_from_parent() const {
-    return local_surface_id_from_parent_;
+  const viz::LocalSurfaceIdAllocation& local_surface_id_allocation_from_parent()
+      const {
+    return local_surface_id_allocation_from_parent_;
   }
 
  protected:
@@ -370,10 +374,12 @@ TEST_F(RenderWidgetUnittest, AutoResizeAllocatedLocalSurfaceId) {
   visual_properties.auto_resize_enabled = true;
   visual_properties.min_size_for_auto_resize = gfx::Size(100, 100);
   visual_properties.max_size_for_auto_resize = gfx::Size(200, 200);
-  visual_properties.local_surface_id = allocator.GetCurrentLocalSurfaceId();
+  allocator.GenerateId();
+  visual_properties.local_surface_id_allocation =
+      allocator.GetCurrentLocalSurfaceIdAllocation();
   widget()->SynchronizeVisualProperties(visual_properties);
-  EXPECT_EQ(allocator.GetCurrentLocalSurfaceId(),
-            widget()->local_surface_id_from_parent());
+  EXPECT_EQ(allocator.GetCurrentLocalSurfaceIdAllocation(),
+            widget()->local_surface_id_allocation_from_parent());
   EXPECT_FALSE(widget()
                    ->layer_tree_view()
                    ->layer_tree_host()
@@ -381,8 +387,8 @@ TEST_F(RenderWidgetUnittest, AutoResizeAllocatedLocalSurfaceId) {
 
   constexpr gfx::Size size(200, 200);
   widget()->DidAutoResize(size);
-  EXPECT_EQ(allocator.GetCurrentLocalSurfaceId(),
-            widget()->local_surface_id_from_parent());
+  EXPECT_EQ(allocator.GetCurrentLocalSurfaceIdAllocation(),
+            widget()->local_surface_id_allocation_from_parent());
   EXPECT_TRUE(widget()
                   ->layer_tree_view()
                   ->layer_tree_host()
@@ -475,7 +481,6 @@ class StubRenderWidgetOwnerDelegate : public RenderWidgetOwnerDelegate {
   bool SupportsMultipleWindowsForWidget() override { return true; }
   void DidHandleGestureEventForWidget(
       const blink::WebGestureEvent& event) override {}
-  void OverrideCloseForWidget() override {}
   void DidCloseWidget() override {}
   void ApplyNewSizeForWidget(const gfx::Size& old_size,
                              const gfx::Size& new_size) override {}

@@ -11,6 +11,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_task_queue_post_callback.h"
 #include "third_party/blink/renderer/core/dom/abort_signal.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 
 namespace blink {
 
@@ -96,7 +97,8 @@ ScriptPromise ScriptedTaskQueue::postTask(ScriptState* script_state,
         WTF::Bind(&ScriptedTaskQueue::AbortTask, WrapPersistent(this), id));
   }
 
-  pending_tasks_.Set(id, new WrappedCallback(callback, resolver));
+  pending_tasks_.Set(id,
+                     MakeGarbageCollected<WrappedCallback>(callback, resolver));
 
   auto callback_wrapper = TaskQueuePostCallbackWrapper::Create(id, this);
   task_runner_->PostTask(FROM_HERE,

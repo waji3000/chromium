@@ -11,7 +11,7 @@
 #include "base/base64.h"
 #include "base/logging.h"
 #include "base/strings/string_util.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "chrome/browser/chromeos/arc/fileapi/arc_content_file_system_url_util.h"
 #include "chrome/browser/chromeos/arc/fileapi/arc_documents_provider_root.h"
 #include "chrome/browser/chromeos/arc/fileapi/arc_documents_provider_root_map.h"
@@ -115,8 +115,12 @@ base::FilePath GetDownloadsFolderForProfile(Profile* profile) {
   storage::ExternalMountPoints* const mount_points =
       storage::ExternalMountPoints::GetSystemInstance();
   base::FilePath path;
-  if (mount_points->GetRegisteredPath(mount_point_name, &path))
+  if (mount_points->GetRegisteredPath(mount_point_name, &path)) {
+    if (base::FeatureList::IsEnabled(chromeos::features::kMyFilesVolume))
+      return path.AppendASCII(kFolderNameDownloads);
+
     return path;
+  }
 
   // Return $HOME/Downloads as Download folder.
   if (ShouldMountPrimaryUserDownloads(profile))
@@ -169,6 +173,23 @@ bool MigratePathFromOldFormat(Profile* profile,
     return old_path != *new_path;
   }
 
+  return false;
+}
+
+bool MigrateFromDownloadsToMyFiles(Profile* profile,
+                                   const base::FilePath& old_path,
+                                   base::FilePath* new_path) {
+  const base::FilePath old_base =
+      profile->GetPath().Append(kFolderNameDownloads);
+  const base::FilePath new_base = GetDownloadsFolderForProfile(profile);
+  if (new_base == old_base)
+    return false;
+  base::FilePath relative;
+  if (old_path == old_base ||
+      old_base.AppendRelativePath(old_path, &relative)) {
+    *new_path = new_base.Append(relative);
+    return old_path != *new_path;
+  }
   return false;
 }
 
@@ -227,7 +248,9 @@ bool ConvertFileSystemURLToPathInsideCrostini(
     const storage::FileSystemURL& file_system_url,
     base::FilePath* inside) {
   const std::string& id(file_system_url.mount_filesystem_id());
-  base::FilePath path(file_system_url.virtual_path());
+  // File system root requires strip trailing separator.
+  base::FilePath path =
+      base::FilePath(file_system_url.virtual_path()).StripTrailingSeparators();
   std::string mount_point_name_crostini = GetCrostiniMountPointName(profile);
   std::string mount_point_name_downloads = GetDownloadsMountPointName(profile);
   // Include drive if using DriveFS.
@@ -286,7 +309,8 @@ bool ConvertFileSystemURLToPathInsideCrostini(
   } else {
     return false;
   }
-  return base_to_exclude.AppendRelativePath(path, inside);
+  return base_to_exclude == path ||
+         base_to_exclude.AppendRelativePath(path, inside);
 }
 
 bool ConvertPathToArcUrl(const base::FilePath& path, GURL* arc_url_out) {
@@ -409,6 +433,9 @@ std::string GetPathDisplayTextForSettings(Profile* profile,
   std::string result(path);
   auto* drive_integration_service =
       drive::DriveIntegrationServiceFactory::FindForProfile(profile);
+  if (drive_integration_service && !drive_integration_service->is_enabled()) {
+    drive_integration_service = nullptr;
+  }
   if (ReplacePrefix(&result, "/home/chronos/user/Downloads",
                     kFolderNameDownloads)) {
   } else if (ReplacePrefix(&result,
@@ -462,6 +489,29 @@ std::string GetPathDisplayTextForSettings(Profile* profile,
 
   base::ReplaceChars(result, "/", " \u203a ", &result);
   return result;
+}
+
+bool ExtractMountNameAndFullPath(const base::FilePath& absolute_path,
+                                 std::string* mount_name,
+                                 std::string* full_path) {
+  DCHECK(absolute_path.IsAbsolute());
+  DCHECK(mount_name);
+  DCHECK(full_path);
+  storage::ExternalMountPoints* mount_points =
+      storage::ExternalMountPoints::GetSystemInstance();
+  base::FilePath virtual_path;
+  if (!mount_points->GetVirtualPath(absolute_path, &virtual_path))
+    return false;
+  const std::string& value = virtual_path.value();
+  size_t pos = value.find(base::FilePath::kSeparators[0]);
+  *mount_name = value.substr(0, pos);
+  // Set full_path to '/' if |absolute_path| is a root.
+  if (pos == std::string::npos) {
+    *full_path = "/";
+  } else {
+    *full_path = value.substr(pos);
+  }
+  return true;
 }
 
 }  // namespace util

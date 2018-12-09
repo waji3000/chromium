@@ -33,6 +33,7 @@
 
 class Browser;
 class Profile;
+class SwitchAccessEventHandlerDelegate;
 
 namespace gfx {
 class Rect;
@@ -43,7 +44,6 @@ namespace chromeos {
 class AccessibilityExtensionLoader;
 class DictationChromeos;
 class SelectToSpeakEventHandlerDelegate;
-class SwitchAccessEventHandler;
 
 enum AccessibilityNotificationType {
   ACCESSIBILITY_MANAGER_SHUTDOWN,
@@ -53,6 +53,7 @@ enum AccessibilityNotificationType {
   ACCESSIBILITY_TOGGLE_SCREEN_MAGNIFIER,
   ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK,
   ACCESSIBILITY_TOGGLE_SELECT_TO_SPEAK,
+  ACCESSIBILITY_TOGGLE_SWITCH_ACCESS,
   ACCESSIBILITY_TOGGLE_VIRTUAL_KEYBOARD,
   ACCESSIBILITY_TOGGLE_MONO_AUDIO,
   ACCESSIBILITY_TOGGLE_CARET_HIGHLIGHT,
@@ -272,9 +273,6 @@ class AccessibilityManager
     return keyboard_listener_extension_id_;
   }
 
-  // Set the keys to be captured by Switch Access.
-  void SetSwitchAccessKeys(const std::set<int>& key_codes);
-
   // Starts or stops dictation (type what you speak).
   bool ToggleDictation();
 
@@ -312,6 +310,12 @@ class AccessibilityManager
 
   // Sets the startup sound user preference.
   void SetStartupSoundEnabled(bool value) const;
+
+  // Gets the bluetooth braille display device address for the current user.
+  const std::string GetBluetoothBrailleDisplayAddress() const;
+
+  // Sets the bluetooth braille display device address for the current user.
+  void UpdateBluetoothBrailleDisplayAddress(const std::string& address);
 
   // Test helpers:
   void SetProfileForTest(Profile* profile);
@@ -435,8 +439,8 @@ class AccessibilityManager
 
   std::unique_ptr<AccessibilityExtensionLoader> switch_access_loader_;
 
-  std::unique_ptr<chromeos::SwitchAccessEventHandler>
-      switch_access_event_handler_;
+  std::unique_ptr<SwitchAccessEventHandlerDelegate>
+      switch_access_event_handler_delegate_;
 
   // Ash's mojom::AccessibilityController used to request Ash's a11y feature.
   ash::mojom::AccessibilityControllerPtr accessibility_controller_;
@@ -458,6 +462,7 @@ class AccessibilityManager
   base::WeakPtrFactory<AccessibilityManager> weak_ptr_factory_;
 
   friend class DictationTest;
+  friend class SwitchAccessTest;
   DISALLOW_COPY_AND_ASSIGN(AccessibilityManager);
 };
 

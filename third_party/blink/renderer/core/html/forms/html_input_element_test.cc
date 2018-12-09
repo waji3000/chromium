@@ -160,7 +160,8 @@ TEST_F(HTMLInputElementTest, RadioKeyDownDCHECKFailure) {
   radio2.setAttribute(html_names::kStyleAttr, "position:fixed");
   KeyboardEventInit* init = KeyboardEventInit::Create();
   init->setKey("ArrowRight");
-  radio1.DefaultEventHandler(*new KeyboardEvent("keydown", init));
+  radio1.DefaultEventHandler(
+      *MakeGarbageCollected<KeyboardEvent>("keydown", init));
   EXPECT_EQ(GetDocument().ActiveElement(), &radio2);
 }
 
@@ -169,7 +170,7 @@ TEST_F(HTMLInputElementTest, DateTimeChooserSizeParamRespectsScale) {
   GetDocument().View()->GetFrame().GetPage()->GetVisualViewport().SetScale(2.f);
   GetDocument().body()->SetInnerHTMLFromString(
       "<input type='date' style='width:200px;height:50px' />");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   HTMLInputElement* input =
       ToHTMLInputElement(GetDocument().body()->firstChild());
 
@@ -214,12 +215,12 @@ TEST_F(HTMLInputElementTest, RepaintAfterClearingFile) {
   FileChooserFileInfoList files;
   files.push_back(CreateFileChooserFileInfoNative("/native/path/native-file",
                                                   "display-name"));
-  FileList* list = FileInputType::CreateFileList(files, false);
+  FileList* list = FileInputType::CreateFileList(files, base::FilePath());
   ASSERT_TRUE(list);
   EXPECT_EQ(1u, list->length());
 
   input->setFiles(list);
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   ASSERT_TRUE(input->GetLayoutObject());
   EXPECT_FALSE(input->GetLayoutObject()->ShouldCheckForPaintInvalidation());

@@ -54,7 +54,10 @@
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/platform/geometry/int_point.h"
 #include "third_party/blink/renderer/platform/geometry/int_rect.h"
+#include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_layer.h"
+#include "third_party/blink/renderer/platform/graphics/test/fake_gles2_interface.h"
+#include "third_party/blink/renderer/platform/graphics/test/fake_web_graphics_context_3d_provider.h"
 #include "third_party/blink/renderer/platform/graphics/touch_action.h"
 #include "third_party/blink/renderer/platform/testing/histogram_tester.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
@@ -70,11 +73,12 @@ class ScrollingCoordinatorTest : public testing::Test,
       : ScopedPaintTouchActionRectsForTest(GetParam()),
         base_url_("http://www.test.com/") {
     helper_.Initialize(nullptr, nullptr, nullptr, &ConfigureSettings);
-    GetWebView()->Resize(IntSize(320, 240));
+    GetWebView()->MainFrameWidget()->Resize(IntSize(320, 240));
 
     // macOS attaches main frame scrollbars to the VisualViewport so the
     // VisualViewport layers need to be initialized.
-    GetWebView()->UpdateAllLifecyclePhases();
+    GetWebView()->MainFrameWidget()->UpdateAllLifecyclePhases(
+        WebWidget::LifecycleUpdateReason::kTest);
     WebFrameWidgetBase* main_frame_widget =
         GetWebView()->MainFrameImpl()->FrameWidgetImpl();
     main_frame_widget->SetRootGraphicsLayer(GetWebView()
@@ -102,7 +106,8 @@ class ScrollingCoordinatorTest : public testing::Test,
   }
 
   void ForceFullCompositingUpdate() {
-    GetWebView()->UpdateAllLifecyclePhases();
+    GetWebView()->MainFrameWidget()->UpdateAllLifecyclePhases(
+        WebWidget::LifecycleUpdateReason::kTest);
   }
 
   void RegisterMockedHttpURLLoad(const std::string& file_name) {
@@ -140,7 +145,7 @@ class ScrollingCoordinatorTest : public testing::Test,
 INSTANTIATE_TEST_CASE_P(All, ScrollingCoordinatorTest, ::testing::Bool());
 
 TEST_P(ScrollingCoordinatorTest, fastScrollingByDefault) {
-  GetWebView()->Resize(WebSize(800, 600));
+  GetWebView()->MainFrameWidget()->Resize(WebSize(800, 600));
   LoadHTML("<div id='spacer' style='height: 1000px'></div>");
   ForceFullCompositingUpdate();
 
@@ -170,7 +175,7 @@ TEST_P(ScrollingCoordinatorTest, fastScrollingByDefault) {
 }
 
 TEST_P(ScrollingCoordinatorTest, fastScrollingCanBeDisabledWithSetting) {
-  GetWebView()->Resize(WebSize(800, 600));
+  GetWebView()->MainFrameWidget()->Resize(WebSize(800, 600));
   LoadHTML("<div id='spacer' style='height: 1000px'></div>");
   GetWebView()->GetSettings()->SetThreadedScrollingEnabled(false);
   ForceFullCompositingUpdate();
@@ -515,6 +520,20 @@ TEST_P(ScrollingCoordinatorTest, elementTouchEventHandlerPassive) {
   cc::Region region = cc_layer->touch_action_region().GetRegionForTouchAction(
       TouchAction::kTouchActionNone);
   EXPECT_TRUE(region.IsEmpty());
+}
+
+TEST_P(ScrollingCoordinatorTest, TouchActionRectsOnImage) {
+  LoadHTML(R"HTML(
+    <img id="image" style="width: 100px; height: 100px; touch-action: none;">
+  )HTML");
+  ForceFullCompositingUpdate();
+
+  auto* layout_view = GetFrame()->View()->GetLayoutView();
+  auto* mapping = layout_view->Layer()->GetCompositedLayerMapping();
+  cc::Layer* cc_layer = mapping->ScrollingContentsLayer()->CcLayer();
+  cc::Region region = cc_layer->touch_action_region().GetRegionForTouchAction(
+      TouchAction::kTouchActionNone);
+  EXPECT_EQ(region.bounds(), gfx::Rect(8, 8, 100, 100));
 }
 
 TEST_P(ScrollingCoordinatorTest, touchEventHandlerBoth) {
@@ -1046,7 +1065,7 @@ class ScrollingCoordinatorMockEventListener final : public EventListener {
     return this == &other;
   }
 
-  void handleEvent(ExecutionContext*, Event*) final {}
+  void Invoke(ExecutionContext*, Event*) final {}
 };
 }  // namespace
 
@@ -1071,7 +1090,8 @@ TEST_P(ScrollingCoordinatorTest, WindowTouchEventHandlerInvalidation) {
   EXPECT_TRUE(region.IsEmpty());
 
   // Adding a blocking window event handler should create a touch action region.
-  auto* listener = new ScrollingCoordinatorMockEventListener();
+  auto* listener =
+      MakeGarbageCollected<ScrollingCoordinatorMockEventListener>();
   AddEventListenerOptionsResolved* resolved_options =
       AddEventListenerOptionsResolved::Create();
   resolved_options->setPassive(false);
@@ -1687,6 +1707,10 @@ class NonCompositedMainThreadScrollingReasonTest
   }
 };
 
+INSTANTIATE_TEST_CASE_P(All,
+                        NonCompositedMainThreadScrollingReasonTest,
+                        ::testing::Bool());
+
 TEST_P(NonCompositedMainThreadScrollingReasonTest, TransparentTest) {
   TestNonCompositedReasons("transparent",
                            MainThreadScrollingReason::kHasOpacityAndLCDText);
@@ -1825,6 +1849,61 @@ TEST_P(NonCompositedMainThreadScrollingReasonTest,
           ->GetScrollableArea();
   ASSERT_TRUE(scrollable_area2);
   ASSERT_TRUE(scrollable_area2->UsesCompositedScrolling());
+}
+
+class ScrollingCoordinatorTestWithAcceleratedContext
+    : public ScrollingCoordinatorTest {
+ public:
+  ScrollingCoordinatorTestWithAcceleratedContext()
+      : ScrollingCoordinatorTest() {}
+
+ protected:
+  void SetUp() override {
+    auto factory = [](FakeGLES2Interface* gl, bool* gpu_compositing_disabled)
+        -> std::unique_ptr<WebGraphicsContext3DProvider> {
+      *gpu_compositing_disabled = false;
+      gl->SetIsContextLost(false);
+      return std::make_unique<FakeWebGraphicsContext3DProvider>(gl);
+    };
+    SharedGpuContext::SetContextProviderFactoryForTesting(
+        WTF::BindRepeating(factory, WTF::Unretained(&gl_)));
+    ScrollingCoordinatorTest::SetUp();
+  }
+
+  void TearDown() override {
+    SharedGpuContext::ResetForTesting();
+    ScrollingCoordinatorTest::TearDown();
+  }
+
+ private:
+  FakeGLES2Interface gl_;
+};
+
+INSTANTIATE_TEST_CASE_P(All,
+                        ScrollingCoordinatorTestWithAcceleratedContext,
+                        ::testing::Bool());
+
+TEST_P(ScrollingCoordinatorTestWithAcceleratedContext, CanvasTouchActionRects) {
+  LoadHTML(R"HTML(
+    <canvas id="canvas" style="touch-action: none; will-change: transform;">
+    <script>
+      var canvas = document.getElementById("canvas");
+      var ctx = canvas.getContext("2d");
+      canvas.width = 400;
+      canvas.height = 400;
+      ctx.fillStyle = 'lightgrey';
+      ctx.fillRect(0, 0, 400, 400);
+    </script>
+  )HTML");
+  ForceFullCompositingUpdate();
+
+  Element* canvas = GetFrame()->GetDocument()->getElementById("canvas");
+  auto* canvas_box = ToLayoutBox(canvas->GetLayoutObject());
+  auto* mapping = canvas_box->Layer()->GetCompositedLayerMapping();
+  cc::Layer* cc_layer = mapping->MainGraphicsLayer()->CcLayer();
+  cc::Region region = cc_layer->touch_action_region().GetRegionForTouchAction(
+      TouchAction::kTouchActionNone);
+  EXPECT_EQ(region.bounds(), gfx::Rect(0, 0, 400, 400));
 }
 
 }  // namespace blink

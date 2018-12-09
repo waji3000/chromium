@@ -144,7 +144,6 @@ extern const char kChromeUISupervisedUserInternalsHost[];
 extern const char kChromeUISupervisedUserPassphrasePageHost[];
 extern const char kChromeUISyncConfirmationHost[];
 extern const char kChromeUISyncConfirmationURL[];
-extern const char kChromeUISyncConsentBumpURL[];
 extern const char kChromeUISyncFileSystemInternalsHost[];
 extern const char kChromeUISyncHost[];
 extern const char kChromeUISyncInternalsHost[];
@@ -221,6 +220,8 @@ extern const char kChromeUISetTimeURL[];
 extern const char kChromeUISlowHost[];
 extern const char kChromeUISlowTraceHost[];
 extern const char kChromeUISlowURL[];
+extern const char kChromeUISmbShareHost[];
+extern const char kChromeUISmbShareURL[];
 extern const char kChromeUISysInternalsHost[];
 extern const char kChromeUIUserImageHost[];
 extern const char kChromeUIUserImageURL[];
@@ -261,6 +262,7 @@ extern const char kChromeUIPrintHost[];
 extern const char kChromeUIWebRtcLogsHost[];
 
 // Settings sub-pages.
+extern const char kAddressesSubPage[];
 extern const char kAutofillSubPage[];
 extern const char kClearBrowserDataSubPage[];
 extern const char kContentSettingsSubPage[];

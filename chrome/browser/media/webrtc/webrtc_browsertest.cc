@@ -33,19 +33,12 @@ static const char kKeygenAlgorithmRsa[] =
 static const char kKeygenAlgorithmEcdsa[] =
     "{ name: \"ECDSA\", namedCurve: \"P-256\" }";
 
-// TODO(crbug.com/898546): Many WebRtcBrowserTests flakily leak.
-#if defined(ADDRESS_SANITIZER)
-#define MAYBE_WebRtcBrowserTest DISABLED_WebRtcBrowserTest
-#else
-#define MAYBE_WebRtcBrowserTest WebRtcBrowserTest
-#endif
-
 // Top-level integration test for WebRTC. It always uses fake devices; see
 // WebRtcWebcamBrowserTest for a test that acquires any real webcam on the
 // system.
-class MAYBE_WebRtcBrowserTest : public WebRtcTestBase {
+class WebRtcBrowserTest : public WebRtcTestBase {
  public:
-  MAYBE_WebRtcBrowserTest() : left_tab_(nullptr), right_tab_(nullptr) {}
+  WebRtcBrowserTest() : left_tab_(nullptr), right_tab_(nullptr) {}
 
   void SetUpInProcessBrowserTestFixture() override {
     DetectErrorsInJavaScript();  // Look for errors in our rather complex js.
@@ -129,6 +122,14 @@ class MAYBE_WebRtcBrowserTest : public WebRtcTestBase {
   content::WebContents* right_tab_;
 };
 
+// TODO(898546): many of these tests are failing on ASan builds.
+#if defined(ADDRESS_SANITIZER)
+#define MAYBE_WebRtcBrowserTest DISABLED_WebRtcBrowserTest
+class DISABLED_WebRtcBrowserTest : public WebRtcBrowserTest {};
+#else
+#define MAYBE_WebRtcBrowserTest WebRtcBrowserTest
+#endif
+
 IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcBrowserTest,
                        RunsAudioVideoWebRTCCallInTwoTabsVP8) {
   RunsAudioVideoWebRTCCallInTwoTabs("VP8");
@@ -141,7 +142,7 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcBrowserTest,
 
 #if BUILDFLAG(RTC_USE_H264)
 
-IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest,
                        RunsAudioVideoWebRTCCallInTwoTabsH264) {
   // Only run test if run-time feature corresponding to |rtc_use_h264| is on.
   if (!base::FeatureList::IsEnabled(content::kWebRtcH264WithOpenH264FFmpeg)) {
@@ -164,7 +165,7 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcBrowserTest,
 
 #endif  // BUILDFLAG(RTC_USE_H264)
 
-IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcBrowserTest, TestWebAudioMediaStream) {
+IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, TestWebAudioMediaStream) {
   // This tests against crash regressions for the WebAudio-MediaStream
   // integration.
   ASSERT_TRUE(embedded_test_server()->Start());
@@ -231,15 +232,8 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcBrowserTest,
   DetectVideoAndHangUp();
 }
 
-#if defined(OS_LINUX) && defined(ADDRESS_SANITIZER)
-#define MAYBE_RunsAudioVideoWebRTCCallInTwoTabsGetStatsPromise \
-  DISABLED_RunsAudioVideoWebRTCCallInTwoTabsGetStatsPromise
-#else
-#define MAYBE_RunsAudioVideoWebRTCCallInTwoTabsGetStatsPromise \
-  RunsAudioVideoWebRTCCallInTwoTabsGetStatsPromise
-#endif
 IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcBrowserTest,
-                       MAYBE_RunsAudioVideoWebRTCCallInTwoTabsGetStatsPromise) {
+                       RunsAudioVideoWebRTCCallInTwoTabsGetStatsPromise) {
   StartServerAndOpenTabs();
   SetupPeerconnectionWithLocalStream(left_tab_);
   SetupPeerconnectionWithLocalStream(right_tab_);

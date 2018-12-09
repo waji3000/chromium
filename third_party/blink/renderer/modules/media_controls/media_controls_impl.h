@@ -78,6 +78,8 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
 
  public:
   static MediaControlsImpl* Create(HTMLMediaElement&, ShadowRoot&);
+
+  explicit MediaControlsImpl(HTMLMediaElement&);
   ~MediaControlsImpl() override = default;
 
   // Returns whether the ModernMediaControlsEnabled runtime flag is on.
@@ -142,6 +144,7 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   void ToggleOverflowMenu();
   bool OverflowMenuVisible();
 
+  void VolumeSliderWantedTimerFired(TimerBase*);
   void OpenVolumeSliderIfNecessary();
   void CloseVolumeSliderIfNecessary();
 
@@ -242,8 +245,6 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   // check that the element is a video element first.
   HTMLVideoElement& VideoElement();
 
-  explicit MediaControlsImpl(HTMLMediaElement&);
-
   void InitializeControls();
   void PopulatePanel();
 
@@ -286,7 +287,9 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   void ComputeWhichControlsFit();
 
   void UpdateOverflowMenuWanted() const;
+  void UpdateOverflowMenuItemCSSClass() const;
   void UpdateScrubbingMessageFits() const;
+  void UpdateOverflowAndTrackListCSSClassForPip() const;
   void UpdateSizingCSSClass();
   void MaybeRecordElementsDisplayed() const;
 
@@ -414,6 +417,10 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   // Timer for distinguishing double-taps.
   TaskRunnerTimer<MediaControlsImpl> tap_timer_;
   bool is_paused_for_double_tap_ = false;
+
+  // Timer to delay showing the volume slider to avoid accidental triggering
+  // of the slider
+  TaskRunnerTimer<MediaControlsImpl> volume_slider_wanted_timer_;
 
   bool is_test_mode_ = false;
 };

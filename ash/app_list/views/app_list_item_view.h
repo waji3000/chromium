@@ -198,6 +198,7 @@ class APP_LIST_EXPORT AppListItemView
   bool OnMousePressed(const ui::MouseEvent& event) override;
   void OnMouseReleased(const ui::MouseEvent& event) override;
   bool OnMouseDragged(const ui::MouseEvent& event) override;
+  bool SkipDefaultKeyEventProcessing(const ui::KeyEvent& event) override;
   void OnFocus() override;
   void OnBlur() override;
 
@@ -222,6 +223,10 @@ class APP_LIST_EXPORT AppListItemView
 
   const bool is_folder_;
   const bool is_in_folder_;
+
+  // Whether context menu options have been requested. Prevents multiple
+  // requests.
+  bool waiting_for_context_menu_options_ = false;
 
   AppListItem* item_weak_;  // Owned by AppListModel. Can be NULL.
 
@@ -255,15 +260,16 @@ class APP_LIST_EXPORT AppListItemView
   bool is_installing_ = false;
   bool is_highlighted_ = false;
 
+  // Whether |context_menu_| was cancelled as the result of a continuous drag
+  // gesture.
+  bool menu_close_initiated_from_drag_ = false;
+
   base::string16 tooltip_text_;
 
   // A timer to defer showing drag UI when mouse is pressed.
   base::OneShotTimer mouse_drag_timer_;
   // A timer to defer showing drag UI when the app item is touch pressed.
   base::OneShotTimer touch_drag_timer_;
-
-  // True if new style launcher feature is enabled.
-  const bool is_new_style_launcher_enabled_;
 
   base::WeakPtrFactory<AppListItemView> weak_ptr_factory_;
 

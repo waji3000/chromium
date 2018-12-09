@@ -80,7 +80,7 @@ Animation* Animation::Create(AnimationEffect* effect,
 
   DocumentTimeline* subtimeline = ToDocumentTimeline(timeline);
 
-  Animation* animation = new Animation(
+  Animation* animation = MakeGarbageCollected<Animation>(
       subtimeline->GetDocument()->ContextDocument(), *subtimeline, effect);
 
   if (subtimeline) {
@@ -685,9 +685,9 @@ void Animation::finish(ExceptionState& exception_state) {
 
 ScriptPromise Animation::finished(ScriptState* script_state) {
   if (!finished_promise_) {
-    finished_promise_ =
-        new AnimationPromise(ExecutionContext::From(script_state), this,
-                             AnimationPromise::kFinished);
+    finished_promise_ = MakeGarbageCollected<AnimationPromise>(
+        ExecutionContext::From(script_state), this,
+        AnimationPromise::kFinished);
     if (PlayStateInternal() == kFinished)
       finished_promise_->Resolve(this);
   }
@@ -696,8 +696,8 @@ ScriptPromise Animation::finished(ScriptState* script_state) {
 
 ScriptPromise Animation::ready(ScriptState* script_state) {
   if (!ready_promise_) {
-    ready_promise_ = new AnimationPromise(ExecutionContext::From(script_state),
-                                          this, AnimationPromise::kReady);
+    ready_promise_ = MakeGarbageCollected<AnimationPromise>(
+        ExecutionContext::From(script_state), this, AnimationPromise::kReady);
     if (PlayStateInternal() != kPending)
       ready_promise_->Resolve(this);
   }
@@ -1142,19 +1142,21 @@ Animation::PlayStateUpdateScope::~PlayStateUpdateScope() {
   if (old_play_state != new_play_state) {
     bool was_active = old_play_state == kPending || old_play_state == kRunning;
     bool is_active = new_play_state == kPending || new_play_state == kRunning;
-    if (!was_active && is_active)
+    if (!was_active && is_active) {
       TRACE_EVENT_NESTABLE_ASYNC_BEGIN1(
           "blink.animations,devtools.timeline,benchmark,rail", "Animation",
-          animation_, "data", InspectorAnimationEvent::Data(*animation_));
-    else if (was_active && !is_active)
+          animation_, "data", inspector_animation_event::Data(*animation_));
+    } else if (was_active && !is_active) {
       TRACE_EVENT_NESTABLE_ASYNC_END1(
           "blink.animations,devtools.timeline,benchmark,rail", "Animation",
           animation_, "endData",
-          InspectorAnimationStateEvent::Data(*animation_));
-    else
+          inspector_animation_state_event::Data(*animation_));
+    } else {
       TRACE_EVENT_NESTABLE_ASYNC_INSTANT1(
           "blink.animations,devtools.timeline,benchmark,rail", "Animation",
-          animation_, "data", InspectorAnimationStateEvent::Data(*animation_));
+          animation_, "data",
+          inspector_animation_state_event::Data(*animation_));
+    }
   }
 
   // Ordering is important, the ready promise should resolve/reject before
@@ -1316,7 +1318,7 @@ void Animation::Trace(blink::Visitor* visitor) {
 
 Animation::CompositorAnimationHolder*
 Animation::CompositorAnimationHolder::Create(Animation* animation) {
-  return new CompositorAnimationHolder(animation);
+  return MakeGarbageCollected<CompositorAnimationHolder>(animation);
 }
 
 Animation::CompositorAnimationHolder::CompositorAnimationHolder(

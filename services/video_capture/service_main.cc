@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "services/service_manager/public/c/main.h"
-#include "services/service_manager/public/cpp/service_runner.h"
+#include "services/service_manager/public/cpp/standalone_service/service_main.h"
+#include "base/message_loop/message_loop.h"
 #include "services/video_capture/service_impl.h"
 
-MojoResult ServiceMain(MojoHandle service_request_handle) {
-  return service_manager::ServiceRunner(
-             video_capture::ServiceImpl::Create().release())
-      .Run(service_request_handle);
+void ServiceMain(service_manager::mojom::ServiceRequest request) {
+  base::MessageLoop message_loop;
+  video_capture::ServiceImpl(std::move(request)).RunUntilTermination();
 }

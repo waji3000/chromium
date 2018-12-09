@@ -10,13 +10,14 @@
 #include <vector>
 
 #include "base/callback_forward.h"
-#include "content/public/browser/service_worker_usage_info.h"
+#include "content/common/content_export.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
 #include "url/gurl.h"
 
 namespace content {
 
 class ServiceWorkerContextObserver;
+struct StorageUsageInfo;
 
 enum class ServiceWorkerCapability {
   NO_SERVICE_WORKER,
@@ -51,8 +52,8 @@ class ServiceWorkerContext {
  public:
   using ResultCallback = base::OnceCallback<void(bool success)>;
 
-  using GetUsageInfoCallback = base::OnceCallback<void(
-      const std::vector<ServiceWorkerUsageInfo>& usage_info)>;
+  using GetUsageInfoCallback =
+      base::OnceCallback<void(const std::vector<StorageUsageInfo>& usage_info)>;
 
   using CheckHasServiceWorkerCallback =
       base::OnceCallback<void(ServiceWorkerCapability capability)>;
@@ -156,7 +157,7 @@ class ServiceWorkerContext {
       CheckHasServiceWorkerCallback callback) = 0;
 
   // Stops all running service workers and unregisters all service worker
-  // registrations. This method is used in LayoutTests to make sure that the
+  // registrations. This method is used in web tests to make sure that the
   // existing service worker will not affect the succeeding tests.
   //
   // This function can be called from any thread, but the callback will always

@@ -6,9 +6,8 @@
 
 #include "ash/public/cpp/shelf_types.h"
 #include "ash/shelf/shelf.h"
-#include "ash/system/tray/system_tray.h"
-#include "ash/system/tray/system_tray_item.h"
 #include "ash/system/tray/tray_constants.h"
+#include "ui/accessibility/ax_node_data.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/gfx/animation/slide_animation.h"
@@ -25,8 +24,13 @@ const int kTrayItemAnimationDurationMS = 200;
 
 }  // namespace
 
-TrayItemView::TrayItemView(SystemTrayItem* owner)
-    : shelf_(owner->system_tray()->shelf()) {}
+void IconizedLabel::GetAccessibleNodeData(ui::AXNodeData* node_data) {
+  if (custom_accessible_name_.empty())
+    return Label::GetAccessibleNodeData(node_data);
+
+  node_data->role = ax::mojom::Role::kStaticText;
+  node_data->SetName(custom_accessible_name_);
+}
 
 TrayItemView::TrayItemView(Shelf* shelf)
     : shelf_(shelf), label_(NULL), image_view_(NULL) {
@@ -39,7 +43,7 @@ TrayItemView::TrayItemView(Shelf* shelf)
 TrayItemView::~TrayItemView() = default;
 
 void TrayItemView::CreateLabel() {
-  label_ = new views::Label;
+  label_ = new IconizedLabel;
   AddChildView(label_);
   PreferredSizeChanged();
 }
@@ -79,17 +83,17 @@ int TrayItemView::GetAnimationDurationMS() {
   return kTrayItemAnimationDurationMS;
 }
 
+bool TrayItemView::IsHorizontalAlignment() const {
+  return shelf_->IsHorizontalAlignment();
+}
+
 gfx::Size TrayItemView::CalculatePreferredSize() const {
   DCHECK_EQ(1, child_count());
-  gfx::Size inner_size = views::View::CalculatePreferredSize();
+  gfx::Size size = views::View::CalculatePreferredSize();
   if (image_view_) {
-    inner_size = gfx::Size(TrayConstants::GetTrayIconSize(),
-                           TrayConstants::GetTrayIconSize());
+    size = gfx::Size(kUnifiedTrayIconSize, kUnifiedTrayIconSize);
   }
-  gfx::Rect rect(inner_size);
-  if (label_)
-    rect.Inset(gfx::Insets(-kTrayImageItemPadding));
-  gfx::Size size = rect.size();
+
   if (!animation_.get() || !animation_->is_animating())
     return size;
   if (shelf_->IsHorizontalAlignment()) {

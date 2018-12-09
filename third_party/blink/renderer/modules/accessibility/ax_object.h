@@ -49,6 +49,7 @@
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
+#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "ui/accessibility/ax_enums.mojom-blink.h"
 
@@ -472,6 +473,7 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
     return RoleValue() == ax::mojom::Role::kColorWell;
   }
   virtual bool IsControl() const { return false; }
+  virtual bool IsDefault() const { return false; }
   virtual bool IsEmbeddedObject() const { return false; }
   virtual bool IsFieldset() const { return false; }
   virtual bool IsHeading() const { return false; }
@@ -551,7 +553,7 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   // Is the object selected because selection is following focus?
   virtual bool IsSelectedFromFocus() const { return false; }
   virtual bool IsSelectedOptionActive() const { return false; }
-  virtual bool IsVisible() const { return true; }
+  virtual bool IsVisible() const;
   virtual bool IsVisited() const { return false; }
 
   // Check whether certain properties can be modified.
@@ -1006,6 +1008,9 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
                                               const AXObject& second,
                                               int* index_in_ancestor1,
                                               int* index_in_ancestor2);
+
+  // Returns a string representation of this object.
+  String ToString() const;
 
  protected:
   AXID id_;

@@ -11,7 +11,6 @@
 #include "third_party/blink/renderer/core/dom/context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/dom/events/event_target.h"
 #include "third_party/blink/renderer/core/fileapi/blob.h"
-#include "third_party/blink/renderer/core/fileapi/file_error.h"
 #include "third_party/blink/renderer/core/typed_arrays/array_buffer_view_helpers.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
@@ -25,6 +24,7 @@ namespace blink {
 
 class DOMArrayBuffer;
 class DOMArrayBufferView;
+enum class FileErrorCode;
 class PresentationController;
 class PresentationReceiver;
 class PresentationRequest;
@@ -131,7 +131,7 @@ class PresentationConnection : public EventTargetWithInlineData,
 
   // Callbacks invoked from BlobLoader.
   void DidFinishLoadingBlob(DOMArrayBuffer*);
-  void DidFailLoadingBlob(file_error::ErrorCode);
+  void DidFailLoadingBlob(FileErrorCode);
 
   void SendMessageToTargetConnection(
       mojom::blink::PresentationConnectionMessagePtr);

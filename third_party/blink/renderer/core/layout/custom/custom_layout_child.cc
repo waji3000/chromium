@@ -15,7 +15,7 @@ namespace blink {
 CustomLayoutChild::CustomLayoutChild(const CSSLayoutDefinition& definition,
                                      LayoutBox* box)
     : box_(box),
-      style_map_(new PrepopulatedComputedStylePropertyMap(
+      style_map_(MakeGarbageCollected<PrepopulatedComputedStylePropertyMap>(
           box->GetDocument(),
           box->StyleRef(),
           box->GetNode(),
@@ -41,8 +41,8 @@ CustomLayoutFragmentRequest* CustomLayoutChild::layoutNextFragment(
       return nullptr;
   }
 
-  return new CustomLayoutFragmentRequest(this, options,
-                                         std::move(constraint_data));
+  return MakeGarbageCollected<CustomLayoutFragmentRequest>(
+      this, options, std::move(constraint_data));
 }
 
 void CustomLayoutChild::Trace(blink::Visitor* visitor) {

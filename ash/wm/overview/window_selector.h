@@ -47,13 +47,9 @@ enum class IndicatorState;
 // one by clicking or tapping on it.
 class ASH_EXPORT WindowSelector : public display::DisplayObserver,
                                   public aura::WindowObserver,
-                                  public ::wm::ActivationChangeObserver,
                                   public views::TextfieldController,
                                   public SplitViewController::Observer {
  public:
-  // Returns true if the window can be selected in overview mode.
-  static bool IsSelectable(const aura::Window* window);
-
   enum Direction { LEFT, UP, RIGHT, DOWN };
 
   enum class OverviewTransition {
@@ -220,11 +216,24 @@ class ASH_EXPORT WindowSelector : public display::DisplayObserver,
   // Called when the overview mode starting animation completes.
   void OnStartingAnimationComplete(bool canceled);
 
+  // Returns true if any of the grids in |grid_list_| shield widgets are still
+  // animating.
+  bool IsWindowGridAnimating();
+
+  // Called when windows are being activated/deactivated during
+  // overview mode.
+  void OnWindowActivating(
+      ::wm::ActivationChangeObserver::ActivationReason reason,
+      aura::Window* gained_active,
+      aura::Window* lost_active);
+
   WindowSelectorDelegate* delegate() { return delegate_; }
 
   SplitViewDragIndicators* split_view_drag_indicators() {
     return split_view_drag_indicators_.get();
   }
+
+  views::Widget* text_filter_widget() { return text_filter_widget_.get(); }
 
   int text_filter_bottom() const { return text_filter_bottom_; }
 
@@ -252,13 +261,6 @@ class ASH_EXPORT WindowSelector : public display::DisplayObserver,
   // aura::WindowObserver:
   void OnWindowHierarchyChanged(const HierarchyChangeParams& params) override;
   void OnWindowDestroying(aura::Window* window) override;
-
-  // wm::ActivationChangeObserver:
-  void OnWindowActivated(ActivationReason reason,
-                         aura::Window* gained_active,
-                         aura::Window* lost_active) override;
-  void OnAttemptToReactivateWindow(aura::Window* request_active,
-                                   aura::Window* actual_active) override;
 
   // views::TextfieldController:
   void ContentsChanged(views::Textfield* sender,
@@ -311,8 +313,9 @@ class ASH_EXPORT WindowSelector : public display::DisplayObserver,
   aura::Window* restore_focus_window_;
 
   // True when performing operations that may cause window activations. This is
-  // used to prevent handling the resulting expected activation.
-  bool ignore_activations_ = false;
+  // used to prevent handling the resulting expected activation. This is
+  // initially true until this is initialized.
+  bool ignore_activations_ = true;
 
   // List of all the window overview grids, one for each root window.
   std::vector<std::unique_ptr<WindowGrid>> grid_list_;

@@ -20,7 +20,6 @@
 <translation id="1087788677726983142">इव्हेंट स्ट्रीम फिल्टर लपवा</translation>
 <translation id="1088219014394087294">कोणतेही मथळे नाहीत.</translation>
 <translation id="1106741348836243114">ध्वनी अभिप्राय (इअरकॉन) चालू किंवा बंद करा.</translation>
-<translation id="1108651818222110612">उपशीर्षक</translation>
 <translation id="1120743664840974483">{"a": "alpha", "b": "bravo", "c": "charlie", "d": "delta", "e": "echo", "f": "foxtrot", "g": "golf", "h": "hotel", "i": "india", "j": "juliet","k": "kilo", "l": "lima", "m": "mike", "n": "november", "o": "oscar","p": "papa", "q": "quebec", "r": "romeo", "s": "sierra", "t": "tango", "u": "uniform", "v": "victor", "w": "whiskey","x": "xray", "y": "yankee", "z": "zulu"}</translation>
 <translation id="1120938014254001895">दोन बोटांनी वरच्या दिशेला स्वाइप करा</translation>
 <translation id="1124771028211010580">वर्तमान डिस्प्ले आकार शेजारी-शेजारी आहे.</translation>
@@ -45,6 +44,7 @@
 <translation id="1275718070701477396">निवडलेले</translation>
 <translation id="1286609444451033486">टॉगल करण्यासाठी Search+Space दाबा.</translation>
 <translation id="1291286136605998134">टॉगल बटण</translation>
+<translation id="1303806948938513162">ChromeVox मेनूमध्ये एंटर करण्यासाठी चार बोटांनी टॅप करा</translation>
 <translation id="1319608975892113573">मागील ब्लॉककोट नाही.</translation>
 <translation id="1321576897702511272">ChromeVox मदत लपवा</translation>
 <translation id="1331702245475014624"><ph name="TOTAL" /> पैकी <ph name="INDEX" /></translation>
@@ -194,7 +194,6 @@
 <translation id="2737520612859577214">सुपरस्क्रिप्टचा शेवट</translation>
 <translation id="2749275490991666823">चेक केलेले</translation>
 <translation id="27527859628328957">पुढील फोकस करण्यायोग्य आयटमवर जंप करा</translation>
-<translation id="276402504937943375">अनुक्रमणिका</translation>
 <translation id="2770781857296573485">गट अन्वेषण एंटर करा</translation>
 <translation id="2777845298774924149">निर्गमन केले</translation>
 <translation id="2781264313200109999">लिंकची सुरुवात</translation>
@@ -238,6 +237,7 @@
 <translation id="3046838483509668188">ChromeVox पर्याय</translation>
 <translation id="3047143736589213134">प्रायोगिक मुख्य नकाशा</translation>
 <translation id="3060756054951570867"><ph name="TITLE" /> मेनू उघडला</translation>
+<translation id="3060880924447482063">आयटमनुसार हलवण्यासाठी डावीकडे किंवा उजवीकडे स्वाइप करा</translation>
 <translation id="3070245424257836917">तीन बोटांनी वरच्या दिशेला स्वाइप करा</translation>
 <translation id="3078345202707391975">पुढील स्तर 2 शीर्षक</translation>
 <translation id="3078740164268491126">सारणी</translation>
@@ -331,6 +331,7 @@
 <translation id="3389259863310851658">मागील फॉर्म फील्ड</translation>
 <translation id="3390225400784126843">पुढील वेगळा घटक.</translation>
 <translation id="3392045790598181549"><ph name="NAME" />, मेनू आयटम</translation>
+<translation id="3393605254399152980">तुम्ही कोणत्या गोष्टीला स्पर्श करत आहात ते ऐकण्यासाठी एका बोटाने ड्रॅग करा</translation>
 <translation id="3406283310380167331">फॉर्म सूची दर्शवा</translation>
 <translation id="3423495725743882470">पंक्ती $1 स्तंभ $2</translation>
 <translation id="3457000393508828486">अंशत: दाबलेले</translation>
@@ -346,6 +347,7 @@
 <translation id="3497063866483065785">{COUNT,plural, =1{प्रश्नचिन्ह}one{# प्रश्नचिन्हे}other{# प्रश्नचिन्हे}}</translation>
 <translation id="3514822174137761109">{COUNT,plural, =1{कॅरेट}one{# कॅरेट}other{# कॅरेट}}</translation>
 <translation id="352577523970648069">एक संपादन करण्यायोग्य मजकूर फील्ड</translation>
+<translation id="3549680091535286226">बोलणे तात्पुरते थांबवण्यासाठी दोन बोटांनी टॅप करा</translation>
 <translation id="3568702578574425662"><ph name="NAME" />, चेकबॉक्स चेक केलेला नाही</translation>
 <translation id="3589661172894441357">शब्दावली</translation>
 <translation id="3599054940393788245">गणितात नाही</translation>
@@ -397,6 +399,7 @@
 <translation id="4058278702844053247">पृष्‍ठ लोड होणे प्रगतीपथावर आहे</translation>
 <translation id="4065205963140826639">पुढील बटण शोधण्यासाठी आता शोध + उजबा बाण वापरून पहा, नंतर ते क्लिक करण्यासाठी शोध + Space दाबा.</translation>
 <translation id="4081085052247739398">{COUNT,plural, =1{टिल्डि}one{# टिल्डि}other{# टिल्डि}}</translation>
+<translation id="4086311032171418648">जाणून घ्या मोड थांबवत आहे.</translation>
 <translation id="409334809956508737">मागील ऑब्जेक्ट</translation>
 <translation id="4099274309791143834">उपमेनू सह</translation>
 <translation id="4101527861445851766">एक चेक केलेला चेकबॉक्स</translation>
@@ -409,6 +412,7 @@
 <translation id="4166192625054637755">सबस्क्रिप्टचा शेवट</translation>
 <translation id="4173994908659439270">पुढील संपादन करण्‍यायोग्‍य मजकूर फील्‍ड नाही.</translation>
 <translation id="4176463684765177261">अक्षम</translation>
+<translation id="4187322598335821254">ओळीनुसार हलवण्यासाठी वर किंवा खाली स्वाइप करा</translation>
 <translation id="4188530942454211480">मागील वाक्य</translation>
 <translation id="4191918948604314587">एक बटण</translation>
 <translation id="419265409837491189">मागील स्तंभावर जा</translation>
@@ -482,6 +486,7 @@
 <translation id="4763480195061959176">व्हिडिओ</translation>
 <translation id="4764692524839457597">डीफॉल्ट</translation>
 <translation id="479989351350248267">search</translation>
+<translation id="4804818685124855865">‍डिस्कनेक्ट</translation>
 <translation id="481165870889056555">वर्तमान पृष्‍ठाचे शीर्षक घोषित करा</translation>
 <translation id="4826415162591436065">फॉरवर्ड करणे नेव्हिगेट करा</translation>
 <translation id="4826604887384865800">पुढील जंप</translation>
@@ -499,6 +504,7 @@
 <translation id="4877261390094455813">एक शोध क्वेरी एंटर करा.</translation>
 <translation id="4886524826165775965"><ph name="INDEX" />/<ph name="TOTAL" /></translation>
 <translation id="489907760999452556">अंतर्गत दुवा</translation>
+<translation id="4915087353619183190">जाणून घ्या मोड सुरू होत आहे. त्याच्या कार्याबद्दल जाणून घेण्यासाठी qwerty की दाबा, रिफ्रेश करण्यायोग्य ब्रेल की किंवा टच जेश्चर दाबा. बाहेर पडण्यासाठी कंट्रोल की सह डब्ल्यू किंवा एस्केप दाबा.</translation>
 <translation id="492295894462528572">प्रस्तावना</translation>
 <translation id="495170559598752135">क्रिया</translation>
 <translation id="4953585991029886728">मजकूर संपादित करा</translation>
@@ -550,6 +556,7 @@
 <translation id="5291783959063340370">ऑब्जेक्ट</translation>
 <translation id="5302089807023311274">ग्रंथसूची संदर्भ</translation>
 <translation id="5304943142864553931"><ph name="TITLE" />, टॅब</translation>
+<translation id="5308380583665731573">कनेक्‍ट करा</translation>
 <translation id="5310788376443009632">काढले:</translation>
 <translation id="5320727453979144100">रोचक मोड सक्षम</translation>
 <translation id="5321085947096604457">{COUNT,plural, =1{स्वल्पविराम}one{# स्वल्पविराम}other{# स्वल्पविराम}}</translation>
@@ -706,6 +713,7 @@
 <translation id="6583174818554398774">ग्रॅन्युलॅरिटीवर पुढीलवर हलवा</translation>
 <translation id="6587021927234520429">पुढील स्‍तर 4 मथळा नाही.</translation>
 <translation id="6601344353291556895">पाल्हाळीक वर्णने सक्षम करा.</translation>
+<translation id="6609828810966525877">जाणून घ्या मोड आणि Chromebook मदत केंद्रामधील आणखी जेश्चर एक्सप्लोर करा</translation>
 <translation id="6615602925644411249">पृष्ठामध्ये शोधा.</translation>
 <translation id="6628427060004938651">भाग</translation>
 <translation id="6633350132811819843">पुढील सारणी नाही.</translation>
@@ -757,12 +765,14 @@ Chrome ब्राउझरच्या, ऑम्निबॉक्स दे�
 उघडलेल्या टॅबमध्ये पुढे जाण्यासाठी, Control+Tab वापरा.
 Chrome ब्राउझर मेनू उघडण्यासाठी, Alt+F दाबा.</translation>
 <translation id="7086377898680121060">चकाकी वाढवा</translation>
+<translation id="7088743565397416204">ज्यावर फोकस केला आहे ते अॅक्टिव्हेट करण्यासाठी दोनदा टॅप करा</translation>
 <translation id="7095834689119144465">केवळ अंकीय मजकूर संपादित करा</translation>
 <translation id="7096001299300236431">मागील माध्यम</translation>
 <translation id="7116595520562830928">multln</translation>
 <translation id="712735679809149106">शब्द प्रतिध्वनी</translation>
 <translation id="713824876195128146">पुढील ब्लॉक कोट</translation>
 <translation id="7143034430156387447">6 आणि 8 बिंदू ब्रेलमध्ये टॉगल करा</translation>
+<translation id="7143207342074048698">कनेक्ट करीत आहे</translation>
 <translation id="7157306005867877619">अमूर्त</translation>
 <translation id="7161425887892204659">जुळणारा मजकूर संपला</translation>
 <translation id="7161771961008409533">पॉप-अप बटण</translation>
@@ -812,6 +822,7 @@ Chrome ब्राउझर मेनू उघडण्यासाठी, Alt
 <translation id="7491962110804786152">टॅब</translation>
 <translation id="7492049978501397201">संवाद एंटर केला</translation>
 <translation id="7518543783849163354">तात्पुरते ChromeVox चे बोलणे थांबविण्यासाठी, Control की दाबा.</translation>
+<translation id="7521682724501952239">तुम्ही टचस्क्रीनसह ChromeVox वापरू शकता.</translation>
 <translation id="7532613204005497612">जून</translation>
 <translation id="7552432549459840808">उपयोगी Chrome शॉर्टकट</translation>
 <translation id="7579911500627256166">बिंदू <ph name="DOT" /></translation>
@@ -825,7 +836,6 @@ Chrome ब्राउझर मेनू उघडण्यासाठी, Alt
 <translation id="7625690649919402823">पुढील सारणी</translation>
 <translation id="7628927569678398026"><ph name="LOCALE" /> ( <ph name="VARIANT" /> ), ग्रेड <ph name="GRADE" /></translation>
 <translation id="7641134354185483015">मागील स्‍तर 3 मथळा नाही.</translation>
-<translation id="7647456547678091388">टीप</translation>
 <translation id="7659376057562985921"><ph name="VALUE" />, <ph name="NAME" />, मजकूर बॉक्स</translation>
 <translation id="7663318257180412551">मथळा 2</translation>
 <translation id="7674576868851035240">पुढील दुवा</translation>
@@ -871,6 +881,7 @@ Chrome ब्राउझर मेनू उघडण्यासाठी, Alt
 <translation id="8076492880354921740">टॅब</translation>
 <translation id="8091452896542422286">मोकळी जागा</translation>
 <translation id="8110647606445335195">कोणत्याही ARIA च्‍या महत्त्वाच्या खुणा नाहीत.</translation>
+<translation id="8138880386467279117">स्पर्श करा</translation>
 <translation id="8153880621934657047">सारणीमध्ये नाही.</translation>
 <translation id="817440585505441544">{COUNT,plural, =1{अंडरस्कोअर}one{# अंडरस्कोअर}other{# अंडरस्कोअर}}</translation>
 <translation id="8179976553408161302">Enter</translation>
@@ -950,6 +961,7 @@ Chrome ब्राउझर मेनू उघडण्यासाठी, Alt
 <translation id="8940925288729953902">सुधारणा की</translation>
 <translation id="8943175951035496220">उजवीकडे सेल नाही.</translation>
 <translation id="8978496506222343566">tltip</translation>
+<translation id="8986362086234534611">विसरा</translation>
 <translation id="900114243503212879">फाईल</translation>
 <translation id="9027462562263121875">कोणत्याही सारण्‍या नाहीत.</translation>
 <translation id="9040132695316389094">मथळा 1</translation>

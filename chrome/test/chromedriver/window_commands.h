@@ -362,7 +362,45 @@ Status ExecutePerformActions(Session* session,
                              std::unique_ptr<base::Value>* value,
                              Timeout* timeout);
 
-Status ProcessInputActionSequence(Session* session,
-                                  const base::DictionaryValue* action_sequence,
-                                  std::unique_ptr<base::ListValue>* result);
+Status ProcessInputActionSequence(
+    Session* session,
+    const base::DictionaryValue* action_sequence,
+    std::unique_ptr<base::DictionaryValue>* result);
+
+Status ExecuteReleaseActions(Session* session,
+                             WebView* web_view,
+                             const base::DictionaryValue& params,
+                             std::unique_ptr<base::Value>* value,
+                             Timeout* timeout);
+
+Status ExecuteGetWindowRect(Session* session,
+                            WebView* web_view,
+                            const base::DictionaryValue& params,
+                            std::unique_ptr<base::Value>* value,
+                            Timeout* timeout);
+
+Status ExecuteSetWindowRect(Session* session,
+                            WebView* web_view,
+                            const base::DictionaryValue& params,
+                            std::unique_ptr<base::Value>* value,
+                            Timeout* timeout);
+
+Status ExecuteMaximizeWindow(Session* session,
+                             WebView* web_view,
+                             const base::DictionaryValue& params,
+                             std::unique_ptr<base::Value>* value,
+                             Timeout* timeout);
+
+Status ExecuteMinimizeWindow(Session* session,
+                             WebView* web_view,
+                             const base::DictionaryValue& params,
+                             std::unique_ptr<base::Value>* value,
+                             Timeout* timeout);
+
+Status ExecuteFullScreenWindow(Session* session,
+                               WebView* web_view,
+                               const base::DictionaryValue& params,
+                               std::unique_ptr<base::Value>* value,
+                               Timeout* timeout);
+
 #endif  // CHROME_TEST_CHROMEDRIVER_WINDOW_COMMANDS_H_

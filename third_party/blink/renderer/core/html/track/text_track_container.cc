@@ -77,7 +77,7 @@ void TextTrackContainer::Trace(blink::Visitor* visitor) {
 TextTrackContainer* TextTrackContainer::Create(
     HTMLMediaElement& media_element) {
   TextTrackContainer* element =
-      new TextTrackContainer(media_element.GetDocument());
+      MakeGarbageCollected<TextTrackContainer>(media_element.GetDocument());
   element->SetShadowPseudoId(
       AtomicString("-webkit-media-text-track-container"));
   if (IsHTMLVideoElement(media_element))
@@ -96,7 +96,7 @@ LayoutObject* TextTrackContainer::CreateLayoutObject(const ComputedStyle&) {
 
 void TextTrackContainer::ObserveSizeChanges(Element& element) {
   video_size_observer_ = ResizeObserver::Create(
-      GetDocument(), new VideoElementResizeDelegate(*this));
+      GetDocument(), MakeGarbageCollected<VideoElementResizeDelegate>(*this));
   video_size_observer_->observe(&element);
 }
 

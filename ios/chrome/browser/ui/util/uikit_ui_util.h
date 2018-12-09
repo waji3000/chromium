@@ -250,16 +250,14 @@ void TriggerHapticFeedbackForImpact(UIImpactFeedbackStyle impactStyle);
 // |type| represent the type of notification associated with this feedback.
 void TriggerHapticFeedbackForNotification(UINotificationFeedbackType type);
 
-// Returns the safeAreaInsets for a given view.
-UIEdgeInsets SafeAreaInsetsForView(UIView* view);
-
 // Returns the text for tabs count to be displayed in toolbar and tab_grid.
 // As an easter egg, show a smiley face instead of the count if the user has
 // more than 99 tabs open.
 NSString* TextForTabCount(long count);
 
-// Helper check if |category| is an accessibility category. For iOS 11+ it is a
-// wrapper around UIContentSizeCategoryIsAccessibilityCategory.
-BOOL ContentSizeCategoryIsAccessibilityCategory(UIContentSizeCategory category);
+UIFont* PreferredFontForTextStyleWithMaxCategory(
+    UIFontTextStyle style,
+    UIContentSizeCategory currentCategory,
+    UIContentSizeCategory maxCategory);
 
 #endif  // IOS_CHROME_BROWSER_UI_UTIL_UIKIT_UI_UTIL_H_

@@ -331,8 +331,10 @@ HeapVector<Member<Element>> TreeScope::ElementsFromPoint(double x,
 }
 
 SVGTreeScopeResources& TreeScope::EnsureSVGTreeScopedResources() {
-  if (!svg_tree_scoped_resources_)
-    svg_tree_scoped_resources_ = new SVGTreeScopeResources(this);
+  if (!svg_tree_scoped_resources_) {
+    svg_tree_scoped_resources_ =
+        MakeGarbageCollected<SVGTreeScopeResources>(this);
+  }
   return *svg_tree_scoped_resources_;
 }
 
@@ -487,7 +489,7 @@ Element* TreeScope::AdjustedFocusedElement() const {
     return nullptr;
   }
 
-  EventPath* event_path = new EventPath(*element);
+  EventPath* event_path = MakeGarbageCollected<EventPath>(*element);
   for (const auto& context : event_path->NodeEventContexts()) {
     if (context.GetNode() == RootNode()) {
       // context.target() is one of the followings:

@@ -14,11 +14,15 @@
 #include "components/viz/host/gpu_client.h"
 #include "components/viz/host/gpu_client_delegate.h"
 #include "components/viz/host/host_gpu_memory_buffer_manager.h"
+#include "components/viz/service/main/viz_main_impl.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
+#include "gpu/config/gpu_preferences.h"
 #include "gpu/ipc/client/gpu_channel_host.h"
 #include "gpu/ipc/common/gpu_memory_buffer_impl_shared_memory.h"
 #include "gpu/ipc/common/gpu_memory_buffer_support.h"
 #include "gpu/ipc/host/shader_disk_cache.h"
+#include "gpu/ipc/service/gpu_init.h"
+#include "media/gpu/buildflags.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "mojo/public/cpp/system/buffer.h"
 #include "mojo/public/cpp/system/platform_handle.h"
@@ -26,6 +30,7 @@
 #include "services/viz/privileged/interfaces/viz_main.mojom.h"
 #include "services/viz/public/interfaces/constants.mojom.h"
 #include "services/ws/gpu_host/gpu_host_delegate.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/gfx/buffer_format_util.h"
 
 #if defined(OS_WIN)
@@ -36,6 +41,10 @@
 #include "services/ws/gpu_host/arc_client.h"
 #endif
 
+#if defined(OS_CHROMEOS) && BUILDFLAG(USE_VAAPI)
+#include "media/gpu/vaapi/vaapi_wrapper.h"
+#endif
+
 namespace ws {
 namespace gpu_host {
 
@@ -43,12 +52,6 @@ namespace {
 
 // The client Id 1 is reserved for the frame sink manager.
 const int32_t kInternalGpuChannelClientId = 2;
-
-// TODO(crbug.com/620927): This should be removed once ozone-mojo is done.
-bool HasSplitVizProcess() {
-  constexpr char kEnableViz[] = "enable-viz";
-  return base::CommandLine::ForCurrentProcess()->HasSwitch(kEnableViz);
-}
 
 class GpuClientDelegate : public viz::GpuClientDelegate {
  public:
@@ -100,11 +103,12 @@ GpuHost::GpuHost(GpuHostDelegate* delegate,
   viz::GpuHostImpl::InitFontRenderParams(
       gfx::GetFontRenderParams(gfx::FontRenderParamsQuery(), nullptr));
 
-  bool in_process = !connector || !HasSplitVizProcess();
+  bool in_process = !connector || !features::IsMashOopVizEnabled();
 
   viz::mojom::VizMainPtr viz_main_ptr;
   if (in_process) {
-    // TODO(crbug.com/620927): This should be removed once ozone-mojo is done.
+    // TODO(crbug.com/912221): This goes away after the gpu process split in
+    // mash.
     gpu_thread_.Start();
     gpu_thread_.task_runner()->PostTask(
         FROM_HERE,
@@ -150,7 +154,7 @@ GpuHost::GpuHost(GpuHostDelegate* delegate,
 }
 
 GpuHost::~GpuHost() {
-  // TODO(crbug.com/620927): This should be removed once ozone-mojo is done.
+  // TODO(crbug.com/912221): This goes away after the gpu process split in mash.
   if (gpu_thread_.IsRunning()) {
     // Stop() will return after |viz_main_impl_| has been destroyed.
     gpu_thread_.task_runner()->PostTask(
@@ -201,9 +205,26 @@ void GpuHost::OnBadMessageFromGpu() {
 }
 
 void GpuHost::InitializeVizMain(viz::mojom::VizMainRequest request) {
+  gpu::GpuPreferences gpu_preferences;
+  gpu_preferences.gpu_program_cache_size =
+      gpu::ShaderDiskCache::CacheSizeBytes();
+  gpu_preferences.texture_target_exception_list =
+      gpu::CreateBufferUsageAndFormatExceptionList();
+
+#if defined(OS_CHROMEOS) && BUILDFLAG(USE_VAAPI)
+  // Initialize media codec. The UI service is running in a privileged process.
+  // We don't need care when to initialize media codec.
+  media::VaapiWrapper::PreSandboxInitialization();
+#endif
+
+  auto gpu_init = std::make_unique<gpu::GpuInit>();
+  gpu_init->InitializeInProcess(base::CommandLine::ForCurrentProcess(),
+                                gpu_preferences);
+
   viz::VizMainImpl::ExternalDependencies deps;
   deps.create_display_compositor = true;
-  viz_main_impl_ = std::make_unique<viz::VizMainImpl>(nullptr, std::move(deps));
+  viz_main_impl_ = std::make_unique<viz::VizMainImpl>(nullptr, std::move(deps),
+                                                      std::move(gpu_init));
   viz_main_impl_->Bind(std::move(request));
 }
 

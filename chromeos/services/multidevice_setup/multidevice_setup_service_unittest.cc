@@ -6,6 +6,7 @@
 
 #include "base/run_loop.h"
 #include "base/test/scoped_task_environment.h"
+#include "chromeos/components/multidevice/remote_device_test_util.h"
 #include "chromeos/services/device_sync/public/cpp/fake_device_sync_client.h"
 #include "chromeos/services/multidevice_setup/fake_account_status_change_delegate.h"
 #include "chromeos/services/multidevice_setup/fake_feature_state_observer.h"
@@ -20,7 +21,6 @@
 #include "chromeos/services/multidevice_setup/public/mojom/constants.mojom.h"
 #include "chromeos/services/multidevice_setup/public/mojom/multidevice_setup.mojom.h"
 #include "components/cryptauth/fake_gcm_device_info_provider.h"
-#include "components/cryptauth/remote_device_test_util.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
 #include "services/service_manager/public/cpp/test/test_connector_factory.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -109,7 +109,7 @@ class MultiDeviceSetupServiceTest : public testing::Test {
  protected:
   MultiDeviceSetupServiceTest()
       : test_devices_(
-            cryptauth::CreateRemoteDeviceRefListForTest(kNumTestDevices)) {}
+            multidevice::CreateRemoteDeviceRefListForTest(kNumTestDevices)) {}
   ~MultiDeviceSetupServiceTest() override = default;
 
   // testing::Test:
@@ -143,18 +143,15 @@ class MultiDeviceSetupServiceTest : public testing::Test {
     MultiDeviceSetupImpl::Factory::SetFactoryForTesting(
         fake_multidevice_setup_factory_.get());
 
-    connector_factory_ =
-        service_manager::TestConnectorFactory::CreateForUniqueService(
-            std::make_unique<MultiDeviceSetupService>(
-                test_pref_service_.get(), fake_device_sync_client_.get(),
-                fake_auth_token_validator_.get(),
-                fake_oobe_completion_tracker_.get(),
-                std::move(fake_android_sms_app_helper_delegate),
-                std::move(fake_android_sms_pairing_state_tracker),
-                fake_gcm_device_info_provider_.get()));
+    service_ = std::make_unique<MultiDeviceSetupService>(
+        connector_factory_.RegisterInstance(mojom::kServiceName),
+        test_pref_service_.get(), fake_device_sync_client_.get(),
+        fake_auth_token_validator_.get(), fake_oobe_completion_tracker_.get(),
+        std::move(fake_android_sms_app_helper_delegate),
+        std::move(fake_android_sms_pairing_state_tracker),
+        fake_gcm_device_info_provider_.get());
 
-    auto connector = connector_factory_->CreateConnector();
-
+    auto* connector = connector_factory_.GetDefaultConnector();
     connector->BindInterface(mojom::kServiceName, &multidevice_setup_ptr_);
     multidevice_setup_ptr_.FlushForTesting();
 
@@ -209,7 +206,7 @@ class MultiDeviceSetupServiceTest : public testing::Test {
   }
 
   const base::test::ScopedTaskEnvironment scoped_task_environment_;
-  const cryptauth::RemoteDeviceRefList test_devices_;
+  const multidevice::RemoteDeviceRefList test_devices_;
 
   std::unique_ptr<sync_preferences::TestingPrefServiceSyncable>
       test_pref_service_;
@@ -223,7 +220,8 @@ class MultiDeviceSetupServiceTest : public testing::Test {
 
   std::unique_ptr<FakeMultiDeviceSetupFactory> fake_multidevice_setup_factory_;
 
-  std::unique_ptr<service_manager::TestConnectorFactory> connector_factory_;
+  service_manager::TestConnectorFactory connector_factory_;
+  std::unique_ptr<MultiDeviceSetupService> service_;
   base::Optional<bool> last_debug_event_success_;
 
   mojom::MultiDeviceSetupPtr multidevice_setup_ptr_;

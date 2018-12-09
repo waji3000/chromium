@@ -47,6 +47,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * A model class that parses the incoming intent for Custom Tabs specific customization data.
@@ -128,13 +129,27 @@ public class CustomTabIntentDataProvider extends BrowserSessionDataProvider {
     public static final String EXTRA_SEND_TO_EXTERNAL_DEFAULT_HANDLER =
             "android.support.customtabs.extra.SEND_TO_EXTERNAL_HANDLER";
 
+    /** Key for the intent extra used to define an array list of module managed hosts. */
+    /* package */ static final String EXTRA_MODULE_MANAGED_HOST_LIST =
+            "org.chromium.chrome.browser.customtabs.EXTRA_MODULE_MANAGED_HOST_LIST";
+
+    /** Extra that defines the module managed URLs regex. */
+    /* package */ static final String EXTRA_MODULE_MANAGED_URLS_REGEX =
+            "org.chromium.chrome.browser.customtabs.EXTRA_MODULE_MANAGED_URLS_REGEX";
+
     /** The APK package to load the module from. */
-    private static final String EXTRA_MODULE_PACKAGE_NAME =
+    @VisibleForTesting
+    /* package */ static final String EXTRA_MODULE_PACKAGE_NAME =
             "org.chromium.chrome.browser.customtabs.EXTRA_MODULE_PACKAGE_NAME";
 
     /** The class name of the module entry point. */
-    private static final String EXTRA_MODULE_CLASS_NAME =
+    @VisibleForTesting
+    /* package */ static final String EXTRA_MODULE_CLASS_NAME =
             "org.chromium.chrome.browser.customtabs.EXTRA_MODULE_CLASS_NAME";
+
+    /** Extra that indicates whether to hide the CCT header on module managed URLs. */
+    /* package */ static final String EXTRA_HIDE_CCT_HEADER_ON_MODULE_MANAGED_URLS =
+            "org.chromium.chrome.browser.customtabs.EXTRA_HIDE_CCT_HEADER_ON_MODULE_MANAGED_URLS";
 
     private static final int MAX_CUSTOM_MENU_ITEMS = 5;
 
@@ -159,6 +174,11 @@ public class CustomTabIntentDataProvider extends BrowserSessionDataProvider {
     private final boolean mIsTrustedWebActivity;
     @Nullable
     private final ComponentName mModuleComponentName;
+    @Nullable
+    private final List<String> mModuleManagedHosts;
+    @Nullable
+    private final Pattern mModuleManagedUrlsPattern;
+    private final boolean mHideCctHeaderOnModuleManagedUrls;
     private final boolean mIsIncognito;
     @Nullable
     private String mUrlToLoad;
@@ -286,8 +306,20 @@ public class CustomTabIntentDataProvider extends BrowserSessionDataProvider {
         String moduleClassName = IntentUtils.safeGetStringExtra(intent, EXTRA_MODULE_CLASS_NAME);
         if (modulePackageName != null && moduleClassName != null) {
             mModuleComponentName = new ComponentName(modulePackageName, moduleClassName);
+            mModuleManagedHosts =
+                    IntentUtils.safeGetStringArrayListExtra(intent, EXTRA_MODULE_MANAGED_HOST_LIST);
+            String moduleManagedUrlsRegex =
+                    IntentUtils.safeGetStringExtra(intent, EXTRA_MODULE_MANAGED_URLS_REGEX);
+            mModuleManagedUrlsPattern = (moduleManagedUrlsRegex != null)
+                    ? Pattern.compile(moduleManagedUrlsRegex)
+                    : null;
+            mHideCctHeaderOnModuleManagedUrls = IntentUtils.safeGetBooleanExtra(
+                    intent, EXTRA_HIDE_CCT_HEADER_ON_MODULE_MANAGED_URLS, false);
         } else {
             mModuleComponentName = null;
+            mModuleManagedHosts = null;
+            mModuleManagedUrlsPattern = null;
+            mHideCctHeaderOnModuleManagedUrls = false;
         }
     }
 
@@ -750,7 +782,6 @@ public class CustomTabIntentDataProvider extends BrowserSessionDataProvider {
     boolean isTrustedWebActivity() {
         if (!ChromeFeatureList.isInitialized()) return false;
         if (!ChromeFeatureList.isEnabled(ChromeFeatureList.TRUSTED_WEB_ACTIVITY)) return false;
-        if (ChromeVersionInfo.isBetaBuild() || ChromeVersionInfo.isStableBuild()) return false;
 
         return mIsTrustedWebActivity;
     }
@@ -761,5 +792,38 @@ public class CustomTabIntentDataProvider extends BrowserSessionDataProvider {
     @Nullable
     ComponentName getModuleComponentName() {
         return mModuleComponentName;
+    }
+
+    /**
+     * See {@link #EXTRA_MODULE_MANAGED_URLS_REGEX}.
+     * @return The pattern compiled from the regex that defines the module managed URLs,
+     * or null if not specified.
+     */
+    @Nullable
+    Pattern getExtraModuleManagedUrlsPattern() {
+        return mModuleManagedUrlsPattern;
+    }
+
+    /**
+     * See {@link #EXTRA_MODULE_MANAGED_HOST_LIST}.
+     * @return The list of module managed hosts, or null if not specified.
+     */
+    @Nullable
+    List<String> getExtraModuleManagedHosts() {
+        return mModuleManagedHosts;
+    }
+
+    /**
+     * @return the Intent this instance was created with.
+     */
+    public Intent getIntent() {
+        return mIntent;
+    }
+
+    /**
+     * @return Whether to hide CCT header on module managed URLs.
+     */
+    boolean shouldHideCctHeaderOnModuleManagedUrls() {
+        return mHideCctHeaderOnModuleManagedUrls;
     }
 }

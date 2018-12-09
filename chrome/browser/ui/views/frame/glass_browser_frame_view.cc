@@ -12,6 +12,7 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/app/chrome_dll_resource.h"
 #include "chrome/browser/themes/theme_properties.h"
+#include "chrome/browser/ui/extensions/hosted_app_browser_controller.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/hosted_app_button_container.h"
@@ -112,12 +113,15 @@ GlassBrowserFrameView::GlassBrowserFrameView(BrowserFrame* frame,
     AddChildView(window_title_);
   }
 
-  if (browser_view->IsBrowserTypeHostedApp()) {
+  extensions::HostedAppBrowserController* controller =
+      browser_view->browser()->hosted_app_controller();
+  if (controller && controller->ShouldShowHostedAppButtonContainer()) {
     // TODO(alancutter): Avoid snapshotting GetTitlebarFeatureColor() values
     // here and call it on demand in
     // HostedAppButtonContainer::UpdateIconsColor() via a delegate interface.
     SkColor active_color = GetTitlebarFeatureColor(kActive);
     SkColor inactive_color = GetTitlebarFeatureColor(kInactive);
+
     set_hosted_app_button_container(new HostedAppButtonContainer(
         frame, browser_view, active_color, inactive_color));
     AddChildView(hosted_app_button_container());
@@ -186,6 +190,15 @@ bool GlassBrowserFrameView::HasVisibleBackgroundTabShapes(
   return BrowserNonClientFrameView::HasVisibleBackgroundTabShapes(active_state);
 }
 
+bool GlassBrowserFrameView::CanDrawStrokes() const {
+  // On Win 7, the tabs are drawn as flat shapes against the glass frame, so
+  // the active tab always has a visible shape and strokes are unnecessary.
+  if (base::win::GetVersion() < base::win::VERSION_WIN8)
+    return false;
+
+  return BrowserNonClientFrameView::CanDrawStrokes();
+}
+
 void GlassBrowserFrameView::UpdateThrobber(bool running) {
   if (ShowCustomIcon())
     window_icon_->Update();
@@ -225,15 +238,6 @@ bool GlassBrowserFrameView::IsSingleTabModeAvailable() const {
   // custom-drawing the titlebar.
   return ShouldCustomDrawSystemTitlebar() &&
          BrowserNonClientFrameView::IsSingleTabModeAvailable();
-}
-
-bool GlassBrowserFrameView::ShouldDrawStrokes() const {
-  // On Win 7, the tabs are drawn as flat shapes against the glass frame, so
-  // the active tab always has a visible shape and strokes are unnecessary.
-  if (base::win::GetVersion() < base::win::VERSION_WIN8)
-    return false;
-
-  return BrowserNonClientFrameView::ShouldDrawStrokes();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -390,8 +394,7 @@ void GlassBrowserFrameView::ButtonPressed(views::Button* sender,
 
 bool GlassBrowserFrameView::ShouldTabIconViewAnimate() const {
   DCHECK(ShowCustomIcon());
-  const content::WebContents* current_tab =
-      browser_view()->GetActiveWebContents();
+  content::WebContents* current_tab = browser_view()->GetActiveWebContents();
   return current_tab && current_tab->IsLoading();
 }
 

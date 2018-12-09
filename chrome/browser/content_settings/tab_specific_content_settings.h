@@ -180,19 +180,19 @@ class TabSpecificContentSettings
   // information which are needed for navigation: CONTENT_SETTINGS_TYPE_COOKIES
   // for cookies and service workers, and CONTENT_SETTINGS_TYPE_JAVASCRIPT for
   // service workers.
-  // TODO(vabr): Only public for tests. Move to a test client.
+  // Only public for tests.
   void ClearContentSettingsExceptForNavigationRelatedSettings();
 
   // Resets navigation related information (CONTENT_SETTINGS_TYPE_COOKIES and
   // CONTENT_SETTINGS_TYPE_JAVASCRIPT).
-  // TODO(vabr): Only public for tests. Move to a test client.
+  // Only public for tests.
   void ClearNavigationRelatedContentSettings();
 
   // Notifies that a Flash download has been blocked.
   void FlashDownloadBlocked();
 
   // Changes the |content_blocked_| entry for popups.
-  void SetPopupsBlocked(bool blocked);
+  void ClearPopupsBlocked();
 
   // Called when audio has been blocked on the page.
   void OnAudioBlocked();
@@ -200,11 +200,6 @@ class TabSpecificContentSettings
   // Returns whether a particular kind of content has been blocked for this
   // page.
   bool IsContentBlocked(ContentSettingsType content_type) const;
-
-  // Returns true if content blockage was indicated to the user.
-  bool IsBlockageIndicated(ContentSettingsType content_type) const;
-
-  void SetBlockageHasBeenIndicated(ContentSettingsType content_type);
 
   // Returns whether a particular kind of content has been allowed. Currently
   // only tracks cookies.
@@ -222,12 +217,12 @@ class TabSpecificContentSettings
     return media_stream_requested_video_device_;
   }
 
-  // TODO(vabr): Only public for tests. Move to a test client.
+  // Only public for tests.
   const std::string& media_stream_selected_audio_device() const {
     return media_stream_selected_audio_device_;
   }
 
-  // TODO(vabr): Only public for tests. Move to a test client.
+  // Only public for tests.
   const std::string& media_stream_selected_video_device() const {
     return media_stream_selected_video_device_;
   }
@@ -307,14 +302,14 @@ class TabSpecificContentSettings
   void SetPepperBrokerAllowed(bool allowed);
 
   // Message handlers.
-  // TODO(vabr): Only public for tests. Move to a test client.
+  // Only public for tests.
   void OnContentBlocked(ContentSettingsType type);
   void OnContentBlockedWithDetail(ContentSettingsType type,
                                   const base::string16& details);
   void OnContentAllowed(ContentSettingsType type);
 
   // These methods are invoked on the UI thread by the static functions above.
-  // TODO(vabr): Only public for tests. Move to a test client.
+  // Only public for tests.
   void OnCookiesRead(const GURL& url,
                      const GURL& first_party_url,
                      const net::CookieList& cookie_list,
@@ -429,7 +424,6 @@ class TabSpecificContentSettings
 
   struct ContentSettingsStatus {
     bool blocked;
-    bool blockage_indicated_to_user;
     bool allowed;
   };
   // Stores which content setting types actually have blocked content.
@@ -488,6 +482,8 @@ class TabSpecificContentSettings
   // Stores content settings changed by the user via page info since the last
   // navigation. Used to determine whether to display the settings in page info.
   std::set<ContentSettingsType> content_settings_changed_via_page_info_;
+
+  WEB_CONTENTS_USER_DATA_KEY_DECL();
 
   DISALLOW_COPY_AND_ASSIGN(TabSpecificContentSettings);
 };

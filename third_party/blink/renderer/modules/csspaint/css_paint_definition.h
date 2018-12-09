@@ -5,9 +5,9 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_CSSPAINT_CSS_PAINT_DEFINITION_H_
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_CSSPAINT_CSS_PAINT_DEFINITION_H_
 
+#include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/css/css_syntax_descriptor.h"
 #include "third_party/blink/renderer/core/css/cssom/css_style_value.h"
-#include "third_party/blink/renderer/core/css_property_names.h"
 #include "third_party/blink/renderer/modules/csspaint/paint_rendering_context_2d_settings.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
 #include "third_party/blink/renderer/platform/bindings/name_client.h"
@@ -35,6 +35,15 @@ class MODULES_EXPORT CSSPaintDefinition final
       v8::Local<v8::Function> constructor,
       v8::Local<v8::Function> paint,
       const Vector<CSSPropertyID>&,
+      const Vector<AtomicString>& custom_invalidation_properties,
+      const Vector<CSSSyntaxDescriptor>& input_argument_types,
+      const PaintRenderingContext2DSettings*);
+
+  CSSPaintDefinition(
+      ScriptState*,
+      v8::Local<v8::Function> constructor,
+      v8::Local<v8::Function> paint,
+      const Vector<CSSPropertyID>& native_invalidation_properties,
       const Vector<AtomicString>& custom_invalidation_properties,
       const Vector<CSSSyntaxDescriptor>& input_argument_types,
       const PaintRenderingContext2DSettings*);
@@ -80,15 +89,6 @@ class MODULES_EXPORT CSSPaintDefinition final
   }
 
  private:
-  CSSPaintDefinition(
-      ScriptState*,
-      v8::Local<v8::Function> constructor,
-      v8::Local<v8::Function> paint,
-      const Vector<CSSPropertyID>& native_invalidation_properties,
-      const Vector<AtomicString>& custom_invalidation_properties,
-      const Vector<CSSSyntaxDescriptor>& input_argument_types,
-      const PaintRenderingContext2DSettings*);
-
   void MaybeCreatePaintInstance();
 
   Member<ScriptState> script_state_;

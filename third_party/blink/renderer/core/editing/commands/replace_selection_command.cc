@@ -27,9 +27,9 @@
 #include "third_party/blink/renderer/core/editing/commands/replace_selection_command.h"
 
 #include "base/macros.h"
+#include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/css/css_property_value_set.h"
 #include "third_party/blink/renderer/core/css/css_style_declaration.h"
-#include "third_party/blink/renderer/core/css_property_names.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/document_fragment.h"
 #include "third_party/blink/renderer/core/dom/element.h"
@@ -1442,7 +1442,7 @@ void ReplaceSelectionCommand::DoApply(EditingState* editing_state) {
 
   {
     // TODO(dominicc): refNode may not be connected, for example in
-    // LayoutTests/editing/inserting/insert-table-in-paragraph-crash.html .
+    // web_tests/editing/inserting/insert-table-in-paragraph-crash.html .
     // Refactor this so there's a relationship between the conditions
     // where refNode is dereferenced and refNode is connected.
     bool ref_node_was_connected = inserted_nodes.RefNode()->isConnected();

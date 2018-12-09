@@ -31,7 +31,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -72,7 +72,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -113,7 +113,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -154,7 +154,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -197,7 +197,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 16,
@@ -244,7 +244,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 16,
@@ -291,7 +291,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 8,
@@ -334,7 +334,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -373,7 +373,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -412,7 +412,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -453,7 +453,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -494,7 +494,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -535,7 +535,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 5,
@@ -578,7 +578,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -617,7 +617,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -656,7 +656,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -696,7 +696,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 5,
@@ -749,7 +749,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 19,
@@ -795,7 +795,48 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
+          "ignore_task_failure": false,
+          "io_timeout": 1800,
+          "shards": 1,
+          "upload_test_results": true
+        },
+        "trigger_script": {
+          "args": [
+            "--multiple-dimension-script-verbose",
+            "True"
+          ],
+          "script": "//testing/trigger_scripts/perf_device_trigger.py"
+        }
+      },
+      {
+        "args": [
+          "--gtest-benchmark-name",
+          "base_perftests",
+          "--non-telemetry=true",
+          "--migrated-test=true"
+        ],
+        "isolate_name": "base_perftests",
+        "merge": {
+          "script": "//tools/perf/process_perf_results.py"
+        },
+        "name": "base_perftests",
+        "override_compile_targets": [
+          "base_perftests"
+        ],
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "device_os": "MMB29Q",
+              "device_os_flavor": "google",
+              "device_type": "bullhead",
+              "os": "Android",
+              "pool": "chrome.tests.perf"
+            }
+          ],
+          "expiration": 7200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -836,7 +877,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -877,7 +918,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -918,7 +959,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -959,7 +1000,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -1002,7 +1043,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 16,
@@ -1035,6 +1076,45 @@
       {
         "args": [
           "--gtest-benchmark-name",
+          "base_perftests",
+          "--non-telemetry=true",
+          "--migrated-test=true"
+        ],
+        "isolate_name": "base_perftests",
+        "merge": {
+          "script": "//tools/perf/process_perf_results.py"
+        },
+        "name": "base_perftests",
+        "override_compile_targets": [
+          "base_perftests"
+        ],
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "gpu": "10de:1cb3",
+              "os": "Ubuntu-14.04",
+              "pool": "chrome.tests.perf"
+            }
+          ],
+          "expiration": 7200,
+          "hard_timeout": 36000,
+          "ignore_task_failure": false,
+          "io_timeout": 1800,
+          "shards": 1,
+          "upload_test_results": true
+        },
+        "trigger_script": {
+          "args": [
+            "--multiple-dimension-script-verbose",
+            "True"
+          ],
+          "script": "//testing/trigger_scripts/perf_device_trigger.py"
+        }
+      },
+      {
+        "args": [
+          "--gtest-benchmark-name",
           "load_library_perf_tests",
           "--non-telemetry=true",
           "--migrated-test=true"
@@ -1057,7 +1137,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -1096,7 +1176,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -1135,7 +1215,46 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
+          "ignore_task_failure": false,
+          "io_timeout": 1800,
+          "shards": 1,
+          "upload_test_results": true
+        },
+        "trigger_script": {
+          "args": [
+            "--multiple-dimension-script-verbose",
+            "True"
+          ],
+          "script": "//testing/trigger_scripts/perf_device_trigger.py"
+        }
+      },
+      {
+        "args": [
+          "--gtest-benchmark-name",
+          "performance_browser_tests",
+          "--non-telemetry=true",
+          "--migrated-test=true"
+        ],
+        "isolate_name": "performance_browser_tests",
+        "merge": {
+          "script": "//tools/perf/process_perf_results.py"
+        },
+        "name": "performance_browser_tests",
+        "override_compile_targets": [
+          "performance_browser_tests"
+        ],
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "gpu": "10de:1cb3",
+              "os": "Ubuntu-14.04",
+              "pool": "chrome.tests.perf"
+            }
+          ],
+          "expiration": 7200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -1174,7 +1293,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -1215,7 +1334,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 26,
@@ -1258,7 +1377,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -1297,7 +1416,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -1338,7 +1457,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 26,
@@ -1356,6 +1475,45 @@
   },
   "mac-10_13_laptop_high_end-perf": {
     "isolated_scripts": [
+      {
+        "args": [
+          "--gtest-benchmark-name",
+          "base_perftests",
+          "--non-telemetry=true",
+          "--migrated-test=true"
+        ],
+        "isolate_name": "base_perftests",
+        "merge": {
+          "script": "//tools/perf/process_perf_results.py"
+        },
+        "name": "base_perftests",
+        "override_compile_targets": [
+          "base_perftests"
+        ],
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "gpu": "1002:6821",
+              "os": "Mac-10.13",
+              "pool": "chrome.tests.perf"
+            }
+          ],
+          "expiration": 7200,
+          "hard_timeout": 36000,
+          "ignore_task_failure": false,
+          "io_timeout": 1800,
+          "shards": 1,
+          "upload_test_results": true
+        },
+        "trigger_script": {
+          "args": [
+            "--multiple-dimension-script-verbose",
+            "True"
+          ],
+          "script": "//testing/trigger_scripts/perf_device_trigger.py"
+        }
+      },
       {
         "args": [
           "--gtest-benchmark-name",
@@ -1381,7 +1539,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -1420,7 +1578,46 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
+          "ignore_task_failure": false,
+          "io_timeout": 1800,
+          "shards": 1,
+          "upload_test_results": true
+        },
+        "trigger_script": {
+          "args": [
+            "--multiple-dimension-script-verbose",
+            "True"
+          ],
+          "script": "//testing/trigger_scripts/perf_device_trigger.py"
+        }
+      },
+      {
+        "args": [
+          "--gtest-benchmark-name",
+          "performance_browser_tests",
+          "--non-telemetry=true",
+          "--migrated-test=true"
+        ],
+        "isolate_name": "performance_browser_tests",
+        "merge": {
+          "script": "//tools/perf/process_perf_results.py"
+        },
+        "name": "performance_browser_tests",
+        "override_compile_targets": [
+          "performance_browser_tests"
+        ],
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "gpu": "1002:6821",
+              "os": "Mac-10.13",
+              "pool": "chrome.tests.perf"
+            }
+          ],
+          "expiration": 7200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -1459,7 +1656,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -1500,7 +1697,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 26,
@@ -1526,6 +1723,45 @@
       {
         "args": [
           "--gtest-benchmark-name",
+          "base_perftests",
+          "--non-telemetry=true",
+          "--migrated-test=true"
+        ],
+        "isolate_name": "base_perftests",
+        "merge": {
+          "script": "//tools/perf/process_perf_results.py"
+        },
+        "name": "base_perftests",
+        "override_compile_targets": [
+          "base_perftests"
+        ],
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "gpu": "8086:5912",
+              "os": "Windows-10",
+              "pool": "chrome.tests.perf"
+            }
+          ],
+          "expiration": 7200,
+          "hard_timeout": 36000,
+          "ignore_task_failure": false,
+          "io_timeout": 1800,
+          "shards": 1,
+          "upload_test_results": true
+        },
+        "trigger_script": {
+          "args": [
+            "--multiple-dimension-script-verbose",
+            "True"
+          ],
+          "script": "//testing/trigger_scripts/perf_device_trigger.py"
+        }
+      },
+      {
+        "args": [
+          "--gtest-benchmark-name",
           "components_perftests",
           "--non-telemetry=true",
           "--migrated-test=true"
@@ -1548,7 +1784,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -1587,7 +1823,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -1626,7 +1862,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 1,
@@ -1667,7 +1903,7 @@
             }
           ],
           "expiration": 7200,
-          "hard_timeout": 25200,
+          "hard_timeout": 36000,
           "ignore_task_failure": false,
           "io_timeout": 1800,
           "shards": 26,

@@ -177,10 +177,13 @@ class COMPONENTS_DOWNLOAD_EXPORT DownloadItemImpl
       const std::string& last_modified,
       int64_t received_bytes,
       int64_t total_bytes,
+      int32_t auto_resume_count,
       const std::string& hash,
       DownloadItem::DownloadState state,
       DownloadDangerType danger_type,
       DownloadInterruptReason interrupt_reason,
+      bool paused,
+      bool allow_metered,
       bool opened,
       base::Time last_access_time,
       bool transient,
@@ -212,7 +215,7 @@ class COMPONENTS_DOWNLOAD_EXPORT DownloadItemImpl
   void StealDangerousDownload(bool need_removal,
                               const AcquireFileCallback& callback) override;
   void Pause() override;
-  void Resume() override;
+  void Resume(bool user_resume) override;
   void Cancel(bool user_cancel) override;
   void Remove() override;
   void OpenDownload() override;
@@ -222,10 +225,12 @@ class COMPONENTS_DOWNLOAD_EXPORT DownloadItemImpl
   DownloadState GetState() const override;
   DownloadInterruptReason GetLastReason() const override;
   bool IsPaused() const override;
+  bool AllowMetered() const override;
   bool IsTemporary() const override;
   bool CanResume() const override;
   bool IsDone() const override;
   int64_t GetBytesWasted() const override;
+  int32_t GetAutoResumeCount() const override;
   const GURL& GetURL() const override;
   const std::vector<GURL>& GetUrlChain() const override;
   const GURL& GetOriginalUrl() const override;
@@ -329,8 +334,6 @@ class COMPONENTS_DOWNLOAD_EXPORT DownloadItemImpl
   // should be considered complete.
   virtual void MarkAsComplete();
 
-  DownloadSource download_source() const { return download_source_; }
-
   // DownloadDestinationObserver
   void DestinationUpdate(
       int64_t bytes_so_far,
@@ -345,6 +348,16 @@ class COMPONENTS_DOWNLOAD_EXPORT DownloadItemImpl
       std::unique_ptr<crypto::SecureHash> hash_state) override;
 
   void SetDelegate(DownloadItemImplDelegate* delegate);
+
+  const DownloadUrlParameters::RequestHeadersType& request_headers() const {
+    return request_headers_;
+  }
+
+  bool fetch_error_body() const { return fetch_error_body_; }
+
+  DownloadSource download_source() const { return download_source_; }
+
+  uint64_t ukm_download_id() const { return ukm_download_id_; }
 
  private:
   // Fine grained states of a download.
@@ -572,6 +585,8 @@ class COMPONENTS_DOWNLOAD_EXPORT DownloadItemImpl
 
   void UpdateProgress(int64_t bytes_so_far, int64_t bytes_per_sec);
 
+  void UpdateResumptionInfo(bool user_resume);
+
   // Set |hash_| and |hash_state_| based on |hash_state|.
   void SetHashState(std::unique_ptr<crypto::SecureHash> hash_state);
 
@@ -698,6 +713,14 @@ class COMPONENTS_DOWNLOAD_EXPORT DownloadItemImpl
   // True if the item was downloaded temporarily.
   bool is_temporary_ = false;
 
+  // True if the item was explicity paused by the user. This should be checked
+  // in conjunction with the download state to determine whether the download
+  // was truly paused.
+  bool paused_ = false;
+
+  // True if the download can proceed in a metered network.
+  bool allow_metered_ = false;
+
   // Did the user open the item either directly or indirectly (such as by
   // setting always open files of this type)? The shelf also sets this field
   // when the user closes the shelf before the item has been opened but should
@@ -734,7 +757,8 @@ class COMPONENTS_DOWNLOAD_EXPORT DownloadItemImpl
   int64_t bytes_per_sec_ = 0;
 
   // The number of times this download has been resumed automatically. Will be
-  // reset to 0 if a resumption is performed in response to a Resume() call.
+  // reset to 0 if a resumption is performed in response to a Resume() call with
+  // user gesture.
   int auto_resume_count_ = 0;
 
   // In the event of an interruption, the DownloadDestinationObserver interface
@@ -773,6 +797,9 @@ class COMPONENTS_DOWNLOAD_EXPORT DownloadItemImpl
 
   DownloadCreationType download_type_ =
       DownloadCreationType::TYPE_ACTIVE_DOWNLOAD;
+
+  // UKM ID for reporting, default to 0 if uninitialized.
+  uint64_t ukm_download_id_ = 0;
 
   THREAD_CHECKER(thread_checker_);
 

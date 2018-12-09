@@ -31,8 +31,8 @@ VRDisplayEvent* VRDisplayEvent::Create(
     const AtomicString& type,
     VRDisplay* display,
     device::mojom::blink::VRDisplayEventReason reason) {
-  return new VRDisplayEvent(type, display,
-                            VRDisplayEventReasonToString(reason));
+  return MakeGarbageCollected<VRDisplayEvent>(
+      type, display, VRDisplayEventReasonToString(reason));
 }
 
 VRDisplayEvent::VRDisplayEvent() = default;
@@ -57,7 +57,7 @@ VRDisplayEvent::VRDisplayEvent(const AtomicString& type,
 VRDisplayEvent::~VRDisplayEvent() = default;
 
 const AtomicString& VRDisplayEvent::InterfaceName() const {
-  return EventNames::VRDisplayEvent;
+  return event_interface_names::kVRDisplayEvent;
 }
 
 void VRDisplayEvent::Trace(blink::Visitor* visitor) {

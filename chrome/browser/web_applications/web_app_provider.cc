@@ -12,13 +12,18 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/web_applications/bookmark_apps/bookmark_app_install_manager.h"
-#include "chrome/browser/web_applications/bookmark_apps/external_web_apps.h"
-#include "chrome/browser/web_applications/bookmark_apps/policy/web_app_policy_manager.h"
-#include "chrome/browser/web_applications/bookmark_apps/system_web_app_manager.h"
 #include "chrome/browser/web_applications/components/web_app_constants.h"
 #include "chrome/browser/web_applications/components/web_app_helpers.h"
 #include "chrome/browser/web_applications/extensions/pending_bookmark_app_manager.h"
 #include "chrome/browser/web_applications/extensions/web_app_extension_ids_map.h"
+#include "chrome/browser/web_applications/external_web_apps.h"
+#include "chrome/browser/web_applications/file_utils_wrapper.h"
+#include "chrome/browser/web_applications/policy/web_app_policy_manager.h"
+#include "chrome/browser/web_applications/system_web_app_manager.h"
+#include "chrome/browser/web_applications/web_app_database.h"
+#include "chrome/browser/web_applications/web_app_database_factory.h"
+#include "chrome/browser/web_applications/web_app_icon_manager.h"
+#include "chrome/browser/web_applications/web_app_install_finalizer.h"
 #include "chrome/browser/web_applications/web_app_install_manager.h"
 #include "chrome/browser/web_applications/web_app_provider_factory.h"
 #include "chrome/browser/web_applications/web_app_registrar.h"
@@ -36,7 +41,7 @@ WebAppProvider* WebAppProvider::Get(Profile* profile) {
 
 // static
 WebAppProvider* WebAppProvider::GetForWebContents(
-    const content::WebContents* web_contents) {
+    content::WebContents* web_contents) {
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
   DCHECK(profile);
@@ -56,9 +61,18 @@ void WebAppProvider::CreateWebAppsSubsystems(Profile* profile) {
   if (!AllowWebAppInstallation(profile))
     return;
 
-  registrar_ = std::make_unique<WebAppRegistrar>();
-  install_manager_ =
-      std::make_unique<WebAppInstallManager>(profile, registrar_.get());
+  database_factory_ = std::make_unique<WebAppDatabaseFactory>(profile);
+  database_ = std::make_unique<WebAppDatabase>(database_factory_.get());
+  registrar_ = std::make_unique<WebAppRegistrar>(database_.get());
+  icon_manager_ = std::make_unique<WebAppIconManager>(
+      profile, std::make_unique<FileUtilsWrapper>());
+
+  auto install_finalizer = std::make_unique<WebAppInstallFinalizer>(
+      registrar_.get(), icon_manager_.get());
+  install_manager_ = std::make_unique<WebAppInstallManager>(
+      profile, std::move(install_finalizer));
+
+  registrar_->Init(base::DoNothing());
 }
 
 void WebAppProvider::CreateBookmarkAppsSubsystems(Profile* profile) {
@@ -91,8 +105,7 @@ void WebAppProvider::RegisterProfilePrefs(
 }
 
 // static
-bool WebAppProvider::CanInstallWebApp(
-    const content::WebContents* web_contents) {
+bool WebAppProvider::CanInstallWebApp(content::WebContents* web_contents) {
   auto* provider = WebAppProvider::GetForWebContents(web_contents);
   if (!provider || !provider->install_manager_)
     return false;
@@ -122,7 +135,10 @@ void WebAppProvider::Reset() {
   pending_app_manager_.reset();
 
   install_manager_.reset();
+  icon_manager_.reset();
   registrar_.reset();
+  database_.reset();
+  database_factory_.reset();
 }
 
 void WebAppProvider::Observe(int type,

@@ -16,7 +16,7 @@ namespace base {
 namespace sequence_manager {
 namespace internal {
 
-struct AssociatedThreadId;
+class AssociatedThreadId;
 class TaskQueueImpl;
 
 // Task runners are ref-counted and unaccountable, so we need a safe way
@@ -41,9 +41,6 @@ class TaskQueueProxy : public RefCountedThreadSafe<TaskQueueProxy> {
  private:
   friend class RefCountedThreadSafe<TaskQueueProxy>;
   ~TaskQueueProxy();
-
-  // Doesn't acquire lock on main thread.
-  Optional<MoveableAutoLock> AcquireLockIfNeeded() const;
 
   mutable Lock lock_;
   TaskQueueImpl* task_queue_impl_;  // Not owned.

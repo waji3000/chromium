@@ -231,7 +231,7 @@ bool MixedContentChecker::IsMixedContent(const SecurityOrigin* security_origin,
 
 // static
 bool MixedContentChecker::IsMixedContent(
-    const FetchClientSettingsObjectImpl& settings,
+    const FetchClientSettingsObject& settings,
     const KURL& url) {
   switch (settings.GetHttpsState()) {
     case HttpsState::kNone:
@@ -399,7 +399,7 @@ bool MixedContentChecker::ShouldBlockFetch(
   // launching external applications via URLs. http://crbug.com/318788 and
   // https://crbug.com/393481
   if (frame_type == network::mojom::RequestContextFrameType::kNested &&
-      !SchemeRegistry::ShouldTreatURLSchemeAsCORSEnabled(url.Protocol()))
+      !SchemeRegistry::ShouldTreatURLSchemeAsCorsEnabled(url.Protocol()))
     context_type = WebMixedContentContextType::kOptionallyBlockable;
 
   switch (context_type) {
@@ -768,6 +768,40 @@ void MixedContentChecker::MixedContentFound(
   }
 }
 
+// static
+ConsoleMessage* MixedContentChecker::CreateConsoleMessageAboutFetchAutoupgrade(
+    const KURL& main_resource_url,
+    const KURL& mixed_content_url) {
+  String message = String::Format(
+      "Mixed Content: The page at '%s' was loaded over HTTPS, but requested an "
+      "insecure element '%s'. As part of an experiment this request was "
+      "automatically upgraded to HTTPS, For more information see "
+      "https://chromium.googlesource.com/chromium/src/+/master/docs/security/"
+      "autougprade-mixed.md",
+      main_resource_url.ElidedString().Utf8().data(),
+      mixed_content_url.ElidedString().Utf8().data());
+  return ConsoleMessage::Create(kSecurityMessageSource, kWarningMessageLevel,
+                                message);
+}
+
+// static
+ConsoleMessage*
+MixedContentChecker::CreateConsoleMessageAboutWebSocketAutoupgrade(
+    const KURL& main_resource_url,
+    const KURL& mixed_content_url) {
+  String message = String::Format(
+      "Mixed Content: The page at '%s' was loaded over HTTPS, but attempted "
+      "to connect to the insecure WebSocket endpoint '%s'. As part of an "
+      "experiment this request was automatically upgraded to HTTPS, For more "
+      "information see "
+      "https://chromium.googlesource.com/chromium/src/+/master/docs/security/"
+      "autougprade-mixed.md",
+      main_resource_url.ElidedString().Utf8().data(),
+      mixed_content_url.ElidedString().Utf8().data());
+  return ConsoleMessage::Create(kSecurityMessageSource, kWarningMessageLevel,
+                                message);
+}
+
 WebMixedContentContextType MixedContentChecker::ContextTypeForInspector(
     LocalFrame* frame,
     const ResourceRequest& request) {
@@ -783,7 +817,7 @@ WebMixedContentContextType MixedContentChecker::ContextTypeForInspector(
   // subframe.
   if (request.GetFrameType() ==
           network::mojom::RequestContextFrameType::kNested &&
-      !SchemeRegistry::ShouldTreatURLSchemeAsCORSEnabled(
+      !SchemeRegistry::ShouldTreatURLSchemeAsCorsEnabled(
           request.Url().Protocol())) {
     return WebMixedContentContextType::kOptionallyBlockable;
   }

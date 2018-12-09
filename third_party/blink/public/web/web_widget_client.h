@@ -46,8 +46,11 @@
 
 class SkBitmap;
 
-namespace blink {
+namespace gfx {
+class Point;
+}
 
+namespace blink {
 class WebDragData;
 class WebGestureEvent;
 class WebString;
@@ -63,9 +66,6 @@ class WebWidgetClient {
 
   // Called when a region of the WebWidget needs to be re-painted.
   virtual void DidInvalidateRect(const WebRect&) {}
-
-  // FIXME: Remove all overrides of this.
-  virtual bool AllowsBrokenNullLayerTreeView() const { return false; }
 
   // Called when a call to WebWidget::animate is required
   virtual void ScheduleAnimation() {}
@@ -175,7 +175,11 @@ class WebWidgetClient {
                              const WebDragData&,
                              WebDragOperationsMask,
                              const SkBitmap& drag_image,
-                             const WebPoint& drag_image_offset) {}
+                             const gfx::Point& drag_image_offset) {}
+
+  // Double tap zooms a rect in the main-frame renderer.
+  virtual void AnimateDoubleTapZoomInMainFrame(const blink::WebPoint& point,
+                                               const blink::WebRect& bounds) {}
 };
 
 }  // namespace blink

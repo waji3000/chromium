@@ -37,11 +37,16 @@ void FakeModelTypeChangeProcessor::UpdateStorageKey(
     const std::string& storage_key,
     MetadataChangeList* metadata_change_list) {}
 
-void FakeModelTypeChangeProcessor::UntrackEntity(
-    const EntityData& entity_data) {}
-
 void FakeModelTypeChangeProcessor::UntrackEntityForStorageKey(
     const std::string& storage_key) {}
+
+void FakeModelTypeChangeProcessor::UntrackEntityForClientTagHash(
+    const std::string& client_tag_hash) {}
+
+bool FakeModelTypeChangeProcessor::IsEntityUnsynced(
+    const std::string& storage_key) {
+  return false;
+}
 
 void FakeModelTypeChangeProcessor::OnModelStarting(
     ModelTypeSyncBridge* bridge) {}

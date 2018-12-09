@@ -15,10 +15,22 @@
 #include "third_party/blink/renderer/core/layout/ng/ng_fragment_builder.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_physical_box_fragment.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
+#include "third_party/blink/renderer/platform/fonts/shaping/shape_result_view.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
 namespace {
+
+struct SameSizeAsNGPhysicalFragment
+    : RefCounted<const NGPhysicalFragment, NGPhysicalFragmentTraits> {
+  void* pointers[2];
+  NGPhysicalSize size;
+  unsigned flags;
+};
+
+static_assert(sizeof(NGPhysicalFragment) ==
+                  sizeof(SameSizeAsNGPhysicalFragment),
+              "NGPhysicalFragment should stay small");
 
 bool AppendFragmentOffsetAndSize(
     const NGPhysicalFragment* fragment,
@@ -237,31 +249,28 @@ NGPhysicalFragment::NGPhysicalFragment(NGFragmentBuilder* builder,
                                        NGFragmentType type,
                                        unsigned sub_type)
     : layout_object_(builder->layout_object_),
-      style_(std::move(builder->style_)),
       size_(ToNGPhysicalSize(builder->size_, builder->GetWritingMode())),
       break_token_(std::move(builder->break_token_)),
       type_(type),
       sub_type_(sub_type),
+      style_variant_((unsigned)builder->style_variant_),
       is_fieldset_container_(false),
-      is_old_layout_root_(false),
-      style_variant_((unsigned)builder->style_variant_) {}
+      is_old_layout_root_(false) {}
 
 NGPhysicalFragment::NGPhysicalFragment(LayoutObject* layout_object,
-                                       const ComputedStyle& style,
                                        NGStyleVariant style_variant,
                                        NGPhysicalSize size,
                                        NGFragmentType type,
                                        unsigned sub_type,
                                        scoped_refptr<NGBreakToken> break_token)
     : layout_object_(layout_object),
-      style_(&style),
       size_(size),
       break_token_(std::move(break_token)),
       type_(type),
       sub_type_(sub_type),
+      style_variant_((unsigned)style_variant),
       is_fieldset_container_(false),
-      is_old_layout_root_(false),
-      style_variant_((unsigned)style_variant) {}
+      is_old_layout_root_(false) {}
 
 // Keep the implementation of the destructor here, to avoid dependencies on
 // ComputedStyle in the header file.
@@ -286,21 +295,20 @@ void NGPhysicalFragment::Destroy() const {
 }
 
 const ComputedStyle& NGPhysicalFragment::Style() const {
-  DCHECK(style_);
-  // TODO(kojii): Returning |style_| locks the style at the layout time, and
-  // will not be updated when its base style is updated later. Line styles and
-  // ellipsis styles have this problem.
-  if (!GetLayoutObject())
-    return *style_;
+  if (Type() == kFragmentLineBox)
+    return ToNGPhysicalLineBoxFragment(this)->Style();
   switch (StyleVariant()) {
     case NGStyleVariant::kStandard:
+      DCHECK(GetLayoutObject());
       return *GetLayoutObject()->Style();
     case NGStyleVariant::kFirstLine:
+      DCHECK(GetLayoutObject());
       return *GetLayoutObject()->FirstLineStyle();
     case NGStyleVariant::kEllipsis:
-      return *style_;
+      return ToNGPhysicalTextFragment(this)->Style();
   }
-  return *style_;
+  NOTREACHED();
+  return *GetLayoutObject()->Style();
 }
 
 Node* NGPhysicalFragment::GetNode() const {
@@ -433,15 +441,33 @@ TouchAction NGPhysicalFragment::EffectiveWhitelistedTouchAction() const {
 }
 
 UBiDiLevel NGPhysicalFragment::BidiLevel() const {
+  switch (Type()) {
+    case kFragmentText:
+      return ToNGPhysicalTextFragment(*this).BidiLevel();
+    case kFragmentBox:
+    case kFragmentRenderedLegend:
+      return ToNGPhysicalBoxFragment(*this).BidiLevel();
+    case kFragmentLineBox:
+      break;
+  }
   NOTREACHED();
   return 0;
 }
 
 TextDirection NGPhysicalFragment::ResolvedDirection() const {
-  DCHECK(IsInline());
-  DCHECK(IsText() || IsAtomicInline());
-  // TODO(xiaochengh): Store direction in |base_direction_| flag.
-  return DirectionFromLevel(BidiLevel());
+  switch (Type()) {
+    case kFragmentText:
+      return ToNGPhysicalTextFragment(*this).ResolvedDirection();
+    case kFragmentBox:
+    case kFragmentRenderedLegend:
+      DCHECK(IsInline() && IsAtomicInline());
+      // TODO(xiaochengh): Store direction in |base_direction_| flag.
+      return DirectionFromLevel(BidiLevel());
+    case kFragmentLineBox:
+      break;
+  }
+  NOTREACHED();
+  return TextDirection::kLtr;
 }
 
 String NGPhysicalFragment::ToString() const {

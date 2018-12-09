@@ -27,14 +27,17 @@
 #include "chromecast/base/cast_paths.h"
 #include "chromecast/base/chromecast_switches.h"
 #include "chromecast/browser/application_session_id_manager.h"
+#include "chromecast/browser/browser_buildflags.h"
 #include "chromecast/browser/cast_browser_context.h"
 #include "chromecast/browser/cast_browser_main_parts.h"
 #include "chromecast/browser/cast_browser_process.h"
+#include "chromecast/browser/cast_feature_list_creator.h"
 #include "chromecast/browser/cast_http_user_agent_settings.h"
 #include "chromecast/browser/cast_navigation_ui_data.h"
 #include "chromecast/browser/cast_network_delegate.h"
 #include "chromecast/browser/cast_quota_permission_context.h"
 #include "chromecast/browser/cast_resource_dispatcher_host_delegate.h"
+#include "chromecast/browser/cast_session_id_map.h"
 #include "chromecast/browser/default_navigation_throttle.h"
 #include "chromecast/browser/devtools/cast_devtools_manager_delegate.h"
 #include "chromecast/browser/grit/cast_browser_resources.h"
@@ -42,6 +45,7 @@
 #include "chromecast/browser/service/cast_service_simple.h"
 #include "chromecast/browser/tts/tts_controller.h"
 #include "chromecast/browser/url_request_context_factory.h"
+#include "chromecast/common/cast_content_client.h"
 #include "chromecast/common/global_descriptors.h"
 #include "chromecast/media/audio/cast_audio_manager.h"
 #include "chromecast/media/base/media_resource_tracker.h"
@@ -62,6 +66,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_descriptors.h"
+#include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/service_manager_connection.h"
 #include "content/public/common/service_names.mojom.h"
@@ -84,13 +89,17 @@
 #endif  // ENABLE_MOJO_MEDIA_IN_BROWSER_PROCESS
 
 #if defined(OS_LINUX) || defined(OS_ANDROID)
-#include "components/crash/content/app/breakpad_linux.h"
 #include "components/crash/content/browser/crash_handler_host_linux.h"
 #endif  // defined(OS_LINUX) || defined(OS_ANDROID)
 
+#if defined(OS_LINUX)
+#include "components/crash/content/app/breakpad_linux.h"
+#endif  // defined(OS_LINUX)
+
 #if defined(OS_ANDROID)
+#include "base/android/build_info.h"
 #include "components/cdm/browser/cdm_message_filter_android.h"
-#include "components/crash/content/browser/child_exit_observer_android.h"
+#include "components/crash/content/app/crashpad.h"
 #include "media/mojo/services/android_mojo_media_client.h"
 #if !BUILDFLAG(USE_CHROMECAST_CDMS)
 #include "components/cdm/browser/media_drm_storage_impl.h"
@@ -124,11 +133,12 @@ namespace shell {
 
 namespace {
 #if BUILDFLAG(ENABLE_MOJO_MEDIA_IN_BROWSER_PROCESS)
-static std::unique_ptr<service_manager::Service> CreateMediaService(
-    CastContentBrowserClient* browser_client) {
+static void CreateMediaService(CastContentBrowserClient* browser_client,
+                               service_manager::mojom::ServiceRequest request) {
+  std::unique_ptr<::media::MediaService> service;
 #if defined(OS_ANDROID)
-  return std::make_unique<::media::MediaService>(
-      std::make_unique<::media::AndroidMojoMediaClient>());
+  service = std::make_unique<::media::MediaService>(
+      std::make_unique<::media::AndroidMojoMediaClient>(), std::move(request));
 #else
   auto mojo_media_client = std::make_unique<media::CastMojoMediaClient>(
       browser_client->GetCmaBackendFactory(),
@@ -137,8 +147,11 @@ static std::unique_ptr<service_manager::Service> CreateMediaService(
       browser_client->GetVideoModeSwitcher(),
       browser_client->GetVideoResolutionPolicy(),
       browser_client->media_resource_tracker());
-  return std::make_unique<::media::MediaService>(std::move(mojo_media_client));
+  service = std::make_unique<::media::MediaService>(
+      std::move(mojo_media_client), std::move(request));
 #endif  // defined(OS_ANDROID)
+
+  service_manager::Service::RunAsyncUntilTermination(std::move(service));
 }
 #endif  // BUILDFLAG(ENABLE_MOJO_MEDIA_IN_BROWSER_PROCESS)
 
@@ -163,9 +176,20 @@ void CreateMediaDrmStorage(content::RenderFrameHost* render_frame_host,
 
 }  // namespace
 
-CastContentBrowserClient::CastContentBrowserClient()
+CastContentBrowserClient::CastContentBrowserClient(
+    CastFeatureListCreator* cast_feature_list_creator)
     : cast_browser_main_parts_(nullptr),
-      url_request_context_factory_(new URLRequestContextFactory()) {}
+      url_request_context_factory_(new URLRequestContextFactory()),
+      cast_feature_list_creator_(cast_feature_list_creator) {
+  // TODO(awolter): Remove this once the feature is on by default.
+  const std::string extra_enable_features =
+#if defined(OS_ANDROID)
+      features::kAudioServiceAudioStreams.name;
+#else
+      std::string();
+#endif
+  cast_feature_list_creator_->SetExtraEnableFeatures(extra_enable_features);
+}
 
 CastContentBrowserClient::~CastContentBrowserClient() {
 #if BUILDFLAG(IS_CAST_USING_CMA_BACKEND)
@@ -246,35 +270,42 @@ CastContentBrowserClient::media_pipeline_backend_manager() {
 std::unique_ptr<::media::AudioManager>
 CastContentBrowserClient::CreateAudioManager(
     ::media::AudioLogFactory* audio_log_factory) {
-  // TODO(alokp): Consider switching off the mixer on audio platforms
-  // because we already have a mixer in the audio pipeline downstream of
-  // CastAudioManager.
-#if !defined(OS_ANDROID)
-  bool use_mixer = true;
-#else
-  bool use_mixer = false;
-#endif
+#if defined(OS_ANDROID)
+  // Disable CMA backend on builds older than N.
+  if (base::android::BuildInfo::GetInstance()->sdk_int() <
+      base::android::SDK_VERSION_NOUGAT) {
+    return nullptr;
+  }
+#endif  // defined(OS_ANDROID)
+
+  // Create the audio thread and initialize the CastSessionIdMap. We need to
+  // initialize the CastSessionIdMap as soon as possible, so that the task
+  // runner gets set before any calls to it.
+  auto audio_thread = std::make_unique<::media::AudioThreadImpl>();
+  shell::CastSessionIdMap::GetInstance(audio_thread->GetTaskRunner());
 
 #if defined(USE_ALSA)
   return std::make_unique<media::CastAudioManagerAlsa>(
-      std::make_unique<::media::AudioThreadImpl>(), audio_log_factory,
+      std::move(audio_thread), audio_log_factory,
       base::BindRepeating(&CastContentBrowserClient::GetCmaBackendFactory,
                           base::Unretained(this)),
+      base::BindRepeating(&shell::CastSessionIdMap::GetSessionId),
       base::CreateSingleThreadTaskRunnerWithTraits(
           {content::BrowserThread::UI}),
       GetMediaTaskRunner(),
       content::ServiceManagerConnection::GetForProcess()->GetConnector(),
-      use_mixer);
+      BUILDFLAG(ENABLE_CAST_AUDIO_MANAGER_MIXER));
 #else
   return std::make_unique<media::CastAudioManager>(
-      std::make_unique<::media::AudioThreadImpl>(), audio_log_factory,
+      std::move(audio_thread), audio_log_factory,
       base::BindRepeating(&CastContentBrowserClient::GetCmaBackendFactory,
                           base::Unretained(this)),
+      base::BindRepeating(&shell::CastSessionIdMap::GetSessionId),
       base::CreateSingleThreadTaskRunnerWithTraits(
           {content::BrowserThread::UI}),
       GetMediaTaskRunner(),
       content::ServiceManagerConnection::GetForProcess()->GetConnector(),
-      use_mixer);
+      BUILDFLAG(ENABLE_CAST_AUDIO_MANAGER_MIXER));
 #endif  // defined(USE_ALSA)
 }
 
@@ -447,12 +478,19 @@ void CastContentBrowserClient::AppendExtraCommandLineSwitches(
       base::CommandLine::ForCurrentProcess();
 
 #if !defined(OS_FUCHSIA)
+#if defined(OS_ANDROID)
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableCrashReporter)) {
+    command_line->AppendSwitch(switches::kEnableCrashReporter);
+  }
+#else
   // IsCrashReporterEnabled() is set when InitCrashReporter() is called, and
   // controlled by GetBreakpadClient()->EnableBreakpadForProcess(), therefore
   // it's ok to add switch to every process here.
   if (breakpad::IsCrashReporterEnabled()) {
     command_line->AppendSwitch(switches::kEnableCrashReporter);
   }
+#endif  // defined(OS_ANDROID)
 #endif  // !defined(OS_FUCHSIA)
 
   // Command-line for different processes.
@@ -706,14 +744,15 @@ void CastContentBrowserClient::ExposeInterfacesToMediaService(
       std::move(application_session_id)));
 }
 
-void CastContentBrowserClient::RegisterInProcessServices(
-    StaticServiceMap* services,
-    content::ServiceManagerConnection* connection) {
+void CastContentBrowserClient::HandleServiceRequest(
+    const std::string& service_name,
+    service_manager::mojom::ServiceRequest request) {
 #if BUILDFLAG(ENABLE_MOJO_MEDIA_IN_BROWSER_PROCESS)
-  service_manager::EmbeddedServiceInfo info;
-  info.factory = base::Bind(&CreateMediaService, base::Unretained(this));
-  info.task_runner = GetMediaTaskRunner();
-  services->insert(std::make_pair(::media::mojom::kMediaServiceName, info));
+  if (service_name == ::media::mojom::kMediaServiceName) {
+    GetMediaTaskRunner()->PostTask(
+        FROM_HERE,
+        base::BindOnce(&CreateMediaService, this, std::move(request)));
+  }
 #endif
 }
 
@@ -745,9 +784,8 @@ void CastContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
       kAndroidPakDescriptor,
       base::GlobalDescriptors::GetInstance()->Get(kAndroidPakDescriptor),
       base::GlobalDescriptors::GetInstance()->GetRegion(kAndroidPakDescriptor));
-  crash_reporter::ChildExitObserver::GetInstance()->BrowserChildProcessStarted(
-      child_process_id, mappings);
-#elif !defined(OS_FUCHSIA)
+#endif  // defined(OS_ANDROID)
+#if !defined(OS_FUCHSIA)
   // TODO(crbug.com/753619): Enable crash reporting on Fuchsia.
   int crash_signal_fd = GetCrashSignalFD(command_line);
   if (crash_signal_fd >= 0) {
@@ -791,7 +829,12 @@ scoped_refptr<net::SSLPrivateKey> CastContentBrowserClient::DeviceKey() {
   return nullptr;
 }
 
-#if !defined(OS_ANDROID) && !defined(OS_FUCHSIA)
+#if defined(OS_ANDROID)
+int CastContentBrowserClient::GetCrashSignalFD(
+    const base::CommandLine& command_line) {
+  return crashpad::CrashHandlerHost::Get()->GetDeathSignalSocket();
+}
+#elif !defined(OS_FUCHSIA)
 int CastContentBrowserClient::GetCrashSignalFD(
     const base::CommandLine& command_line) {
   std::string process_type =
@@ -829,7 +872,7 @@ CastContentBrowserClient::CreateCrashHandlerHost(
   crash_handler->StartUploaderThread();
   return crash_handler;
 }
-#endif  // !defined(OS_ANDROID)
+#endif  // defined(OS_ANDROID)
 
 std::vector<std::unique_ptr<content::NavigationThrottle>>
 CastContentBrowserClient::CreateThrottlesForNavigation(
@@ -851,6 +894,10 @@ CastContentBrowserClient::CreateThrottlesForNavigation(
   }
 #endif
   return throttles;
+}
+
+std::string CastContentBrowserClient::GetUserAgent() const {
+  return chromecast::shell::GetUserAgent();
 }
 
 }  // namespace shell

@@ -31,6 +31,7 @@
 #include "services/network/public/mojom/fetch_api.mojom-shared.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "services/service_manager/public/mojom/interface_provider.mojom-blink.h"
+#include "third_party/blink/public/mojom/script/script_type.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_cache_options.h"
 #include "third_party/blink/renderer/core/core_export.h"
@@ -38,7 +39,6 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
 #include "third_party/blink/renderer/core/frame/dom_timer_coordinator.h"
-#include "third_party/blink/renderer/core/frame/dom_window_base64.h"
 #include "third_party/blink/renderer/core/messaging/blink_transferable_message.h"
 #include "third_party/blink/renderer/core/script/script.h"
 #include "third_party/blink/renderer/core/workers/worker_animation_frame_provider.h"
@@ -61,6 +61,8 @@ class FontFaceSet;
 class OffscreenFontSelector;
 class V8VoidFunction;
 class WorkerClassicScriptLoader;
+class StringOrTrustedScriptURL;
+class TrustedTypePolicyFactory;
 class WorkerLocation;
 class WorkerNavigator;
 class WorkerThread;
@@ -69,8 +71,7 @@ struct GlobalScopeCreationParams;
 class CORE_EXPORT WorkerGlobalScope
     : public WorkerOrWorkletGlobalScope,
       public ActiveScriptWrappable<WorkerGlobalScope>,
-      public Supplementable<WorkerGlobalScope>,
-      public DOMWindowBase64 {
+      public Supplementable<WorkerGlobalScope> {
   DEFINE_WRAPPERTYPEINFO();
   USING_GARBAGE_COLLECTED_MIXIN(WorkerGlobalScope);
 
@@ -94,7 +95,7 @@ class CORE_EXPORT WorkerGlobalScope
   // WorkerGlobalScope
   WorkerGlobalScope* self() { return this; }
   WorkerLocation* location() const;
-  WorkerNavigator* navigator() const;
+  WorkerNavigator* navigator() const override;
   void close();
   bool isSecureContextForBindings() const {
     return ExecutionContext::IsSecureContext();
@@ -103,11 +104,13 @@ class CORE_EXPORT WorkerGlobalScope
   String origin() const;
 
   DEFINE_ATTRIBUTE_EVENT_LISTENER(error, kError);
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(languagechange, kLanguagechange);
   DEFINE_ATTRIBUTE_EVENT_LISTENER(rejectionhandled, kRejectionhandled);
   DEFINE_ATTRIBUTE_EVENT_LISTENER(unhandledrejection, kUnhandledrejection);
 
   // WorkerUtils
-  virtual void importScripts(const Vector<String>& urls, ExceptionState&);
+  virtual void importScripts(const HeapVector<StringOrTrustedScriptURL>& urls,
+                             ExceptionState&);
 
   // ExecutionContext
   const KURL& Url() const final { return url_; }
@@ -174,8 +177,7 @@ class CORE_EXPORT WorkerGlobalScope
     return animation_frame_provider_;
   }
 
-  // Returns true when this is a nested worker.
-  virtual bool IsNestedWorker() const { return false; }
+  TrustedTypePolicyFactory* trustedTypes();
 
  protected:
   WorkerGlobalScope(std::unique_ptr<GlobalScopeCreationParams>,
@@ -202,9 +204,14 @@ class CORE_EXPORT WorkerGlobalScope
 
   void AddPausedCall(base::OnceClosure closure);
 
-  ScriptType GetScriptType() const { return script_type_; }
+  void MaybeRunPausedTasks();
+
+  mojom::ScriptType GetScriptType() const { return script_type_; }
 
  private:
+  virtual void importScriptsFromStrings(const Vector<String>& urls,
+                                        ExceptionState&);
+
   void SetWorkerSettings(std::unique_ptr<WorkerSettings>);
 
   // Returns true if this worker script is supposed to be fetched on the main
@@ -248,7 +255,7 @@ class CORE_EXPORT WorkerGlobalScope
   void TasksWereUnpaused() override;
 
   const KURL url_;
-  const ScriptType script_type_;
+  const mojom::ScriptType script_type_;
   const String user_agent_;
   const base::UnguessableToken parent_devtools_token_;
   const V8CacheOptions v8_cache_options_;
@@ -256,6 +263,7 @@ class CORE_EXPORT WorkerGlobalScope
 
   mutable Member<WorkerLocation> location_;
   mutable TraceWrapperMember<WorkerNavigator> navigator_;
+  Member<TrustedTypePolicyFactory> trusted_types_;
 
   WorkerThread* thread_;
 

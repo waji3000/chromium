@@ -23,6 +23,7 @@
 #include "ash/autoclick/autoclick_controller.h"
 #include "ash/cast_config_controller.h"
 #include "ash/components/tap_visualizer/public/mojom/constants.mojom.h"
+#include "ash/contained_shell/contained_shell_controller.h"
 #include "ash/dbus/ash_dbus_services.h"
 #include "ash/detachable_base/detachable_base_handler.h"
 #include "ash/detachable_base/detachable_base_notification_controller.h"
@@ -96,7 +97,7 @@
 #include "ash/system/caps_lock_notification_controller.h"
 #include "ash/system/keyboard_brightness/keyboard_brightness_controller.h"
 #include "ash/system/keyboard_brightness_control_delegate.h"
-#include "ash/system/locale/locale_notification_controller.h"
+#include "ash/system/locale/locale_update_controller.h"
 #include "ash/system/message_center/message_center_controller.h"
 #include "ash/system/model/system_tray_model.h"
 #include "ash/system/network/sms_observer.h"
@@ -131,7 +132,6 @@
 #include "ash/wm/cursor_manager_chromeos.h"
 #include "ash/wm/event_client_impl.h"
 #include "ash/wm/immersive_context_ash.h"
-#include "ash/wm/immersive_handler_factory_ash.h"
 #include "ash/wm/lock_state_controller.h"
 #include "ash/wm/mru_window_tracker.h"
 #include "ash/wm/native_cursor_manager_ash.h"
@@ -161,7 +161,7 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/memory/ptr_util.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "base/trace_event/trace_event.h"
 #include "chromeos/chromeos_features.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -241,6 +241,7 @@ class AshVisibilityController : public ::wm::VisibilityController {
 // Registers prefs whose default values are same in user and signin prefs.
 void RegisterProfilePrefs(PrefRegistrySimple* registry, bool for_test) {
   AccessibilityController::RegisterProfilePrefs(registry, for_test);
+  AssistantController::RegisterProfilePrefs(registry);
   BluetoothPowerController::RegisterProfilePrefs(registry);
   DockedMagnifierController::RegisterProfilePrefs(registry, for_test);
   LoginScreenController::RegisterProfilePrefs(registry, for_test);
@@ -511,10 +512,6 @@ bool Shell::HasPrimaryStatusArea() {
   return !!GetPrimaryRootWindowController()->GetStatusAreaWidget();
 }
 
-SystemTray* Shell::GetPrimarySystemTray() {
-  return GetPrimaryRootWindowController()->GetSystemTray();
-}
-
 void Shell::SetLargeCursorSizeInDip(int large_cursor_size_in_dip) {
   window_tree_host_manager_->cursor_window_controller()
       ->SetLargeCursorSizeInDip(large_cursor_size_in_dip);
@@ -661,15 +658,14 @@ Shell::Shell(std::unique_ptr<ShellDelegate> shell_delegate,
           std::make_unique<system::BrightnessControllerChromeos>()),
       cast_config_(std::make_unique<CastConfigController>()),
       connector_(connector),
+      contained_shell_controller_(std::make_unique<ContainedShellController>()),
       first_run_helper_(std::make_unique<FirstRunHelper>()),
       focus_cycler_(std::make_unique<FocusCycler>()),
       ime_controller_(std::make_unique<ImeController>()),
       immersive_context_(std::make_unique<ImmersiveContextAsh>()),
       keyboard_brightness_control_delegate_(
           std::make_unique<KeyboardBrightnessController>()),
-      locale_notification_controller_(
-          std::make_unique<LocaleNotificationController>()),
-      login_screen_controller_(std::make_unique<LoginScreenController>()),
+      locale_update_controller_(std::make_unique<LocaleUpdateController>()),
       media_controller_(std::make_unique<MediaController>(connector)),
       new_window_controller_(std::make_unique<NewWindowController>()),
       session_controller_(std::make_unique<SessionController>(connector)),
@@ -680,7 +676,6 @@ Shell::Shell(std::unique_ptr<ShellDelegate> shell_delegate,
       system_tray_notifier_(std::make_unique<SystemTrayNotifier>()),
       vpn_list_(std::make_unique<VpnList>()),
       window_cycle_controller_(std::make_unique<WindowCycleController>()),
-      window_selector_controller_(std::make_unique<WindowSelectorController>()),
       display_configurator_(std::make_unique<display::DisplayConfigurator>()),
       display_output_protection_(std::make_unique<DisplayOutputProtection>(
           display_configurator_.get())),
@@ -689,6 +684,8 @@ Shell::Shell(std::unique_ptr<ShellDelegate> shell_delegate,
   // Ash doesn't properly remove pre-target-handlers.
   ui::EventHandler::DisableCheckTargets();
 
+  login_screen_controller_ =
+      std::make_unique<LoginScreenController>(system_tray_notifier_.get());
   display_manager_.reset(ScreenAsh::CreateDisplayManager());
   window_tree_host_manager_ = std::make_unique<WindowTreeHostManager>();
   user_metrics_recorder_ = std::make_unique<UserMetricsRecorder>();
@@ -820,6 +817,7 @@ Shell::~Shell() {
   // Close all widgets (including the shelf) and destroy all window containers.
   CloseAllRootWindowChildWindows();
 
+  login_screen_controller_.reset();
   system_notification_controller_.reset();
   // Should be destroyed after Shelf and |system_notification_controller_|.
   system_tray_model_.reset();
@@ -1025,8 +1023,6 @@ void Shell::Init(
 
   wallpaper_controller_ = std::make_unique<WallpaperController>();
 
-  immersive_handler_factory_ = std::make_unique<ImmersiveHandlerFactoryAsh>();
-
   window_positioner_ = std::make_unique<WindowPositioner>();
 
   native_cursor_manager_ = new NativeCursorManagerAsh;
@@ -1070,7 +1066,9 @@ void Shell::Init(
       std::make_unique<::wm::FocusController>(new wm::AshFocusRules());
   focus_controller_->AddObserver(this);
 
-  screen_position_controller_.reset(new ScreenPositionController);
+  window_selector_controller_ = std::make_unique<WindowSelectorController>();
+
+  screen_position_controller_ = std::make_unique<ScreenPositionController>();
 
   // Must be before CreatePrimaryHost().
   window_service_owner_ =
@@ -1097,8 +1095,7 @@ void Shell::Init(
 
   // |app_list_controller_| is put after |tablet_mode_controller_| as the former
   // uses the latter in constructor.
-  app_list_controller_ = std::make_unique<AppListControllerImpl>(
-      window_service_owner_->window_service());
+  app_list_controller_ = std::make_unique<AppListControllerImpl>();
   shelf_controller_ = std::make_unique<ShelfController>();
 
   magnifier_key_scroll_handler_ = MagnifierKeyScroller::CreateHandler();
@@ -1182,12 +1179,7 @@ void Shell::Init(
         std::make_unique<DockedMagnifierController>();
   }
 
-  viz::mojom::VideoDetectorObserverPtr observer;
-  video_detector_ =
-      std::make_unique<VideoDetector>(mojo::MakeRequest(&observer));
-  aura_env_->context_factory_private()
-      ->GetHostFrameSinkManager()
-      ->AddVideoDetectorObserver(std::move(observer));
+  video_detector_ = std::make_unique<VideoDetector>();
 
   tooltip_controller_.reset(new views::corewm::TooltipController(
       std::unique_ptr<views::corewm::Tooltip>(new views::corewm::TooltipAura)));
@@ -1262,9 +1254,11 @@ void Shell::Init(
   // |connector_| is null in unit tests.
   if (connector_ &&
       base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kShowTaps)) {
-    // The show taps feature is a separate mojo app.
+    // The show taps feature is a separate service.
     // TODO(jamescook): Make this work in ash_shell_with_content.
-    connector_->StartService(tap_visualizer::mojom::kServiceName);
+    // TODO(https://crbug.com/904148): This should not use |WarmService()|.
+    connector_->WarmService(service_manager::ServiceFilter::ByName(
+        tap_visualizer::mojom::kServiceName));
   }
 
   if (!::features::IsMultiProcessMash()) {
@@ -1437,6 +1431,11 @@ void Shell::OnSessionStateChanged(session_manager::SessionState state) {
   // Disable drag-and-drop during OOBE and GAIA login screens by only enabling
   // the controller when the session is active. https://crbug.com/464118
   drag_drop_controller_->set_enabled(is_session_active);
+
+  if (base::FeatureList::IsEnabled(features::kContainedShell) &&
+      is_session_active) {
+    contained_shell_controller_->LaunchContainedShell();
+  }
 }
 
 void Shell::OnLoginStatusChanged(LoginStatus login_status) {

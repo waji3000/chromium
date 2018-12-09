@@ -28,6 +28,7 @@
 #include "chrome/browser/printing/print_preview_data_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/chrome_pages.h"
+#include "chrome/browser/ui/webui/dark_mode_handler.h"
 #include "chrome/browser/ui/webui/metrics_handler.h"
 #include "chrome/browser/ui/webui/print_preview/print_preview_handler.h"
 #include "chrome/browser/ui/webui/theme_source.h"
@@ -179,8 +180,6 @@ void AddPrintPreviewStrings(content::WebUIDataSource* source) {
   source->AddLocalizedString("learnMore", IDS_LEARN_MORE);
   source->AddLocalizedString("loading", IDS_PRINT_PREVIEW_LOADING);
   source->AddLocalizedString("noPlugin", IDS_PRINT_PREVIEW_NO_PLUGIN);
-  source->AddLocalizedString("launchNativeDialog",
-                             IDS_PRINT_PREVIEW_NATIVE_DIALOG);
   source->AddLocalizedString("previewFailed", IDS_PRINT_PREVIEW_FAILED);
   source->AddLocalizedString("invalidPrinterSettings",
                              IDS_PRINT_INVALID_PRINTER_SETTINGS);
@@ -214,15 +213,9 @@ void AddPrintPreviewStrings(content::WebUIDataSource* source) {
   source->AddLocalizedString("optionTwoSided",
                              IDS_PRINT_PREVIEW_OPTION_TWO_SIDED);
   source->AddLocalizedString("pagesLabel", IDS_PRINT_PREVIEW_PAGES_LABEL);
-  source->AddLocalizedString("pageRangeTextBox",
-                             IDS_PRINT_PREVIEW_PAGE_RANGE_TEXT);
-  source->AddLocalizedString("pageRangeRadio",
-                             IDS_PRINT_PREVIEW_PAGE_RANGE_RADIO);
   source->AddLocalizedString("printToPDF", IDS_PRINT_PREVIEW_PRINT_TO_PDF);
   source->AddLocalizedString("printPreviewSummaryFormatShort",
                              IDS_PRINT_PREVIEW_SUMMARY_FORMAT_SHORT);
-  source->AddLocalizedString("printPreviewSummaryFormatLong",
-                             IDS_PRINT_PREVIEW_SUMMARY_FORMAT_LONG);
   source->AddLocalizedString("printPreviewSheetsLabelSingular",
                              IDS_PRINT_PREVIEW_SHEETS_LABEL_SINGULAR);
   source->AddLocalizedString("printPreviewSheetsLabelPlural",
@@ -245,20 +238,10 @@ void AddPrintPreviewStrings(content::WebUIDataSource* source) {
       "resolveExtensionUSBErrorMessage",
       IDS_PRINT_PREVIEW_RESOLVE_EXTENSION_USB_ERROR_MESSAGE);
   source->AddString(
-      "printWithCloudPrintWait",
-      l10n_util::GetStringFUTF16(
-          IDS_PRINT_PREVIEW_PRINT_WITH_CLOUD_PRINT_WAIT,
-          l10n_util::GetStringUTF16(IDS_GOOGLE_CLOUD_PRINT)));
-  source->AddString(
-      "noDestsPromoLearnMoreUrl",
-      chrome::kCloudPrintNoDestinationsLearnMoreURL);
-  source->AddString(
       "settingsPrintingPage",
       chrome::GetSettingsUrl(chrome::kPrintingSettingsSubPage).spec());
   source->AddString("gcpCertificateErrorLearnMoreURL",
                     chrome::kCloudPrintCertificateErrorLearnMoreURL);
-  source->AddLocalizedString("pageRangeLimitInstruction",
-                             IDS_PRINT_PREVIEW_PAGE_RANGE_LIMIT_INSTRUCTION);
   source->AddLocalizedString(
       "pageRangeLimitInstructionWithValue",
       IDS_PRINT_PREVIEW_PAGE_RANGE_LIMIT_INSTRUCTION_WITH_VALUE);
@@ -311,8 +294,6 @@ void AddPrintPreviewStrings(content::WebUIDataSource* source) {
                              IDS_PRINT_PREVIEW_SEARCH_BOX_PLACEHOLDER);
   source->AddLocalizedString("noDestinationsMessage",
                              IDS_PRINT_PREVIEW_NO_DESTINATIONS_MESSAGE);
-  source->AddLocalizedString("showAllButtonText",
-                             IDS_PRINT_PREVIEW_SHOW_ALL_BUTTON_TEXT);
   source->AddLocalizedString("destinationCount",
                              IDS_PRINT_PREVIEW_DESTINATION_COUNT);
   source->AddLocalizedString("recentDestinationsTitle",
@@ -335,8 +316,6 @@ void AddPrintPreviewStrings(content::WebUIDataSource* source) {
                              IDS_PRINT_PREVIEW_NO_LONGER_SUPPORTED);
   source->AddLocalizedString("couldNotPrint",
                              IDS_PRINT_PREVIEW_COULD_NOT_PRINT);
-  source->AddLocalizedString("registerPromoButtonText",
-                             IDS_PRINT_PREVIEW_REGISTER_PROMO_BUTTON_TEXT);
   source->AddLocalizedString(
       "extensionDestinationIconTooltip",
       IDS_PRINT_PREVIEW_EXTENSION_DESTINATION_ICON_TOOLTIP);
@@ -352,10 +331,6 @@ void AddPrintPreviewStrings(content::WebUIDataSource* source) {
       "advancedSettingsDialogConfirm",
       IDS_PRINT_PREVIEW_ADVANCED_SETTINGS_DIALOG_CONFIRM);
   source->AddLocalizedString("cancel", IDS_CANCEL);
-  source->AddLocalizedString("advancedOptionsLabel",
-                             IDS_PRINT_PREVIEW_ADVANCED_OPTIONS_LABEL);
-  source->AddLocalizedString("showAdvancedOptions",
-                             IDS_PRINT_PREVIEW_SHOW_ADVANCED_OPTIONS);
   source->AddLocalizedString("newShowAdvancedOptions",
                              IDS_PRINT_PREVIEW_NEW_SHOW_ADVANCED_OPTIONS);
 
@@ -370,7 +345,6 @@ void AddPrintPreviewStrings(content::WebUIDataSource* source) {
   source->AddLocalizedString("registerPrinterInformationMessage",
                              IDS_CLOUD_PRINT_REGISTER_PRINTER_INFORMATION);
   source->AddLocalizedString("moreOptionsLabel", IDS_MORE_OPTIONS_LABEL);
-  source->AddLocalizedString("lessOptionsLabel", IDS_LESS_OPTIONS_LABEL);
   source->AddLocalizedString("managedOption",
                              IDS_PRINT_PREVIEW_MANAGED_OPTION_TEXT);
 #if defined(OS_CHROMEOS)
@@ -390,25 +364,6 @@ void AddPrintPreviewStrings(content::WebUIDataSource* source) {
   source->AddLocalizedString("openPdfInPreviewOption",
                              IDS_PRINT_PREVIEW_OPEN_PDF_IN_PREVIEW_APP);
 #endif
-}
-
-void AddPrintPreviewImages(content::WebUIDataSource* source) {
-  source->AddResourcePath("images/1x/printer.png",
-                          IDR_PRINT_PREVIEW_IMAGES_1X_PRINTER);
-  source->AddResourcePath("images/2x/printer.png",
-                          IDR_PRINT_PREVIEW_IMAGES_2X_PRINTER);
-  source->AddResourcePath("images/1x/printer_shared.png",
-                          IDR_PRINT_PREVIEW_IMAGES_1X_PRINTER_SHARED);
-  source->AddResourcePath("images/2x/printer_shared.png",
-                          IDR_PRINT_PREVIEW_IMAGES_2X_PRINTER_SHARED);
-  source->AddResourcePath("images/business.svg",
-                          IDR_PRINT_PREVIEW_IMAGES_ENTERPRISE_PRINTER);
-  source->AddResourcePath("images/google_doc.png",
-                          IDR_PRINT_PREVIEW_IMAGES_GOOGLE_DOC);
-  source->AddResourcePath("images/pdf.png", IDR_PRINT_PREVIEW_IMAGES_PDF);
-  source->AddResourcePath("images/mobile.png", IDR_PRINT_PREVIEW_IMAGES_MOBILE);
-  source->AddResourcePath("images/mobile_shared.png",
-                          IDR_PRINT_PREVIEW_IMAGES_MOBILE_SHARED);
 }
 
 void AddPrintPreviewFlags(content::WebUIDataSource* source, Profile* profile) {
@@ -461,8 +416,6 @@ void SetupPrintPreviewPlugin(content::WebUIDataSource* source) {
                           IDR_PDF_GESTURE_DETECTOR_JS);
   source->AddResourcePath("pdf/browser_api.js", IDR_PDF_BROWSER_API_JS);
   source->AddResourcePath("pdf/metrics.js", IDR_PDF_METRICS_JS);
-  source->AddResourcePath("pdf/coords_transformer.js",
-                          IDR_PDF_COORDS_TRANSFORMER_JS);
 
   source->AddResourcePath("pdf/elements/shared-vars.html",
                           IDR_PDF_SHARED_VARS_HTML);
@@ -532,11 +485,10 @@ void SetupPrintPreviewPlugin(content::WebUIDataSource* source) {
   source->OverrideContentSecurityPolicyObjectSrc("object-src 'self';");
 }
 
-content::WebUIDataSource* CreateNewPrintPreviewUISource(Profile* profile) {
+content::WebUIDataSource* CreatePrintPreviewUISource(Profile* profile) {
   content::WebUIDataSource* source =
       content::WebUIDataSource::Create(chrome::kChromeUIPrintHost);
   AddPrintPreviewStrings(source);
-  AddPrintPreviewImages(source);
   source->SetJsonPath("strings.js");
 #if BUILDFLAG(OPTIMIZE_WEBUI)
   source->AddResourcePath("crisper.js", IDR_PRINT_PREVIEW_CRISPER_JS);
@@ -552,19 +504,6 @@ content::WebUIDataSource* CreateNewPrintPreviewUISource(Profile* profile) {
   }
   source->SetDefaultResource(IDR_PRINT_PREVIEW_NEW_HTML);
 #endif
-  SetupPrintPreviewPlugin(source);
-  AddPrintPreviewFlags(source, profile);
-  return source;
-}
-
-content::WebUIDataSource* CreatePrintPreviewUISource(Profile* profile) {
-  content::WebUIDataSource* source =
-      content::WebUIDataSource::Create(chrome::kChromeUIPrintHost);
-  AddPrintPreviewStrings(source);
-  source->SetJsonPath("strings.js");
-  source->AddResourcePath("print_preview.js", IDR_PRINT_PREVIEW_JS);
-  AddPrintPreviewImages(source);
-  source->SetDefaultResource(IDR_PRINT_PREVIEW_HTML);
   SetupPrintPreviewPlugin(source);
   AddPrintPreviewFlags(source, profile);
   return source;
@@ -594,16 +533,9 @@ PrintPreviewUI::PrintPreviewUI(content::WebUI* web_ui)
       handler_(CreatePrintPreviewHandlers(web_ui)) {
   // Set up the chrome://print/ data source.
   Profile* profile = Profile::FromWebUI(web_ui);
-
-  bool new_print_preview_enabled =
-      base::FeatureList::IsEnabled(features::kNewPrintPreview) ||
-      base::FeatureList::IsEnabled(features::kExperimentalUi);
-  if (new_print_preview_enabled) {
-    content::WebUIDataSource::Add(profile,
-                                  CreateNewPrintPreviewUISource(profile));
-  } else {
-    content::WebUIDataSource::Add(profile, CreatePrintPreviewUISource(profile));
-  }
+  content::WebUIDataSource* source = CreatePrintPreviewUISource(profile);
+  DarkModeHandler::Initialize(web_ui, source);
+  content::WebUIDataSource::Add(profile, source);
 
   // Set up the chrome://theme/ source.
   content::URLDataSource::Add(profile, std::make_unique<ThemeSource>(profile));

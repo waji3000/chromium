@@ -61,6 +61,7 @@ jumbo_static_library("sync") {
     "base/report_unrecoverable_error.cc",
     "base/report_unrecoverable_error.h",
     "base/stop_source.h",
+    "base/storage_option.h",
     "base/sync_base_switches.cc",
     "base/sync_base_switches.h",
     "base/sync_prefs.cc",
@@ -140,6 +141,8 @@ jumbo_static_library("sync") {
     "driver/startup_controller.h",
     "driver/sync_api_component_factory.cc",
     "driver/sync_api_component_factory.h",
+    "driver/sync_auth_util.cc",
+    "driver/sync_auth_util.h",
     "driver/sync_client.cc",
     "driver/sync_client.h",
     "driver/sync_driver_switches.cc",
@@ -157,6 +160,7 @@ jumbo_static_library("sync") {
     "driver/sync_token_status.cc",
     "driver/sync_token_status.h",
     "driver/sync_type_preference_provider.h",
+    "driver/sync_user_settings.h",
     "driver/sync_util.cc",
     "driver/sync_util.h",
     "driver/syncable_service_based_model_type_controller.cc",
@@ -567,6 +571,7 @@ jumbo_static_library("sync") {
   deps = [
     "//base:i18n",
     "//components/data_use_measurement/core",
+    "//components/invalidation/impl:feature_list",
     "//components/invalidation/public",
     "//components/keyed_service/core",
     "//components/metrics",
@@ -797,6 +802,10 @@ static_library("test_support_driver") {
     "driver/sync_api_component_factory_mock.h",
     "driver/sync_client_mock.cc",
     "driver/sync_client_mock.h",
+    "driver/test_sync_service.cc",
+    "driver/test_sync_service.h",
+    "driver/test_sync_user_settings.cc",
+    "driver/test_sync_user_settings.h",
     "engine/fake_sync_engine.cc",
     "engine/fake_sync_engine.h",
     "engine/mock_sync_engine.cc",
@@ -812,7 +821,7 @@ static_library("test_support_driver") {
   deps = [
     ":sync",
     ":test_support_engine",
-    "//components/signin/core/browser:account_info",
+    "//components/signin/core/browser:shared",
     "//components/sync_preferences:test_support",
     "//components/version_info",
     "//google_apis",
@@ -1071,7 +1080,7 @@ if (is_android) {
     testonly = true
     jni_package = "sync/test/fake_server"
     sources = [
-      "//chrome/android/sync_shell/javatests/src/org/chromium/chrome/browser/sync/FakeServerHelper.java",
+      "//chrome/android/javatests/src/org/chromium/chrome/browser/sync/FakeServerHelper.java",
     ]
   }
 

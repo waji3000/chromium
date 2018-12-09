@@ -33,6 +33,8 @@ class CORE_EXPORT TopDocumentRootScrollerController
  public:
   static TopDocumentRootScrollerController* Create(Page&);
 
+  TopDocumentRootScrollerController(Page&);
+
   void Trace(blink::Visitor*);
 
   // This class needs to be informed of changes to compositing so that it can
@@ -46,7 +48,7 @@ class CORE_EXPORT TopDocumentRootScrollerController
   // This method needs to be called to create a ViewportScrollCallback that
   // will be used to apply viewport scrolling actions like browser controls
   // movement and overscroll glow.
-  void InitializeViewportScrollCallback(RootFrameViewport&);
+  void InitializeViewportScrollCallback(RootFrameViewport&, Document&);
 
   // Returns true if the given ScrollStateCallback is the
   // ViewportScrollCallback managed by this class.
@@ -63,8 +65,8 @@ class CORE_EXPORT TopDocumentRootScrollerController
 
   PaintLayer* RootScrollerPaintLayer() const;
 
-  // Returns the Node that's the global root scroller.  See README.md for
-  // the difference between this and the root scroller types in
+  // Returns the Node that's the global root scroller.  See README.md for the
+  // difference between this and the root scroller types in
   // RootScrollerController.
   Node* GlobalRootScroller() const;
 
@@ -84,18 +86,19 @@ class CORE_EXPORT TopDocumentRootScrollerController
   IntSize RootScrollerVisibleArea() const;
 
  private:
-  TopDocumentRootScrollerController(Page&);
-
   // Calculates the Node that should be the globalRootScroller. On a simple
   // page, this will simply the root frame's effectiveRootScroller but if the
   // root scroller is set to an iframe, this will then descend into the iframe
   // to find its effective root scroller.
   Node* FindGlobalRootScroller();
 
-  // Should be called to ensure the correct element is currently set as the
-  // global root scroller and that all appropriate state changes are made if
-  // it changes.
-  void RecomputeGlobalRootScroller();
+  // Should be called to set a new node as the global root scroller and that
+  // all appropriate state changes are made if it changes.
+  void UpdateGlobalRootScroller(Node* new_global_root_scroller);
+
+  // Updates the is_global_root_scroller bits in all the necessary places when
+  // the global root scsroller changes.
+  void UpdateCachedBits(Node* old_global, Node* new_global);
 
   Document* TopDocument() const;
 

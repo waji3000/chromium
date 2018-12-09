@@ -213,8 +213,6 @@ class CORE_EXPORT NGBoxFragmentBuilder final
     DISALLOW_NEW();
     // Linebox that contains start_fragment.
     const NGPhysicalLineBoxFragment* start_linebox_fragment;
-    // Offset of start_linebox from containing block.
-    NGLogicalOffset start_linebox_offset;
     // Start fragment of inline containing block.
     const NGPhysicalFragment* start_fragment;
     // Start fragment rect combined with rectangles of all fragments
@@ -222,14 +220,12 @@ class CORE_EXPORT NGBoxFragmentBuilder final
     NGPhysicalOffsetRect start_fragment_union_rect;
     // end_** variables are end fragment counterparts to start fragment.
     const NGPhysicalLineBoxFragment* end_linebox_fragment;
-    NGLogicalOffset end_linebox_offset;
     const NGPhysicalFragment* end_fragment;
     NGPhysicalOffsetRect end_fragment_union_rect;
   };
 
   void ComputeInlineContainerFragments(
-      HashMap<const LayoutObject*, FragmentPair>* inline_container_fragments,
-      NGLogicalSize* container_size);
+      HashMap<const LayoutObject*, FragmentPair>* inline_container_fragments);
 
  private:
   scoped_refptr<NGLayoutResult> ToBoxFragment(WritingMode);
@@ -258,7 +254,7 @@ class CORE_EXPORT NGBoxFragmentBuilder final
   // The break-after value of the previous in-flow sibling.
   EBreakBetween previous_break_after_ = EBreakBetween::kAuto;
 
-  Vector<NGBaseline> baselines_;
+  NGBaselineList baselines_;
 
   NGBorderEdges border_edges_;
 

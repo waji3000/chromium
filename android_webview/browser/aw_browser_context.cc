@@ -140,6 +140,9 @@ base::FilePath AwBrowserContext::GetCacheDir() {
 void AwBrowserContext::PreMainMessageLoopRun(net::NetLog* net_log) {
   FilePath cache_path = GetCacheDir();
 
+  // TODO(ntfschr): set this to nullptr when the NetworkService is disabled,
+  // once we remove a dependency on url_request_context_getter_
+  // (http://crbug.com/887538).
   url_request_context_getter_ = new AwURLRequestContextGetter(
       cache_path, context_storage_path_.Append(kChannelIDFilename),
       CreateProxyConfigService(), user_pref_service_.get(), net_log);
@@ -210,10 +213,6 @@ base::FilePath AwBrowserContext::GetPath() const {
   return context_storage_path_;
 }
 
-base::FilePath AwBrowserContext::GetCachePath() const {
-  return GetCacheDir();
-}
-
 bool AwBrowserContext::IsOffTheRecord() const {
   // Android WebView does not support off the record profile yet.
   return false;
@@ -221,8 +220,7 @@ bool AwBrowserContext::IsOffTheRecord() const {
 
 content::ResourceContext* AwBrowserContext::GetResourceContext() {
   if (!resource_context_) {
-    resource_context_.reset(
-        new AwResourceContext(url_request_context_getter_.get()));
+    resource_context_.reset(new AwResourceContext);
   }
   return resource_context_.get();
 }

@@ -28,6 +28,7 @@
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_params.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_pref_names.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_switches.h"
+#include "components/data_reduction_proxy/core/common/data_reduction_proxy_throttle_manager.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_request_headers.h"
 #include "net/url_request/http_user_agent_settings.h"
@@ -252,8 +253,10 @@ void DataReductionProxyIOData::SetProxyPrefs(bool enabled, bool at_startup) {
 
   // If Data Saver is disabled, reset data reduction proxy state.
   if (!enabled) {
-    // TODO(crbug.com/721403): Make DRP work with network service.
-    if (!base::FeatureList::IsEnabled(network::features::kNetworkService)) {
+    if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
+      if (proxy_config_client_)
+        proxy_config_client_->ClearBadProxiesCache();
+    } else {
       net::ProxyResolutionService* proxy_resolution_service =
           url_request_context_getter_->GetURLRequestContext()
               ->proxy_resolution_service();
@@ -370,6 +373,7 @@ void DataReductionProxyIOData::OnProxyConfigUpdated() {
       base::BindOnce(&DataReductionProxyService::SetConfiguredProxiesOnUI,
                      service_, config_->GetAllConfiguredProxies()));
   UpdateCustomProxyConfig();
+  UpdateThrottleConfig();
 }
 
 network::mojom::CustomProxyConfigPtr
@@ -413,6 +417,24 @@ void DataReductionProxyIOData::UpdateCustomProxyConfig() {
       CreateCustomProxyConfig(config_->GetProxiesForHttp()));
 }
 
+void DataReductionProxyIOData::UpdateThrottleConfig() {
+  if (drp_throttle_config_observers_.empty())
+    return;
+
+  auto config = CreateThrottleConfig();
+
+  drp_throttle_config_observers_.ForAllPtrs(
+      [&config](mojom::DataReductionProxyThrottleConfigObserver* observer) {
+        observer->OnThrottleConfigChanged(config->Clone());
+      });
+}
+
+mojom::DataReductionProxyThrottleConfigPtr
+DataReductionProxyIOData::CreateThrottleConfig() const {
+  return DataReductionProxyThrottleManager::CreateConfig(
+      config_->GetProxiesForHttp());
+}
+
 void DataReductionProxyIOData::OnEffectiveConnectionTypeChanged(
     net::EffectiveConnectionType type) {
   DCHECK(io_task_runner_->BelongsToCurrentThread());
@@ -438,22 +460,59 @@ void DataReductionProxyIOData::SetCustomProxyConfigClient(
   UpdateCustomProxyConfig();
 }
 
+DataReductionProxyThrottleManager*
+DataReductionProxyIOData::GetThrottleManager() {
+  if (!throttle_manager_) {
+    mojom::DataReductionProxyPtr drp;
+    Clone(mojo::MakeRequest(&drp));
+    throttle_manager_ = std::make_unique<DataReductionProxyThrottleManager>(
+        std::move(drp), CreateThrottleConfig());
+  }
+
+  return throttle_manager_.get();
+}
+
 void DataReductionProxyIOData::MarkProxiesAsBad(
     base::TimeDelta bypass_duration,
     const net::ProxyList& bad_proxies,
     mojom::DataReductionProxy::MarkProxiesAsBadCallback callback) {
-  // TODO(https://crbug.com/721403): Do sanity checks on |bypass_duration| and
-  // |bad_proxies|.
-  //
-  // In particular need to enforce that only data reduction
-  // proxies are permitted to be marked as bad. Allowing renderers to
-  // arbitrarily bypass *any* proxy would be a more powerful capability.
+  // Sanity check the inputs, as this data may originate from a lower-privilege
+  // process (renderer).
+
+  // The current policy sets this to 5 minutes, so don't allow a bigger
+  // timespan.
+  if (bypass_duration < base::TimeDelta() ||
+      bypass_duration > base::TimeDelta::FromMinutes(5)) {
+    LOG(ERROR) << "Received bad MarkProxiesAsBad() -- invalid bypass_duration: "
+               << bypass_duration;
+    std::move(callback).Run();
+    return;
+  }
+
+  // |bad_proxies| should be DRP servers or this API allows marking arbitrary
+  // proxies as bad. It is possible that proxies from an older config are
+  // received (FindConfiguredDataReductionProxy() searches recent proxies too).
+  for (const auto& proxy : bad_proxies.GetAll()) {
+    if (!config_->FindConfiguredDataReductionProxy(proxy)) {
+      LOG(ERROR) << "Received bad MarkProxiesAsBad() -- not a DRP server: "
+                 << proxy.ToURI();
+      std::move(callback).Run();
+      return;
+    }
+  }
+
   proxy_config_client_->MarkProxiesAsBad(bypass_duration, bad_proxies,
                                          std::move(callback));
 }
 
+void DataReductionProxyIOData::AddThrottleConfigObserver(
+    mojom::DataReductionProxyThrottleConfigObserverPtr observer) {
+  observer->OnThrottleConfigChanged(CreateThrottleConfig());
+  drp_throttle_config_observers_.AddPtr(std::move(observer));
+}
+
 void DataReductionProxyIOData::Clone(mojom::DataReductionProxyRequest request) {
-  bindings_.AddBinding(this, std::move(request));
+  drp_bindings_.AddBinding(this, std::move(request));
 }
 
 }  // namespace data_reduction_proxy

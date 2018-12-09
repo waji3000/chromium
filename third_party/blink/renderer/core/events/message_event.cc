@@ -30,6 +30,7 @@
 #include <memory>
 
 #include "third_party/blink/renderer/bindings/core/v8/v8_array_buffer.h"
+#include "third_party/blink/renderer/core/event_interface_names.h"
 #include "third_party/blink/renderer/core/frame/user_activation.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_private_property.h"
@@ -169,7 +170,7 @@ MessageEvent* MessageEvent::Create(const AtomicString& type,
         "The optional 'source' property is neither a Window nor MessagePort.");
     return nullptr;
   }
-  return new MessageEvent(type, initializer);
+  return MakeGarbageCollected<MessageEvent>(type, initializer);
 }
 
 void MessageEvent::initMessageEvent(const AtomicString& type,
@@ -242,7 +243,7 @@ void MessageEvent::initMessageEvent(const AtomicString& type,
 }
 
 const AtomicString& MessageEvent::InterfaceName() const {
-  return EventNames::MessageEvent;
+  return event_interface_names::kMessageEvent;
 }
 
 MessagePortArray MessageEvent::ports() {

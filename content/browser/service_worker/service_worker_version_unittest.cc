@@ -247,7 +247,7 @@ class MessageReceiverDisallowStart : public MessageReceiver {
       const GURL& script_url,
       bool pause_after_download,
       mojom::ServiceWorkerRequest service_worker_request,
-      mojom::ControllerServiceWorkerRequest controller_request,
+      blink::mojom::ControllerServiceWorkerRequest controller_request,
       mojom::EmbeddedWorkerInstanceHostAssociatedPtrInfo instance_host,
       mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info,
       blink::mojom::ServiceWorkerInstalledScriptsInfoPtr installed_scripts_info)
@@ -301,7 +301,8 @@ class MessageReceiverDisallowStart : public MessageReceiver {
       instance_host_ptr_map_;
   std::map<int /* embedded_worker_id */, mojom::ServiceWorkerRequest>
       service_worker_request_map_;
-  std::map<int /* embedded_worker_id */, mojom::ControllerServiceWorkerRequest>
+  std::map<int /* embedded_worker_id */,
+           blink::mojom::ControllerServiceWorkerRequest>
       controller_request_map_;
   DISALLOW_COPY_AND_ASSIGN(MessageReceiverDisallowStart);
 };
@@ -586,7 +587,7 @@ TEST_F(ServiceWorkerVersionTest, Doom) {
       33 /* dummy render process id */, 1 /* dummy provider_id */,
       true /* is_parent_frame_secure */, helper_->context()->AsWeakPtr(),
       &remote_endpoint);
-  host->SetDocumentUrl(registration_->scope());
+  host->UpdateUrls(registration_->scope(), registration_->scope());
   host->SetControllerRegistration(registration_, false);
   EXPECT_TRUE(version_->HasControllee());
   EXPECT_TRUE(host->controller());
@@ -1012,7 +1013,7 @@ TEST_F(ServiceWorkerRequestTimeoutTest, RequestTimeout) {
   // Simulate the renderer aborting the inflight event.
   // This should not crash: https://crbug.com/676984.
   TakeExtendableMessageEventCallback().Run(
-      blink::mojom::ServiceWorkerEventStatus::ABORTED, base::TimeTicks::Now());
+      blink::mojom::ServiceWorkerEventStatus::ABORTED);
   base::RunLoop().RunUntilIdle();
 
   // Simulate the renderer stopping the worker.

@@ -71,6 +71,7 @@
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/geometry/point.h"
 
+using base::ASCIIToUTF16;
 using testing::_;
 using testing::ElementsAre;
 
@@ -165,8 +166,12 @@ class ObservingAutofillClient
   base::RunLoop* run_loop_;
   bool popup_shown_;
 
+  WEB_CONTENTS_USER_DATA_KEY_DECL();
+
   DISALLOW_COPY_AND_ASSIGN(ObservingAutofillClient);
 };
+
+WEB_CONTENTS_USER_DATA_KEY_IMPL(ObservingAutofillClient)
 
 void TestPromptNotShown(const char* failure_message,
                         content::WebContents* web_contents) {
@@ -2043,35 +2048,44 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
 }
 
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, NoPromptOnBack) {
-  // Go to a successful landing page through submitting first, so that it is
-  // reachable through going back, and the remembered page transition is form
-  // submit. There is no need to submit non-empty strings.
-  NavigateToFile("/password/password_form.html");
+  for (bool new_parser_enabled : {false, true}) {
+    base::test::ScopedFeatureList scoped_feature_list;
+    if (new_parser_enabled) {
+      scoped_feature_list.InitAndEnableFeature(
+          features::kNewPasswordFormParsing);
+    } else {
+      scoped_feature_list.InitAndDisableFeature(
+          features::kNewPasswordFormParsing);
+    }
+    // Go to a successful landing page through submitting first, so that it is
+    // reachable through going back, and the remembered page transition is form
+    // submit. There is no need to submit non-empty strings.
+    NavigateToFile("/password/password_form.html");
 
-  NavigationObserver dummy_submit_observer(WebContents());
-  std::string just_submit =
-      "document.getElementById('input_submit_button').click()";
-  ASSERT_TRUE(content::ExecuteScript(WebContents(), just_submit));
-  dummy_submit_observer.Wait();
+    NavigationObserver dummy_submit_observer(WebContents());
+    std::string just_submit =
+        "document.getElementById('input_submit_button').click()";
+    ASSERT_TRUE(content::ExecuteScript(WebContents(), just_submit));
+    dummy_submit_observer.Wait();
 
-  // Now go to a page with a form again, fill the form, and go back instead of
-  // submitting it.
-  NavigateToFile("/password/dummy_submit.html");
+    // Now go to a page with a form again, fill the form, and go back instead of
+    // submitting it.
+    NavigateToFile("/password/dummy_submit.html");
 
-  NavigationObserver observer(WebContents());
-  std::unique_ptr<BubbleObserver> prompt_observer(
-      new BubbleObserver(WebContents()));
-  // The (dummy) submit is necessary to provisionally save the typed password. A
-  // user typing in the password field would not need to submit to provisionally
-  // save it, but the script cannot trigger that just by assigning to the
-  // field's value.
-  std::string fill_and_back =
-      "document.getElementById('password_field').value = 'random';"
-      "document.getElementById('input_submit_button').click();"
-      "window.history.back();";
-  ASSERT_TRUE(content::ExecuteScript(WebContents(), fill_and_back));
-  observer.Wait();
-  EXPECT_FALSE(prompt_observer->IsSavePromptShownAutomatically());
+    NavigationObserver observer(WebContents());
+    BubbleObserver prompt_observer(WebContents());
+    // The (dummy) submit is necessary to provisionally save the typed password.
+    // A user typing in the password field would not need to submit to
+    // provisionally save it, but the script cannot trigger that just by
+    // assigning to the field's value.
+    std::string fill_and_back =
+        "document.getElementById('password_field').value = 'random';"
+        "document.getElementById('input_submit_button').click();"
+        "window.history.back();";
+    ASSERT_TRUE(content::ExecuteScript(WebContents(), fill_and_back));
+    observer.Wait();
+    EXPECT_FALSE(prompt_observer.IsSavePromptShownAutomatically());
+  }
 }
 
 // Regression test for http://crbug.com/452306
@@ -3899,6 +3913,45 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
   driver->ShowPasswordSuggestions(base::i18n::LEFT_TO_RIGHT, base::string16(),
                                   0, gfx::RectF());
   EXPECT_FALSE(autofill_client->popup_controller_for_testing());
+}
+
+IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, FormDynamicallyChanged) {
+  scoped_refptr<password_manager::TestPasswordStore> password_store =
+      static_cast<password_manager::TestPasswordStore*>(
+          PasswordStoreFactory::GetForProfile(
+              browser()->profile(), ServiceAccessType::IMPLICIT_ACCESS)
+              .get());
+  autofill::PasswordForm signin_form;
+  signin_form.signon_realm = embedded_test_server()->base_url().spec();
+  signin_form.username_value = ASCIIToUTF16("temp");
+  signin_form.password_value = ASCIIToUTF16("pw");
+  password_store->AddLogin(signin_form);
+
+  // Check that password update bubble is shown.
+  NavigateToFile("/password/simple_password.html");
+
+  // Simulate that a script removes username/password elements and adds the
+  // elements identical to them.
+  ASSERT_TRUE(content::ExecuteScriptWithoutUserGesture(
+      RenderFrameHost(),
+      "function replaceElement(id) {"
+      "  var elem = document.getElementById(id);"
+      "  var parent = elem.parentElement;"
+      "  var cloned_elem = elem.cloneNode();"
+      "  cloned_elem.value = '';"
+      "  parent.removeChild(elem);"
+      "  parent.appendChild(cloned_elem);"
+      "}"
+      "replaceElement('username_field');"
+      "replaceElement('password_field');"));
+
+  // Let the user interact with the page, so that DOM gets modification events,
+  // needed for autofilling fields.
+  content::SimulateMouseClickAt(
+      WebContents(), 0, blink::WebMouseEvent::Button::kLeft, gfx::Point(1, 1));
+
+  WaitForElementValue("username_field", "temp");
+  WaitForElementValue("password_field", "pw");
 }
 
 }  // namespace password_manager

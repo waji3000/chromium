@@ -64,6 +64,7 @@
 #include "content/browser/renderer_host/render_widget_host_input_event_router.h"
 #include "content/browser/renderer_host/render_widget_host_owner_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
+#include "content/browser/renderer_host/render_widget_host_view_child_frame.h"
 #include "content/common/content_constants_internal.h"
 #include "content/common/cursors/webcursor.h"
 #include "content/common/drag_messages.h"
@@ -408,6 +409,7 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       is_hidden_(hidden),
       visual_properties_ack_pending_(false),
       auto_resize_enabled_(false),
+      page_scale_factor_(1.f),
       waiting_for_screen_rects_ack_(false),
       is_unresponsive_(false),
       in_flight_event_count_(0),
@@ -727,6 +729,8 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
                         OnHasTouchEventHandlers)
     IPC_MESSAGE_HANDLER(WidgetHostMsg_IntrinsicSizingInfoChanged,
                         OnIntrinsicSizingInfoChanged)
+    IPC_MESSAGE_HANDLER(WidgetHostMsg_AnimateDoubleTapZoomInMainFrame,
+                        OnAnimateDoubleTapZoomInMainFrame)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -793,9 +797,11 @@ void RenderWidgetHostImpl::WasShown(bool record_presentation_time) {
   SendScreenRects();
   RestartInputEventAckTimeoutIfNecessary();
 
-  Send(new WidgetMsg_WasShown(routing_id_, record_presentation_time
-                                               ? base::TimeTicks::Now()
-                                               : base::TimeTicks()));
+  Send(new WidgetMsg_WasShown(
+      routing_id_,
+      record_presentation_time ? base::TimeTicks::Now() : base::TimeTicks(),
+      view_->is_evicted()));
+  view_->reset_is_evicted();
 
   process_->UpdateClientPriority(this);
 
@@ -858,6 +864,8 @@ bool RenderWidgetHostImpl::GetVisualProperties(
   visual_properties->min_size_for_auto_resize = min_size_for_auto_resize_;
   visual_properties->max_size_for_auto_resize = max_size_for_auto_resize_;
 
+  visual_properties->page_scale_factor = page_scale_factor_;
+
   if (view_) {
     visual_properties->new_size = view_->GetRequestedRendererSize();
     visual_properties->capture_sequence_number =
@@ -877,11 +885,11 @@ bool RenderWidgetHostImpl::GetVisualProperties(
     visual_properties->visible_viewport_size = view_->GetVisibleViewportSize();
     // TODO(ccameron): GetLocalSurfaceId is not synchronized with the device
     // scale factor of the surface. Fix this.
-    viz::LocalSurfaceId local_surface_id = view_->GetLocalSurfaceId();
-    if (local_surface_id.is_valid()) {
-      visual_properties->local_surface_id = local_surface_id;
-      visual_properties->local_surface_id_allocation_time =
-          view_->GetLocalSurfaceIdAllocationTime();
+    viz::LocalSurfaceIdAllocation local_surface_id_allocation =
+        view_->GetLocalSurfaceIdAllocation();
+    if (local_surface_id_allocation.IsValid()) {
+      visual_properties->local_surface_id_allocation =
+          local_surface_id_allocation;
     }
   }
 
@@ -909,14 +917,19 @@ bool RenderWidgetHostImpl::GetVisualProperties(
         (old_visual_properties_->compositor_viewport_pixel_size.IsEmpty() &&
          !visual_properties->compositor_viewport_pixel_size.IsEmpty())));
 
-  viz::LocalSurfaceId old_parent_local_surface_id =
+  viz::LocalSurfaceIdAllocation old_parent_local_surface_id_allocation =
       old_visual_properties_
-          ? old_visual_properties_->local_surface_id.value_or(
-                viz::LocalSurfaceId())
-          : viz::LocalSurfaceId();
+          ? old_visual_properties_->local_surface_id_allocation.value_or(
+                viz::LocalSurfaceIdAllocation())
+          : viz::LocalSurfaceIdAllocation();
+  const viz::LocalSurfaceId& old_parent_local_surface_id =
+      old_parent_local_surface_id_allocation.local_surface_id();
 
-  viz::LocalSurfaceId new_parent_local_surface_id =
-      visual_properties->local_surface_id.value_or(viz::LocalSurfaceId());
+  viz::LocalSurfaceIdAllocation new_parent_local_surface_id_allocation =
+      visual_properties->local_surface_id_allocation.value_or(
+          viz::LocalSurfaceIdAllocation());
+  const viz::LocalSurfaceId& new_parent_local_surface_id =
+      new_parent_local_surface_id_allocation.local_surface_id();
 
   const bool parent_local_surface_id_changed =
       !old_visual_properties_ ||
@@ -946,7 +959,9 @@ bool RenderWidgetHostImpl::GetVisualProperties(
       old_visual_properties_->visible_viewport_size !=
           visual_properties->visible_viewport_size ||
       old_visual_properties_->capture_sequence_number !=
-          visual_properties->capture_sequence_number;
+          visual_properties->capture_sequence_number ||
+      old_visual_properties_->page_scale_factor !=
+          visual_properties->page_scale_factor;
 
   // We should throttle sending updated VisualProperties to the renderer to
   // the rate of commit. This ensures we don't overwhelm the renderer with
@@ -956,7 +971,7 @@ bool RenderWidgetHostImpl::GetVisualProperties(
                !visual_properties->auto_resize_enabled &&
                !visual_properties->new_size.IsEmpty() &&
                !visual_properties->compositor_viewport_pixel_size.IsEmpty() &&
-               visual_properties->local_surface_id && size_changed;
+               visual_properties->local_surface_id_allocation && size_changed;
 
   return dirty;
 }
@@ -2053,6 +2068,10 @@ void RenderWidgetHostImpl::SetAutoResize(bool enable,
   max_size_for_auto_resize_ = max_size;
 }
 
+void RenderWidgetHostImpl::SetPageScaleFactor(float page_scale_factor) {
+  page_scale_factor_ = page_scale_factor;
+}
+
 void RenderWidgetHostImpl::Destroy(bool also_delete) {
   DCHECK(!destroyed_);
   destroyed_ = true;
@@ -2383,7 +2402,7 @@ TouchEmulator* RenderWidgetHostImpl::GetExistingTouchEmulator() {
 
 void RenderWidgetHostImpl::OnTextInputStateChanged(
     const TextInputState& params) {
-  if (delegate_->GetInputEventShim()) {
+  if (delegate_ && delegate_->GetInputEventShim()) {
     delegate_->GetInputEventShim()->DidTextInputStateChange(params);
     return;
   }
@@ -2432,7 +2451,7 @@ void RenderWidgetHostImpl::OnProcessSwapMessage(const IPC::Message& message) {
 
 void RenderWidgetHostImpl::OnLockMouse(bool user_gesture,
                                        bool privileged) {
-  if (delegate_->GetInputEventShim()) {
+  if (delegate_ && delegate_->GetInputEventShim()) {
     delegate_->GetInputEventShim()->DidLockMouse(user_gesture, privileged);
     return;
   }
@@ -2463,7 +2482,7 @@ void RenderWidgetHostImpl::OnLockMouse(bool user_gesture,
 }
 
 void RenderWidgetHostImpl::OnUnlockMouse() {
-  if (delegate_->GetInputEventShim()) {
+  if (delegate_ && delegate_->GetInputEventShim()) {
     delegate_->GetInputEventShim()->DidUnlockMouse();
     return;
   }
@@ -2584,7 +2603,7 @@ void RenderWidgetHostImpl::DecrementInFlightEventCount(
 }
 
 void RenderWidgetHostImpl::OnHasTouchEventHandlers(bool has_handlers) {
-  if (delegate_->GetInputEventShim()) {
+  if (delegate_ && delegate_->GetInputEventShim()) {
     delegate_->GetInputEventShim()->DidSetHasTouchEventHandlers(has_handlers);
     return;
   }
@@ -3125,6 +3144,59 @@ void RenderWidgetHostImpl::OnRenderFrameMetadataChangedAfterActivation() {
 void RenderWidgetHostImpl::OnLocalSurfaceIdChanged(
     const cc::RenderFrameMetadata& metadata) {
   DidUpdateVisualProperties(metadata);
+}
+
+std::vector<viz::SurfaceId>
+RenderWidgetHostImpl::CollectSurfaceIdsForEviction() {
+  RenderViewHostImpl* rvh = RenderViewHostImpl::From(this);
+  // A corresponding RenderViewHostImpl may not exist in unit tests.
+  if (!rvh)
+    return {};
+  return rvh->CollectSurfaceIdsForEviction();
+}
+
+std::unique_ptr<RenderWidgetHostIterator>
+RenderWidgetHostImpl::GetEmbeddedRenderWidgetHosts() {
+  // This iterates over all RenderWidgetHosts and returns those whose Views
+  // are children of this host's View.
+  std::unique_ptr<RenderWidgetHostIteratorImpl> hosts(
+      new RenderWidgetHostIteratorImpl());
+  auto* parent_view = static_cast<RenderWidgetHostViewBase*>(GetView());
+  for (auto& it : g_routing_id_widget_map.Get()) {
+    RenderWidgetHost* widget = it.second;
+
+    auto* view = static_cast<RenderWidgetHostViewBase*>(widget->GetView());
+    if (view && view->IsRenderWidgetHostViewChildFrame() &&
+        static_cast<RenderWidgetHostViewChildFrame*>(view)->GetParentView() ==
+            parent_view) {
+      hosts->Add(widget);
+    }
+  }
+
+  return std::move(hosts);
+}
+
+void RenderWidgetHostImpl::OnAnimateDoubleTapZoomInMainFrame(
+    const gfx::Point& point,
+    const gfx::Rect& rect_to_zoom) {
+  if (!view_)
+    return;
+
+  auto* root_view = view_->GetRootView();
+  gfx::Transform transform_to_main_frame;
+  if (!view_->GetTransformToViewCoordSpace(root_view, &transform_to_main_frame))
+    return;
+  gfx::Point transformed_point(point);
+  transform_to_main_frame.TransformPoint(&transformed_point);
+  gfx::RectF transformed_rect(rect_to_zoom);
+  transform_to_main_frame.TransformRect(&transformed_rect);
+
+  // Transform the point & rect into the root-view's coordinates.
+  gfx::Rect transformed_rect_to_zoom = gfx::ToEnclosingRect(transformed_rect);
+
+  auto* root_rvhi = RenderViewHostImpl::From(root_view->GetRenderWidgetHost());
+  root_rvhi->Send(new ViewMsg_AnimateDoubleTapZoom(
+      root_rvhi->GetRoutingID(), transformed_point, transformed_rect_to_zoom));
 }
 
 }  // namespace content

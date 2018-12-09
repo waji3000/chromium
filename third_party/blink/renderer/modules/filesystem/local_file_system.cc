@@ -85,7 +85,8 @@ void LocalFileSystem::ResolveURL(
     const KURL& file_system_url,
     std::unique_ptr<AsyncFileSystemCallbacks> callbacks,
     SynchronousType type) {
-  CallbackWrapper* wrapper = new CallbackWrapper(std::move(callbacks));
+  CallbackWrapper* wrapper =
+      MakeGarbageCollected<CallbackWrapper>(std::move(callbacks));
   RequestFileSystemAccessInternal(
       context,
       WTF::Bind(&LocalFileSystem::ResolveURLInternal,
@@ -102,7 +103,8 @@ void LocalFileSystem::RequestFileSystem(
     long long size,
     std::unique_ptr<AsyncFileSystemCallbacks> callbacks,
     SynchronousType sync_type) {
-  CallbackWrapper* wrapper = new CallbackWrapper(std::move(callbacks));
+  CallbackWrapper* wrapper =
+      MakeGarbageCollected<CallbackWrapper>(std::move(callbacks));
   RequestFileSystemAccessInternal(
       context,
       WTF::Bind(&LocalFileSystem::FileSystemAllowedInternal,
@@ -216,13 +218,15 @@ LocalFileSystem* LocalFileSystem::From(ExecutionContext& context) {
 
 void ProvideLocalFileSystemTo(LocalFrame& frame,
                               std::unique_ptr<FileSystemClient> client) {
-  frame.ProvideSupplement(new LocalFileSystem(frame, std::move(client)));
+  frame.ProvideSupplement(
+      MakeGarbageCollected<LocalFileSystem>(frame, std::move(client)));
 }
 
 void ProvideLocalFileSystemToWorker(WorkerClients* worker_clients,
                                     std::unique_ptr<FileSystemClient> client) {
-  Supplement<WorkerClients>::ProvideTo(
-      *worker_clients, new LocalFileSystem(*worker_clients, std::move(client)));
+  Supplement<WorkerClients>::ProvideTo(*worker_clients,
+                                       MakeGarbageCollected<LocalFileSystem>(
+                                           *worker_clients, std::move(client)));
 }
 
 }  // namespace blink

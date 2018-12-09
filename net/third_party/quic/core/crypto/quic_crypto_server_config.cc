@@ -17,7 +17,6 @@
 #include "net/third_party/quic/core/crypto/channel_id.h"
 #include "net/third_party/quic/core/crypto/crypto_framer.h"
 #include "net/third_party/quic/core/crypto/crypto_handshake_message.h"
-#include "net/third_party/quic/core/crypto/crypto_server_config_protobuf.h"
 #include "net/third_party/quic/core/crypto/crypto_utils.h"
 #include "net/third_party/quic/core/crypto/curve25519_key_exchange.h"
 #include "net/third_party/quic/core/crypto/ephemeral_key_source.h"
@@ -28,6 +27,7 @@
 #include "net/third_party/quic/core/crypto/quic_encrypter.h"
 #include "net/third_party/quic/core/crypto/quic_hkdf.h"
 #include "net/third_party/quic/core/crypto/quic_random.h"
+#include "net/third_party/quic/core/proto/crypto_server_config.pb.h"
 #include "net/third_party/quic/core/proto/source_address_token.pb.h"
 #include "net/third_party/quic/core/quic_packets.h"
 #include "net/third_party/quic/core/quic_socket_address_coder.h"
@@ -1111,6 +1111,14 @@ void QuicCryptoServerConfig::ProcessClientHelloAfterCalculateSharedKeys(
   }
 
   QuicString forward_secure_public_value;
+  if (GetQuicRestartFlag(quic_no_ephemeral_key_source)) {
+    if (ephemeral_key_source_) {
+      QUIC_BUG << "quic_no_ephemeral_key_source flag is on, but "
+                  "ephemeral_key_source is present";
+    } else {
+      QUIC_FLAG_COUNT(quic_restart_flag_quic_no_ephemeral_key_source);
+    }
+  }
   if (ephemeral_key_source_) {
     params->forward_secure_premaster_secret =
         ephemeral_key_source_->CalculateForwardSecureKey(
@@ -1555,6 +1563,7 @@ QuicCryptoServerConfig::BuildServerConfigUpdateMessageProofSourceCallback::
       client_common_set_hashes_(params.client_common_set_hashes),
       client_cached_cert_hashes_(params.client_cached_cert_hashes),
       sct_supported_by_client_(params.sct_supported_by_client),
+      sni_(params.sni),
       message_(std::move(message)),
       cb_(std::move(cb)) {}
 
@@ -1566,7 +1575,7 @@ void QuicCryptoServerConfig::BuildServerConfigUpdateMessageProofSourceCallback::
   config_->FinishBuildServerConfigUpdateMessage(
       version_, compressed_certs_cache_, common_cert_sets_,
       client_common_set_hashes_, client_cached_cert_hashes_,
-      sct_supported_by_client_, ok, chain, proof.signature,
+      sct_supported_by_client_, sni_, ok, chain, proof.signature,
       proof.leaf_cert_scts, std::move(details), std::move(message_),
       std::move(cb_));
 }
@@ -1578,6 +1587,7 @@ void QuicCryptoServerConfig::FinishBuildServerConfigUpdateMessage(
     const QuicString& client_common_set_hashes,
     const QuicString& client_cached_cert_hashes,
     bool sct_supported_by_client,
+    const QuicString& sni,
     bool ok,
     const QuicReferenceCountedPointer<ProofSource::Chain>& chain,
     const QuicString& signature,
@@ -1598,7 +1608,8 @@ void QuicCryptoServerConfig::FinishBuildServerConfigUpdateMessage(
   message.SetStringPiece(kPROF, signature);
   if (sct_supported_by_client && enable_serving_sct_) {
     if (leaf_cert_sct.empty()) {
-      QUIC_LOG_EVERY_N_SEC(WARNING, 60) << "SCT is expected but it is empty.";
+      QUIC_LOG_EVERY_N_SEC(WARNING, 60)
+          << "SCT is expected but it is empty. SNI: " << sni;
     } else {
       message.SetStringPiece(kCertificateSCTTag, leaf_cert_sct);
     }
@@ -1799,7 +1810,7 @@ QuicCryptoServerConfig::ParseConfigProtobuf(
   static_assert(sizeof(config->orbit) == kOrbitSize, "incorrect orbit size");
   memcpy(config->orbit, orbit.data(), sizeof(config->orbit));
 
-  if (kexs_tags.size() != protobuf->key_size()) {
+  if (kexs_tags.size() != static_cast<size_t>(protobuf->key_size())) {
     QUIC_LOG(WARNING) << "Server config has " << kexs_tags.size()
                       << " key exchange methods configured, but "
                       << protobuf->key_size() << " private keys";
@@ -1822,7 +1833,7 @@ QuicCryptoServerConfig::ParseConfigProtobuf(
 
     config->kexs.push_back(tag);
 
-    for (size_t j = 0; j < protobuf->key_size(); j++) {
+    for (int j = 0; j < protobuf->key_size(); j++) {
       const QuicServerConfigProtobuf::PrivateKey& key = protobuf->key(i);
       if (key.tag() == tag) {
         private_key = key.private_key();

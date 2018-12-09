@@ -37,6 +37,7 @@
 #include "content/public/common/renderer_preference_watcher.mojom.h"
 #include "ipc/ipc_message.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
+#include "services/network/public/cpp/features.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/service_worker/service_worker_utils.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom.h"
@@ -96,51 +97,91 @@ void NotifyWorkerVersionDoomedOnUI(int worker_process_id, int worker_route_id) {
 
 // Returns a factory bundle for doing loads on behalf of the specified |rph| and
 // |origin|. The returned bundle has a default factory that goes to network and
-// if |use_non_network_factories| is true it may also include scheme-specific
-// factories that don't go to network.
+// it may also include scheme-specific factories that don't go to network.
 //
 // The network factory does not support reconnection to the network service.
 std::unique_ptr<URLLoaderFactoryBundleInfo> CreateFactoryBundle(
     RenderProcessHost* rph,
-    const url::Origin& origin,
-    bool use_non_network_factories) {
+    const url::Origin& origin) {
   auto factory_bundle = std::make_unique<URLLoaderFactoryBundleInfo>();
-  network::mojom::URLLoaderFactoryPtrInfo default_factory_info;
+  network::mojom::URLLoaderFactoryRequest default_factory_request =
+      mojo::MakeRequest(&factory_bundle->default_factory_info());
+  network::mojom::TrustedURLLoaderHeaderClientPtrInfo default_header_client;
+  bool bypass_redirect_checks = false;
+
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
+    // Create the default *network* factory. The factory will be used as the
+    // default factory when |factory_bundle| is cloned via
+    // CloneWithoutDefaultFactory(). See comments in URLLoaderFactoryBundle
+    // for more details.
+    network::mojom::URLLoaderFactoryRequest default_network_factory_request =
+        mojo::MakeRequest(&factory_bundle->default_network_factory_info());
+    network::mojom::TrustedURLLoaderHeaderClientPtrInfo header_client;
+    GetContentClient()->browser()->WillCreateURLLoaderFactory(
+        rph->GetBrowserContext(), nullptr /* frame_host */, rph->GetID(),
+        false /* is_navigation */, origin, &default_network_factory_request,
+        &header_client, &bypass_redirect_checks);
+
+    if (!GetNetworkFactoryCallbackForTest()) {
+      rph->CreateURLLoaderFactory(origin, std::move(header_client),
+                                  std::move(default_network_factory_request));
+    } else {
+      network::mojom::URLLoaderFactoryPtr original_factory;
+      rph->CreateURLLoaderFactory(origin, std::move(header_client),
+                                  mojo::MakeRequest(&original_factory));
+      GetNetworkFactoryCallbackForTest()->Run(
+          std::move(default_network_factory_request), rph->GetID(),
+          original_factory.PassInterface());
+    }
+
+    // Create the default factory. See comments in URLLoaderFactoryBundle
+    // for more details.
+    bool bypass_redirect_checks_for_default_factory = bypass_redirect_checks;
+    GetContentClient()->browser()->WillCreateURLLoaderFactory(
+        rph->GetBrowserContext(), nullptr /* frame_host */, rph->GetID(),
+        false /* is_navigation */, origin, &default_factory_request,
+        &default_header_client, &bypass_redirect_checks_for_default_factory);
+    DCHECK_EQ(bypass_redirect_checks,
+              bypass_redirect_checks_for_default_factory)
+        << "CreateFactoryBundle doesn't support multiple "
+           "|bypass_redirect_checks| values";
+  }
+
   if (!GetNetworkFactoryCallbackForTest()) {
-    rph->CreateURLLoaderFactory(origin,
-                                mojo::MakeRequest(&default_factory_info));
+    rph->CreateURLLoaderFactory(origin, std::move(default_header_client),
+                                std::move(default_factory_request));
   } else {
     network::mojom::URLLoaderFactoryPtr original_factory;
-    rph->CreateURLLoaderFactory(origin, mojo::MakeRequest(&original_factory));
-    GetNetworkFactoryCallbackForTest()->Run(
-        mojo::MakeRequest(&default_factory_info), rph->GetID(),
-        original_factory.PassInterface());
+    rph->CreateURLLoaderFactory(origin, std::move(default_header_client),
+                                mojo::MakeRequest(&original_factory));
+    GetNetworkFactoryCallbackForTest()->Run(std::move(default_factory_request),
+                                            rph->GetID(),
+                                            original_factory.PassInterface());
   }
-  factory_bundle->default_factory_info() = std::move(default_factory_info);
 
-  if (use_non_network_factories) {
-    ContentBrowserClient::NonNetworkURLLoaderFactoryMap non_network_factories;
-    GetContentClient()
-        ->browser()
-        ->RegisterNonNetworkSubresourceURLLoaderFactories(
-            rph->GetID(), MSG_ROUTING_NONE, &non_network_factories);
+  factory_bundle->set_bypass_redirect_checks(bypass_redirect_checks);
 
-    for (auto& pair : non_network_factories) {
-      const std::string& scheme = pair.first;
-      std::unique_ptr<network::mojom::URLLoaderFactory> factory =
-          std::move(pair.second);
+  ContentBrowserClient::NonNetworkURLLoaderFactoryMap non_network_factories;
+  GetContentClient()
+      ->browser()
+      ->RegisterNonNetworkSubresourceURLLoaderFactories(
+          rph->GetID(), MSG_ROUTING_NONE, &non_network_factories);
 
-      // To be safe, ignore schemes that aren't allowed to register service
-      // workers. We assume that importScripts and fetch() should fail on such
-      // schemes.
-      if (!base::ContainsValue(GetServiceWorkerSchemes(), scheme))
-        continue;
-      network::mojom::URLLoaderFactoryPtr factory_ptr;
-      mojo::MakeStrongBinding(std::move(factory),
-                              mojo::MakeRequest(&factory_ptr));
-      factory_bundle->scheme_specific_factory_infos().emplace(
-          scheme, factory_ptr.PassInterface());
-    }
+  for (auto& pair : non_network_factories) {
+    const std::string& scheme = pair.first;
+    std::unique_ptr<network::mojom::URLLoaderFactory> factory =
+        std::move(pair.second);
+
+    // To be safe, ignore schemes that aren't allowed to register service
+    // workers. We assume that importScripts and fetch() should fail on such
+    // schemes.
+    if (!base::ContainsValue(GetServiceWorkerSchemes(), scheme))
+      continue;
+    network::mojom::URLLoaderFactoryPtr factory_ptr;
+    mojo::MakeStrongBinding(std::move(factory),
+                            mojo::MakeRequest(&factory_ptr));
+    factory_bundle->scheme_specific_factory_infos().emplace(
+        scheme, factory_ptr.PassInterface());
   }
   return factory_bundle;
 }
@@ -238,13 +279,7 @@ void SetupOnUIThread(base::WeakPtr<ServiceWorkerProcessManager> process_manager,
   // These bundles don't support reconnection to the network service, see
   // below comments.
   if (blink::ServiceWorkerUtils::IsServicificationEnabled()) {
-    // For performance, we only create the loader factories for non-http(s)
-    // URLs (e.g. chrome-extension://) when the main script URL is
-    // non-http(s). We assume an http(s) service worker cannot
-    // importScripts or fetch() a non-http(s) URL.
-    bool use_non_network_factories = !params->script_url.SchemeIsHTTPOrHTTPS();
-
-    url::Origin origin = url::Origin::Create(params->script_url);
+    const url::Origin origin = url::Origin::Create(params->script_url);
 
     // The bundle for the browser is passed to ServiceWorkerScriptLoaderFactory
     // and used to request non-installed service worker scripts. It's OK to not
@@ -252,16 +287,14 @@ void SetupOnUIThread(base::WeakPtr<ServiceWorkerProcessManager> process_manager,
     // until the service worker reaches the 'installed' state.
     //
     // TODO(falken): Only make this bundle for non-installed service workers.
-    factory_bundle_for_browser =
-        CreateFactoryBundle(rph, origin, use_non_network_factories);
+    factory_bundle_for_browser = CreateFactoryBundle(rph, origin);
 
     // The bundle for the renderer is passed to the service worker, and
     // used for subresource loading from the service worker (i.e., fetch()).
     // It's OK to not support reconnection to the network service because the
     // service worker terminates itself when the connection breaks, so a new
     // instance can be started.
-    factory_bundle_for_renderer =
-        CreateFactoryBundle(rph, origin, use_non_network_factories);
+    factory_bundle_for_renderer = CreateFactoryBundle(rph, origin);
   }
 
   // Register to DevTools and update params accordingly.

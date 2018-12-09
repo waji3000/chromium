@@ -30,10 +30,15 @@
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_image.h"
 
-// TODO(posciak): remove this once V4L2 headers are updated.
-#define V4L2_PIX_FMT_MT21 v4l2_fourcc('M', 'T', '2', '1')
-#ifndef V4L2_BUF_FLAG_LAST
-#define V4L2_BUF_FLAG_LAST 0x00100000
+// TODO(mojahsu): remove this once V4L2 headers are updated.
+#ifndef V4L2_PIX_FMT_JPEG_RAW
+#define V4L2_PIX_FMT_JPEG_RAW v4l2_fourcc('J', 'P', 'G', 'R')
+#endif
+#ifndef V4L2_CID_JPEG_LUMA_QUANTIZATION
+#define V4L2_CID_JPEG_LUMA_QUANTIZATION (V4L2_CID_JPEG_CLASS_BASE + 5)
+#endif
+#ifndef V4L2_CID_JPEG_CHROMA_QUANTIZATION
+#define V4L2_CID_JPEG_CHROMA_QUANTIZATION (V4L2_CID_JPEG_CLASS_BASE + 6)
 #endif
 
 namespace media {
@@ -282,7 +287,12 @@ class MEDIA_GPU_EXPORT V4L2Device
  public:
   // Utility format conversion functions
   static VideoPixelFormat V4L2PixFmtToVideoPixelFormat(uint32_t format);
-  static uint32_t VideoPixelFormatToV4L2PixFmt(VideoPixelFormat format);
+  static uint32_t VideoPixelFormatToV4L2PixFmt(VideoPixelFormat format,
+                                               bool single_planar);
+  // Returns v4l2 pixel format from |layout|. If there is no corresponding
+  // single- or multi-planar format or |layout| is invalid, returns 0.
+  static uint32_t VideoFrameLayoutToV4L2PixFmt(const VideoFrameLayout& layout);
+  // If there is no corresponding single- or multi-planar format, returns 0.
   static uint32_t VideoCodecProfileToV4L2PixFmt(VideoCodecProfile profile,
                                                 bool slice_based);
   static VideoCodecProfile V4L2VP9ProfileToVideoCodecProfile(uint32_t profile);
@@ -305,11 +315,15 @@ class MEDIA_GPU_EXPORT V4L2Device
   static base::Optional<VideoFrameLayout> V4L2FormatToVideoFrameLayout(
       const struct v4l2_format& format);
 
+  // Returns whether |pix_fmt| is multi planar.
+  static bool IsMultiPlanarV4L2PixFmt(uint32_t pix_fmt);
+
   enum class Type {
     kDecoder,
     kEncoder,
     kImageProcessor,
     kJpegDecoder,
+    kJpegEncoder,
   };
 
   // Create and initialize an appropriate V4L2Device instance for the current
@@ -401,8 +415,8 @@ class MEDIA_GPU_EXPORT V4L2Device
   // Returns the supported texture target for the V4L2Device.
   virtual GLenum GetTextureTarget() = 0;
 
-  // Returns the preferred V4L2 input format for |type| or 0 if none.
-  virtual uint32_t PreferredInputFormat(Type type) = 0;
+  // Returns the preferred V4L2 input formats for |type| or empty if none.
+  virtual std::vector<uint32_t> PreferredInputFormat(Type type) = 0;
 
   // NOTE: The below methods to query capabilities have a side effect of
   // closing the previously-open device, if any, and should not be called after
@@ -433,8 +447,9 @@ class MEDIA_GPU_EXPORT V4L2Device
   // Return true if image processing is supported, false otherwise.
   virtual bool IsImageProcessingSupported() = 0;
 
-  // Return true if JPEG decoding is supported, false otherwise.
+  // Return true if JPEG codec is supported, false otherwise.
   virtual bool IsJpegDecodingSupported() = 0;
+  virtual bool IsJpegEncodingSupported() = 0;
 
  protected:
   friend class base::RefCountedThreadSafe<V4L2Device>;

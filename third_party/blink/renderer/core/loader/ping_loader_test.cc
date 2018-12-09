@@ -23,6 +23,10 @@ namespace {
 
 class PingLocalFrameClient : public EmptyLocalFrameClient {
  public:
+  std::unique_ptr<WebURLLoaderFactory> CreateURLLoaderFactory() override {
+    return Platform::Current()->CreateDefaultURLLoaderFactory();
+  }
+
   void DispatchWillSendRequest(ResourceRequest& request) override {
     if (request.GetKeepalive())
       ping_request_ = request;
@@ -37,7 +41,7 @@ class PingLocalFrameClient : public EmptyLocalFrameClient {
 class PingLoaderTest : public PageTestBase {
  public:
   void SetUp() override {
-    client_ = new PingLocalFrameClient;
+    client_ = MakeGarbageCollected<PingLocalFrameClient>();
     PageTestBase::SetupPageWithClients(nullptr, client_);
   }
 

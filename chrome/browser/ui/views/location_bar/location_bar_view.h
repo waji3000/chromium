@@ -43,7 +43,6 @@ class GURL;
 class IntentPickerView;
 class KeywordHintView;
 class LocationIconView;
-class ManagePasswordsIconViews;
 enum class OmniboxPart;
 class OmniboxPopupView;
 enum class OmniboxTint;
@@ -141,11 +140,6 @@ class LocationBarView : public LocationBar,
 
   // Returns the delegate.
   Delegate* delegate() const { return delegate_; }
-
-  // The passwords icon. It may not be visible.
-  ManagePasswordsIconViews* manage_passwords_icon_view() {
-    return manage_passwords_icon_view_;
-  }
 
   // Toggles the star on or off.
   void SetStarToggled(bool on);
@@ -321,11 +315,9 @@ class LocationBarView : public LocationBar,
   void AcceptInput(base::TimeTicks match_selection_timestamp) override;
   void FocusSearch() override;
   void UpdateContentSettingsIcons() override;
-  void UpdateManagePasswordsIconAndBubble() override;
   void UpdateSaveCreditCardIcon() override;
   void UpdateLocalCardMigrationIcon() override;
   void UpdateBookmarkStarVisibility() override;
-  void UpdateLocationBarVisibility(bool visible, bool animation) override;
   void SaveStateToContents(content::WebContents* contents) override;
   const OmniboxView* GetOmniboxView() const override;
   LocationBarTesting* GetLocationBarForTesting() override;
@@ -410,9 +402,6 @@ class LocationBarView : public LocationBar,
   // The page action icons.
   PageActionIconContainerView* page_action_icon_container_view_ = nullptr;
 
-  // The manage passwords icon.
-  ManagePasswordsIconViews* manage_passwords_icon_view_ = nullptr;
-
   // The save credit card icon.  It will be null when |browser_| is null.
   autofill::SaveCardIconView* save_credit_card_icon_view_ = nullptr;
 
@@ -435,9 +424,6 @@ class LocationBarView : public LocationBar,
   // An [x] that appears in touch mode (when the OSK is visible) and allows the
   // user to clear all text.
   views::ImageButton* clear_all_button_ = nullptr;
-
-  // Animation to control showing / hiding the location bar.
-  gfx::SlideAnimation size_animation_{this};
 
   // Animation to change whole location bar background color on hover.
   gfx::SlideAnimation hover_animation_{this};

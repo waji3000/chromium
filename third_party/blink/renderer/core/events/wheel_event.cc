@@ -25,6 +25,7 @@
 
 #include "third_party/blink/renderer/core/clipboard/data_transfer.h"
 #include "third_party/blink/renderer/core/dom/events/event_dispatcher.h"
+#include "third_party/blink/renderer/core/event_interface_names.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
 
@@ -72,7 +73,7 @@ MouseEventInit* GetMouseEventInitForWheel(const WebMouseWheelEvent& event,
 
 WheelEvent* WheelEvent::Create(const WebMouseWheelEvent& event,
                                AbstractView* view) {
-  return new WheelEvent(event, view);
+  return MakeGarbageCollected<WheelEvent>(event, view);
 }
 
 WheelEvent::WheelEvent()
@@ -107,7 +108,7 @@ WheelEvent::WheelEvent(const WebMouseWheelEvent& event, AbstractView* view)
       native_event_(event) {}
 
 const AtomicString& WheelEvent::InterfaceName() const {
-  return EventNames::WheelEvent;
+  return event_interface_names::kWheelEvent;
 }
 
 bool WheelEvent::IsMouseEvent() const {

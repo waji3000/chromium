@@ -2,6 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Decodes a UTF16 string that is encoded as base64.
+function decodeUTF16Base64ToString(encoded_text) {
+  var data = atob(encoded_text);
+  var result = '';
+  for (var i = 0; i < data.length; i += 2) {
+    result +=
+        String.fromCharCode(data.charCodeAt(i) * 256 + data.charCodeAt(i + 1));
+  }
+  return result;
+}
+
 function toggleHelpBox() {
   var helpBoxOuter = document.getElementById('details');
   helpBoxOuter.classList.toggle(HIDDEN_CLASS);
@@ -159,8 +170,24 @@ var primaryControlOnLeft = true;
 primaryControlOnLeft = false;
 // </if>
 
-// TODO(crbug.com/883486): UI not yet implemented.
 function setAutoFetchState(scheduled, can_schedule) {
+  document.getElementById('cancel-save-page-button')
+      .classList.toggle(HIDDEN_CLASS, !scheduled);
+  document.getElementById('save-page-for-later-button')
+      .classList.toggle(HIDDEN_CLASS, scheduled || !can_schedule);
+}
+
+function savePageLaterClick() {
+  errorPageController.savePageForLater();
+  // savePageForLater will eventually trigger a call to setAutoFetchState() when
+  // it completes.
+}
+
+function cancelSavePageClick() {
+  errorPageController.cancelSavePage();
+  // setAutoFetchState is not called in response to cancelSavePage(), so do it
+  // now.
+  setAutoFetchState(false, true);
 }
 
 function toggleErrorInformationPopup() {
@@ -255,7 +282,7 @@ function getSuggestedContentDiv(item, index) {
 // unsafe and must be securely handled to be presented on the dino page. Images
 // have already been safely re-encoded but textual content -- like title and
 // attribution -- must be properly handled here.
-function offlineContentAvailable(suggestions) {
+function offlineContentAvailable(isShown, suggestions) {
   if (!suggestions || !loadTimeData.valueExists('offlineContentList'))
     return;
 
@@ -270,15 +297,32 @@ function offlineContentAvailable(suggestions) {
   // plain text.
   for (var index = 0; index < suggestions.length; index++) {
     document.getElementById(`offline-content-suggestion-title-${index}`)
-        .textContent = atob(suggestions[index].title_base64);
+        .textContent =
+        decodeUTF16Base64ToString(suggestions[index].title_base64);
     document.getElementById(`offline-content-suggestion-attribution-${index}`)
-        .textContent = atob(suggestions[index].attribution_base64);
+        .textContent =
+        decodeUTF16Base64ToString(suggestions[index].attribution_base64);
   }
 
   var contentListElement = document.getElementById('offline-content-list');
   if (document.dir == 'rtl')
     contentListElement.classList.add('is-rtl');
+  // The list is configured as shown by default. Hide if needed.
+  if (!isShown)
+    toggleOfflineContentListVisibility(false);
   contentListElement.hidden = false;
+}
+
+function toggleOfflineContentListVisibility(updatePref) {
+  if (!loadTimeData.valueExists('offlineContentList'))
+    return;
+
+  var contentListElement = document.getElementById('offline-content-list');
+  var isVisible = !contentListElement.classList.toggle('list-hidden');
+
+  if (updatePref && window.errorPageController) {
+    errorPageController.listVisibilityChanged(isVisible);
+  }
 }
 
 function onDocumentLoad() {
@@ -293,8 +337,7 @@ function onDocumentLoad() {
   var showSavedCopyButtonVisible =
       loadTimeData.valueExists('showSavedCopyButton') &&
       loadTimeData.getValue('showSavedCopyButton').msg;
-  var downloadButtonVisible =
-      loadTimeData.valueExists('downloadButton') &&
+  var downloadButtonVisible = loadTimeData.valueExists('downloadButton') &&
       loadTimeData.getValue('downloadButton').msg;
 
   // If offline content suggestions will be visible, the usual buttons will not
@@ -347,9 +390,12 @@ function onDocumentLoad() {
     detailsButton.classList.add('singular');
   }
 
+  var attemptAutoFetch = loadTimeData.valueExists('attemptAutoFetch') &&
+      loadTimeData.getValue('attemptAutoFetch');
+
   // Show control buttons.
   if (reloadButtonVisible || showSavedCopyButtonVisible ||
-      downloadButtonVisible) {
+      downloadButtonVisible || attemptAutoFetch) {
     controlButtonDiv.hidden = false;
 
     // Set the secondary button state in the cases of two call to actions.

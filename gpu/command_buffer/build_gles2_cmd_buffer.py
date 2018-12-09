@@ -1690,6 +1690,14 @@ _NAMED_TYPE_INFO = {
       'gpu::SwapBuffersFlags::kVSyncParams',
     ],
   },
+  'SharedImageAccessMode': {
+    'type': 'GLenum',
+    'is_complete': True,
+    'valid': [
+      'GL_SHARED_IMAGE_ACCESS_MODE_READWRITE_CHROMIUM',
+      'GL_SHARED_IMAGE_ACCESS_MODE_READ_CHROMIUM',
+    ],
+  },
 }
 
 # A function info object specifies the type and other special data for the
@@ -1853,6 +1861,8 @@ _FUNCTION_INFO = {
     'type': 'Custom',
     'impl_func': False,
     'data_transfer_methods': ['shm'],
+    'size_args': {
+      'data': 'size', },
     'client_test': False,
     'trace_level': 2,
   },
@@ -1861,6 +1871,8 @@ _FUNCTION_INFO = {
     'client_test': False,
     'decoder_func': 'DoBufferSubData',
     'data_transfer_methods': ['shm'],
+    'size_args': {
+      'data': 'size', },
     'trace_level': 2,
   },
   'CheckFramebufferStatus': {
@@ -1889,6 +1901,7 @@ _FUNCTION_INFO = {
   },
   'ClearBufferuiv': {
     'type': 'PUT',
+    'use_count_func': True,
     'count': 4,
     'decoder_func': 'DoClearBufferuiv',
     'unit_test': False,
@@ -1958,20 +1971,6 @@ _FUNCTION_INFO = {
   },
   'CreateAndConsumeTextureINTERNAL': {
     'decoder_func': 'DoCreateAndConsumeTextureINTERNAL',
-    'internal': True,
-    'type': 'PUT',
-    'count': 16,  # GL_MAILBOX_SIZE_CHROMIUM
-    'impl_func': False,
-    'unit_test': False,
-    'trace_level': 2,
-  },
-  'CreateAndTexStorage2DSharedImageCHROMIUM': {
-    'type': 'NoCommand',
-    'extension': "CHROMIUM_shared_image",
-    'trace_level': 2,
-  },
-  'CreateAndTexStorage2DSharedImageINTERNAL': {
-    'decoder_func': 'DoCreateAndTexStorage2DSharedImageINTERNAL',
     'internal': True,
     'type': 'PUT',
     'count': 16,  # GL_MAILBOX_SIZE_CHROMIUM
@@ -2857,6 +2856,80 @@ _FUNCTION_INFO = {
     'unit_test': False,
     'trace_level': 2,
     'es31': True
+  },
+  'MultiDrawArraysWEBGL': {
+    'type': 'Custom',
+    'cmd_args': 'GLenumDrawMode mode, '
+                'uint32_t firsts_shm_id, uint32_t firsts_shm_offset, '
+                'uint32_t counts_shm_id, uint32_t counts_shm_offset, '
+                'GLsizei drawcount',
+    'extension': 'WEBGL_multi_draw',
+    'extension_flag': 'webgl_multi_draw',
+    'data_transfer_methods': ['shm'],
+    'size_args': {
+      'firsts': 'drawcount * sizeof(GLint)',
+      'counts': 'drawcount * sizeof(GLsizei)', },
+    'defer_draws': True,
+    'impl_func': False,
+    'client_test': False,
+    'trace_level': 2,
+  },
+  'MultiDrawArraysInstancedWEBGL': {
+    'type': 'Custom',
+    'cmd_args': 'GLenumDrawMode mode, '
+                'uint32_t firsts_shm_id, uint32_t firsts_shm_offset, '
+                'uint32_t counts_shm_id, uint32_t counts_shm_offset, '
+                'uint32_t instance_counts_shm_id, '
+                'uint32_t instance_counts_shm_offset, GLsizei drawcount',
+    'extension': 'WEBGL_multi_draw_instanced',
+    'extension_flag': 'webgl_multi_draw_instanced',
+    'data_transfer_methods': ['shm'],
+    'size_args': {
+      'firsts': 'drawcount * sizeof(GLint)',
+      'counts': 'drawcount * sizeof(GLsizei)',
+      'instance_counts': 'drawcount * sizeof(GLsizei)', },
+    'defer_draws': True,
+    'impl_func': False,
+    'client_test': False,
+    'trace_level': 2,
+  },
+  'MultiDrawElementsWEBGL': {
+    'type': 'Custom',
+    'cmd_args': 'GLenumDrawMode mode, '
+                'uint32_t counts_shm_id, uint32_t counts_shm_offset, '
+                'GLenumIndexType type, '
+                'uint32_t offsets_shm_id, uint32_t offsets_shm_offset, '
+                'GLsizei drawcount',
+    'extension': 'WEBGL_multi_draw',
+    'extension_flag': 'webgl_multi_draw',
+    'data_transfer_methods': ['shm'],
+    'size_args': {
+      'counts': 'drawcount * sizeof(GLsizei)',
+      'offsets': 'drawcount * sizeof(GLsizei)', },
+    'defer_draws': True,
+    'impl_func': False,
+    'client_test': False,
+    'trace_level': 2,
+  },
+  'MultiDrawElementsInstancedWEBGL': {
+    'type': 'Custom',
+    'cmd_args': 'GLenumDrawMode mode, '
+                'uint32_t counts_shm_id, uint32_t counts_shm_offset, '
+                'GLenumIndexType type, '
+                'uint32_t offsets_shm_id, uint32_t offsets_shm_offset, '
+                'uint32_t instance_counts_shm_id, '
+                'uint32_t instance_counts_shm_offset, GLsizei drawcount',
+    'extension': 'WEBGL_multi_draw_instanced',
+    'extension_flag': 'webgl_multi_draw_instanced',
+    'data_transfer_methods': ['shm'],
+    'size_args': {
+      'counts': 'drawcount * sizeof(GLsizei)',
+      'offsets': 'drawcount * sizeof(GLsizei)',
+      'instance_counts': 'drawcount * sizeof(GLsizei)', },
+    'defer_draws': True,
+    'impl_func': False,
+    'client_test': False,
+    'trace_level': 2,
   },
   'OverlayPromotionHintCHROMIUM': {
     'decoder_func': 'DoOverlayPromotionHintCHROMIUM',
@@ -3774,22 +3847,20 @@ _FUNCTION_INFO = {
     'extension': 'CHROMIUM_schedule_ca_layer',
     'unit_test': False,
   },
-  'ScheduleDCLayerSharedStateCHROMIUM': {
-    'type': 'Custom',
-    'impl_func': False,
-    'client_test': False,
-    'cmd_args': 'GLfloat opacity, GLboolean is_clipped, '
-                'GLint z_order, GLuint shm_id, GLuint shm_offset',
-    'extension': 'CHROMIUM_schedule_ca_layer',
-  },
   'ScheduleDCLayerCHROMIUM': {
-    'type': 'Custom',
-    'impl_func': False,
-    'client_test': False,
-    'cmd_args': 'GLsizei num_textures, GLuint background_color, '
-                'GLuint edge_aa_mask, GLuint filter, GLuint shm_id, '
-                'GLuint shm_offset, bool is_protected_video',
-    'extension': 'CHROMIUM_schedule_ca_layer',
+    'cmd_args': 'GLuint y_texture_id, GLuint uv_texture_id, GLint z_order, '
+                'GLint content_x, GLint content_y, GLint content_width, '
+                'GLint content_height, GLint quad_x, GLint quad_y, '
+                'GLint quad_width, GLint quad_height, '
+                'GLfloat transform_c1r1, GLfloat transform_c2r1, '
+                'GLfloat transform_c1r2, GLfloat transform_c2r2, '
+                'GLfloat transform_tx, GLfloat transform_ty, '
+                'GLboolean is_clipped, GLint clip_x, GLint clip_y, '
+                'GLint clip_width, GLint clip_height, '
+                'GLuint protected_video_type',
+    'decoder_func': 'DoScheduleDCLayerCHROMIUM',
+    'extension': 'CHROMIUM_schedule_dc_layer',
+    'unit_test': False,
   },
   'CommitOverlayPlanesCHROMIUM': {
     'impl_func': False,
@@ -4129,6 +4200,32 @@ _FUNCTION_INFO = {
     'client_test': False,
     'extension': 'KHRParallelShaderCompile',
     'extension_flag': 'khr_parallel_shader_compile',
+  },
+  'CreateAndTexStorage2DSharedImageCHROMIUM': {
+    'type': 'NoCommand',
+    'extension': "CHROMIUM_shared_image",
+    'trace_level': 2,
+  },
+  'CreateAndTexStorage2DSharedImageINTERNAL': {
+    'decoder_func': 'DoCreateAndTexStorage2DSharedImageINTERNAL',
+    'internal': True,
+    'type': 'PUT',
+    'count': 16,  # GL_MAILBOX_SIZE_CHROMIUM
+    'impl_func': False,
+    'unit_test': False,
+    'trace_level': 2,
+  },
+  'BeginSharedImageAccessDirectCHROMIUM': {
+    'decoder_func': 'DoBeginSharedImageAccessDirectCHROMIUM',
+    'extension': 'CHROMIUM_shared_image',
+    'unit_test': False,
+    'client_test': False,
+    'cmd_args': 'GLuint texture, GLenumSharedImageAccessMode mode',
+  },
+  'EndSharedImageAccessDirectCHROMIUM': {
+    'decoder_func': 'DoEndSharedImageAccessDirectCHROMIUM',
+    'extension': 'CHROMIUM_shared_image',
+    'unit_test': False,
   }
 }
 

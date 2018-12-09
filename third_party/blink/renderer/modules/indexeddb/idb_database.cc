@@ -28,10 +28,7 @@
 #include "base/atomic_sequence_num.h"
 #include "base/optional.h"
 #include "third_party/blink/public/common/indexeddb/web_idb_types.h"
-#include "third_party/blink/public/platform/modules/indexeddb/web_idb_database_callbacks.h"
 #include "third_party/blink/public/platform/modules/indexeddb/web_idb_database_exception.h"
-#include "third_party/blink/public/platform/modules/indexeddb/web_idb_key_path.h"
-#include "third_party/blink/public/platform/modules/indexeddb/web_idb_observation.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/serialized_script_value.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_binding_for_modules.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_idb_observer_callback.h"
@@ -45,11 +42,13 @@
 #include "third_party/blink/renderer/modules/indexeddb/idb_observer_changes.h"
 #include "third_party/blink/renderer/modules/indexeddb/idb_tracing.h"
 #include "third_party/blink/renderer/modules/indexeddb/idb_version_change_event.h"
+#include "third_party/blink/renderer/modules/indexeddb/web_idb_database_callbacks.h"
 #include "third_party/blink/renderer/modules/indexeddb/web_idb_database_callbacks_impl.h"
+#include "third_party/blink/renderer/modules/indexeddb/web_idb_key_path.h"
+#include "third_party/blink/renderer/modules/indexeddb/web_idb_observation.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
-#include "third_party/blink/renderer/platform/wtf/atomics.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 
 #include <limits>
@@ -100,7 +99,8 @@ IDBDatabase* IDBDatabase::Create(ExecutionContext* context,
                                  std::unique_ptr<WebIDBDatabase> database,
                                  IDBDatabaseCallbacks* callbacks,
                                  v8::Isolate* isolate) {
-  return new IDBDatabase(context, std::move(database), callbacks, isolate);
+  return MakeGarbageCollected<IDBDatabase>(context, std::move(database),
+                                           callbacks, isolate);
 }
 
 IDBDatabase::IDBDatabase(ExecutionContext* context,
@@ -208,7 +208,7 @@ void IDBDatabase::OnChanges(
       IDBTransaction* transaction = nullptr;
       auto it = transactions.find(map_entry.first);
       if (it != transactions.end()) {
-        const std::pair<int64_t, std::vector<int64_t>>& obs_txn = it->second;
+        const std::pair<int64_t, WebVector<int64_t>>& obs_txn = it->second;
         HashSet<String> stores;
         for (int64_t store_id : obs_txn.second) {
           stores.insert(metadata_.object_stores.at(store_id)->name);
@@ -248,7 +248,7 @@ int32_t IDBDatabase::AddObserver(
     bool include_transaction,
     bool no_records,
     bool values,
-    const std::bitset<kWebIDBOperationTypeCount>& operation_types) {
+    std::bitset<blink::kIDBOperationTypeCount> operation_types) {
   int32_t observer_id = NextObserverId();
   observers_.Set(observer_id, observer);
   Backend()->AddObserver(transaction_id, observer_id, include_transaction,
@@ -295,9 +295,9 @@ IDBObjectStore* IDBDatabase::createObjectStore(
     return nullptr;
   }
 
-  if (auto_increment && ((key_path.GetType() == IDBKeyPath::kStringType &&
+  if (auto_increment && ((key_path.GetType() == mojom::IDBKeyPathType::String &&
                           key_path.GetString().IsEmpty()) ||
-                         key_path.GetType() == IDBKeyPath::kArrayType)) {
+                         key_path.GetType() == mojom::IDBKeyPathType::Array)) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kInvalidAccessError,
         "The autoIncrement option was set but the "
@@ -419,9 +419,9 @@ IDBTransaction* IDBDatabase::transaction(
     object_store_ids.push_back(object_store_id);
   }
 
-  WebIDBTransactionMode mode = IDBTransaction::StringToMode(mode_string);
-  if (mode != kWebIDBTransactionModeReadOnly &&
-      mode != kWebIDBTransactionModeReadWrite) {
+  mojom::IDBTransactionMode mode = IDBTransaction::StringToMode(mode_string);
+  if (mode != mojom::IDBTransactionMode::ReadOnly &&
+      mode != mojom::IDBTransactionMode::ReadWrite) {
     exception_state.ThrowTypeError(
         "The mode provided ('" + mode_string +
         "') is not one of 'readonly' or 'readwrite'.");

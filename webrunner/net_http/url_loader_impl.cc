@@ -124,7 +124,7 @@ URLLoaderImpl::URLLoaderImpl(std::unique_ptr<net::URLRequestContext> context,
       context_(std::move(context)),
       buffer_(new net::GrowableIOBuffer()),
       write_watch_(FROM_HERE) {
-  binding_.set_error_handler([this] { delete this; });
+  binding_.set_error_handler([this](zx_status_t status) { delete this; });
   g_active_requests++;
 }
 
@@ -340,7 +340,7 @@ bool URLLoaderImpl::WriteResponseBytes(int result) {
              response_body_mode_ ==
                  oldhttp::ResponseBodyMode::BUFFER_OR_STREAM);
       // In socket mode, attempt to shut down the socket and close it.
-      write_socket_.write(ZX_SOCKET_SHUTDOWN_WRITE, nullptr, 0, nullptr);
+      write_socket_.shutdown(ZX_SOCKET_SHUTDOWN_WRITE);
       write_socket_ = zx::socket();
     } else {
       DCHECK_EQ(response_body_mode_, oldhttp::ResponseBodyMode::BUFFER);

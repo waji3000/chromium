@@ -1506,6 +1506,70 @@ void ShaderSourceBucket(GLuint shader, uint32_t str_bucket_id) {
   }
 }
 
+void MultiDrawArraysWEBGL(GLenum mode,
+                          uint32_t firsts_shm_id,
+                          uint32_t firsts_shm_offset,
+                          uint32_t counts_shm_id,
+                          uint32_t counts_shm_offset,
+                          GLsizei drawcount) {
+  gles2::cmds::MultiDrawArraysWEBGL* c =
+      GetCmdSpace<gles2::cmds::MultiDrawArraysWEBGL>();
+  if (c) {
+    c->Init(mode, firsts_shm_id, firsts_shm_offset, counts_shm_id,
+            counts_shm_offset, drawcount);
+  }
+}
+
+void MultiDrawArraysInstancedWEBGL(GLenum mode,
+                                   uint32_t firsts_shm_id,
+                                   uint32_t firsts_shm_offset,
+                                   uint32_t counts_shm_id,
+                                   uint32_t counts_shm_offset,
+                                   uint32_t instance_counts_shm_id,
+                                   uint32_t instance_counts_shm_offset,
+                                   GLsizei drawcount) {
+  gles2::cmds::MultiDrawArraysInstancedWEBGL* c =
+      GetCmdSpace<gles2::cmds::MultiDrawArraysInstancedWEBGL>();
+  if (c) {
+    c->Init(mode, firsts_shm_id, firsts_shm_offset, counts_shm_id,
+            counts_shm_offset, instance_counts_shm_id,
+            instance_counts_shm_offset, drawcount);
+  }
+}
+
+void MultiDrawElementsWEBGL(GLenum mode,
+                            uint32_t counts_shm_id,
+                            uint32_t counts_shm_offset,
+                            GLenum type,
+                            uint32_t offsets_shm_id,
+                            uint32_t offsets_shm_offset,
+                            GLsizei drawcount) {
+  gles2::cmds::MultiDrawElementsWEBGL* c =
+      GetCmdSpace<gles2::cmds::MultiDrawElementsWEBGL>();
+  if (c) {
+    c->Init(mode, counts_shm_id, counts_shm_offset, type, offsets_shm_id,
+            offsets_shm_offset, drawcount);
+  }
+}
+
+void MultiDrawElementsInstancedWEBGL(GLenum mode,
+                                     uint32_t counts_shm_id,
+                                     uint32_t counts_shm_offset,
+                                     GLenum type,
+                                     uint32_t offsets_shm_id,
+                                     uint32_t offsets_shm_offset,
+                                     uint32_t instance_counts_shm_id,
+                                     uint32_t instance_counts_shm_offset,
+                                     GLsizei drawcount) {
+  gles2::cmds::MultiDrawElementsInstancedWEBGL* c =
+      GetCmdSpace<gles2::cmds::MultiDrawElementsInstancedWEBGL>();
+  if (c) {
+    c->Init(mode, counts_shm_id, counts_shm_offset, type, offsets_shm_id,
+            offsets_shm_offset, instance_counts_shm_id,
+            instance_counts_shm_offset, drawcount);
+  }
+}
+
 void StencilFunc(GLenum func, GLint ref, GLuint mask) {
   gles2::cmds::StencilFunc* c = GetCmdSpace<gles2::cmds::StencilFunc>();
   if (c) {
@@ -2653,19 +2717,6 @@ void CreateAndConsumeTextureINTERNALImmediate(GLuint texture,
   }
 }
 
-void CreateAndTexStorage2DSharedImageINTERNALImmediate(GLuint texture,
-                                                       GLenum internalFormat,
-                                                       const GLbyte* mailbox) {
-  const uint32_t size = gles2::cmds::
-      CreateAndTexStorage2DSharedImageINTERNALImmediate::ComputeSize();
-  gles2::cmds::CreateAndTexStorage2DSharedImageINTERNALImmediate* c =
-      GetImmediateCmdSpaceTotalSize<
-          gles2::cmds::CreateAndTexStorage2DSharedImageINTERNALImmediate>(size);
-  if (c) {
-    c->Init(texture, internalFormat, mailbox);
-  }
-}
-
 void BindUniformLocationCHROMIUMBucket(GLuint program,
                                        GLint location,
                                        uint32_t name_bucket_id) {
@@ -2865,30 +2916,37 @@ void FlushDriverCachesCHROMIUM() {
   }
 }
 
-void ScheduleDCLayerSharedStateCHROMIUM(GLfloat opacity,
-                                        GLboolean is_clipped,
-                                        GLint z_order,
-                                        GLuint shm_id,
-                                        GLuint shm_offset) {
-  gles2::cmds::ScheduleDCLayerSharedStateCHROMIUM* c =
-      GetCmdSpace<gles2::cmds::ScheduleDCLayerSharedStateCHROMIUM>();
-  if (c) {
-    c->Init(opacity, is_clipped, z_order, shm_id, shm_offset);
-  }
-}
-
-void ScheduleDCLayerCHROMIUM(GLsizei num_textures,
-                             GLuint background_color,
-                             GLuint edge_aa_mask,
-                             GLuint filter,
-                             GLuint shm_id,
-                             GLuint shm_offset,
-                             bool is_protected_video) {
+void ScheduleDCLayerCHROMIUM(GLuint y_texture_id,
+                             GLuint uv_texture_id,
+                             GLint z_order,
+                             GLint content_x,
+                             GLint content_y,
+                             GLint content_width,
+                             GLint content_height,
+                             GLint quad_x,
+                             GLint quad_y,
+                             GLint quad_width,
+                             GLint quad_height,
+                             GLfloat transform_c1r1,
+                             GLfloat transform_c2r1,
+                             GLfloat transform_c1r2,
+                             GLfloat transform_c2r2,
+                             GLfloat transform_tx,
+                             GLfloat transform_ty,
+                             GLboolean is_clipped,
+                             GLint clip_x,
+                             GLint clip_y,
+                             GLint clip_width,
+                             GLint clip_height,
+                             GLuint protected_video_type) {
   gles2::cmds::ScheduleDCLayerCHROMIUM* c =
       GetCmdSpace<gles2::cmds::ScheduleDCLayerCHROMIUM>();
   if (c) {
-    c->Init(num_textures, background_color, edge_aa_mask, filter, shm_id,
-            shm_offset, is_protected_video);
+    c->Init(y_texture_id, uv_texture_id, z_order, content_x, content_y,
+            content_width, content_height, quad_x, quad_y, quad_width,
+            quad_height, transform_c1r1, transform_c2r1, transform_c1r2,
+            transform_c2r2, transform_tx, transform_ty, is_clipped, clip_x,
+            clip_y, clip_width, clip_height, protected_video_type);
   }
 }
 
@@ -3406,6 +3464,34 @@ void MaxShaderCompilerThreadsKHR(GLuint count) {
       GetCmdSpace<gles2::cmds::MaxShaderCompilerThreadsKHR>();
   if (c) {
     c->Init(count);
+  }
+}
+
+void CreateAndTexStorage2DSharedImageINTERNALImmediate(GLuint texture,
+                                                       const GLbyte* mailbox) {
+  const uint32_t size = gles2::cmds::
+      CreateAndTexStorage2DSharedImageINTERNALImmediate::ComputeSize();
+  gles2::cmds::CreateAndTexStorage2DSharedImageINTERNALImmediate* c =
+      GetImmediateCmdSpaceTotalSize<
+          gles2::cmds::CreateAndTexStorage2DSharedImageINTERNALImmediate>(size);
+  if (c) {
+    c->Init(texture, mailbox);
+  }
+}
+
+void BeginSharedImageAccessDirectCHROMIUM(GLuint texture, GLenum mode) {
+  gles2::cmds::BeginSharedImageAccessDirectCHROMIUM* c =
+      GetCmdSpace<gles2::cmds::BeginSharedImageAccessDirectCHROMIUM>();
+  if (c) {
+    c->Init(texture, mode);
+  }
+}
+
+void EndSharedImageAccessDirectCHROMIUM(GLuint texture) {
+  gles2::cmds::EndSharedImageAccessDirectCHROMIUM* c =
+      GetCmdSpace<gles2::cmds::EndSharedImageAccessDirectCHROMIUM>();
+  if (c) {
+    c->Init(texture);
   }
 }
 

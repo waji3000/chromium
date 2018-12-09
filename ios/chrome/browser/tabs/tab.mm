@@ -58,7 +58,6 @@
 #import "ios/chrome/browser/tabs/legacy_tab_helper.h"
 #import "ios/chrome/browser/tabs/tab_dialog_delegate.h"
 #import "ios/chrome/browser/tabs/tab_helper_util.h"
-#import "ios/chrome/browser/tabs/tab_model.h"
 #import "ios/chrome/browser/tabs/tab_private.h"
 #include "ios/chrome/browser/translate/chrome_ios_translate_client.h"
 #import "ios/chrome/browser/u2f/u2f_controller.h"
@@ -67,7 +66,6 @@
 #import "ios/chrome/browser/ui/open_in_controller.h"
 #import "ios/chrome/browser/ui/overscroll_actions/overscroll_actions_controller.h"
 #include "ios/chrome/browser/ui/util/ui_util.h"
-#import "ios/chrome/browser/voice/voice_search_navigations_tab_helper.h"
 #import "ios/chrome/browser/web/page_placeholder_tab_helper.h"
 #import "ios/chrome/browser/web/tab_id_tab_helper.h"
 #include "ios/chrome/grit/ios_strings.h"
@@ -121,7 +119,6 @@ NSString* const kTabClosingCurrentDocumentNotificationForCrashReporting =
 NSString* const kTabUrlKey = @"url";
 
 @interface Tab ()<CRWWebStateObserver> {
-  __weak TabModel* _parentTabModel;
   ios::ChromeBrowserState* _browserState;
 
   OpenInController* _openInController;
@@ -239,49 +236,7 @@ NSString* const kTabUrlKey = @"url";
   overscrollActionsControllerDelegate_ = overscrollActionsControllerDelegate;
 }
 
-- (BOOL)isVoiceSearchResultsTab {
-  // TODO(crbug.com/778416): Move this logic entirely into helper.
-  // If nothing has been loaded in the Tab, it cannot be displaying a voice
-  // search results page.
-  web::NavigationItem* item =
-      self.webState->GetNavigationManager()->GetVisibleItem();
-  if (!item)
-    return NO;
-  // Navigating through history to a NavigationItem that was created for a voice
-  // search query should just be treated like a normal page load.
-  if ((item->GetTransitionType() & ui::PAGE_TRANSITION_FORWARD_BACK) != 0)
-    return NO;
-  // Check whether |item| has been marked as a voice search result navigation.
-  return VoiceSearchNavigationTabHelper::FromWebState(self.webState)
-      ->IsNavigationFromVoiceSearch(item);
-}
-
-- (BOOL)loadFinished {
-  return self.webState && !self.webState->IsLoading();
-}
-
 #pragma mark - Public API
-
-- (void)setParentTabModel:(TabModel*)model {
-  DCHECK(!model || !_parentTabModel);
-  _parentTabModel = model;
-}
-
-- (UIView*)view {
-  if (!self.webState)
-    return nil;
-
-  // Record reload of previously-evicted tab.
-  if (self.webState->IsEvicted() && [_parentTabModel tabUsageRecorder])
-    [_parentTabModel tabUsageRecorder]->RecordPageLoadStart(self.webState);
-
-  // Do not trigger the load if the tab has crashed. SadTabTabHelper is
-  // responsible for handing reload logic for crashed tabs.
-  if (!self.webState->IsCrashed()) {
-    self.webState->GetNavigationManager()->LoadIfNecessary();
-  }
-  return self.webState->GetView();
-}
 
 - (UIView*)viewForPrinting {
   return self.webController.viewForPrinting;
@@ -331,23 +286,6 @@ NSString* const kTabUrlKey = @"url";
   }
 }
 
-#pragma mark - Public API (relatinge to User agent)
-
-- (BOOL)usesDesktopUserAgent {
-  if (!self.navigationManager)
-    return NO;
-
-  web::NavigationItem* visibleItem = self.navigationManager->GetVisibleItem();
-  return visibleItem &&
-         visibleItem->GetUserAgentType() == web::UserAgentType::DESKTOP;
-}
-
-- (void)reloadWithUserAgentType:(web::UserAgentType)userAgentType {
-  web::NavigationManager* navigationManager = [self navigationManager];
-  DCHECK(navigationManager);
-  navigationManager->ReloadWithUserAgentType(userAgentType);
-}
-
 #pragma mark - Public API (relating to U2F)
 
 - (void)evaluateU2FResultFromURL:(const GURL&)URL {
@@ -382,8 +320,6 @@ NSString* const kTabUrlKey = @"url";
 
 - (void)webState:(web::WebState*)webState
     didLoadPageWithSuccess:(BOOL)loadSuccess {
-  DCHECK([self loadFinished]);
-
   if (loadSuccess) {
     scoped_refptr<net::HttpResponseHeaders> headers =
         _webStateImpl->GetHttpResponseHeaders();
@@ -420,7 +356,10 @@ NSString* const kTabUrlKey = @"url";
     _openInController = [[OpenInController alloc]
         initWithURLLoaderFactory:_browserState->GetSharedURLLoaderFactory()
                    webController:self.webController];
-    _openInController.baseView = self.view;
+    // Previously evicted tabs should be reloaded before this method is called.
+    DCHECK(!self.webState->IsEvicted());
+    self.webState->GetNavigationManager()->LoadIfNecessary();
+    _openInController.baseView = self.webState->GetView();
   }
   return _openInController;
 }
@@ -458,10 +397,6 @@ NSString* const kTabUrlKey = @"url";
 #pragma mark - TestingSupport
 
 @implementation Tab (TestingSupport)
-
-- (TabModel*)parentTabModel {
-  return _parentTabModel;
-}
 
 // TODO(crbug.com/620465): this require the Tab's WebState to be a WebStateImpl,
 // remove this helper once this is no longer true (and fix the unit tests).

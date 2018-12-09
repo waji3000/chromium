@@ -19,7 +19,7 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/common/autofill_features.h"
-#include "components/autofill/core/common/autofill_switches.h"
+#include "components/password_manager/core/browser/new_password_form_manager.h"
 #include "components/password_manager/core/browser/password_generation_manager.h"
 #include "components/password_manager/core/browser/password_manager_util.h"
 #include "components/password_manager/core/browser/test_password_store.h"
@@ -97,10 +97,6 @@ class PasswordGenerationInteractiveTest
     // Make sure the feature is enabled.
     scoped_feature_list_.InitAndEnableFeature(
         autofill::features::kAutomaticPasswordGeneration);
-
-    // Don't require ping from autofill or blacklist checking.
-    command_line->AppendSwitch(
-        autofill::switches::kLocalHeuristicsOnlyForPasswordGeneration);
   }
 
   void SetUpOnMainThread() override {
@@ -113,8 +109,12 @@ class PasswordGenerationInteractiveTest
     ChromePasswordManagerClient* client =
         ChromePasswordManagerClient::FromWebContents(WebContents());
     client->SetTestObserver(&observer_);
+    // The base class should enable password generation.
+    ASSERT_NE(password_manager::NOT_SYNCING, client->GetPasswordSyncState());
+    password_manager::NewPasswordFormManager::
+        set_wait_for_server_predictions_for_filling(false);
 
-    NavigateToFile("/password/signup_form.html");
+    NavigateToFile("/password/signup_form_new_password.html");
   }
 
   void TearDownOnMainThread() override {
@@ -253,11 +253,12 @@ IN_PROC_BROWSER_TEST_F(PasswordGenerationInteractiveTest,
 IN_PROC_BROWSER_TEST_F(PasswordGenerationInteractiveTest,
                        PopupShownManuallyAndPasswordErased) {
   NavigateToFile("/password/password_form.html");
-
   FocusPasswordField();
+  EXPECT_FALSE(GenerationPopupShowing());
   // The same flow happens when user generates a password from the context menu.
   password_manager_util::UserTriggeredManualGenerationFromContextMenu(
       ChromePasswordManagerClient::FromWebContents(WebContents()));
+  WaitForPopupStatusChange();
   EXPECT_TRUE(GenerationPopupShowing());
   SendKeyToPopup(ui::VKEY_DOWN);
   SendKeyToPopup(ui::VKEY_RETURN);

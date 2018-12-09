@@ -15,8 +15,11 @@
 #include "base/containers/flat_map.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "components/services/patch/patch_service.h"
+#include "components/services/unzip/unzip_service.h"
 #include "components/update_client/configurator.h"
 #include "services/network/test/test_url_loader_factory.h"
+#include "services/service_manager/public/cpp/test/test_connector_factory.h"
 #include "url/gurl.h"
 
 class PrefService;
@@ -27,7 +30,6 @@ class SharedURLLoaderFactory;
 
 namespace service_manager {
 class Connector;
-class TestConnectorFactory;
 }  // namespace service_manager
 
 namespace update_client {
@@ -113,6 +115,7 @@ class TestConfigurator : public Configurator {
   void SetUpdateCheckUrl(const GURL& url);
   void SetPingUrl(const GURL& url);
   void SetAppGuid(const std::string& app_guid);
+  void SetUseJSON(bool use_JSON);
   network::TestURLLoaderFactory* test_url_loader_factory() {
     return &test_url_loader_factory_;
   }
@@ -132,9 +135,13 @@ class TestConfigurator : public Configurator {
   GURL update_check_url_;
   GURL ping_url_;
   std::string app_guid_;
+  bool use_JSON_;
 
-  std::unique_ptr<service_manager::TestConnectorFactory> connector_factory_;
+  service_manager::TestConnectorFactory connector_factory_;
   std::unique_ptr<service_manager::Connector> connector_;
+
+  unzip::UnzipService unzip_service_;
+  patch::PatchService patch_service_;
 
   scoped_refptr<network::SharedURLLoaderFactory> test_shared_loader_factory_;
   network::TestURLLoaderFactory test_url_loader_factory_;

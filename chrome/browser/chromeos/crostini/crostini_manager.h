@@ -33,6 +33,7 @@ enum class CrostiniResult {
   SUCCESS,
   DBUS_ERROR,
   UNPARSEABLE_RESPONSE,
+  INSUFFICIENT_DISK,
   CREATE_DISK_IMAGE_FAILED,
   VM_START_FAILED,
   VM_STOP_FAILED,
@@ -128,6 +129,7 @@ class CrostiniManager : public KeyedService,
   // The type of the callback for CrostiniManager::CreateDiskImage.
   using CreateDiskImageCallback =
       base::OnceCallback<void(CrostiniResult result,
+                              vm_tools::concierge::DiskImageStatus,
                               const base::FilePath& disk_path)>;
   // The type of the callback for CrostiniManager::DestroyDiskImage.
   using DestroyDiskImageCallback = CrostiniResultCallback;
@@ -172,7 +174,9 @@ class CrostiniManager : public KeyedService,
     virtual ~RestartObserver() {}
     virtual void OnComponentLoaded(CrostiniResult result) = 0;
     virtual void OnConciergeStarted(CrostiniResult result) = 0;
-    virtual void OnDiskImageCreated(CrostiniResult result) = 0;
+    virtual void OnDiskImageCreated(CrostiniResult result,
+                                    vm_tools::concierge::DiskImageStatus status,
+                                    int64_t disk_size_available) = 0;
     virtual void OnVmStarted(CrostiniResult result) = 0;
     virtual void OnContainerDownloading(int32_t download_percent) = 0;
     virtual void OnContainerCreated(CrostiniResult result) = 0;
@@ -231,6 +235,8 @@ class CrostiniManager : public KeyedService,
       const base::FilePath& disk_path,
       // The storage location for the disk image
       vm_tools::concierge::StorageLocation storage_location,
+      // The logical size of the disk image, in bytes
+      int64_t disk_size_bytes,
       CreateDiskImageCallback callback);
 
   // Checks the arguments for destroying a named Termina VM disk image.
@@ -538,12 +544,6 @@ class CrostiniManager : public KeyedService,
   // checking component registration code may block.
   void MaybeUpgradeCrostiniAfterChecks();
 
-  // Helper for CrostiniManager::CreateDiskImage. Separated so it can be run
-  // off the main thread.
-  void CreateDiskImageAfterSizeCheck(
-      vm_tools::concierge::CreateDiskImageRequest request,
-      CreateDiskImageCallback callback,
-      int64_t free_disk_size);
 
   void FinishRestart(CrostiniRestarter* restarter, CrostiniResult result);
 

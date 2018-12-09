@@ -524,7 +524,11 @@ GLES2DecoderPassthroughImpl::GLES2DecoderPassthroughImpl(
       client_(client),
       commands_to_process_(0),
       debug_marker_manager_(),
-      logger_(&debug_marker_manager_, client_),
+      logger_(&debug_marker_manager_,
+              base::BindRepeating(&DecoderClient::OnConsoleMessage,
+                                  base::Unretained(client_),
+                                  0),
+              group->gpu_preferences().disable_gl_error_limit),
       surface_(),
       context_(),
       offscreen_(false),
@@ -539,7 +543,7 @@ GLES2DecoderPassthroughImpl::GLES2DecoderPassthroughImpl(
       bound_draw_framebuffer_(0),
       bound_read_framebuffer_(0),
       gpu_decoder_category_(TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(
-          TRACE_DISABLED_BY_DEFAULT("gpu_decoder"))),
+          TRACE_DISABLED_BY_DEFAULT("gpu.decoder"))),
       gpu_trace_level_(2),
       gpu_trace_commands_(false),
       gpu_debug_commands_(false),
@@ -613,7 +617,7 @@ GLES2Decoder::Error GLES2DecoderPassthroughImpl::DoCommandsImpl(
         if (DebugImpl && gpu_trace_commands_) {
           if (CMD_FLAG_GET_TRACE_LEVEL(info.cmd_flags) <= gpu_trace_level_) {
             doing_gpu_trace = true;
-            gpu_tracer_->Begin(TRACE_DISABLED_BY_DEFAULT("gpu_decoder"),
+            gpu_tracer_->Begin(TRACE_DISABLED_BY_DEFAULT("gpu.decoder"),
                                GetCommandName(command), kTraceDecoder);
           }
         }
@@ -1344,10 +1348,12 @@ gpu::Capabilities GLES2DecoderPassthroughImpl::GetCapabilities() {
   caps.protected_video_swap_chain = surface_->SupportsProtectedVideo();
   caps.texture_npot = feature_info_->feature_flags().npot_ok;
   caps.chromium_gpu_fence = feature_info_->feature_flags().chromium_gpu_fence;
-  caps.texture_target_exception_list =
-      group_->gpu_preferences().texture_target_exception_list;
   caps.chromium_nonblocking_readback = true;
   caps.num_surface_buffers = surface_->GetBufferCount();
+  caps.gpu_memory_buffer_formats =
+      feature_info_->feature_flags().gpu_memory_buffer_formats;
+  caps.texture_target_exception_list =
+      group_->gpu_preferences().texture_target_exception_list;
 
   return caps;
 }
@@ -1697,6 +1703,11 @@ void GLES2DecoderPassthroughImpl::SetCopyTextureResourceManagerForTest(
   NOTIMPLEMENTED();
 }
 
+void GLES2DecoderPassthroughImpl::SetCopyTexImageBlitterForTest(
+    CopyTexImageResourceManager* copy_tex_image_blit) {
+  NOTIMPLEMENTED();
+}
+
 const char* GLES2DecoderPassthroughImpl::GetCommandName(
     unsigned int command_id) const {
   if (command_id >= kFirstGLES2Command && command_id < kNumCommands) {
@@ -1934,9 +1945,11 @@ GLES2DecoderPassthroughImpl::PatchGetFramebufferAttachmentParameter(
 }
 
 void GLES2DecoderPassthroughImpl::InsertError(GLenum error,
-                                              const std::string&) {
-  // Message ignored for now
+                                              const std::string& message) {
   errors_.insert(error);
+  LogGLDebugMessage(GL_DEBUG_SOURCE_API, GL_DEBUG_TYPE_ERROR, error,
+                    GL_DEBUG_SEVERITY_HIGH, message.length(), message.c_str(),
+                    GetLogger());
 }
 
 GLenum GLES2DecoderPassthroughImpl::PopError() {
@@ -2034,7 +2047,11 @@ error::Error GLES2DecoderPassthroughImpl::ProcessQueries(bool did_finish) {
     switch (query.target) {
       case GL_COMMANDS_COMPLETED_CHROMIUM:
         DCHECK(query.commands_completed_fence != nullptr);
-        result_available = query.commands_completed_fence->HasCompleted();
+        // Note: |did_finish| guarantees that the GPU has passed the fence but
+        // we cannot assume that GLFence::HasCompleted() will return true yet as
+        // that's not guaranteed by all GLFence implementations.
+        result_available =
+            did_finish || query.commands_completed_fence->HasCompleted();
         result = result_available;
         break;
 
@@ -2059,6 +2076,9 @@ error::Error GLES2DecoderPassthroughImpl::ProcessQueries(bool did_finish) {
              pending_read_pixels_) {
           if (pending_read_pixels.waiting_async_pack_queries.count(
                   query.service_id) > 0) {
+            // Async read pixel processing happens before query processing. If
+            // there was a finish then there should be no pending read pixels.
+            DCHECK(!did_finish);
             result_available = GL_FALSE;
             result = GL_FALSE;
             break;
@@ -2068,7 +2088,7 @@ error::Error GLES2DecoderPassthroughImpl::ProcessQueries(bool did_finish) {
 
       case GL_READBACK_SHADOW_COPIES_UPDATED_CHROMIUM:
         DCHECK(query.buffer_shadow_update_fence);
-        if (query.buffer_shadow_update_fence->HasCompleted()) {
+        if (did_finish || query.buffer_shadow_update_fence->HasCompleted()) {
           ReadBackBuffersIntoShadowCopies(query.buffer_shadow_updates);
           result_available = GL_TRUE;
           result = 0;

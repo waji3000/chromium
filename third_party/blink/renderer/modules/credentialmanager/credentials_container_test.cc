@@ -132,7 +132,9 @@ TEST(CredentialsContainerTest, PendingGetRequest_NoGCCycles) {
     mock_credential_manager.WaitForCallToGet();
   }
 
-  V8GCController::CollectAllGarbageForTesting(v8::Isolate::GetCurrent());
+  V8GCController::CollectAllGarbageForTesting(
+      v8::Isolate::GetCurrent(),
+      v8::EmbedderHeapTracer::EmbedderStackState::kEmpty);
   ThreadState::Current()->CollectAllGarbage();
 
   ASSERT_TRUE(document_observer.WasCollected());

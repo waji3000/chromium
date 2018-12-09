@@ -6,6 +6,7 @@
 
 #include "ash/focus_cycler.h"
 #include "ash/public/cpp/ash_switches.h"
+#include "ash/public/cpp/system_tray_focus_observer.h"
 #include "ash/session/session_controller.h"
 #include "ash/session/test_session_controller_client.h"
 #include "ash/shell.h"
@@ -14,8 +15,6 @@
 #include "ash/system/palette/palette_tray.h"
 #include "ash/system/session/logout_button_tray.h"
 #include "ash/system/status_area_widget_test_helper.h"
-#include "ash/system/system_tray_focus_observer.h"
-#include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/system_tray_notifier.h"
 #include "ash/system/unified/unified_system_tray.h"
 #include "ash/system/virtual_keyboard/virtual_keyboard_tray.h"
@@ -27,8 +26,8 @@
 #include "components/session_manager/session_manager_types.h"
 #include "ui/events/test/event_generator.h"
 #include "ui/keyboard/keyboard_controller.h"
-#include "ui/keyboard/keyboard_switches.h"
 #include "ui/keyboard/keyboard_util.h"
+#include "ui/keyboard/public/keyboard_switches.h"
 #include "ui/keyboard/test/keyboard_test_util.h"
 
 using session_manager::SessionState;
@@ -251,12 +250,16 @@ class StatusAreaWidgetVirtualKeyboardTest : public AshTestBase {
     AshTestBase::SetUp();
     ASSERT_TRUE(keyboard::IsKeyboardEnabled());
 
+    keyboard_controller()->LoadKeyboardWindowInBackground();
+    // Wait for the keyboard window to load.
+    base::RunLoop().RunUntilIdle();
+
     // These tests only apply to the floating virtual keyboard, as it is the
     // only case where both the virtual keyboard and the shelf are visible.
-    keyboard_controller()->SetContainerType(keyboard::ContainerType::FLOATING,
-                                            base::nullopt, base::DoNothing());
-    keyboard_controller()->GetKeyboardWindow()->SetBounds(
-        gfx::Rect(0, 0, 10, 10));
+    const gfx::Rect keyboard_bounds(0, 0, 1, 1);
+    keyboard_controller()->SetContainerType(
+        keyboard::mojom::ContainerType::kFloating, keyboard_bounds,
+        base::DoNothing());
   }
 
   keyboard::KeyboardController* keyboard_controller() {
@@ -273,14 +276,14 @@ TEST_F(StatusAreaWidgetVirtualKeyboardTest,
   status->ime_menu_tray()->SetVisible(true);
 
   keyboard_controller()->ShowKeyboard(false /* locked */);
-  keyboard_controller()->NotifyKeyboardWindowLoaded();
   ASSERT_TRUE(keyboard::WaitUntilShown());
 
   // The keyboard should hide when clicked.
   ui::test::EventGenerator* generator = GetEventGenerator();
-  generator->set_current_location(status->virtual_keyboard_tray_for_testing()
-                                      ->GetBoundsInScreen()
-                                      .CenterPoint());
+  generator->set_current_screen_location(
+      status->virtual_keyboard_tray_for_testing()
+          ->GetBoundsInScreen()
+          .CenterPoint());
   generator->ClickLeftButton();
   ASSERT_TRUE(keyboard::WaitUntilHidden());
 }
@@ -294,7 +297,6 @@ TEST_F(StatusAreaWidgetVirtualKeyboardTest,
   status->ime_menu_tray()->SetVisible(true);
 
   keyboard_controller()->ShowKeyboard(false /* locked */);
-  keyboard_controller()->NotifyKeyboardWindowLoaded();
   ASSERT_TRUE(keyboard::WaitUntilShown());
 
   // The keyboard should hide when tapped.
@@ -307,11 +309,10 @@ TEST_F(StatusAreaWidgetVirtualKeyboardTest,
 
 TEST_F(StatusAreaWidgetVirtualKeyboardTest, ClickingHidesVirtualKeyboard) {
   keyboard_controller()->ShowKeyboard(false /* locked */);
-  keyboard_controller()->NotifyKeyboardWindowLoaded();
   ASSERT_TRUE(keyboard_controller()->IsKeyboardVisible());
 
   ui::test::EventGenerator* generator = GetEventGenerator();
-  generator->set_current_location(
+  generator->set_current_screen_location(
       StatusAreaWidgetTestHelper::GetStatusAreaWidget()
           ->GetWindowBoundsInScreen()
           .CenterPoint());
@@ -323,11 +324,10 @@ TEST_F(StatusAreaWidgetVirtualKeyboardTest, ClickingHidesVirtualKeyboard) {
 
 TEST_F(StatusAreaWidgetVirtualKeyboardTest, TappingHidesVirtualKeyboard) {
   keyboard_controller()->ShowKeyboard(false /* locked */);
-  keyboard_controller()->NotifyKeyboardWindowLoaded();
-  ASSERT_TRUE(keyboard_controller()->IsKeyboardVisible());
+  ASSERT_TRUE(keyboard::WaitUntilShown());
 
   ui::test::EventGenerator* generator = GetEventGenerator();
-  generator->set_current_location(
+  generator->set_current_screen_location(
       StatusAreaWidgetTestHelper::GetStatusAreaWidget()
           ->GetWindowBoundsInScreen()
           .CenterPoint());
@@ -339,11 +339,10 @@ TEST_F(StatusAreaWidgetVirtualKeyboardTest, TappingHidesVirtualKeyboard) {
 
 TEST_F(StatusAreaWidgetVirtualKeyboardTest, DoesNotHideLockedVirtualKeyboard) {
   keyboard_controller()->ShowKeyboard(true /* locked */);
-  keyboard_controller()->NotifyKeyboardWindowLoaded();
-  ASSERT_TRUE(keyboard_controller()->IsKeyboardVisible());
+  ASSERT_TRUE(keyboard::WaitUntilShown());
 
   ui::test::EventGenerator* generator = GetEventGenerator();
-  generator->set_current_location(
+  generator->set_current_screen_location(
       StatusAreaWidgetTestHelper::GetStatusAreaWidget()
           ->GetWindowBoundsInScreen()
           .CenterPoint());

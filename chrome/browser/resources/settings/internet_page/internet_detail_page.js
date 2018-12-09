@@ -115,6 +115,15 @@ Polymer({
     },
 
     /**
+     * State of the Always-on VPN toggle.
+     * @private
+     */
+    alwaysOnVpn_: {
+      type: Boolean,
+      value: false,
+    },
+
+    /**
      * The network preferred state.
      * @private
      */
@@ -142,6 +151,10 @@ Polymer({
     /** @private */
     proxyExpanded_: Boolean,
   },
+
+  observers: [
+    'onAlwaysOnPrefChanged_(prefs.arc.vpn.always_on.*)',
+  ],
 
   listeners: {
     'network-list-changed': 'checkNetworkExists_',
@@ -1038,6 +1051,48 @@ Polymer({
 
   /**
    * @param {!CrOnc.NetworkProperties} networkProperties
+   * @return {boolean} Whether the toggle for the Always-on VPN feature is
+   * displayed.
+   * @private
+   */
+  showAlwaysOnVpn_: function(networkProperties) {
+    return this.isArcVpn_(networkProperties) && this.prefs.arc &&
+        this.prefs.arc.vpn && this.prefs.arc.vpn.always_on &&
+        this.prefs.arc.vpn.always_on.vpn_package &&
+        networkProperties.VPN.Host.Active ===
+        this.prefs.arc.vpn.always_on.vpn_package.value;
+  },
+
+  /**
+   * @param {!CrOnc.NetworkProperties} networkProperties
+   * @param {!chrome.settingsPrivate.PrefObject} vpnConfigAllowed
+   * @return {boolean} Whether the toggle for the Always-on VPN feature is
+   * enabled.
+   * @private
+   */
+  enableAlwaysOnVpn_: function(networkProperties, vpnConfigAllowed) {
+    return this.isArcVpn_(networkProperties) && vpnConfigAllowed &&
+        !!vpnConfigAllowed.value;
+  },
+
+  /** @private */
+  onAlwaysOnPrefChanged_: function() {
+    if (this.prefs.arc && this.prefs.arc.vpn && this.prefs.arc.vpn.always_on &&
+        this.prefs.arc.vpn.always_on.lockdown) {
+      this.alwaysOnVpn_ = this.prefs.arc.vpn.always_on.lockdown.value;
+    }
+  },
+
+  /** @private */
+  onAlwaysOnVpnChange_: function() {
+    if (this.prefs.arc && this.prefs.arc.vpn && this.prefs.arc.vpn.always_on &&
+        this.prefs.arc.vpn.always_on.lockdown) {
+      this.set('prefs.arc.vpn.always_on.lockdown.value', this.alwaysOnVpn_);
+    }
+  },
+
+  /**
+   * @param {!CrOnc.NetworkProperties} networkProperties
    * @param {!chrome.networkingPrivate.GlobalPolicy} globalPolicy
    * @param {boolean} managedNetworkAvailable
    * @return {boolean} True if the prefer network checkbox should be shown.
@@ -1045,10 +1100,16 @@ Polymer({
    */
   showPreferNetwork_: function(
       networkProperties, globalPolicy, managedNetworkAvailable) {
-    // TODO(stevenjb): Resolve whether or not we want to allow "preferred" for
-    // networkProperties.Type == CrOnc.Type.ETHERNET.
+    if (!networkProperties)
+      return false;
+
+    const type = networkProperties.Type;
+    if (type == CrOnc.Type.ETHERNET || type == CrOnc.Type.CELLULAR ||
+        this.isArcVpn_(networkProperties)) {
+      return false;
+    }
+
     return this.isRemembered_(networkProperties) &&
-        !this.isArcVpn_(networkProperties) &&
         !this.isBlockedByPolicy_(
             networkProperties, globalPolicy, managedNetworkAvailable);
   },

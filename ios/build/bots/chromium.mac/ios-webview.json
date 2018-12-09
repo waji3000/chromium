@@ -3,7 +3,7 @@
     "Hold back the ios_deployment_target to iOS10 for web_view and related",
     "tests, only testing on iOS 10.3 simulator."
   ],
-  "xcode build version": "10a254a",
+  "xcode build version": "10b61",
   "gn_args": [
     "goma_dir=\"$(goma_dir)\"",
     "ios_deployment_target=\"10.0\"",
@@ -25,7 +25,8 @@
         { "os": "Mac-10.13.5", "pool": "Chrome" },
         { "os": "Mac-10.13.6", "pool": "Chrome" }
       ],
-      "os": "10.3"
+      "os": "10.3",
+      "priority": 30
     },
     {
       "app": "ios_web_view_inttests",
@@ -35,7 +36,8 @@
         { "os": "Mac-10.13.5", "pool": "Chrome" },
         { "os": "Mac-10.13.6", "pool": "Chrome" }
       ],
-      "os": "10.3"
+      "os": "10.3",
+      "priority": 30
     },
     {
       "app": "ios_components_unittests",
@@ -45,7 +47,8 @@
         { "os": "Mac-10.13.5", "pool": "Chrome" },
         { "os": "Mac-10.13.6", "pool": "Chrome" }
       ],
-      "os": "10.3"
+      "os": "10.3",
+      "priority": 30
     },
     {
       "app": "components_unittests",
@@ -55,7 +58,8 @@
         { "os": "Mac-10.13.5", "pool": "Chrome" },
         { "os": "Mac-10.13.6", "pool": "Chrome" }
       ],
-      "os": "10.3"
+      "os": "10.3",
+      "priority": 30
     },
     {
       "app": "net_unittests",
@@ -65,7 +69,8 @@
         { "os": "Mac-10.13.5", "pool": "Chrome" },
         { "os": "Mac-10.13.6", "pool": "Chrome" }
       ],
-      "os": "10.3"
+      "os": "10.3",
+      "priority": 30
     },
     {
       "app": "ios_net_unittests",
@@ -75,7 +80,8 @@
         { "os": "Mac-10.13.5", "pool": "Chrome" },
         { "os": "Mac-10.13.6", "pool": "Chrome" }
       ],
-      "os": "10.3"
+      "os": "10.3",
+      "priority": 30
     },
     {
       "app": "ios_web_unittests",
@@ -85,7 +91,8 @@
         { "os": "Mac-10.13.5", "pool": "Chrome" },
         { "os": "Mac-10.13.6", "pool": "Chrome" }
       ],
-      "os": "10.3"
+      "os": "10.3",
+      "priority": 30
     },
     {
       "app": "ios_web_inttests",
@@ -95,7 +102,8 @@
         { "os": "Mac-10.13.5", "pool": "Chrome" },
         { "os": "Mac-10.13.6", "pool": "Chrome" }
       ],
-      "os": "10.3"
+      "os": "10.3",
+      "priority": 30
     },
     {
       "app": "ios_web_shell_egtests",
@@ -106,6 +114,7 @@
         { "os": "Mac-10.13.6", "pool": "Chrome" }
       ],
       "os": "10.3",
+      "priority": 30,
       "xctest": true
     }
   ]

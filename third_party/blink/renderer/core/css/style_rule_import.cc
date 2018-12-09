@@ -34,14 +34,14 @@ namespace blink {
 
 StyleRuleImport* StyleRuleImport::Create(const String& href,
                                          scoped_refptr<MediaQuerySet> media) {
-  return new StyleRuleImport(href, media);
+  return MakeGarbageCollected<StyleRuleImport>(href, media);
 }
 
 StyleRuleImport::StyleRuleImport(const String& href,
                                  scoped_refptr<MediaQuerySet> media)
     : StyleRuleBase(kImport),
       parent_style_sheet_(nullptr),
-      style_sheet_client_(new ImportedStyleSheetClient(this)),
+      style_sheet_client_(MakeGarbageCollected<ImportedStyleSheetClient>(this)),
       str_href_(href),
       media_queries_(media),
       loading_(false) {
@@ -79,7 +79,7 @@ void StyleRuleImport::NotifyFinished(Resource* resource) {
     context = parent_style_sheet_->ParserContext();
   }
   context = CSSParserContext::Create(
-      context, cached_style_sheet->GetResponse().Url(),
+      context, cached_style_sheet->GetResponse().CurrentRequestUrl(),
       cached_style_sheet->GetResponse().IsOpaqueResponseFromServiceWorker(),
       cached_style_sheet->GetReferrerPolicy(), cached_style_sheet->Encoding(),
       document);

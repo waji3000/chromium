@@ -7,9 +7,11 @@
 #include "ash/shell.h"
 #include "ash/window_factory.h"
 #include "ash/wm/window_util.h"
+#include "base/threading/sequenced_task_runner_handle.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/ime/mock_input_method.h"
+#include "ui/keyboard/test/keyboard_test_util.h"
 
 namespace ash {
 
@@ -22,8 +24,15 @@ aura::Window* TestKeyboardUI::LoadKeyboardWindow(LoadCallback callback) {
   keyboard_window_ = window_factory::NewWindow(&delegate_);
   keyboard_window_->Init(ui::LAYER_NOT_DRAWN);
 
-  // TODO(https://crbug.com/849995): Call |callback| instead of having tests
-  // call |NotifyKeyboardWindowLoaded|.
+  // Set a default size for the keyboard.
+  display::Screen* screen = display::Screen::GetScreen();
+  keyboard_window_->SetBounds(keyboard::KeyboardBoundsFromRootBounds(
+      screen->GetPrimaryDisplay().bounds()));
+
+  // Simulate an asynchronous load.
+  base::SequencedTaskRunnerHandle::Get()->PostTask(FROM_HERE,
+                                                   std::move(callback));
+
   return keyboard_window_.get();
 }
 
@@ -39,7 +48,5 @@ ui::InputMethod* TestKeyboardUI::GetInputMethod() {
 }
 
 void TestKeyboardUI::ReloadKeyboardIfNeeded() {}
-void TestKeyboardUI::InitInsets(const gfx::Rect& keyboard_bounds) {}
-void TestKeyboardUI::ResetInsets() {}
 
 }  // namespace ash

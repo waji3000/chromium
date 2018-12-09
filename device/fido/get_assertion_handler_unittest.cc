@@ -7,8 +7,10 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/stl_util.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/scoped_task_environment.h"
+#include "build/build_config.h"
 #include "device/base/features.h"
 #include "device/bluetooth/bluetooth_adapter_factory.h"
 #include "device/bluetooth/test/mock_bluetooth_adapter.h"
@@ -16,15 +18,22 @@
 #include "device/fido/ctap_get_assertion_request.h"
 #include "device/fido/device_response_converter.h"
 #include "device/fido/fake_fido_discovery.h"
+#include "device/fido/features.h"
 #include "device/fido/fido_constants.h"
 #include "device/fido/fido_parsing_utils.h"
 #include "device/fido/fido_test_data.h"
 #include "device/fido/fido_transport_protocol.h"
 #include "device/fido/get_assertion_request_handler.h"
+#include "device/fido/hid/fake_hid_impl_for_testing.h"
 #include "device/fido/mock_fido_device.h"
 #include "device/fido/test_callback_receiver.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(OS_WIN)
+#include "device/fido/win/authenticator.h"
+#include "device/fido/win/fake_webauthn_api.h"
+#endif  // defined(OS_WIN)
 
 namespace device {
 
@@ -35,7 +44,7 @@ constexpr uint8_t kBogusCredentialId[] = {0x01, 0x02, 0x03, 0x04};
 using TestGetAssertionRequestCallback = test::StatusAndValuesCallbackReceiver<
     FidoReturnCode,
     base::Optional<AuthenticatorGetAssertionResponse>,
-    FidoTransportProtocol>;
+    base::Optional<FidoTransportProtocol>>;
 
 }  // namespace
 
@@ -324,6 +333,32 @@ TEST_F(FidoGetAssertionHandlerTest, InvalidCredential) {
 
   scoped_task_environment_.FastForwardUntilNoTasksRemain();
   EXPECT_FALSE(get_assertion_callback().was_called());
+}
+
+// Tests a scenario where the authenticator responds with an empty credential.
+// When GetAssertion request only has a single credential in the allow list,
+// this is a valid response. Check that credential is set by the client before
+// the response is returned to the relying party.
+TEST_F(FidoGetAssertionHandlerTest, ValidEmptyCredential) {
+  auto request_handler = CreateGetAssertionHandlerCtap();
+  discovery()->WaitForCallToStartAndSimulateSuccess();
+  // Resident Keys must be disabled, otherwise allow list check is skipped.
+  auto device = MockFidoDevice::MakeCtapWithGetInfoExpectation(
+      test_data::kTestGetInfoResponseWithoutResidentKeySupport);
+  device->ExpectCtap2CommandAndRespondWith(
+      CtapRequestCommand::kAuthenticatorGetAssertion,
+      test_data::kTestGetAssertionResponseWithEmptyCredential);
+  discovery()->AddDevice(std::move(device));
+
+  get_assertion_callback().WaitForCallback();
+  const auto& response = get_assertion_callback().value<0>();
+  EXPECT_TRUE(request_handler->is_complete());
+  EXPECT_EQ(FidoReturnCode::kSuccess, get_assertion_callback().status());
+  ASSERT_TRUE(response);
+  EXPECT_TRUE(response->credential());
+  EXPECT_THAT(
+      response->raw_credential_id(),
+      ::testing::ElementsAreArray(test_data::kTestGetAssertionCredentialId));
 }
 
 // Tests a scenario where authenticator responds without user entity in its
@@ -684,5 +719,64 @@ TEST_F(FidoGetAssertionHandlerTest,
   EXPECT_EQ(FidoReturnCode::kUserConsentDenied,
             get_assertion_callback().status());
 }
+
+#if defined(OS_WIN)
+class GetAssertionRequestHandlerWinTest : public ::testing::Test {
+ protected:
+  base::test::ScopedTaskEnvironment scoped_task_environment_;
+  ScopedFakeWinWebAuthnApi scoped_fake_win_webauthn_api_;
+};
+
+// Verify that the request handler instantiates a HID device backed
+// FidoDeviceAuthenticator or a WinNativeCrossPlatformAuthenticator, depending
+// on feature flag and API availability.
+TEST_F(GetAssertionRequestHandlerWinTest, TestWinUsbDiscovery) {
+  enum class DeviceType {
+    kHid,
+    kWinNative,
+  };
+  const struct TestCase {
+    bool enable_win_webauthn_api;
+    bool enable_feature_flag;
+    DeviceType expect_device_type;
+  } test_cases[] = {
+      {false, false, DeviceType::kHid},
+      {false, true, DeviceType::kHid},
+      {true, false, DeviceType::kHid},
+      {true, true, DeviceType::kWinNative},
+  };
+  size_t i = 0;
+  for (const auto& test : test_cases) {
+    SCOPED_TRACE(i++);
+    scoped_fake_win_webauthn_api_.set_available(test.enable_win_webauthn_api);
+    base::test::ScopedFeatureList scoped_feature_list;
+    // Feature is default off (even with API present).
+    if (test.enable_feature_flag)
+      scoped_feature_list.InitAndEnableFeature(kWebAuthUseNativeWinApi);
+
+    // Simulate a connected HID device.
+    ScopedFakeHidManager fake_hid_manager;
+    fake_hid_manager.AddFidoHidDevice("guid");
+
+    TestGetAssertionRequestCallback cb;
+    auto handler = std::make_unique<GetAssertionRequestHandler>(
+        fake_hid_manager.service_manager_connector(),
+        base::flat_set<FidoTransportProtocol>(
+            {FidoTransportProtocol::kUsbHumanInterfaceDevice}),
+        CtapGetAssertionRequest(test_data::kRelyingPartyId,
+                                test_data::kClientDataJson),
+
+        cb.callback());
+    scoped_task_environment_.RunUntilIdle();
+
+    EXPECT_EQ(1u, handler->AuthenticatorsForTesting().size());
+    // Crudely distinguish authenticator type by FidoAuthenticator::GetId.
+    EXPECT_EQ(test.expect_device_type == DeviceType::kHid
+                  ? "hid:guid"
+                  : WinWebAuthnApiAuthenticator::kAuthenticatorId,
+              handler->AuthenticatorsForTesting().begin()->second->GetId());
+  }
+}
+#endif  // defined(OS_WIN)
 
 }  // namespace device

@@ -36,6 +36,11 @@ const base::Feature kAutofillAddressNormalizer{
 const base::Feature kAutofillAlwaysFillAddresses{
     "AlwaysFillAddresses", base::FEATURE_ENABLED_BY_DEFAULT};
 
+// Controls whether the server cards are always shown when the user is in sync
+// transport mode, or if an explicit opt-in is required.
+const base::Feature kAutofillAlwaysShowServerCardsInSyncTransport{
+    "AlwaysShowServerCardsInSyncTransport", base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Controls the use of GET (instead of POST) to fetch cacheable autofill query
 // responses.
 const base::Feature kAutofillCacheQueryResponses{
@@ -67,7 +72,7 @@ const base::Feature kAutofillDownstreamUseGooglePayBrandingOniOS{
 
 // Controls whether Autofill attemps to fill dynamically changing forms.
 const base::Feature kAutofillDynamicForms{"AutofillDynamicForms",
-                                          base::FEATURE_DISABLED_BY_DEFAULT};
+                                          base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Controls whether the server credit cards are saved only in the ephemeral
 // account-based storage, instead of the persistent local storage.
@@ -118,6 +123,11 @@ const base::Feature kAutofillExpandedPopupViews{
 const base::Feature kAutofillGetPaymentsIdentityFromSync{
     "AutofillGetPaymentsIdentityFromSync", base::FEATURE_DISABLED_BY_DEFAULT};
 
+// When enabled, autofill suggestions are displayed in the keyboard accessory
+// instead of the regular popup.
+const base::Feature kAutofillKeyboardAccessory{
+    "AutofillKeyboardAccessory", base::FEATURE_DISABLED_BY_DEFAULT};
+
 // When enabled, the local card migration dialog will show the progress
 // and result of the migration after starting the migration. When disabled,
 // there is no feedback for the migration.
@@ -132,6 +142,9 @@ const base::Feature kAutofillManualFallback{"AutofillManualFallback",
 // Controls whether the manual fallback will include addresses and cards.
 const base::Feature kAutofillManualFallbackPhaseTwo{
     "AutofillManualFallbackPhaseTwo", base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kAutofillMetadataUploads{"AutofillMetadataUploads",
+                                             base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kAutofillPreferServerNamePredictions{
     "AutofillPreferServerNamePredictions", base::FEATURE_DISABLED_BY_DEFAULT};
@@ -158,6 +171,13 @@ const base::Feature kAutofillRestrictUnownedFieldsToFormlessCheckout{
     "AutofillRestrictUnownedFieldsToFormlessCheckout",
     base::FEATURE_DISABLED_BY_DEFAULT};
 
+// On Canary and Dev channels only, this feature flag instructs chrome to send
+// rich form/field metadata with queries. This will trigger the use of richer
+// field-type predictions model on the server, for testing/evaluation of those
+// models prior to a client-push.
+const base::Feature kAutofillRichMetadataQueries{
+    "AutofillRichMetadataQueries", base::FEATURE_DISABLED_BY_DEFAULT};
+
 const base::Feature kAutofillSaveOnProbablySubmitted{
     "AutofillSaveOnProbablySubmitted", base::FEATURE_ENABLED_BY_DEFAULT};
 
@@ -165,10 +185,16 @@ const base::Feature kAutofillSaveCardDialogUnlabeledExpirationDate{
     "AutofillSaveCardDialogUnlabeledExpirationDate",
     base::FEATURE_ENABLED_BY_DEFAULT};
 
+// When enabled, local and upload credit card save dialogs will be updated to
+// new M72 guidelines, including a [No thanks] cancel button and an extended
+// title string.
+const base::Feature kAutofillSaveCardImprovedUserConsent{
+    "AutofillSaveCardImprovedUserConsent", base::FEATURE_DISABLED_BY_DEFAULT};
+
 // When enabled, a sign in promo will show up right after the user
 // saves a card locally. This also introduces a "Manage Cards" bubble.
 const base::Feature kAutofillSaveCardSignInAfterLocalSave{
-    "AutofillSaveCardSignInAfterLocalSave", base::FEATURE_DISABLED_BY_DEFAULT};
+    "AutofillSaveCardSignInAfterLocalSave", base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Controls whether offering to save cards will consider data from the Autofill
 // strike database.
@@ -258,11 +284,19 @@ const base::Feature kAutofillUpstreamEditableCardholderName{
     "AutofillUpstreamEditableCardholderName",
     base::FEATURE_DISABLED_BY_DEFAULT};
 
+const base::Feature kAutofillUpstreamEditableExpirationDate{
+    "AutofillUpstreamEditableExpirationDate",
+    base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Controls whether the credit card upload bubble shows the Google Pay logo and
 // a shorter "Save card?" header message on mobile.
 const base::Feature kAutofillUpstreamUseGooglePayBrandingOnMobile{
     "AutofillUpstreamUseGooglePayOnAndroidBranding",
     base::FEATURE_ENABLED_BY_DEFAULT};
+
+// Controls whether to use the API or use the legacy server.
+const base::Feature kAutofillUseApi{"AutofillUseApi",
+                                    base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Controls whether the PaymentsCustomerData is used to make requests to
 // Google Payments.

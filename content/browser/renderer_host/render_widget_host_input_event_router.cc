@@ -25,6 +25,7 @@
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/renderer_host/render_widget_host_view_child_frame.h"
 #include "content/common/frame_messages.h"
+#include "content/public/browser/render_widget_host_iterator.h"
 #include "third_party/blink/public/platform/web_input_event.h"
 #include "ui/base/layout.h"
 #include "ui/gfx/geometry/dip_util.h"
@@ -297,9 +298,6 @@ void RenderWidgetHostInputEventRouter::OnRenderWidgetHostViewBaseDestroyed(
 
   if (view == last_fling_start_target_)
     last_fling_start_target_ = nullptr;
-
-  if (view == last_fling_start_bubbled_target_)
-    last_fling_start_bubbled_target_ = nullptr;
 
   event_targeter_->ViewWillBeDestroyed(view);
 }
@@ -1010,14 +1008,13 @@ void RenderWidgetHostInputEventRouter::BubbleScrollEvent(
   DCHECK(target_view);
   DCHECK(event.GetType() == blink::WebInputEvent::kGestureScrollBegin ||
          event.GetType() == blink::WebInputEvent::kGestureScrollUpdate ||
-         event.GetType() == blink::WebInputEvent::kGestureScrollEnd ||
-         event.GetType() == blink::WebInputEvent::kGestureFlingStart ||
-         event.GetType() == blink::WebInputEvent::kGestureFlingCancel);
+         event.GetType() == blink::WebInputEvent::kGestureScrollEnd);
 
   ui::LatencyInfo latency_info =
       ui::WebInputEventTraits::CreateLatencyInfoForWebGestureEvent(event);
 
   if (event.GetType() == blink::WebInputEvent::kGestureScrollBegin) {
+    forced_last_fling_start_target_to_stop_flinging_for_test_ = false;
     // If target_view has unrelated gesture events in progress, do
     // not proceed. This could cause confusion between independent
     // scrolls.
@@ -1042,26 +1039,7 @@ void RenderWidgetHostInputEventRouter::BubbleScrollEvent(
 
     bubbling_gesture_scroll_target_.target = target_view;
     bubbling_gesture_scroll_source_device_ = event.SourceDevice();
-  } else if (event.GetType() == blink::WebInputEvent::kGestureFlingCancel) {
-    // TODO(828422): Remove once this issue no longer occurs.
-    if (resending_view == last_fling_start_bubbled_target_) {
-      ReportBubblingScrollToSameView(event, resending_view);
-      last_fling_start_bubbled_target_ = nullptr;
-      return;
-    }
-    // GFC event must get bubbled to the same target view that the last GFS has
-    // been bubbled.
-    if (last_fling_start_bubbled_target_) {
-      last_fling_start_bubbled_target_->ProcessGestureEvent(
-          GestureEventInTarget(event, last_fling_start_bubbled_target_),
-          latency_info);
-      last_fling_start_bubbled_target_ = nullptr;
-    }
-    return;
   } else {  // !(event.GetType() == blink::WebInputEvent::kGestureScrollBegin)
-            // && !(event.GetType() ==
-            // blink::WebInputEvent::kGestureFlingCancel)
-
     if (!bubbling_gesture_scroll_target_.target) {
       // The GestureScrollBegin event is not bubbled, don't bubble the rest of
       // the scroll events.
@@ -1096,13 +1074,7 @@ void RenderWidgetHostInputEventRouter::BubbleScrollEvent(
       GestureEventInTarget(event, bubbling_gesture_scroll_target_.target),
       latency_info);
 
-  // The GFC should be sent to the view that handles the GFS.
-  if (event.GetType() == blink::WebInputEvent::kGestureFlingStart) {
-    last_fling_start_bubbled_target_ = bubbling_gesture_scroll_target_.target;
-  }
-
-  if (event.GetType() == blink::WebInputEvent::kGestureScrollEnd ||
-      event.GetType() == blink::WebInputEvent::kGestureFlingStart) {
+  if (event.GetType() == blink::WebInputEvent::kGestureScrollEnd) {
     first_bubbling_scroll_target_.target = nullptr;
     bubbling_gesture_scroll_target_.target = nullptr;
     bubbling_gesture_scroll_source_device_ =
@@ -1182,6 +1154,18 @@ void RenderWidgetHostInputEventRouter::CancelScrollBubbling(
   }
 }
 
+void RenderWidgetHostInputEventRouter::StopFling() {
+  if (!bubbling_gesture_scroll_target_.target)
+    return;
+
+  if (!last_fling_start_target_ || !last_fling_start_target_->host())
+    return;
+
+  // The last_fling_start_target_'s fling controller must stop flinging when its
+  // generated GSUs are not consumed by the bubbling target view.
+  last_fling_start_target_->host()->StopFling();
+  forced_last_fling_start_target_to_stop_flinging_for_test_ = true;
+}
 void RenderWidgetHostInputEventRouter::AddFrameSinkIdOwner(
     const viz::FrameSinkId& id,
     RenderWidgetHostViewBase* owner) {
@@ -1265,11 +1249,9 @@ RenderWidgetHostInputEventRouter::FindTouchscreenGestureEventTarget(
 
 bool RenderWidgetHostInputEventRouter::IsViewInMap(
     const RenderWidgetHostViewBase* view) const {
-  for (auto entry : owner_map_) {
-    if (entry.second == view)
-      return true;
-  }
-  return false;
+  DCHECK(!is_registered(view->GetFrameSinkId()) ||
+         owner_map_.find(view->GetFrameSinkId())->second == view);
+  return is_registered(view->GetFrameSinkId());
 }
 
 void RenderWidgetHostInputEventRouter::DispatchTouchscreenGestureEvent(
@@ -1349,11 +1331,8 @@ void RenderWidgetHostInputEventRouter::DispatchTouchscreenGestureEvent(
       gesture_target_it == touchscreen_gesture_target_map_.end();
 
   // We use GestureTapDown to detect the start of a gesture sequence since
-  // there is no WebGestureEvent equivalent for ET_GESTURE_BEGIN. Note that
-  // this means the GestureFlingCancel that always comes between
-  // ET_GESTURE_BEGIN and GestureTapDown is sent to the previous target, in
-  // case it is still in a fling.
-  bool is_gesture_start =
+  // there is no WebGestureEvent equivalent for ET_GESTURE_BEGIN.
+  const bool is_gesture_start =
       gesture_event.GetType() == blink::WebInputEvent::kGestureTapDown;
 
   if (gesture_event.unique_touch_event_id == 0) {
@@ -1361,7 +1340,9 @@ void RenderWidgetHostInputEventRouter::DispatchTouchscreenGestureEvent(
     // are not associated with touch events, because non-synthetic events can be
     // created by ContentView. These will use the target found by the
     // RenderWidgetTargeter. These gesture events should always have a
-    // unique_touch_event_id of 0.
+    // unique_touch_event_id of 0. They must have a non-null target in order
+    // to get the coordinate transform.
+    DCHECK(target);
     touchscreen_gesture_target_.target = target;
     touchscreen_gesture_target_in_map_ = IsViewInMap(target);
     if (!root_view->GetTransformToViewCoordSpace(
@@ -1445,6 +1426,19 @@ void RenderWidgetHostInputEventRouter::DispatchTouchscreenGestureEvent(
 
   if (gesture_event.GetType() == blink::WebInputEvent::kGestureFlingStart)
     last_fling_start_target_ = touchscreen_gesture_target_.target;
+
+  // If we have one of the following events, then the user has lifted their
+  // last finger.
+  const bool is_gesture_end =
+      gesture_event.GetType() == blink::WebInputEvent::kGestureTap ||
+      gesture_event.GetType() == blink::WebInputEvent::kGestureLongTap ||
+      gesture_event.GetType() == blink::WebInputEvent::kGestureDoubleTap ||
+      gesture_event.GetType() == blink::WebInputEvent::kGestureTwoFingerTap ||
+      gesture_event.GetType() == blink::WebInputEvent::kGestureScrollEnd ||
+      gesture_event.GetType() == blink::WebInputEvent::kGestureFlingStart;
+
+  if (is_gesture_end)
+    touchscreen_gesture_target_.target = nullptr;
 }
 
 void RenderWidgetHostInputEventRouter::RouteTouchscreenGestureEvent(
@@ -1569,6 +1563,28 @@ RenderWidgetHostInputEventRouter::FindViewFromFrameSinkId(
   // it likely means the RenderWidgetHostView has been destroyed but its
   // parent frame has not sent a new compositor frame since that happened.
   return iter == owner_map_.end() ? nullptr : iter->second;
+}
+
+bool RenderWidgetHostInputEventRouter::ShouldContinueHitTesting(
+    RenderWidgetHostViewBase* target_view) const {
+  // TODO(kenrb, riajiang): It would be better if we could determine if the
+  // event's point has a chance of hitting an embedded child and returning
+  // false if not, but Viz hit testing does not easily support that. This
+  // currently assumes any embedded view could potentially be the event
+  // target.
+  if (!use_viz_hit_test_)
+    return true;
+
+  // Determine if |view| has any embedded children that could potentially
+  // receive the event.
+  auto* widget_host =
+      static_cast<RenderWidgetHostImpl*>(target_view->GetRenderWidgetHost());
+  std::unique_ptr<RenderWidgetHostIterator> child_widgets(
+      widget_host->GetEmbeddedRenderWidgetHosts());
+  if (child_widgets->GetNextHost())
+    return true;
+
+  return false;
 }
 
 std::vector<RenderWidgetHostView*>

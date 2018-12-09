@@ -11,6 +11,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_pump_default.h"
 #include "base/run_loop.h"
+#include "base/sequence_checker.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/condition_variable.h"
@@ -33,6 +34,9 @@
 
 namespace base {
 namespace sequence_manager {
+namespace {
+const int kNumTasks = 1000000;
+}
 
 // To reduce noise related to the OS timer, we use a mock time domain to
 // fast forward the timers.
@@ -71,6 +75,7 @@ enum class PerfTestType : int {
   kUseUIMessageLoop = 7,
   kUseIOMessageLoop = 8,
   kUseSingleThreadInWorkerPool = 9,
+  kUseSequenceManagerWithMessagePumpAndRandomSampling = 10,
 };
 
 // Customization point for SequenceManagerPerfTest which allows us to test
@@ -104,7 +109,7 @@ class BaseSequenceManagerPerfTestDelegate : public PerfTestDelegate {
 
   scoped_refptr<TaskRunner> CreateTaskRunner() override {
     scoped_refptr<TestTaskQueue> task_queue =
-        manager_->CreateTaskQueue<TestTaskQueue>(
+        manager_->CreateTaskQueueWithType<TestTaskQueue>(
             TaskQueue::Spec("test").SetTimeDomain(time_domain_.get()));
     owned_task_queues_.push_back(task_queue);
     return task_queue->task_runner();
@@ -145,8 +150,9 @@ class SequenceManagerWithMessageLoopPerfTestDelegate
   explicit SequenceManagerWithMessageLoopPerfTestDelegate(const char* name)
       : name_(name), message_loop_(new MessageLoopType()) {
     SetSequenceManager(SequenceManagerForTest::Create(
-        message_loop_.get(), message_loop_->task_runner(),
-        DefaultTickClock::GetInstance()));
+        message_loop_->GetMessageLoopBase(), message_loop_->task_runner(),
+        DefaultTickClock::GetInstance(),
+        SequenceManager::Settings{.randomised_sampling_enabled = false}));
   }
 
   ~SequenceManagerWithMessageLoopPerfTestDelegate() override { ShutDown(); }
@@ -161,18 +167,22 @@ class SequenceManagerWithMessageLoopPerfTestDelegate
 class SequenceManagerWithMessagePumpPerfTestDelegate
     : public BaseSequenceManagerPerfTestDelegate {
  public:
-  SequenceManagerWithMessagePumpPerfTestDelegate(const char* name,
-                                                 MessageLoop::Type type)
+  SequenceManagerWithMessagePumpPerfTestDelegate(
+      const char* name,
+      MessageLoop::Type type,
+      bool randomised_sampling_enabled = false)
       : name_(name) {
     SetSequenceManager(SequenceManagerForTest::Create(
         std::make_unique<internal::ThreadControllerWithMessagePumpImpl>(
             MessageLoop ::CreateMessagePumpForType(type),
-            DefaultTickClock::GetInstance())));
+            DefaultTickClock::GetInstance()),
+        SequenceManager::Settings{.randomised_sampling_enabled =
+                                      randomised_sampling_enabled}));
 
     // ThreadControllerWithMessagePumpImpl doesn't provide a default task
     // runner.
     scoped_refptr<TaskQueue> default_task_queue =
-        GetManager()->template CreateTaskQueue<TestTaskQueue>(
+        GetManager()->template CreateTaskQueueWithType<TestTaskQueue>(
             TaskQueue::Spec("default"));
     GetManager()->SetDefaultTaskRunner(default_task_queue->task_runner());
   }
@@ -285,13 +295,17 @@ class SameThreadTaskSource : public TaskSource {
         num_tasks_(num_tasks),
         task_closure_(
             BindRepeating(&SameThreadTaskSource::TestTask, Unretained(this))),
-        task_runners_(std::move(task_runners)) {}
+        task_runners_(std::move(task_runners)) {
+    DETACH_FROM_SEQUENCE(sequence_checker_);
+  }
 
   void Start() override {
     num_tasks_in_flight_ = 1;
     num_tasks_to_post_ = num_tasks_;
     num_tasks_to_run_ = num_tasks_;
-    TestTask();
+    // Post the initial task instead of running it synchronously to ensure that
+    // all invocations happen on the same sequence.
+    PostTask(0);
   }
 
  protected:
@@ -300,6 +314,8 @@ class SameThreadTaskSource : public TaskSource {
   virtual void SignalDone() = 0;
 
   void TestTask() {
+    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
     if (--num_tasks_to_run_ == 0) {
       SignalDone();
       return;
@@ -337,6 +353,7 @@ class SameThreadTaskSource : public TaskSource {
   unsigned int num_tasks_in_flight_;
   unsigned int num_tasks_to_post_;
   unsigned int num_tasks_to_run_;
+  SEQUENCE_CHECKER(sequence_checker_);
 };
 
 class CrossThreadTaskSource : public TaskSource {
@@ -356,6 +373,7 @@ class CrossThreadTaskSource : public TaskSource {
     for (size_t i = 0; i < num_tasks_; i++) {
       while (num_tasks_in_flight_.load(std::memory_order_acquire) >
              max_tasks_in_flight_) {
+        PlatformThread::YieldCurrentThread();
       }
       // Choose a queue weighted towards queue 0.
       unsigned int queue = i % (num_queues_ + 1);
@@ -394,13 +412,12 @@ class SingleThreadImmediateTestCase : public TestCase {
  public:
   SingleThreadImmediateTestCase(
       PerfTestDelegate* delegate,
-      std::vector<scoped_refptr<TaskRunner>> task_runners,
-      size_t num_tasks)
+      std::vector<scoped_refptr<TaskRunner>> task_runners)
       : TestCase(delegate),
         task_source_(std::make_unique<SingleThreadImmediateTaskSource>(
             delegate,
             std::move(task_runners),
-            num_tasks)) {}
+            kNumTasks)) {}
 
   void Start() override { task_source_->Start(); }
 
@@ -432,13 +449,12 @@ class SingleThreadDelayedTestCase : public TestCase {
  public:
   SingleThreadDelayedTestCase(
       PerfTestDelegate* delegate,
-      std::vector<scoped_refptr<TaskRunner>> task_runners,
-      size_t num_tasks)
+      std::vector<scoped_refptr<TaskRunner>> task_runners)
       : TestCase(delegate),
         task_source_(std::make_unique<SingleThreadDelayedTaskSource>(
             delegate,
             std::move(task_runners),
-            num_tasks)) {}
+            kNumTasks)) {}
 
   void Start() override { task_source_->Start(); }
 
@@ -472,11 +488,10 @@ class SingleThreadDelayedTestCase : public TestCase {
 class TwoThreadTestCase : public TestCase {
  public:
   TwoThreadTestCase(PerfTestDelegate* delegate,
-                    std::vector<scoped_refptr<TaskRunner>> task_runners,
-                    size_t num_tasks)
+                    std::vector<scoped_refptr<TaskRunner>> task_runners)
       : TestCase(delegate),
         task_runners_(std::move(task_runners)),
-        num_tasks_(num_tasks),
+        num_tasks_(kNumTasks),
         auxiliary_thread_("auxillary thread") {
     auxiliary_thread_.Start();
   }
@@ -558,9 +573,6 @@ class TwoThreadTestCase : public TestCase {
 class SequenceManagerPerfTest : public testing::TestWithParam<PerfTestType> {
  public:
   void SetUp() override {
-    if (ThreadTicks::IsSupported())
-      ThreadTicks::WaitUntilInitialized();
-
     delegate_ = CreateDelegate();
   }
 
@@ -611,10 +623,22 @@ class SequenceManagerPerfTest : public testing::TestWithParam<PerfTestType> {
       case PerfTestType::kUseSingleThreadInWorkerPool:
         return std::make_unique<SingleThreadInWorkerPoolPerfTestDelegate>();
 
+      case PerfTestType::kUseSequenceManagerWithMessagePumpAndRandomSampling:
+        return std::make_unique<SequenceManagerWithMessagePumpPerfTestDelegate>(
+            " SequenceManager with MessagePumpDefault and random sampling ",
+            MessageLoop::TYPE_DEFAULT, true);
+
       default:
         NOTREACHED();
         return nullptr;
     }
+  }
+
+  bool ShouldMeasureQueueScaling() const {
+    // To limit test run time, we only measure multiple queues specific sequence
+    // manager configurations.
+    return delegate_->MultipleQueuesSupported() &&
+           GetParam() == PerfTestType::kUseSequenceManagerWithUIMessagePump;
   }
 
   std::vector<scoped_refptr<TaskRunner>> CreateTaskRunners(int num) {
@@ -628,23 +652,18 @@ class SequenceManagerPerfTest : public testing::TestWithParam<PerfTestType> {
   void Benchmark(const std::string& trace, TestCase* TestCase) {
     TimeTicks start = TimeTicks::Now();
     TimeTicks now;
-    unsigned long long num_iterations = 0;
-    do {
-      TestCase->Start();
-      delegate_->WaitUntilDone();
-      now = TimeTicks::Now();
-      num_iterations++;
-    } while (now - start < TimeDelta::FromSeconds(5));
+    TestCase->Start();
+    delegate_->WaitUntilDone();
+    now = TimeTicks::Now();
 
     perf_test::PrintResult(
         "task", "", trace + delegate_->GetName(),
-        (now - start).InMicroseconds() / static_cast<double>(num_iterations),
-        "us/run", true);
-
+        (now - start).InMicroseconds() / static_cast<double>(kNumTasks),
+        "us/task", true);
     LOG(ERROR) << "task " << trace << delegate_->GetName()
                << ((now - start).InMicroseconds() /
-                   static_cast<double>(num_iterations))
-               << " us/run";
+                   static_cast<double>(kNumTasks))
+               << " us/task";
   }
 
   std::unique_ptr<PerfTestDelegate> delegate_;
@@ -653,176 +672,139 @@ class SequenceManagerPerfTest : public testing::TestWithParam<PerfTestType> {
 INSTANTIATE_TEST_CASE_P(
     ,
     SequenceManagerPerfTest,
-    testing::Values(PerfTestType::kUseSequenceManagerWithMessageLoop,
-                    PerfTestType::kUseSequenceManagerWithMessagePump,
-                    PerfTestType::kUseSequenceManagerWithUIMessageLoop,
-                    PerfTestType::kUseSequenceManagerWithUIMessagePump,
-                    PerfTestType::kUseSequenceManagerWithIOMessageLoop,
-                    PerfTestType::kUseSequenceManagerWithIOMessagePump,
-                    PerfTestType::kUseMessageLoop,
-                    PerfTestType::kUseUIMessageLoop,
-                    PerfTestType::kUseIOMessageLoop,
-                    PerfTestType::kUseSingleThreadInWorkerPool));
-
-TEST_P(SequenceManagerPerfTest, RunTenThousandDelayedTasks_OneQueue) {
-  if (!ThreadTicks::IsSupported())
-    return;
-
+    testing::Values(
+        PerfTestType::kUseSequenceManagerWithMessageLoop,
+        PerfTestType::kUseSequenceManagerWithMessagePump,
+        PerfTestType::kUseSequenceManagerWithUIMessageLoop,
+        PerfTestType::kUseSequenceManagerWithUIMessagePump,
+        PerfTestType::kUseSequenceManagerWithIOMessageLoop,
+        PerfTestType::kUseSequenceManagerWithIOMessagePump,
+        PerfTestType::kUseMessageLoop,
+        PerfTestType::kUseUIMessageLoop,
+        PerfTestType::kUseIOMessageLoop,
+        PerfTestType::kUseSingleThreadInWorkerPool,
+        PerfTestType::kUseSequenceManagerWithMessagePumpAndRandomSampling));
+TEST_P(SequenceManagerPerfTest, PostDelayedTasks_OneQueue) {
   if (!delegate_->VirtualTimeIsSupported()) {
     LOG(INFO) << "Unsupported";
     return;
   }
 
-  SingleThreadDelayedTestCase task_source(delegate_.get(), CreateTaskRunners(1),
-                                          10000u);
-  Benchmark("run 10000 delayed tasks with one queue", &task_source);
+  SingleThreadDelayedTestCase task_source(delegate_.get(),
+                                          CreateTaskRunners(1));
+  Benchmark("post delayed tasks with one queue", &task_source);
 }
 
-TEST_P(SequenceManagerPerfTest, RunTenThousandDelayedTasks_FourQueues) {
-  if (!ThreadTicks::IsSupported())
-    return;
-
-  if (!delegate_->VirtualTimeIsSupported() ||
-      !delegate_->MultipleQueuesSupported()) {
-    LOG(INFO) << "Unsupported";
-    return;
-  }
-
-  SingleThreadDelayedTestCase task_source(delegate_.get(), CreateTaskRunners(4),
-                                          10000u);
-  Benchmark("run 10000 delayed tasks with four queues", &task_source);
-}
-
-TEST_P(SequenceManagerPerfTest, RunTenThousandDelayedTasks_EightQueues) {
-  if (!ThreadTicks::IsSupported())
-    return;
-
-  if (!delegate_->VirtualTimeIsSupported() ||
-      !delegate_->MultipleQueuesSupported()) {
-    LOG(INFO) << "Unsupported";
-    return;
-  }
-
-  SingleThreadDelayedTestCase task_source(delegate_.get(), CreateTaskRunners(8),
-                                          10000u);
-  Benchmark("run 10000 delayed tasks with eight queues", &task_source);
-}
-
-TEST_P(SequenceManagerPerfTest, RunTenThousandDelayedTasks_ThirtyTwoQueues) {
-  if (!ThreadTicks::IsSupported())
-    return;
-
-  if (!delegate_->VirtualTimeIsSupported() ||
-      !delegate_->MultipleQueuesSupported()) {
+TEST_P(SequenceManagerPerfTest, PostDelayedTasks_FourQueues) {
+  if (!delegate_->VirtualTimeIsSupported() || !ShouldMeasureQueueScaling()) {
     LOG(INFO) << "Unsupported";
     return;
   }
 
   SingleThreadDelayedTestCase task_source(delegate_.get(),
-                                          CreateTaskRunners(32), 10000u);
-  Benchmark("run 10000 delayed tasks with thirty two queues", &task_source);
+                                          CreateTaskRunners(4));
+  Benchmark("post delayed tasks with four queues", &task_source);
 }
 
-TEST_P(SequenceManagerPerfTest, RunTenThousandImmediateTasks_OneQueue) {
-  if (!ThreadTicks::IsSupported())
-    return;
-
-  SingleThreadImmediateTestCase task_source(delegate_.get(),
-                                            CreateTaskRunners(1), 10000u);
-  Benchmark("run 10000 immediate tasks with one queue", &task_source);
-}
-
-TEST_P(SequenceManagerPerfTest, RunTenThousandImmediateTasks_FourQueues) {
-  if (!ThreadTicks::IsSupported())
-    return;
-
-  if (!delegate_->MultipleQueuesSupported()) {
+TEST_P(SequenceManagerPerfTest, PostDelayedTasks_EightQueues) {
+  if (!delegate_->VirtualTimeIsSupported() || !ShouldMeasureQueueScaling()) {
     LOG(INFO) << "Unsupported";
     return;
   }
 
-  SingleThreadImmediateTestCase task_source(delegate_.get(),
-                                            CreateTaskRunners(4), 10000u);
-  Benchmark("run 10000 immediate tasks with four queues", &task_source);
+  SingleThreadDelayedTestCase task_source(delegate_.get(),
+                                          CreateTaskRunners(8));
+  Benchmark("post delayed tasks with eight queues", &task_source);
 }
 
-TEST_P(SequenceManagerPerfTest, RunTenThousandImmediateTasks_EightQueues) {
-  if (!ThreadTicks::IsSupported())
-    return;
-
-  if (!delegate_->MultipleQueuesSupported()) {
+TEST_P(SequenceManagerPerfTest, PostDelayedTasks_ThirtyTwoQueues) {
+  if (!delegate_->VirtualTimeIsSupported() || !ShouldMeasureQueueScaling()) {
     LOG(INFO) << "Unsupported";
     return;
   }
 
-  SingleThreadImmediateTestCase task_source(delegate_.get(),
-                                            CreateTaskRunners(8), 10000u);
-  Benchmark("run 10000 immediate tasks with eight queues", &task_source);
+  SingleThreadDelayedTestCase task_source(delegate_.get(),
+                                          CreateTaskRunners(32));
+  Benchmark("post delayed tasks with thirty two queues", &task_source);
 }
 
-TEST_P(SequenceManagerPerfTest, RunTenThousandImmediateTasks_ThirtyTwoQueues) {
-  if (!ThreadTicks::IsSupported())
-    return;
+TEST_P(SequenceManagerPerfTest, PostImmediateTasks_OneQueue) {
+  SingleThreadImmediateTestCase task_source(delegate_.get(),
+                                            CreateTaskRunners(1));
+  Benchmark("post immediate tasks with one queue", &task_source);
+}
 
-  if (!delegate_->MultipleQueuesSupported()) {
+TEST_P(SequenceManagerPerfTest, PostImmediateTasks_FourQueues) {
+  if (!ShouldMeasureQueueScaling()) {
     LOG(INFO) << "Unsupported";
     return;
   }
 
   SingleThreadImmediateTestCase task_source(delegate_.get(),
-                                            CreateTaskRunners(32), 10000u);
-  Benchmark("run 10000 immediate tasks with thirty two queues", &task_source);
+                                            CreateTaskRunners(4));
+  Benchmark("post immediate tasks with four queues", &task_source);
 }
 
-TEST_P(SequenceManagerPerfTest,
-       RunTenThousandImmediateTasksFromTwoThreads_OneQueue) {
-  if (!ThreadTicks::IsSupported())
-    return;
-
-  TwoThreadTestCase task_source(delegate_.get(), CreateTaskRunners(1), 10000u);
-  Benchmark("run 10000 immediate tasks with one queue", &task_source);
-}
-
-TEST_P(SequenceManagerPerfTest,
-       RunTenThousandImmediateTasksFromTwoThreads_FourQueues) {
-  if (!ThreadTicks::IsSupported())
-    return;
-
-  if (!delegate_->MultipleQueuesSupported()) {
+TEST_P(SequenceManagerPerfTest, PostImmediateTasks_EightQueues) {
+  if (!ShouldMeasureQueueScaling()) {
     LOG(INFO) << "Unsupported";
     return;
   }
 
-  TwoThreadTestCase task_source(delegate_.get(), CreateTaskRunners(4), 10000u);
-  Benchmark("run 10000 immediate tasks with four queues", &task_source);
+  SingleThreadImmediateTestCase task_source(delegate_.get(),
+                                            CreateTaskRunners(8));
+  Benchmark("post immediate tasks with eight queues", &task_source);
 }
 
-TEST_P(SequenceManagerPerfTest,
-       RunTenThousandImmediateTasksFromTwoThreads_EightQueues) {
-  if (!ThreadTicks::IsSupported())
-    return;
-
-  if (!delegate_->MultipleQueuesSupported()) {
+TEST_P(SequenceManagerPerfTest, PostImmediateTasks_ThirtyTwoQueues) {
+  if (!ShouldMeasureQueueScaling()) {
     LOG(INFO) << "Unsupported";
     return;
   }
 
-  TwoThreadTestCase task_source(delegate_.get(), CreateTaskRunners(8), 10000u);
-  Benchmark("run 10000 immediate tasks with eight queues", &task_source);
+  SingleThreadImmediateTestCase task_source(delegate_.get(),
+                                            CreateTaskRunners(32));
+  Benchmark("post immediate tasks with thirty two queues", &task_source);
 }
 
-TEST_P(SequenceManagerPerfTest,
-       RunTenThousandImmediateTasksFromTwoThreads_ThirtyTwoQueues) {
-  if (!ThreadTicks::IsSupported())
-    return;
+TEST_P(SequenceManagerPerfTest, PostImmediateTasksFromTwoThreads_OneQueue) {
+  TwoThreadTestCase task_source(delegate_.get(), CreateTaskRunners(1));
+  Benchmark("post immediate tasks with one queue from two threads",
+            &task_source);
+}
 
-  if (!delegate_->MultipleQueuesSupported()) {
+TEST_P(SequenceManagerPerfTest, PostImmediateTasksFromTwoThreads_FourQueues) {
+  if (!ShouldMeasureQueueScaling()) {
     LOG(INFO) << "Unsupported";
     return;
   }
 
-  TwoThreadTestCase task_source(delegate_.get(), CreateTaskRunners(32), 10000u);
-  Benchmark("run 10000 immediate tasks with thirty two queues", &task_source);
+  TwoThreadTestCase task_source(delegate_.get(), CreateTaskRunners(4));
+  Benchmark("post immediate tasks with four queues from two threads",
+            &task_source);
+}
+
+TEST_P(SequenceManagerPerfTest, PostImmediateTasksFromTwoThreads_EightQueues) {
+  if (!ShouldMeasureQueueScaling()) {
+    LOG(INFO) << "Unsupported";
+    return;
+  }
+
+  TwoThreadTestCase task_source(delegate_.get(), CreateTaskRunners(8));
+  Benchmark("post immediate tasks with eight queues from two threads",
+            &task_source);
+}
+
+TEST_P(SequenceManagerPerfTest,
+       PostImmediateTasksFromTwoThreads_ThirtyTwoQueues) {
+  if (!ShouldMeasureQueueScaling()) {
+    LOG(INFO) << "Unsupported";
+    return;
+  }
+
+  TwoThreadTestCase task_source(delegate_.get(), CreateTaskRunners(32));
+  Benchmark("post immediate tasks with thirty two queues from two threads",
+            &task_source);
 }
 
 // TODO(alexclarke): Add additional tests with different mixes of non-delayed vs

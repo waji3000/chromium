@@ -186,7 +186,7 @@ void WebWorkerFetchContextImpl::SetTerminateSyncLoadEvent(
   terminate_sync_load_event_ = terminate_sync_load_event;
 }
 
-std::unique_ptr<blink::WebWorkerFetchContext>
+scoped_refptr<blink::WebWorkerFetchContext>
 WebWorkerFetchContextImpl::CloneForNestedWorker() {
   mojom::ServiceWorkerWorkerClientRequest service_worker_client_request;
   mojom::ServiceWorkerWorkerClientPtr service_worker_client_ptr;
@@ -206,7 +206,7 @@ WebWorkerFetchContextImpl::CloneForNestedWorker() {
   }
 
   mojom::RendererPreferenceWatcherPtr preference_watcher;
-  auto new_context = std::make_unique<WebWorkerFetchContextImpl>(
+  auto new_context = base::MakeRefCounted<WebWorkerFetchContextImpl>(
       renderer_preferences_, mojo::MakeRequest(&preference_watcher),
       std::move(service_worker_client_request),
       std::move(service_worker_worker_client_registry_ptr_info),
@@ -230,7 +230,8 @@ WebWorkerFetchContextImpl::CloneForNestedWorker() {
   return new_context;
 }
 
-void WebWorkerFetchContextImpl::InitializeOnWorkerThread() {
+void WebWorkerFetchContextImpl::InitializeOnWorkerThread(
+    blink::AcceptLanguagesWatcher* watcher) {
   DCHECK(!resource_dispatcher_);
   DCHECK(!binding_.is_bound());
   DCHECK(!preference_watcher_binding_.is_bound());
@@ -262,20 +263,19 @@ void WebWorkerFetchContextImpl::InitializeOnWorkerThread() {
         base::RefCountedData<blink::mojom::BlobRegistryPtr>>(
         std::move(blob_registry_ptr));
   }
-}
+  accept_languages_watcher_ = watcher;
 
-std::unique_ptr<blink::WebURLLoaderFactory>
-WebWorkerFetchContextImpl::CreateURLLoaderFactory() {
   DCHECK(loader_factory_);
   DCHECK(!web_loader_factory_);
-  auto factory = std::make_unique<Factory>(resource_dispatcher_->GetWeakPtr(),
-                                           loader_factory_);
-  web_loader_factory_ = factory->GetWeakPtr();
+  web_loader_factory_ = std::make_unique<Factory>(
+      resource_dispatcher_->GetWeakPtr(), loader_factory_);
 
   if (blink::ServiceWorkerUtils::IsServicificationEnabled())
     ResetServiceWorkerURLLoaderFactory();
+}
 
-  return factory;
+blink::WebURLLoaderFactory* WebWorkerFetchContextImpl::GetURLLoaderFactory() {
+  return web_loader_factory_.get();
 }
 
 std::unique_ptr<blink::WebURLLoaderFactory>
@@ -467,11 +467,18 @@ void WebWorkerFetchContextImpl::ResetServiceWorkerURLLoaderFactory() {
 
 void WebWorkerFetchContextImpl::NotifyUpdate(
     const RendererPreferences& new_prefs) {
+  if (accept_languages_watcher_ &&
+      renderer_preferences_.accept_languages != new_prefs.accept_languages)
+    accept_languages_watcher_->NotifyUpdate();
   renderer_preferences_ = new_prefs;
   child_preference_watchers_.ForAllPtrs(
       [&new_prefs](mojom::RendererPreferenceWatcher* watcher) {
         watcher->NotifyUpdate(new_prefs);
       });
+}
+
+blink::WebString WebWorkerFetchContextImpl::GetAcceptLanguages() const {
+  return blink::WebString::FromUTF8(renderer_preferences_.accept_languages);
 }
 
 }  // namespace content

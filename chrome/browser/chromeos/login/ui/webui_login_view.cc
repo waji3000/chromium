@@ -7,15 +7,8 @@
 #include <memory>
 
 #include "ash/accelerators/accelerator_controller.h"
-#include "ash/focus_cycler.h"
 #include "ash/public/cpp/ash_features.h"
-#include "ash/root_window_controller.h"
-#include "ash/shelf/shelf.h"
-#include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
-#include "ash/system/status_area_widget.h"
-#include "ash/system/status_area_widget_delegate.h"
-#include "ash/system/tray/system_tray_notifier.h"
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/i18n/rtl.h"
@@ -38,7 +31,8 @@
 #include "chrome/browser/password_manager/chrome_password_manager_client.h"
 #include "chrome/browser/renderer_preferences_util.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
-#include "chrome/browser/ui/ash/chrome_keyboard_controller_client.h"
+#include "chrome/browser/ui/ash/keyboard/chrome_keyboard_controller_client.h"
+#include "chrome/browser/ui/ash/login_screen_client.h"
 #include "chrome/browser/ui/ash/system_tray_client.h"
 #include "chrome/browser/ui/autofill/chrome_autofill_client.h"
 #include "chrome/browser/ui/webui/chromeos/internet_detail_dialog.h"
@@ -130,6 +124,8 @@ WebUILoginView::WebUILoginView(const WebViewSettings& settings)
                  content::NotificationService::AllSources());
   registrar_.Add(this, chrome::NOTIFICATION_LOGIN_NETWORK_ERROR_SHOWN,
                  content::NotificationService::AllSources());
+  registrar_.Add(this, chrome::NOTIFICATION_APP_TERMINATING,
+                 content::NotificationService::AllSources());
 
   accel_map_[ui::Accelerator(ui::VKEY_ESCAPE, ui::EF_NONE)] = kAccelNameCancel;
   accel_map_[ui::Accelerator(ui::VKEY_E,
@@ -191,17 +187,19 @@ WebUILoginView::WebUILoginView(const WebViewSettings& settings)
     }
   }
 
-  if (!features::IsMultiProcessMash())
-    ash::Shell::Get()->system_tray_notifier()->AddSystemTrayFocusObserver(this);
+  if (LoginScreenClient::HasInstance()) {
+    LoginScreenClient::Get()->AddSystemTrayFocusObserver(this);
+    observing_system_tray_focus_ = true;
+  }
 }
 
 WebUILoginView::~WebUILoginView() {
   for (auto& observer : observer_list_)
     observer.OnHostDestroying();
 
+  if (observing_system_tray_focus_)
+    LoginScreenClient::Get()->RemoveSystemTrayFocusObserver(this);
   if (!features::IsMultiProcessMash()) {
-    ash::Shell::Get()->system_tray_notifier()->RemoveSystemTrayFocusObserver(
-        this);
     ash::Shell::Get()->accelerator_controller()->UnregisterAll(this);
     ChromeKeyboardControllerClient::Get()->RemoveObserver(this);
   }
@@ -404,7 +402,20 @@ void WebUILoginView::Observe(int type,
     case chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE:
     case chrome::NOTIFICATION_LOGIN_NETWORK_ERROR_SHOWN: {
       OnLoginPromptVisible();
-      registrar_.RemoveAll();
+      registrar_.Remove(this, chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE,
+                        content::NotificationService::AllSources());
+      registrar_.Remove(this, chrome::NOTIFICATION_LOGIN_NETWORK_ERROR_SHOWN,
+                        content::NotificationService::AllSources());
+      break;
+    }
+    case chrome::NOTIFICATION_APP_TERMINATING: {
+      // In some tests, WebUILoginView remains after LoginScreenClient gets
+      // deleted on shutdown. It should unregister itself before the deletion
+      // happens.
+      if (observing_system_tray_focus_) {
+        LoginScreenClient::Get()->RemoveSystemTrayFocusObserver(this);
+        observing_system_tray_focus_ = false;
+      }
       break;
     }
     default:
@@ -558,42 +569,22 @@ void WebUILoginView::OnFocusLeavingSystemTray(bool reverse) {
 }
 
 bool WebUILoginView::MoveFocusToSystemTray(bool reverse) {
-  // Focus is accepted, but the Ash system tray is not available in Mash, so
-  // exit early. https://crbug.com/782072
-  if (features::IsMultiProcessMash())
-    return true;
-
-  // The focus should not move to the system tray if voice interaction OOOBE is
+  // The focus should not move to the system tray if voice interaction OOBE is
   // active.
   if (LoginDisplayHost::default_host() &&
       LoginDisplayHost::default_host()->IsVoiceInteractionOobe()) {
     return false;
   }
 
-  // If shift+tab is used (|reverse| is true) and views-based shelf is shown,
-  // focus goes to the shelf widget. If views-based shelf is disabled, focus
-  // goes to the system tray, because the web-UI shelf has already been
-  // traversed when we reach here.
-  ash::Shelf* shelf = ash::Shelf::ForWindow(GetWidget()->GetNativeWindow());
-  if (!reverse && ash::ShelfWidget::IsUsingViewsShelf()) {
-    shelf->shelf_widget()->set_default_last_focusable_child(reverse);
-    ash::Shell::Get()->focus_cycler()->FocusWidget(shelf->shelf_widget());
-    return true;
-  }
-
-  ash::RootWindowController* primary_controller =
-      ash::RootWindowController::ForWindow(GetWidget()->GetNativeWindow());
-  if (!primary_controller->IsSystemTrayVisible())
-    return false;
-
-  shelf->GetStatusAreaWidget()
-      ->status_area_widget_delegate()
-      ->set_default_last_focusable_child(reverse);
-  ash::Shell::Get()->focus_cycler()->FocusWidget(shelf->GetStatusAreaWidget());
+  LoginScreenClient::Get()->login_screen()->FocusLoginShelf(reverse);
   return true;
 }
 
 void WebUILoginView::OnLoginPromptVisible() {
+  if (!observing_system_tray_focus_ && LoginScreenClient::HasInstance()) {
+    LoginScreenClient::Get()->AddSystemTrayFocusObserver(this);
+    observing_system_tray_focus_ = true;
+  }
   // If we're hidden than will generate this signal once we're shown.
   if (is_hidden_ || webui_visible_) {
     VLOG(1) << "Login WebUI >> not emitting signal, hidden: " << is_hidden_;

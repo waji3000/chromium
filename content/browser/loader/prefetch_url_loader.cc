@@ -80,10 +80,13 @@ PrefetchURLLoader::~PrefetchURLLoader() = default;
 void PrefetchURLLoader::FollowRedirect(
     const base::Optional<std::vector<std::string>>&
         to_be_removed_request_headers,
-    const base::Optional<net::HttpRequestHeaders>& modified_request_headers) {
+    const base::Optional<net::HttpRequestHeaders>& modified_request_headers,
+    const base::Optional<GURL>& new_url) {
   DCHECK(!modified_request_headers.has_value()) << "Redirect with modified "
                                                    "headers was not supported "
                                                    "yet. crbug.com/845683";
+  DCHECK(!new_url.has_value()) << "Redirect with modified URL was not "
+                                  "supported yet. crbug.com/845683";
   DCHECK(new_url_for_redirect_.is_valid());
   if (signed_exchange_prefetch_handler_) {
     // Rebind |client_binding_| and |loader_|.
@@ -107,11 +110,12 @@ void PrefetchURLLoader::FollowRedirect(
       modified_request_headers_for_accept.SetHeader(
           network::kAcceptHeader, network::kDefaultAcceptHeader);
     }
-    loader_->FollowRedirect(base::nullopt, modified_request_headers_for_accept);
+    loader_->FollowRedirect(base::nullopt, modified_request_headers_for_accept,
+                            base::nullopt);
     return;
   }
 
-  loader_->FollowRedirect(base::nullopt, base::nullopt);
+  loader_->FollowRedirect(base::nullopt, base::nullopt, base::nullopt);
 }
 
 void PrefetchURLLoader::ProceedWithResponse() {
@@ -177,11 +181,25 @@ void PrefetchURLLoader::OnTransferSizeUpdated(int32_t transfer_size_diff) {
 
 void PrefetchURLLoader::OnStartLoadingResponseBody(
     mojo::ScopedDataPipeConsumerHandle body) {
-  // Just drain this here; we don't need to forward the body data to
-  // the renderer for prefetch.
+  // Just drain the original response's body here.
   DCHECK(!pipe_drainer_);
   pipe_drainer_ =
       std::make_unique<mojo::DataPipeDrainer>(this, std::move(body));
+
+  // Send an empty response's body instead.
+  mojo::ScopedDataPipeProducerHandle producer;
+  mojo::ScopedDataPipeConsumerHandle consumer;
+  if (CreateDataPipe(nullptr, &producer, &consumer) == MOJO_RESULT_OK) {
+    forwarding_client_->OnStartLoadingResponseBody(std::move(consumer));
+    return;
+  }
+
+  // No more resources available for creating a data pipe. Close the connection,
+  // which will in turn make this loader destroyed.
+  forwarding_client_->OnComplete(
+      network::URLLoaderCompletionStatus(net::ERR_INSUFFICIENT_RESOURCES));
+  forwarding_client_.reset();
+  client_binding_.Close();
 }
 
 void PrefetchURLLoader::OnComplete(

@@ -435,7 +435,6 @@ void WorkerThread::InitializeOnWorkerThread(
     const base::Optional<WorkerBackingThreadStartupData>& thread_startup_data,
     std::unique_ptr<WorkerDevToolsParams> devtools_params) {
   DCHECK(IsCurrentThread());
-  bool wait_for_debugger = devtools_params->wait_for_debugger;
   {
     MutexLocker lock(mutex_);
     DCHECK_EQ(ThreadState::kNotStarted, thread_state_);
@@ -450,7 +449,7 @@ void WorkerThread::InitializeOnWorkerThread(
 
     const KURL url_for_debugger = global_scope_creation_params->script_url;
 
-    console_message_storage_ = new ConsoleMessageStorage();
+    console_message_storage_ = MakeGarbageCollected<ConsoleMessageStorage>();
     global_scope_ =
         CreateWorkerGlobalScope(std::move(global_scope_creation_params));
     worker_reporting_proxy_.DidCreateWorkerGlobalScope(GlobalScope());
@@ -492,11 +491,7 @@ void WorkerThread::InitializeOnWorkerThread(
   // Otherwise, InspectorTaskRunner might interrupt isolate execution
   // from another thread and try to resume "pause on start" before
   // we even paused.
-  if (wait_for_debugger) {
-    WorkerThreadDebugger* debugger = WorkerThreadDebugger::From(GetIsolate());
-    if (debugger)
-      debugger->PauseWorkerOnStart(this);
-  }
+  worker_inspector_controller_->WaitForDebuggerIfNeeded();
 }
 
 void WorkerThread::EvaluateClassicScriptOnWorkerThread(
@@ -515,10 +510,11 @@ void WorkerThread::ImportClassicScriptOnWorkerThread(
         outside_settings_object,
     const v8_inspector::V8StackTraceId& stack_id) {
   To<WorkerGlobalScope>(GlobalScope())
-      ->ImportClassicScriptPausable(script_url,
-                                    new FetchClientSettingsObjectSnapshot(
-                                        std::move(outside_settings_object)),
-                                    stack_id);
+      ->ImportClassicScriptPausable(
+          script_url,
+          MakeGarbageCollected<FetchClientSettingsObjectSnapshot>(
+              std::move(outside_settings_object)),
+          stack_id);
 }
 
 void WorkerThread::ImportModuleScriptOnWorkerThread(
@@ -530,10 +526,11 @@ void WorkerThread::ImportModuleScriptOnWorkerThread(
   // TODO(nhiroki): Consider excluding this code path from WorkerThread like
   // Worklets.
   To<WorkerGlobalScope>(GlobalScope())
-      ->ImportModuleScriptPausable(script_url,
-                                   new FetchClientSettingsObjectSnapshot(
-                                       std::move(outside_settings_object)),
-                                   credentials_mode);
+      ->ImportModuleScriptPausable(
+          script_url,
+          MakeGarbageCollected<FetchClientSettingsObjectSnapshot>(
+              std::move(outside_settings_object)),
+          credentials_mode);
 }
 
 void WorkerThread::PrepareForShutdownOnWorkerThread() {

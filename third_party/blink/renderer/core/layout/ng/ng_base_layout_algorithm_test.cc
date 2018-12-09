@@ -86,17 +86,15 @@ NGConstraintSpace ConstructBlockLayoutTestConstraintSpace(
           ? NGFragmentationType::kFragmentColumn
           : NGFragmentationType::kFragmentNone;
 
-  return NGConstraintSpaceBuilder(
-             writing_mode,
-             /* icb_size */ NGPhysicalSize(LayoutUnit(800), LayoutUnit(600)))
+  return NGConstraintSpaceBuilder(writing_mode, writing_mode,
+                                  is_new_formatting_context)
       .SetAvailableSize(size)
       .SetPercentageResolutionSize(size)
       .SetTextDirection(direction)
       .SetIsShrinkToFit(shrink_to_fit)
-      .SetIsNewFormattingContext(is_new_formatting_context)
       .SetFragmentainerSpaceAtBfcStart(fragmentainer_space_available)
       .SetFragmentationType(block_fragmentation)
-      .ToConstraintSpace(writing_mode);
+      .ToConstraintSpace();
 }
 
 }  // namespace blink

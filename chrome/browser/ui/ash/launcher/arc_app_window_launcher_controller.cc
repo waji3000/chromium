@@ -6,7 +6,6 @@
 
 #include <string>
 
-#include "ash/public/cpp/app_list/internal_app_id_constants.h"
 #include "ash/public/cpp/app_types.h"
 #include "ash/public/cpp/shelf_model.h"
 #include "ash/public/cpp/window_properties.h"
@@ -20,11 +19,11 @@
 #include "chrome/browser/ui/ash/launcher/arc_app_window.h"
 #include "chrome/browser/ui/ash/launcher/arc_app_window_launcher_item_controller.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
-#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
+#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager_client.h"
 #include "components/account_id/account_id.h"
 #include "components/arc/arc_bridge_service.h"
 #include "components/arc/arc_util.h"
-#include "components/exo/shell_surface.h"
+#include "components/exo/shell_surface_util.h"
 #include "components/user_manager/user_manager.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/env.h"
@@ -35,17 +34,6 @@
 namespace {
 
 constexpr size_t kMaxIconPngSize = 64 * 1024;  // 64 kb
-
-// Generated as ArcAppListPrefs::GetAppIdByPackageName(
-//     "com.google.android.GoogleCameraArc").
-constexpr char kAndroidCameraAppId[] = "goamfaniemdfcajgcmmflhchgkmbngka";
-// Generated as ArcAppListPrefs::GetAppIdByPackageName(
-//     "com.android.camera2").
-constexpr char kAndroidLegacyCameraAppId[] = "obfofkigjfamlldmipdegnjlcpincibc";
-// Generated as ArcAppListPrefs::GetAppIdByPackageName(
-//     "com.android.googlecameramigration").
-constexpr char kAndroidCameraMigrationAppId[] =
-    "ngmkobaiicipbagcngcmilfkhejlnfci";
 
 }  // namespace
 
@@ -177,7 +165,7 @@ void ArcAppWindowLauncherController::OnWindowVisibilityChanged(
   // Attach window to multi-user manager now to let it manage visibility state
   // of the ARC window correctly.
   if (GetWindowTaskId(window) > 0) {
-    MultiUserWindowManager::GetInstance()->SetWindowOwner(
+    MultiUserWindowManagerClient::GetInstance()->SetWindowOwner(
         window,
         user_manager::UserManager::Get()->GetPrimaryUser()->GetAccountId());
   }
@@ -307,17 +295,8 @@ void ArcAppWindowLauncherController::OnTaskCreated(
   DCHECK(!GetAppWindowForTask(task_id));
   const std::string arc_app_id =
       ArcAppListPrefs::GetAppId(package_name, activity_name);
-  std::string app_id_consolidated = arc_app_id;
-
-  // For camera app, always put the internal app icon onto shelf.
-  if (arc_app_id.compare(kAndroidCameraAppId) == 0 ||
-      arc_app_id.compare(kAndroidCameraMigrationAppId) == 0 ||
-      arc_app_id.compare(kAndroidLegacyCameraAppId) == 0) {
-    app_id_consolidated = app_list::kInternalAppIdCamera;
-  }
-
   const arc::ArcAppShelfId arc_app_shelf_id =
-      arc::ArcAppShelfId::FromIntentAndAppId(intent, app_id_consolidated);
+      arc::ArcAppShelfId::FromIntentAndAppId(intent, arc_app_id);
   task_id_to_app_window_info_[task_id] =
       std::make_unique<AppWindowInfo>(arc_app_shelf_id, intent, package_name);
   // Don't create shelf icon for non-primary user.
@@ -554,7 +533,7 @@ void ArcAppWindowLauncherController::UnregisterApp(
 
 // static
 int ArcAppWindowLauncherController::GetWindowTaskId(aura::Window* window) {
-  const std::string* arc_app_id = exo::ShellSurface::GetApplicationId(window);
+  const std::string* arc_app_id = exo::GetShellApplicationId(window);
   if (!arc_app_id)
     return -1;
 

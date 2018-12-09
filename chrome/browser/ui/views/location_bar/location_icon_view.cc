@@ -29,7 +29,7 @@ LocationIconView::LocationIconView(const gfx::FontList& font_list,
     : IconLabelBubbleView(font_list), delegate_(delegate) {
   label()->SetElideBehavior(gfx::ELIDE_MIDDLE);
   set_id(VIEW_ID_LOCATION_ICON);
-  Update();
+  Update(true);
   SetUpForInOutAnimation();
 }
 
@@ -52,33 +52,13 @@ bool LocationIconView::OnMouseDragged(const ui::MouseEvent& event) {
   return IconLabelBubbleView::OnMouseDragged(event);
 }
 
-bool LocationIconView::GetTooltipText(const gfx::Point& p,
-                                      base::string16* tooltip) const {
-  if (show_tooltip_)
-    *tooltip = l10n_util::GetStringUTF16(IDS_TOOLTIP_LOCATION_ICON);
-  return show_tooltip_;
-}
-
 SkColor LocationIconView::GetTextColor() const {
   return delegate_->GetSecurityChipColor(
       delegate_->GetLocationBarModel()->GetSecurityLevel(false));
 }
 
 bool LocationIconView::ShouldShowSeparator() const {
-  if (ShouldShowLabel())
-    return true;
-
-  if (OmniboxFieldTrial::IsJogTextfieldOnPopupEnabled())
-    return false;
-
-  return !delegate_->IsEditingOrEmpty();
-}
-
-bool LocationIconView::ShouldShowExtraEndSpace() const {
-  if (OmniboxFieldTrial::IsJogTextfieldOnPopupEnabled())
-    return false;
-
-  return delegate_->IsEditingOrEmpty();
+  return ShouldShowLabel();
 }
 
 bool LocationIconView::ShowBubble(const ui::Event& event) {
@@ -96,13 +76,12 @@ void LocationIconView::GetAccessibleNodeData(ui::AXNodeData* node_data) {
     return;
   }
 
-  security_state::SecurityLevel security_level =
-      delegate_->GetLocationBarModel()->GetSecurityLevel(false);
-  if (label()->text().empty() && (security_level == security_state::EV_SECURE ||
-                                  security_level == security_state::SECURE)) {
-    node_data->AddStringAttribute(
-        ax::mojom::StringAttribute::kDescription,
-        l10n_util::GetStringUTF8(IDS_SECURE_VERBOSE_STATE));
+  // If no display text exists, ensure that the accessibility label is added.
+  auto accessibility_label = base::UTF16ToUTF8(
+      delegate_->GetLocationBarModel()->GetSecureAccessibilityText());
+  if (label()->text().empty() && !accessibility_label.empty()) {
+    node_data->AddStringAttribute(ax::mojom::StringAttribute::kDescription,
+                                  accessibility_label);
   }
 
   IconLabelBubbleView::GetAccessibleNodeData(node_data);
@@ -141,7 +120,11 @@ bool LocationIconView::ShouldShowText() const {
       return true;
   }
 
-  return !location_bar_model->GetSecureVerboseText().empty();
+  return !location_bar_model->GetSecureDisplayText().empty();
+}
+
+const views::InkDrop* LocationIconView::get_ink_drop_for_testing() {
+  return GetInkDrop();
 }
 
 base::string16 LocationIconView::GetText() const {
@@ -166,7 +149,7 @@ base::string16 LocationIconView::GetText() const {
       return extension_name;
   }
 
-  return delegate_->GetLocationBarModel()->GetSecureVerboseText();
+  return delegate_->GetLocationBarModel()->GetSecureDisplayText();
 }
 
 bool LocationIconView::ShouldAnimateTextVisibilityChange() const {
@@ -182,11 +165,11 @@ bool LocationIconView::ShouldAnimateTextVisibilityChange() const {
           level == SecurityLevel::HTTP_SHOW_WARNING);
 }
 
-void LocationIconView::UpdateTextVisibility() {
+void LocationIconView::UpdateTextVisibility(bool suppress_animations) {
   SetLabel(GetText());
 
   bool should_show = ShouldShowText();
-  if (!ShouldAnimateTextVisibilityChange())
+  if (!ShouldAnimateTextVisibilityChange() || suppress_animations)
     ResetSlideAnimation(should_show);
   else if (should_show)
     AnimateIn(base::nullopt);
@@ -212,34 +195,41 @@ void LocationIconView::OnIconFetched(const gfx::Image& image) {
   SetImage(image.AsImageSkia());
 }
 
-void LocationIconView::Update() {
-  UpdateTextVisibility();
+void LocationIconView::Update(bool suppress_animations) {
+  UpdateTextVisibility(suppress_animations);
   UpdateIcon();
 
   bool is_editing_or_empty = delegate_->IsEditingOrEmpty();
   // The tooltip should be shown if we are not editing or empty.
-  show_tooltip_ = !is_editing_or_empty;
+  SetTooltipText(is_editing_or_empty
+                     ? base::string16()
+                     : l10n_util::GetStringUTF16(IDS_TOOLTIP_LOCATION_ICON));
 
-  // If the omnibox is empty or editing, the user should not be able to left
-  // click on the icon. As such, the icon should not show a highlight or be
-  // focusable. Note: using the middle mouse to copy-and-paste should still
-  // work on the icon.
-  if (is_editing_or_empty) {
-    SetInkDropMode(InkDropMode::OFF);
-    SetFocusBehavior(FocusBehavior::NEVER);
-    return;
-  }
-
-  SetInkDropMode(InkDropMode::ON);
+  // We should only enable/disable the InkDrop if the editing state has changed,
+  // as the drop gets recreated when SetInkDropMode is called. This can result
+  // in strange behaviour, like the the InkDrop disappearing mid animation.
+  if (is_editing_or_empty != was_editing_or_empty_) {
+    // If the omnibox is empty or editing, the user should not be able to left
+    // click on the icon. As such, the icon should not show a highlight or be
+    // focusable. Note: using the middle mouse to copy-and-paste should still
+    // work on the icon.
+    if (is_editing_or_empty) {
+      SetInkDropMode(InkDropMode::OFF);
+      SetFocusBehavior(FocusBehavior::NEVER);
+    } else {
+      SetInkDropMode(InkDropMode::ON);
 
 #if defined(OS_MACOSX)
-  SetFocusBehavior(FocusBehavior::ACCESSIBLE_ONLY);
+      SetFocusBehavior(FocusBehavior::ACCESSIBLE_ONLY);
 #else
-  SetFocusBehavior(FocusBehavior::ALWAYS);
+      SetFocusBehavior(FocusBehavior::ALWAYS);
 #endif
+    }
+  }
 
   last_update_security_level_ =
       delegate_->GetLocationBarModel()->GetSecurityLevel(false);
+  was_editing_or_empty_ = is_editing_or_empty;
 }
 
 bool LocationIconView::IsTriggerableEvent(const ui::Event& event) {

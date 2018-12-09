@@ -466,9 +466,15 @@ void DrawingBuffer::FinishPrepareTransferableResourceGpu(
         color_buffer_for_mailbox->produce_sync_token, gfx::Size(size_),
         is_overlay_candidate);
     out_resource->color_space = sampler_color_space_;
-    out_resource->format = viz::RGBA_8888;
-    if (use_half_float_storage_)
-      out_resource->format = viz::RGBA_F16;
+    if (allocate_alpha_channel_) {
+      if (use_half_float_storage_)
+        out_resource->format = viz::RGBA_F16;
+      else
+        out_resource->format = viz::RGBA_8888;
+    } else {
+      DCHECK(!use_half_float_storage_);
+      out_resource->format = viz::RGBX_8888;
+    }
 
     // This holds a ref on the DrawingBuffer that will keep it alive until the
     // mailbox is released (and while the release callback is running).
@@ -1415,25 +1421,25 @@ scoped_refptr<DrawingBuffer::ColorBuffer> DrawingBuffer::CreateColorBuffer(
       Platform::Current()->GetGpuMemoryBufferManager();
   if (ShouldUseChromiumImage()) {
     gfx::BufferFormat buffer_format;
-    GLenum gl_format = GL_NONE;
     if (allocate_alpha_channel_) {
       buffer_format = use_half_float_storage_ ? gfx::BufferFormat::RGBA_F16
                                               : gfx::BufferFormat::RGBA_8888;
-      gl_format = GL_RGBA;
     } else {
       DCHECK(!use_half_float_storage_);
       buffer_format = gfx::BufferFormat::RGBX_8888;
       if (gpu::IsImageFromGpuMemoryBufferFormatSupported(
               gfx::BufferFormat::BGRX_8888,
-              ContextProvider()->GetCapabilities()))
+              ContextProvider()->GetCapabilities())) {
         buffer_format = gfx::BufferFormat::BGRX_8888;
-      gl_format = GL_RGB;
+      }
     }
     gpu_memory_buffer = gpu_memory_buffer_manager->CreateGpuMemoryBuffer(
         gfx::Size(size), buffer_format, gfx::BufferUsage::SCANOUT,
         gpu::kNullSurfaceHandle);
     if (gpu_memory_buffer) {
       gpu_memory_buffer->SetColorSpace(storage_color_space_);
+      const GLenum gl_format = allocate_alpha_channel_ ? GL_RGBA : GL_RGB;
+
       image_id =
           gl_->CreateImageCHROMIUM(gpu_memory_buffer->AsClientBuffer(),
                                    size.Width(), size.Height(), gl_format);

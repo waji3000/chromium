@@ -349,7 +349,6 @@ String StringForSkPaintFlags(const SkPaint& paint) {
   AppendFlagToString(&flags_string, paint.isFakeBoldText(), "FakeBoldText");
   AppendFlagToString(&flags_string, paint.isLinearText(), "LinearText");
   AppendFlagToString(&flags_string, paint.isSubpixelText(), "SubpixelText");
-  AppendFlagToString(&flags_string, paint.isDevKernText(), "DevKernText");
   AppendFlagToString(&flags_string, paint.isLCDRenderText(), "LCDRenderText");
   AppendFlagToString(&flags_string, paint.isEmbeddedBitmapText(),
                      "EmbeddedBitmapText");
@@ -415,15 +414,15 @@ String StyleName(SkPaint::Style style) {
   };
 }
 
-String TextEncodingName(SkPaint::TextEncoding encoding) {
+String TextEncodingName(SkTextEncoding encoding) {
   switch (encoding) {
-    case SkPaint::kUTF8_TextEncoding:
+    case kUTF8_SkTextEncoding:
       return "UTF-8";
-    case SkPaint::kUTF16_TextEncoding:
+    case kUTF16_SkTextEncoding:
       return "UTF-16";
-    case SkPaint::kUTF32_TextEncoding:
+    case kUTF32_SkTextEncoding:
       return "UTF-32";
-    case SkPaint::kGlyphID_TextEncoding:
+    case kGlyphID_SkTextEncoding:
       return "GlyphID";
     default:
       NOTREACHED();
@@ -431,15 +430,15 @@ String TextEncodingName(SkPaint::TextEncoding encoding) {
   };
 }
 
-String HintingName(SkPaint::Hinting hinting) {
+String HintingName(SkFontHinting hinting) {
   switch (hinting) {
-    case SkPaint::kNo_Hinting:
+    case SkFontHinting::kNone:
       return "None";
-    case SkPaint::kSlight_Hinting:
+    case SkFontHinting::kSlight:
       return "Slight";
-    case SkPaint::kNormal_Hinting:
+    case SkFontHinting::kNormal:
       return "Normal";
-    case SkPaint::kFull_Hinting:
+    case SkFontHinting::kFull:
       return "Full";
     default:
       NOTREACHED();
@@ -473,14 +472,6 @@ std::unique_ptr<JSONObject> ObjectForSkPaint(const SkPaint& paint) {
   return paint_item;
 }
 
-std::unique_ptr<JSONArray> ArrayForSkScalars(size_t n,
-                                             const SkScalar scalars[]) {
-  std::unique_ptr<JSONArray> scalars_array = JSONArray::Create();
-  for (size_t i = 0; i < n; ++i)
-    scalars_array->PushDouble(scalars[i]);
-  return scalars_array;
-}
-
 String ClipOpName(SkClipOp op) {
   switch (op) {
     case SkClipOp::kDifference:
@@ -497,51 +488,6 @@ String SaveLayerFlagsToString(SkCanvas::SaveLayerFlags flags) {
   if (flags & SkCanvas::kPreserveLCDText_SaveLayerFlag)
     flags_string.append("kPreserveLCDText_SaveLayerFlag ");
   return flags_string;
-}
-
-String StringForUTF32LEText(const void* text, size_t byte_length) {
-  icu::UnicodeString utf16;
-#if defined(ARCH_CPU_BIG_ENDIAN)
-  // Swap LE to BE
-  size_t char_length = length / sizeof(UChar32);
-  WTF::Vector<UChar32> utf32be(char_length);
-  const UChar32* utf32le = static_cast<const UChar32*>(text);
-  for (size_t i = 0; i < char_length; ++i)
-    utf32be[i] = base::ByteSwap(utf32le[i]);
-  utf16 = icu::UnicodeString::fromUTF32(utf32be.data(),
-                                        static_cast<int32_t>(byte_length));
-#else
-  utf16 = icu::UnicodeString::fromUTF32(reinterpret_cast<const UChar32*>(text),
-                                        static_cast<int32_t>(byte_length));
-#endif
-  return String(icu::toUCharPtr(utf16.getBuffer()),
-                static_cast<unsigned>(utf16.length()));
-}
-
-String StringForText(const void* text,
-                     size_t byte_length,
-                     const SkPaint& paint) {
-  SkPaint::TextEncoding encoding = paint.getTextEncoding();
-  switch (encoding) {
-    case SkPaint::kUTF8_TextEncoding:
-      return WTF::TextEncoding("UTF-8").Decode(
-          reinterpret_cast<const char*>(text), byte_length);
-    case SkPaint::kUTF16_TextEncoding:
-      return WTF::TextEncoding("UTF-16LE")
-          .Decode(reinterpret_cast<const char*>(text), byte_length);
-    case SkPaint::kUTF32_TextEncoding:
-      return StringForUTF32LEText(text, byte_length);
-    case SkPaint::kGlyphID_TextEncoding: {
-      WTF::Vector<SkUnichar> data_vector(byte_length / 2);
-      SkUnichar* text_data = data_vector.data();
-      paint.glyphsToUnichars(static_cast<const uint16_t*>(text),
-                             byte_length / 2, text_data);
-      return StringForUTF32LEText(text, byte_length);
-    }
-    default:
-      NOTREACHED();
-      return "?";
-  }
 }
 
 }  // namespace
@@ -724,48 +670,6 @@ void LoggingCanvas::onDrawDRRect(const SkRRect& outer,
   params->SetObject("inner", ObjectForSkRRect(inner));
   params->SetObject("paint", ObjectForSkPaint(paint));
   this->SkCanvas::onDrawDRRect(outer, inner, paint);
-}
-
-void LoggingCanvas::onDrawText(const void* text,
-                               size_t byte_length,
-                               SkScalar x,
-                               SkScalar y,
-                               const SkPaint& paint) {
-  AutoLogger logger(this);
-  JSONObject* params = logger.LogItemWithParams("drawText");
-  params->SetString("text", StringForText(text, byte_length, paint));
-  params->SetDouble("x", x);
-  params->SetDouble("y", y);
-  params->SetObject("paint", ObjectForSkPaint(paint));
-  this->SkCanvas::onDrawText(text, byte_length, x, y, paint);
-}
-
-void LoggingCanvas::onDrawPosText(const void* text,
-                                  size_t byte_length,
-                                  const SkPoint pos[],
-                                  const SkPaint& paint) {
-  AutoLogger logger(this);
-  JSONObject* params = logger.LogItemWithParams("drawPosText");
-  params->SetString("text", StringForText(text, byte_length, paint));
-  size_t points_count = paint.countText(text, byte_length);
-  params->SetArray("pos", ArrayForSkPoints(points_count, pos));
-  params->SetObject("paint", ObjectForSkPaint(paint));
-  this->SkCanvas::onDrawPosText(text, byte_length, pos, paint);
-}
-
-void LoggingCanvas::onDrawPosTextH(const void* text,
-                                   size_t byte_length,
-                                   const SkScalar xpos[],
-                                   SkScalar const_y,
-                                   const SkPaint& paint) {
-  AutoLogger logger(this);
-  JSONObject* params = logger.LogItemWithParams("drawPosTextH");
-  params->SetString("text", StringForText(text, byte_length, paint));
-  size_t points_count = paint.countText(text, byte_length);
-  params->SetArray("xpos", ArrayForSkScalars(points_count, xpos));
-  params->SetDouble("constY", const_y);
-  params->SetObject("paint", ObjectForSkPaint(paint));
-  this->SkCanvas::onDrawPosTextH(text, byte_length, xpos, const_y, paint);
 }
 
 void LoggingCanvas::onDrawTextBlob(const SkTextBlob* blob,

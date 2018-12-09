@@ -13,6 +13,7 @@
 #include "third_party/blink/renderer/modules/remoteplayback/availability_callback_wrapper.h"
 #include "third_party/blink/renderer/modules/remoteplayback/html_media_element_remote_playback.h"
 #include "third_party/blink/renderer/modules/remoteplayback/remote_playback.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 
 namespace blink {
 
@@ -88,11 +89,12 @@ void MediaControlsMediaEventListener::Attach() {
     // TODO(avayvod, mlamouri): Attach can be called twice. See
     // https://crbug.com/713275.
     if (!remote_playback_availability_callback_id_.has_value()) {
-      remote_playback_availability_callback_id_ = base::make_optional(
-          remote->WatchAvailabilityInternal(new AvailabilityCallbackWrapper(
-              WTF::BindRepeating(&MediaControlsMediaEventListener::
-                                     OnRemotePlaybackAvailabilityChanged,
-                                 WrapWeakPersistent(this)))));
+      remote_playback_availability_callback_id_ =
+          base::make_optional(remote->WatchAvailabilityInternal(
+              MakeGarbageCollected<AvailabilityCallbackWrapper>(
+                  WTF::BindRepeating(&MediaControlsMediaEventListener::
+                                         OnRemotePlaybackAvailabilityChanged,
+                                     WrapWeakPersistent(this)))));
     }
   }
 }
@@ -144,7 +146,7 @@ RemotePlayback* MediaControlsMediaEventListener::GetRemotePlayback() {
   return HTMLMediaElementRemotePlayback::remote(GetMediaElement());
 }
 
-void MediaControlsMediaEventListener::handleEvent(
+void MediaControlsMediaEventListener::Invoke(
     ExecutionContext* execution_context,
     Event* event) {
   if (event->type() == event_type_names::kVolumechange) {

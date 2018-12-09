@@ -55,6 +55,7 @@
 #include "media/gpu/h264_decoder.h"
 #include "media/gpu/h264_dpb.h"
 #include "media/gpu/test/video_accelerator_unittest_helpers.h"
+#include "media/gpu/test/video_encode_accelerator_unittest_helpers.h"
 #include "media/video/fake_video_encode_accelerator.h"
 #include "media/video/h264_parser.h"
 #include "media/video/video_encode_accelerator.h"
@@ -65,6 +66,12 @@
 #include "media/gpu/vaapi/vaapi_wrapper.h"
 #elif defined(OS_WIN)
 #include "media/gpu/windows/media_foundation_video_encode_accelerator_win.h"
+#endif
+
+#if defined(USE_OZONE)
+#include "ui/ozone/public/ozone_gpu_test_helper.h"
+#include "ui/ozone/public/ozone_platform.h"
+#include "ui/ozone/public/surface_factory_ozone.h"
 #endif
 
 namespace media {
@@ -172,6 +179,11 @@ bool g_needs_encode_latency = false;
 bool g_verify_all_output = false;
 
 bool g_fake_encoder = false;
+
+// This identifies the storage type of inputting VideoFrame on Encode().
+// If |native_input| is true, inputting VideoFrame on Encode() is DmaBuf-backed
+// VideoFrame. Otherwise, it is MEM-backed VideoFrame.
+bool g_native_input = false;
 
 // Environment to store test stream data for all test cases.
 class VideoEncodeAcceleratorTestEnvironment;
@@ -502,6 +514,13 @@ class VideoEncodeAcceleratorTestEnvironment : public ::testing::Environment {
       LOG_ASSERT(log_file_->IsValid());
     }
     ParseAndReadTestStreamData(*test_stream_data_, &test_streams_);
+
+#if defined(USE_OZONE)
+    // Initialize Ozone so that DMABuf can be created through Ozone DRM.
+    ui::OzonePlatform::InitParams params;
+    params.single_process = false;
+    ui::OzonePlatform::InitializeForUI(params);
+#endif
   }
 
   virtual void TearDown() {
@@ -835,12 +854,12 @@ void VideoFrameQualityValidator::Initialize(const gfx::Size& coded_size,
   VideoDecoderConfig config;
   if (IsVP8(profile_))
     config.Initialize(kCodecVP8, VP8PROFILE_ANY, pixel_format_,
-                      COLOR_SPACE_UNSPECIFIED, VIDEO_ROTATION_0, coded_size,
+                      VideoColorSpace(), VIDEO_ROTATION_0, coded_size,
                       visible_size, natural_size, EmptyExtraData(),
                       Unencrypted());
   else if (IsH264(profile_))
     config.Initialize(kCodecH264, H264PROFILE_MAIN, pixel_format_,
-                      COLOR_SPACE_UNSPECIFIED, VIDEO_ROTATION_0, coded_size,
+                      VideoColorSpace(), VIDEO_ROTATION_0, coded_size,
                       visible_size, natural_size, EmptyExtraData(),
                       Unencrypted());
   else
@@ -1163,7 +1182,8 @@ class VEAClientBase : public VideoEncodeAccelerator::Client {
   }
 
  protected:
-  VEAClientBase(ClientStateNotification<ClientState>* note)
+  explicit VEAClientBase(
+      media::test::ClientStateNotification<ClientState>* note)
       : note_(note), next_output_buffer_id_(0) {}
 
   bool has_encoder() { return encoder_.get(); }
@@ -1174,7 +1194,7 @@ class VEAClientBase : public VideoEncodeAccelerator::Client {
 
   // Used to notify another thread about the state. VEAClientBase does not own
   // this.
-  ClientStateNotification<ClientState>* note_;
+  media::test::ClientStateNotification<ClientState>* note_;
 
   // All methods of this class should be run on the same thread.
   base::ThreadChecker thread_checker_;
@@ -1186,7 +1206,7 @@ class VEAClientBase : public VideoEncodeAccelerator::Client {
 class VEAClient : public VEAClientBase {
  public:
   VEAClient(TestStream* test_stream,
-            ClientStateNotification<ClientState>* note,
+            media::test::ClientStateNotification<ClientState>* note,
             bool save_to_file,
             unsigned int keyframe_period,
             bool force_bitrate,
@@ -1396,7 +1416,7 @@ class VEAClient : public VEAClientBase {
 };
 
 VEAClient::VEAClient(TestStream* test_stream,
-                     ClientStateNotification<ClientState>* note,
+                     media::test::ClientStateNotification<ClientState>* note,
                      bool save_to_file,
                      unsigned int keyframe_period,
                      bool force_bitrate,
@@ -1496,11 +1516,13 @@ void VEAClient::CreateEncoder() {
   LOG_ASSERT(!has_encoder());
   DVLOG(1) << "Profile: " << test_stream_->requested_profile
            << ", initial bitrate: " << requested_bitrate_;
-
+  auto storage_type = g_native_input
+                          ? VideoEncodeAccelerator::Config::StorageType::kDmabuf
+                          : VideoEncodeAccelerator::Config::StorageType::kShmem;
   const VideoEncodeAccelerator::Config config(
       test_stream_->pixel_format, test_stream_->visible_size,
-      test_stream_->requested_profile, requested_bitrate_,
-      requested_framerate_);
+      test_stream_->requested_profile, requested_bitrate_, requested_framerate_,
+      base::nullopt, storage_type);
   encoder_ = CreateVideoEncodeAccelerator(config, this, gpu::GpuPreferences());
   if (!encoder_) {
     LOG(ERROR) << "Failed creating a VideoEncodeAccelerator.";
@@ -1769,6 +1791,10 @@ scoped_refptr<VideoFrame> VEAClient::CreateFrame(off_t position) {
       base::TimeDelta().FromMilliseconds((next_input_id_ + 1) *
                                          base::Time::kMillisecondsPerSecond /
                                          current_framerate_));
+  if (g_native_input) {
+    video_frame = test::CreateDmabufFrameFromVideoFrame(std::move(video_frame));
+  }
+
   EXPECT_NE(nullptr, video_frame.get());
   return video_frame;
 }
@@ -2093,7 +2119,7 @@ class SimpleVEAClientBase : public VEAClientBase {
                                size_t output_buffer_size) override;
 
  protected:
-  SimpleVEAClientBase(ClientStateNotification<ClientState>* note,
+  SimpleVEAClientBase(media::test::ClientStateNotification<ClientState>* note,
                       const int width,
                       const int height);
 
@@ -2109,7 +2135,7 @@ class SimpleVEAClientBase : public VEAClientBase {
 };
 
 SimpleVEAClientBase::SimpleVEAClientBase(
-    ClientStateNotification<ClientState>* note,
+    media::test::ClientStateNotification<ClientState>* note,
     const int width,
     const int height)
     : VEAClientBase(note),
@@ -2186,7 +2212,8 @@ void SimpleVEAClientBase::FeedEncoderWithOutput(base::SharedMemory* shm,
 // frame before getting any input.
 class VEANoInputClient : public SimpleVEAClientBase {
  public:
-  explicit VEANoInputClient(ClientStateNotification<ClientState>* note);
+  explicit VEANoInputClient(
+      media::test::ClientStateNotification<ClientState>* note);
   void DestroyEncoder();
 
   // VideoDecodeAccelerator::Client implementation.
@@ -2203,7 +2230,8 @@ class VEANoInputClient : public SimpleVEAClientBase {
   std::unique_ptr<base::OneShotTimer> timer_;
 };
 
-VEANoInputClient::VEANoInputClient(ClientStateNotification<ClientState>* note)
+VEANoInputClient::VEANoInputClient(
+    media::test::ClientStateNotification<ClientState>* note)
     : SimpleVEAClientBase(note, 320, 240) {}
 
 void VEANoInputClient::DestroyEncoder() {
@@ -2241,7 +2269,7 @@ void VEANoInputClient::BitstreamBufferReady(
 class VEACacheLineUnalignedInputClient : public SimpleVEAClientBase {
  public:
   explicit VEACacheLineUnalignedInputClient(
-      ClientStateNotification<ClientState>* note);
+      media::test::ClientStateNotification<ClientState>* note);
 
   // VideoDecodeAccelerator::Client implementation.
   void RequireBitstreamBuffers(unsigned int input_count,
@@ -2257,7 +2285,7 @@ class VEACacheLineUnalignedInputClient : public SimpleVEAClientBase {
 };
 
 VEACacheLineUnalignedInputClient::VEACacheLineUnalignedInputClient(
-    ClientStateNotification<ClientState>* note)
+    media::test::ClientStateNotification<ClientState>* note)
     : SimpleVEAClientBase(note, 368, 368) {
 }  // 368 is divisible by 16 but not 32
 
@@ -2312,6 +2340,34 @@ void VEACacheLineUnalignedInputClient::FeedEncoderWithOneInput(
   encoder_->Encode(video_frame, false);
 }
 
+#if defined(USE_OZONE)
+void SetupOzone(base::WaitableEvent* done) {
+  base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
+  cmd_line->AppendSwitchASCII(switches::kUseGL, gl::kGLImplementationEGLName);
+  ui::OzonePlatform::InitParams params;
+  params.single_process = true;
+  ui::OzonePlatform::InitializeForGPU(params);
+  ui::OzonePlatform::GetInstance()->AfterSandboxEntry();
+  done->Signal();
+}
+#endif
+
+void StartVEAThread(base::Thread* vea_client_thread) {
+#if defined(USE_OZONE)
+  // If USE_OZONE, some additional setups are required.
+  base::Thread::Options options;
+  options.message_loop_type = base::MessageLoop::TYPE_UI;
+  ASSERT_TRUE(vea_client_thread->StartWithOptions(options));
+  base::WaitableEvent done(base::WaitableEvent::ResetPolicy::AUTOMATIC,
+                           base::WaitableEvent::InitialState::NOT_SIGNALED);
+  vea_client_thread->task_runner()->PostTask(
+      FROM_HERE, base::BindOnce(&SetupOzone, &done));
+  done.Wait();
+#else
+  ASSERT_TRUE(vea_client_thread->Start());
+#endif
+}
+
 // Test parameters:
 // - Number of concurrent encoders. The value takes effect when there is only
 //   one input stream; otherwise, one encoder per input stream will be
@@ -2341,10 +2397,19 @@ TEST_P(VideoEncodeAcceleratorTest, TestSimpleEncode) {
       std::get<7>(GetParam()) || g_env->verify_all_output();
   const bool verify_output_timestamp = std::get<8>(GetParam());
 
-  std::vector<std::unique_ptr<ClientStateNotification<ClientState>>> notes;
+  std::vector<
+      std::unique_ptr<media::test::ClientStateNotification<ClientState>>>
+      notes;
   std::vector<std::unique_ptr<VEAClient>> clients;
   base::Thread vea_client_thread("EncoderClientThread");
-  ASSERT_TRUE(vea_client_thread.Start());
+  StartVEAThread(&vea_client_thread);
+
+#if defined(USE_OZONE)
+  std::unique_ptr<ui::OzoneGpuTestHelper> gpu_helper;
+  // To create dmabuf through gbm, Ozone needs to be set up.
+  gpu_helper.reset(new ui::OzoneGpuTestHelper());
+  gpu_helper->Initialize(base::ThreadTaskRunnerHandle::Get());
+#endif
 
   if (g_env->test_streams_.size() > 1)
     num_concurrent_encoders = g_env->test_streams_.size();
@@ -2357,7 +2422,8 @@ TEST_P(VideoEncodeAcceleratorTest, TestSimpleEncode) {
         (save_to_file &&
          !g_env->test_streams_[test_stream_index]->out_filename.empty());
 
-    notes.push_back(std::make_unique<ClientStateNotification<ClientState>>());
+    notes.push_back(
+        std::make_unique<media::test::ClientStateNotification<ClientState>>());
     clients.push_back(std::make_unique<VEAClient>(
         g_env->test_streams_[test_stream_index].get(), notes.back().get(),
         encoder_save_to_file, keyframe_period, force_bitrate, test_perf,
@@ -2409,8 +2475,8 @@ class VideoEncodeAcceleratorSimpleTest : public ::testing::TestWithParam<int> {
 
 template <class TestClient>
 void SimpleTestFunc() {
-  std::unique_ptr<ClientStateNotification<ClientState>> note(
-      new ClientStateNotification<ClientState>());
+  std::unique_ptr<media::test::ClientStateNotification<ClientState>> note(
+      new media::test::ClientStateNotification<ClientState>());
   std::unique_ptr<TestClient> client(new TestClient(note.get()));
   base::Thread vea_client_thread("EncoderClientThread");
   ASSERT_TRUE(vea_client_thread.Start());
@@ -2568,7 +2634,12 @@ class VEATestSuite : public base::TestSuite {
   VEATestSuite(int argc, char** argv) : base::TestSuite(argc, argv) {}
 
   int Run() {
+#if defined(OS_CHROMEOS)
+    base::test::ScopedTaskEnvironment scoped_task_environment(
+        base::test::ScopedTaskEnvironment::MainThreadType::UI);
+#else
     base::test::ScopedTaskEnvironment scoped_task_environment;
+#endif
     media::g_env =
         reinterpret_cast<media::VideoEncodeAcceleratorTestEnvironment*>(
             testing::AddGlobalTestEnvironment(
@@ -2638,6 +2709,16 @@ int main(int argc, char** argv) {
       media::g_verify_all_output = true;
       continue;
     }
+
+    if (it->first == "native_input") {
+#if defined(OS_CHROMEOS)
+      media::g_native_input = true;
+#else
+      LOG(FATAL) << "Unsupported option";
+#endif
+      continue;
+    }
+
     if (it->first == "v" || it->first == "vmodule")
       continue;
     if (it->first == "ozone-platform" || it->first == "ozone-use-surfaceless")

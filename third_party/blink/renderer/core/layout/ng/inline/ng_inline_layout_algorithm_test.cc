@@ -44,10 +44,10 @@ TEST_F(NGInlineLayoutAlgorithmTest, BreakToken) {
 
   NGConstraintSpace constraint_space =
       NGConstraintSpaceBuilder(
-          WritingMode::kHorizontalTb,
-          /* icb_size */ ToNGPhysicalSize(size, WritingMode::kHorizontalTb))
+          WritingMode::kHorizontalTb, WritingMode::kHorizontalTb,
+          /* is_new_fc */ false)
           .SetAvailableSize(size)
-          .ToConstraintSpace(WritingMode::kHorizontalTb);
+          .ToConstraintSpace();
 
   NGInlineChildLayoutContext context;
   scoped_refptr<NGLayoutResult> layout_result =
@@ -124,6 +124,51 @@ TEST_F(NGInlineLayoutAlgorithmTest, GenerateEllipsis) {
   EXPECT_EQ(String(u"\u2026"), ellipsis.Text().ToString());
   // It should have the same LayoutObject as the clipped word.
   EXPECT_EQ(line1.Children()[0]->GetLayoutObject(), ellipsis.GetLayoutObject());
+}
+
+// This test ensures box fragments are generated when necessary, even when the
+// line is empty. One such case is when the line contains a containing box of an
+// out-of-flow object.
+TEST_F(NGInlineLayoutAlgorithmTest,
+       EmptyLineWithOutOfFlowInInlineContainingBlock) {
+  SetBodyInnerHTML(R"HTML(
+    <!DOCTYPE html>
+    <style>
+    oof-container {
+      position: relative;
+    }
+    oof {
+      position: absolute;
+      width: 100px;
+      height: 100px;
+    }
+    html, body { margin: 0; }
+    html {
+      font-size: 10px;
+    }
+    </style>
+    <div id=container>
+      <oof-container>
+        <oof></oof>
+      </oof-container>
+    </div>
+  )HTML");
+  LayoutBlockFlow* block_flow =
+      ToLayoutBlockFlow(GetLayoutObjectByElementId("container"));
+  const NGPhysicalBoxFragment* container = block_flow->CurrentFragment();
+  ASSERT_TRUE(container);
+  EXPECT_EQ(LayoutUnit(), container->Size().height);
+
+  EXPECT_EQ(2u, container->Children().size());
+  const NGPhysicalLineBoxFragment& linebox =
+      ToNGPhysicalLineBoxFragment(*container->Children()[0]);
+
+  EXPECT_EQ(1u, linebox.Children().size());
+  EXPECT_EQ(NGPhysicalSize(), linebox.Size());
+
+  const NGPhysicalBoxFragment& oof_container =
+      ToNGPhysicalBoxFragment(*linebox.Children()[0]);
+  EXPECT_EQ(NGPhysicalSize(), oof_container.Size());
 }
 
 // This test ensures that if an inline box generates (or does not generate) box

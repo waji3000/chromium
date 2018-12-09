@@ -27,7 +27,8 @@ namespace blink {
 class MockFunction : public ScriptFunction {
  public:
   static testing::StrictMock<MockFunction>* Create(ScriptState* script_state) {
-    return new testing::StrictMock<MockFunction>(script_state);
+    return MakeGarbageCollected<testing::StrictMock<MockFunction>>(
+        script_state);
   }
 
   v8::Local<v8::Function> Bind() { return BindToV8Function(); }
@@ -47,7 +48,7 @@ class MockEventListenerForRemotePlayback : public EventListener {
     return this == &other;
   }
 
-  MOCK_METHOD2(handleEvent, void(ExecutionContext* executionContext, Event*));
+  MOCK_METHOD2(Invoke, void(ExecutionContext* executionContext, Event*));
 };
 
 class MockPresentationController final : public PresentationController {
@@ -192,12 +193,12 @@ TEST_F(RemotePlaybackTest, StateChangeEvents) {
   RemotePlayback* remote_playback =
       HTMLMediaElementRemotePlayback::remote(*element);
 
-  auto* connecting_handler =
-      new testing::StrictMock<MockEventListenerForRemotePlayback>();
-  auto* connect_handler =
-      new testing::StrictMock<MockEventListenerForRemotePlayback>();
-  auto* disconnect_handler =
-      new testing::StrictMock<MockEventListenerForRemotePlayback>();
+  auto* connecting_handler = MakeGarbageCollected<
+      testing::StrictMock<MockEventListenerForRemotePlayback>>();
+  auto* connect_handler = MakeGarbageCollected<
+      testing::StrictMock<MockEventListenerForRemotePlayback>>();
+  auto* disconnect_handler = MakeGarbageCollected<
+      testing::StrictMock<MockEventListenerForRemotePlayback>>();
 
   remote_playback->addEventListener(event_type_names::kConnecting,
                                     connecting_handler);
@@ -206,11 +207,9 @@ TEST_F(RemotePlaybackTest, StateChangeEvents) {
   remote_playback->addEventListener(event_type_names::kDisconnect,
                                     disconnect_handler);
 
-  EXPECT_CALL(*connecting_handler, handleEvent(testing::_, testing::_))
-      .Times(1);
-  EXPECT_CALL(*connect_handler, handleEvent(testing::_, testing::_)).Times(1);
-  EXPECT_CALL(*disconnect_handler, handleEvent(testing::_, testing::_))
-      .Times(1);
+  EXPECT_CALL(*connecting_handler, Invoke(testing::_, testing::_)).Times(1);
+  EXPECT_CALL(*connect_handler, Invoke(testing::_, testing::_)).Times(1);
+  EXPECT_CALL(*disconnect_handler, Invoke(testing::_, testing::_)).Times(1);
 
   SetState(remote_playback, WebRemotePlaybackState::kConnecting);
   SetState(remote_playback, WebRemotePlaybackState::kConnecting);
@@ -387,7 +386,7 @@ TEST_F(RemotePlaybackTest, IsListening) {
 
   LocalFrame& frame = page_holder->GetFrame();
   MockPresentationController* mock_controller =
-      new MockPresentationController(frame);
+      MakeGarbageCollected<MockPresentationController>(frame);
   Supplement<LocalFrame>::ProvideTo(
       frame, static_cast<PresentationController*>(mock_controller));
 

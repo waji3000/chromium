@@ -20,7 +20,7 @@ namespace autofill_assistant {
 namespace {
 
 using ::testing::_;
-using ::testing::ElementsAre;
+using ::testing::Eq;
 using ::testing::Invoke;
 
 // A callback that expects to be called immediately.
@@ -56,17 +56,18 @@ class ScriptPreconditionTest : public testing::Test {
  public:
   void SetUp() override {
     ON_CALL(mock_web_controller_,
-            OnElementCheck(kExistenceCheck, ElementsAre("exists"), _))
+            OnElementCheck(kExistenceCheck, Eq(Selector({"exists"})), _))
         .WillByDefault(RunOnceCallback<2>(true));
-    ON_CALL(mock_web_controller_,
-            OnElementCheck(kExistenceCheck, ElementsAre("does_not_exist"), _))
+    ON_CALL(
+        mock_web_controller_,
+        OnElementCheck(kExistenceCheck, Eq(Selector({"does_not_exist"})), _))
         .WillByDefault(RunOnceCallback<2>(false));
 
     SetUrl("http://www.example.com/path");
-    ON_CALL(mock_web_controller_, OnGetFieldValue(ElementsAre("exists"), _))
+    ON_CALL(mock_web_controller_, OnGetFieldValue(Eq(Selector({"exists"})), _))
         .WillByDefault(RunOnceCallback<1>(true, "foo"));
     ON_CALL(mock_web_controller_,
-            OnGetFieldValue(ElementsAre("does_not_exist"), _))
+            OnGetFieldValue(Eq(Selector({"does_not_exist"})), _))
         .WillByDefault(RunOnceCallback<1>(false, ""));
   }
 
@@ -151,12 +152,14 @@ TEST_F(ScriptPreconditionTest, PathFullMatch) {
   EXPECT_TRUE(Check(proto));
 }
 
-TEST_F(ScriptPreconditionTest, PathPartialMatch) {
+TEST_F(ScriptPreconditionTest, PathPartialMatchFails) {
   ScriptPreconditionProto proto;
+  proto.add_path_pattern("/match.*");
+  proto.add_path_pattern(".*/match");
   proto.add_path_pattern("/match");
 
   SetUrl("http://www.example.com/prefix/match/suffix");
-  EXPECT_TRUE(Check(proto));
+  EXPECT_FALSE(Check(proto));
 }
 
 TEST_F(ScriptPreconditionTest, PathWithQueryAndRef) {
@@ -179,7 +182,7 @@ TEST_F(ScriptPreconditionTest, BadPathPattern) {
 
 TEST_F(ScriptPreconditionTest, IgnoreEmptyElementsExist) {
   EXPECT_CALL(mock_web_controller_,
-              OnElementCheck(kExistenceCheck, ElementsAre("exists"), _))
+              OnElementCheck(kExistenceCheck, Eq(Selector({"exists"})), _))
       .WillOnce(RunOnceCallback<2>(true));
 
   ScriptPreconditionProto proto;
@@ -319,6 +322,13 @@ TEST_F(ScriptPreconditionTest, FormValueMatch) {
   match->mutable_element()->add_selectors("exists");
   EXPECT_TRUE(Check(proto));
 
+  match->set_value("bar");
+  EXPECT_FALSE(Check(proto));
+
+  match->set_value("foo");
+  EXPECT_TRUE(Check(proto));
+
+  match->clear_value();
   match->mutable_element()->set_selectors(0, "does_not_exist");
   EXPECT_FALSE(Check(proto));
 }

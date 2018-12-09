@@ -21,6 +21,7 @@ import org.chromium.base.ApplicationStatus.WindowFocusChangedListener;
 import org.chromium.base.ThreadUtils;
 import org.chromium.base.TraceEvent;
 import org.chromium.base.library_loader.LibraryLoader;
+import org.chromium.chrome.browser.ChromeActivity;
 import org.chromium.chrome.browser.fullscreen.FullscreenHtmlApiHandler.FullscreenHtmlApiDelegate;
 import org.chromium.chrome.browser.tab.BrowserControlsVisibilityDelegate;
 import org.chromium.chrome.browser.tab.Tab;
@@ -122,7 +123,10 @@ public class ChromeFullscreenManager
         @Override
         public void run() {
             int visibility = shouldShowAndroidControls() ? View.VISIBLE : View.INVISIBLE;
-            if (mControlContainer.getView().getVisibility() == visibility) return;
+            if (mControlContainer == null
+                    || mControlContainer.getView().getVisibility() == visibility) {
+                return;
+            }
             // requestLayout is required to trigger a new gatherTransparentRegion(), which
             // only occurs together with a layout and let's SurfaceFlinger trim overlays.
             // This may be almost equivalent to using View.GONE, but we still use View.INVISIBLE
@@ -207,15 +211,14 @@ public class ChromeFullscreenManager
             }
         };
 
-        assert controlContainer != null;
+        assert controlContainer != null || mControlsPosition == ControlsPosition.NONE;
         mControlContainer = controlContainer;
-
-        int controlContainerHeight =
-                mActivity.getResources().getDimensionPixelSize(resControlContainerHeight);
 
         switch (mControlsPosition) {
             case ControlsPosition.TOP:
-                mTopControlContainerHeight = controlContainerHeight;
+                assert resControlContainerHeight != ChromeActivity.NO_CONTROL_CONTAINER;
+                mTopControlContainerHeight =
+                        mActivity.getResources().getDimensionPixelSize(resControlContainerHeight);
                 break;
             case ControlsPosition.NONE:
                 // Treat the case of no controls as controls always being totally offscreen.
@@ -399,7 +402,7 @@ public class ChromeFullscreenManager
     }
 
     /**
-     * @return The toolbar control container, null until {@link #initialize} is called.
+     * @return The toolbar control container, may be null.
      */
     @Nullable
     public ControlContainer getControlContainer() {
@@ -567,6 +570,7 @@ public class ChromeFullscreenManager
     }
 
     private boolean shouldShowAndroidControls() {
+        if (mControlContainer == null) return false;
         if (mHidingTokenHolder.hasTokens()) {
             return false;
         }

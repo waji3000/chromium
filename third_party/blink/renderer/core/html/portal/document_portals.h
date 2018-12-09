@@ -15,6 +15,8 @@ class HTMLPortalElement;
 
 class DocumentPortals : public GarbageCollected<DocumentPortals>,
                         public Supplement<Document> {
+  USING_GARBAGE_COLLECTED_MIXIN(DocumentPortals);
+
  public:
   static const char kSupplementName[];
   static DocumentPortals& From(Document&);
@@ -28,11 +30,11 @@ class DocumentPortals : public GarbageCollected<DocumentPortals>,
   // Retrieves the portal identified by the token.
   HTMLPortalElement* GetPortal(const base::UnguessableToken&) const;
 
+  explicit DocumentPortals(Document&);
+
   void Trace(Visitor*) override;
 
  private:
-  explicit DocumentPortals(Document&);
-
   HeapVector<Member<HTMLPortalElement>> portals_;
 };
 

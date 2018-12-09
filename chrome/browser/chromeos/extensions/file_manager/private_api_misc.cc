@@ -44,7 +44,7 @@
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_util.h"
-#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
+#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager_client.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/common/extensions/api/file_manager_private_internal.h"
 #include "chrome/common/extensions/api/manifest_types.h"
@@ -68,6 +68,7 @@
 #include "services/identity/public/cpp/identity_manager.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "storage/common/fileapi/file_system_types.h"
+#include "storage/common/fileapi/file_system_util.h"
 #include "ui/base/webui/web_ui_util.h"
 #include "url/gurl.h"
 
@@ -214,8 +215,6 @@ FileManagerPrivateGetPreferencesFunction::Run() {
                          !drive_integration_service->mount_failed();
   result.cellular_disabled =
       service->GetBoolean(drive::prefs::kDisableDriveOverCellular);
-  result.hosted_files_disabled =
-      service->GetBoolean(drive::prefs::kDisableDriveHostedFiles);
   result.search_suggest_enabled =
       service->GetBoolean(prefs::kSearchSuggestEnabled);
   result.use24hour_clock = service->GetBoolean(prefs::kUse24HourClock);
@@ -228,10 +227,6 @@ FileManagerPrivateGetPreferencesFunction::Run() {
   result.timezone =
       base::UTF16ToUTF8(chromeos::system::TimezoneSettings::GetInstance()
                             ->GetCurrentTimezoneID());
-
-  drive::EventLogger* logger = file_manager::util::GetLogger(profile);
-  if (logger)
-    logger->Log(logging::LOG_INFO, "%s succeeded.", name());
 
   return RespondNow(OneArgument(result.ToValue()));
 }
@@ -249,13 +244,6 @@ FileManagerPrivateSetPreferencesFunction::Run() {
     service->SetBoolean(drive::prefs::kDisableDriveOverCellular,
                         *params->change_info.cellular_disabled);
 
-  if (params->change_info.hosted_files_disabled)
-    service->SetBoolean(drive::prefs::kDisableDriveHostedFiles,
-                        *params->change_info.hosted_files_disabled);
-
-  drive::EventLogger* logger = file_manager::util::GetLogger(profile);
-  if (logger)
-    logger->Log(logging::LOG_INFO, "%s succeeded.", name());
   return RespondNow(NoArguments());
 }
 
@@ -416,13 +404,13 @@ ExtensionFunction::ResponseAction FileManagerPrivateGetProfilesFunction::Run() {
 
   // Obtains the display profile ID.
   AppWindow* const app_window = GetCurrentAppWindow(this);
-  MultiUserWindowManager* const window_manager =
-      MultiUserWindowManager::GetInstance();
+  MultiUserWindowManagerClient* const window_manager_client =
+      MultiUserWindowManagerClient::GetInstance();
   const AccountId current_profile_id = multi_user_util::GetAccountIdFromProfile(
       Profile::FromBrowserContext(browser_context()));
   const AccountId display_profile_id =
-      window_manager && app_window
-          ? window_manager->GetUserPresentingWindow(
+      window_manager_client && app_window
+          ? window_manager_client->GetUserPresentingWindow(
                 app_window->GetNativeWindow())
           : EmptyAccountId();
 
@@ -700,9 +688,8 @@ FileManagerPrivateInternalSharePathsWithCrostiniFunction::Run() {
     paths.emplace_back(cracked.path());
   }
 
-  crostini::SharePaths(
-      profile, crostini::kCrostiniDefaultVmName, std::move(paths),
-      params->persist,
+  crostini::CrostiniSharePath::GetForProfile(profile)->SharePaths(
+      crostini::kCrostiniDefaultVmName, std::move(paths), params->persist,
       base::BindOnce(&FileManagerPrivateInternalSharePathsWithCrostiniFunction::
                          SharePathsCallback,
                      this));
@@ -716,40 +703,68 @@ void FileManagerPrivateInternalSharePathsWithCrostiniFunction::
 }
 
 ExtensionFunction::ResponseAction
-FileManagerPrivateInternalGetCrostiniSharedPathsFunction::Run() {
-  Profile* profile = Profile::FromBrowserContext(browser_context());
-  file_manager::util::FileDefinitionList file_definition_list;
-  auto shared_paths = crostini::GetPersistedSharedPaths(profile);
-  for (const base::FilePath& path : shared_paths) {
-    file_manager::util::FileDefinition file_definition;
-    // All shared paths should be directories.  Even if this is not true, it
-    // is fine for foreground/js/crostini.js class to think so.
-    // We verify that the paths are in fact valid directories before calling
-    // seneschal/9p in CrostiniSharePath::CallSeneschalSharePath().
-    file_definition.is_directory = true;
-    if (file_manager::util::ConvertAbsoluteFilePathToRelativeFileSystemPath(
-            profile, extension_id(), path, &file_definition.virtual_path)) {
-      file_definition_list.emplace_back(std::move(file_definition));
-    }
-  }
+FileManagerPrivateInternalUnsharePathWithCrostiniFunction::Run() {
+  using extensions::api::file_manager_private_internal::
+      UnsharePathWithCrostini::Params;
+  const std::unique_ptr<Params> params(Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params);
 
-  file_manager::util::ConvertFileDefinitionListToEntryDefinitionList(
-      profile, extension_id(),
-      file_definition_list,  // Safe, since copied internally.
-      base::Bind(&FileManagerPrivateInternalGetCrostiniSharedPathsFunction::
-                     OnConvertFileDefinitionListToEntryDefinitionList,
-                 this));
+  Profile* profile = Profile::FromBrowserContext(browser_context());
+  const scoped_refptr<storage::FileSystemContext> file_system_context =
+      file_manager::util::GetFileSystemContextForRenderFrameHost(
+          profile, render_frame_host());
+  storage::FileSystemURL cracked =
+      file_system_context->CrackURL(GURL(params->url));
+  crostini::CrostiniSharePath::GetForProfile(profile)->UnsharePath(
+      crostini::kCrostiniDefaultVmName, cracked.path(),
+      base::BindOnce(
+          &FileManagerPrivateInternalUnsharePathWithCrostiniFunction::
+              UnsharePathCallback,
+          this));
+
   return RespondLater();
 }
 
-void FileManagerPrivateInternalGetCrostiniSharedPathsFunction::
-    OnConvertFileDefinitionListToEntryDefinitionList(
-        std::unique_ptr<file_manager::util::EntryDefinitionList>
-            entry_definition_list) {
-  DCHECK(entry_definition_list);
+void FileManagerPrivateInternalUnsharePathWithCrostiniFunction::
+    UnsharePathCallback(bool success, std::string failure_reason) {
+  Respond(success ? NoArguments() : Error(failure_reason));
+}
 
-  Respond(OneArgument(file_manager::util::ConvertEntryDefinitionListToListValue(
-      *entry_definition_list)));
+ExtensionFunction::ResponseAction
+FileManagerPrivateInternalGetCrostiniSharedPathsFunction::Run() {
+  Profile* profile = Profile::FromBrowserContext(browser_context());
+
+  auto* crostini_share_path =
+      crostini::CrostiniSharePath::GetForProfile(profile);
+  bool first_for_session = crostini_share_path->GetAndSetFirstForSession();
+  auto shared_paths = crostini_share_path->GetPersistedSharedPaths();
+  auto entries = std::make_unique<base::ListValue>();
+  for (const base::FilePath& path : shared_paths) {
+    std::string mount_name;
+    std::string full_path;
+    if (!file_manager::util::ExtractMountNameAndFullPath(path, &mount_name,
+                                                         &full_path)) {
+      LOG(ERROR) << "Error extracting mount name and path from "
+                 << path.value();
+      continue;
+    }
+    auto entry = std::make_unique<base::DictionaryValue>();
+    entry->SetString(
+        "fileSystemRoot",
+        storage::GetExternalFileSystemRootURIString(
+            extensions::Extension::GetBaseURLFromExtensionId(extension_id()),
+            mount_name));
+    entry->SetString("fileSystemName", mount_name);
+    entry->SetString("fileFullPath", full_path);
+    // All shared paths should be directories.  Even if this is not true,
+    // it is fine for foreground/js/crostini.js class to think so. We
+    // verify that the paths are in fact valid directories before calling
+    // seneschal/9p in CrostiniSharePath::CallSeneschalSharePath().
+    entry->SetBoolean("fileIsDirectory", true);
+    entries->Append(std::move(entry));
+  }
+  return RespondNow(TwoArguments(
+      std::move(entries), std::make_unique<base::Value>(first_for_session)));
 }
 
 ExtensionFunction::ResponseAction

@@ -26,7 +26,7 @@
 
 #include "third_party/blink/renderer/bindings/core/v8/string_or_trusted_html.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_html_iframe_element.h"
-#include "third_party/blink/renderer/core/css_property_names.h"
+#include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/feature_policy/iframe_policy.h"
 #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
@@ -46,7 +46,7 @@ inline HTMLIFrameElement::HTMLIFrameElement(Document& document)
     : HTMLFrameElementBase(kIFrameTag, document),
       collapsed_by_client_(false),
       sandbox_(HTMLIFrameElementSandbox::Create(this)),
-      referrer_policy_(kReferrerPolicyDefault) {}
+      referrer_policy_(network::mojom::ReferrerPolicy::kDefault) {}
 
 DEFINE_NODE_FACTORY(HTMLIFrameElement)
 
@@ -84,8 +84,8 @@ DOMTokenList* HTMLIFrameElement::sandbox() const {
 
 Policy* HTMLIFrameElement::policy() {
   if (!policy_) {
-    policy_ = new IFramePolicy(&GetDocument(), ContainerPolicy(),
-                               GetOriginForFeaturePolicy());
+    policy_ = MakeGarbageCollected<IFramePolicy>(
+        &GetDocument(), ContainerPolicy(), GetOriginForFeaturePolicy());
   }
   return policy_.Get();
 }
@@ -151,7 +151,7 @@ void HTMLIFrameElement::ParseAttribute(
     }
     UseCounter::Count(GetDocument(), WebFeature::kSandboxViaIFrame);
   } else if (name == kReferrerpolicyAttr) {
-    referrer_policy_ = kReferrerPolicyDefault;
+    referrer_policy_ = network::mojom::ReferrerPolicy::kDefault;
     if (!value.IsNull()) {
       SecurityPolicy::ReferrerPolicyFromString(
           value, kSupportReferrerPolicyLegacyKeywords, &referrer_policy_);
@@ -314,7 +314,7 @@ bool HTMLIFrameElement::IsInteractiveContent() const {
   return true;
 }
 
-ReferrerPolicy HTMLIFrameElement::ReferrerPolicyAttribute() {
+network::mojom::ReferrerPolicy HTMLIFrameElement::ReferrerPolicyAttribute() {
   return referrer_policy_;
 }
 

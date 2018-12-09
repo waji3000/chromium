@@ -10,14 +10,14 @@
 #include "third_party/blink/renderer/platform/geometry/length.h"
 
 namespace blink {
-namespace CSSLonghand {
+namespace css_longhand {
 
 const CSSValue* TransitionDelay::ParseSingleValue(
     CSSParserTokenRange& range,
     const CSSParserContext&,
     const CSSParserLocalContext&) const {
-  return CSSPropertyParserHelpers::ConsumeCommaSeparatedList(
-      CSSPropertyParserHelpers::ConsumeTime, range, kValueRangeAll);
+  return css_property_parser_helpers::ConsumeCommaSeparatedList(
+      css_property_parser_helpers::ConsumeTime, range, kValueRangeAll);
 }
 
 const CSSValue* TransitionDelay::CSSValueFromComputedStyleInternal(
@@ -37,5 +37,5 @@ const CSSValue* TransitionDelay::InitialValue() const {
   return value;
 }
 
-}  // namespace CSSLonghand
+}  // namespace css_longhand
 }  // namespace blink

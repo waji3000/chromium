@@ -36,6 +36,8 @@
 #include "third_party/blink/renderer/core/loader/resource/script_resource.h"
 #include "third_party/blink/renderer/core/origin_trials/origin_trial_context.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
+#include "third_party/blink/renderer/platform/loader/fetch/fetch_client_settings_object.h"
+#include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loader_options.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_response.h"
 #include "third_party/blink/renderer/platform/loader/fetch/text_resource_decoder_options.h"
@@ -48,20 +50,17 @@
 namespace blink {
 
 WorkerClassicScriptLoader::WorkerClassicScriptLoader()
-    : response_address_space_(mojom::IPAddressSpace::kPublic),
-      mime_type_check_mode_(AllowedByNosniff::MimeTypeCheck::kStrict) {}
+    : response_address_space_(mojom::IPAddressSpace::kPublic) {}
 
 void WorkerClassicScriptLoader::LoadSynchronously(
     ExecutionContext& execution_context,
+    ResourceFetcher* fetch_client_settings_object_fetcher,
     const KURL& url,
     mojom::RequestContextType request_context,
     mojom::IPAddressSpace creation_address_space) {
+  DCHECK(fetch_client_settings_object_fetcher);
   url_ = url;
-  execution_context_ = &execution_context;
-
-  // Impose strict MIME-type checks on importScripts(). See
-  // https://crbug.com/794548.
-  mime_type_check_mode_ = AllowedByNosniff::MimeTypeCheck::kStrict;
+  fetch_client_settings_object_fetcher_ = fetch_client_settings_object_fetcher;
 
   ResourceRequest request(url);
   request.SetHTTPMethod(http_names::kGET);
@@ -76,51 +75,31 @@ void WorkerClassicScriptLoader::LoadSynchronously(
       ParserDisposition::kNotParserInserted;
   resource_loader_options.synchronous_policy = kRequestSynchronously;
 
-  threadable_loader_ = new ThreadableLoader(
-      execution_context, this, resource_loader_options);
+  threadable_loader_ = MakeGarbageCollected<ThreadableLoader>(
+      execution_context, this, resource_loader_options,
+      fetch_client_settings_object_fetcher);
   threadable_loader_->Start(request);
 }
 
 void WorkerClassicScriptLoader::LoadTopLevelScriptAsynchronously(
     ExecutionContext& execution_context,
+    ResourceFetcher* fetch_client_settings_object_fetcher,
     const KURL& url,
     mojom::RequestContextType request_context,
     network::mojom::FetchRequestMode fetch_request_mode,
     network::mojom::FetchCredentialsMode fetch_credentials_mode,
     mojom::IPAddressSpace creation_address_space,
-    bool is_nested_worker,
     base::OnceClosure response_callback,
     base::OnceClosure finished_callback) {
+  DCHECK(fetch_client_settings_object_fetcher);
   DCHECK(response_callback || finished_callback);
   response_callback_ = std::move(response_callback);
   finished_callback_ = std::move(finished_callback);
   url_ = url;
-  execution_context_ = &execution_context;
+  fetch_client_settings_object_fetcher_ = fetch_client_settings_object_fetcher;
   forbid_cross_origin_redirects_ = true;
 
-  if (execution_context.IsDocument()) {
-    // For worker creation on a document, don't impose strict MIME-type checks
-    // on the top-level worker script for backward compatibility. Note that
-    // there is a plan to deprecate legacy mime types for workers. See
-    // https://crbug.com/794548.
-    mime_type_check_mode_ = AllowedByNosniff::MimeTypeCheck::kLax;
-  } else {
-    DCHECK(execution_context.IsWorkerGlobalScope());
-    if (is_nested_worker) {
-      // For nested workers, impose the strict MIME-type checks because the
-      // feature is new (enabled by default in M69) and there is no backward
-      // compatibility issue.
-      mime_type_check_mode_ = AllowedByNosniff::MimeTypeCheck::kStrict;
-    } else {
-      // For worker creation on a document with off-the-main-thread top-level
-      // worker classic script loading, don't impose strict MIME-type checks for
-      // backward compatibility.
-      // TODO(nhiroki): Always impose strict MIME-type checks on all web
-      // workers (https://crbug.com/794548).
-      DCHECK(RuntimeEnabledFeatures::OffMainThreadWorkerScriptFetchEnabled());
-      mime_type_check_mode_ = AllowedByNosniff::MimeTypeCheck::kLax;
-    }
-  }
+  is_worker_global_scope_ = execution_context.IsWorkerGlobalScope();
 
   ResourceRequest request(url);
   request.SetHTTPMethod(http_names::kGET);
@@ -131,8 +110,9 @@ void WorkerClassicScriptLoader::LoadTopLevelScriptAsynchronously(
   request.SetFetchCredentialsMode(fetch_credentials_mode);
 
   need_to_cancel_ = true;
-  threadable_loader_ =
-      new ThreadableLoader(execution_context, this, ResourceLoaderOptions());
+  threadable_loader_ = MakeGarbageCollected<ThreadableLoader>(
+      execution_context, this, ResourceLoaderOptions(),
+      fetch_client_settings_object_fetcher);
   threadable_loader_->Start(request);
   if (failed_)
     NotifyFinished();
@@ -152,30 +132,36 @@ void WorkerClassicScriptLoader::DidReceiveResponse(
     NotifyError();
     return;
   }
-  if (!AllowedByNosniff::MimeTypeAsScript(execution_context_, response,
-                                          mime_type_check_mode_)) {
+  if (!AllowedByNosniff::MimeTypeAsScript(
+          fetch_client_settings_object_fetcher_->Context(), response,
+          fetch_client_settings_object_fetcher_->Context()
+              .GetFetchClientSettingsObject()
+              ->MimeTypeCheckForClassicWorkerScript(),
+          is_worker_global_scope_)) {
     NotifyError();
     return;
   }
 
-  if (forbid_cross_origin_redirects_ && url_ != response.Url() &&
-      !SecurityOrigin::AreSameSchemeHostPort(url_, response.Url())) {
+  if (forbid_cross_origin_redirects_ && url_ != response.CurrentRequestUrl() &&
+      !SecurityOrigin::AreSameSchemeHostPort(url_,
+                                             response.CurrentRequestUrl())) {
     // Forbid cross-origin redirects to ensure the request and response URLs
     // have the same SecurityOrigin.
-    execution_context_->AddConsoleMessage(ConsoleMessage::Create(
-        kSecurityMessageSource, kErrorMessageLevel,
-        "Refused to cross-origin redirects of the top-level worker script."));
+    fetch_client_settings_object_fetcher_->Context().AddErrorConsoleMessage(
+        "Refused to cross-origin redirects of the top-level worker script.",
+        FetchContext::kSecuritySource);
     NotifyError();
     return;
   }
 
   identifier_ = identifier;
-  if (response.WasFetchedViaServiceWorker() &&
-      !response.OriginalURLViaServiceWorker().IsEmpty()) {
-    response_url_ = response.OriginalURLViaServiceWorker();
-  } else {
-    response_url_ = response.Url();
-  }
+  response_url_ = response.ResponseUrl();
+  // The response URL may be empty if a service worker did respondWith(new
+  // Response()) to generate a response.
+  // TODO(falken): Change this to an empty URL if that is indeed spec
+  // conformant.
+  if (response_url_.IsEmpty())
+    response_url_ = response.CurrentRequestUrl();
 
   response_encoding_ = response.TextEncodingName();
   app_cache_id_ = response.AppCacheID();
@@ -242,7 +228,8 @@ void WorkerClassicScriptLoader::DidFailRedirectCheck() {
 void WorkerClassicScriptLoader::Trace(Visitor* visitor) {
   visitor->Trace(threadable_loader_);
   visitor->Trace(content_security_policy_);
-  visitor->Trace(execution_context_);
+  visitor->Trace(fetch_client_settings_object_fetcher_);
+  ThreadableLoaderClient::Trace(visitor);
 }
 
 void WorkerClassicScriptLoader::Cancel() {
@@ -283,11 +270,12 @@ void WorkerClassicScriptLoader::ProcessContentSecurityPolicy(
   // directly.  Otherwise, the Worker inherits the policy from the parent
   // document (which is implemented in WorkerMessagingProxy, and
   // m_contentSecurityPolicy should be left as nullptr to inherit the policy).
-  if (!response.Url().ProtocolIs("blob") &&
-      !response.Url().ProtocolIs("file") &&
-      !response.Url().ProtocolIs("filesystem")) {
+  if (!response.CurrentRequestUrl().ProtocolIs("blob") &&
+      !response.CurrentRequestUrl().ProtocolIs("file") &&
+      !response.CurrentRequestUrl().ProtocolIs("filesystem")) {
     content_security_policy_ = ContentSecurityPolicy::Create();
-    content_security_policy_->SetOverrideURLForSelf(response.Url());
+    content_security_policy_->SetOverrideURLForSelf(
+        response.CurrentRequestUrl());
     content_security_policy_->DidReceiveHeaders(
         ContentSecurityPolicyResponseHeaders(response));
   }

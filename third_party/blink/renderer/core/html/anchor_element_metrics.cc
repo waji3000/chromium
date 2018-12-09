@@ -126,8 +126,8 @@ bool IsUrlIncrementedByOne(const HTMLAnchorElement& anchor_element) {
 // overflows.
 IntRect AbsoluteElementBoundingBoxRect(const LayoutObject* layout_object) {
   Vector<LayoutRect> rects;
-  layout_object->AddElementVisualOverflowRects(rects, LayoutPoint());
-
+  layout_object->AddOutlineRects(rects, LayoutPoint(),
+                                 NGOutlineType::kIncludeBlockVisualOverflow);
   return layout_object
       ->LocalToAbsoluteQuad(FloatQuad(FloatRect(UnionRect(rects))))
       .EnclosingBoundingBox();
@@ -249,9 +249,13 @@ void AnchorElementMetrics::MaybeReportViewportMetricsOnLoad(
   for (const auto& member_element : sender->GetAnchorElements()) {
     const HTMLAnchorElement& anchor_element = *member_element;
 
-    // We ignore anchor elements that are not in the visual viewport.
-    if (!anchor_element.Href().ProtocolIsInHTTPFamily() ||
-        anchor_element.VisibleBoundsInVisualViewport().IsEmpty()) {
+    if (!anchor_element.Href().ProtocolIsInHTTPFamily())
+      continue;
+
+    if (anchor_element.VisibleBoundsInVisualViewport().IsEmpty() &&
+        (!anchor_element.GetDocument().GetFrame() ||
+         !GetRootDocument(anchor_element) ||
+         !IsUrlIncrementedByOne(anchor_element))) {
       continue;
     }
 

@@ -77,7 +77,7 @@ DynamicsCompressorHandler::~DynamicsCompressorHandler() {
   Uninitialize();
 }
 
-void DynamicsCompressorHandler::Process(size_t frames_to_process) {
+void DynamicsCompressorHandler::Process(uint32_t frames_to_process) {
   AudioBus* output_bus = Output(0).Bus();
   DCHECK(output_bus);
 
@@ -101,11 +101,11 @@ void DynamicsCompressorHandler::Process(size_t frames_to_process) {
 
   float reduction =
       dynamics_compressor_->ParameterValue(DynamicsCompressor::kParamReduction);
-  NoBarrierStore(&reduction_, reduction);
+  reduction_.store(reduction, std::memory_order_relaxed);
 }
 
 void DynamicsCompressorHandler::ProcessOnlyAudioParams(
-    size_t frames_to_process) {
+    uint32_t frames_to_process) {
   DCHECK(Context()->IsAudioThread());
   DCHECK_LE(frames_to_process, audio_utilities::kRenderQuantumFrames);
 
@@ -141,7 +141,7 @@ double DynamicsCompressorHandler::LatencyTime() const {
 }
 
 void DynamicsCompressorHandler::SetChannelCount(
-    unsigned long channel_count,
+    unsigned channel_count,
     ExceptionState& exception_state) {
   DCHECK(IsMainThread());
   BaseAudioContext::GraphAutoLocker locker(Context());
@@ -245,7 +245,7 @@ DynamicsCompressorNode* DynamicsCompressorNode::Create(
     return nullptr;
   }
 
-  return new DynamicsCompressorNode(context);
+  return MakeGarbageCollected<DynamicsCompressorNode>(context);
 }
 
 DynamicsCompressorNode* DynamicsCompressorNode::Create(

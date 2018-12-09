@@ -191,9 +191,8 @@ gfx::NativeViewAccessible AXVirtualView::ChildAtIndex(int index) {
   return nullptr;
 }
 
-gfx::NativeWindow AXVirtualView::GetTopLevelWidget() {
-  if (GetOwnerView() && GetOwnerView()->GetWidget())
-    return GetOwnerView()->GetWidget()->GetTopLevelWidget()->GetNativeWindow();
+gfx::NativeViewAccessible AXVirtualView::GetNSWindow() {
+  NOTREACHED();
   return nullptr;
 }
 
@@ -211,12 +210,12 @@ gfx::NativeViewAccessible AXVirtualView::GetParent() {
 gfx::Rect AXVirtualView::GetClippedScreenBoundsRect() const {
   // We could optionally add clipping here if ever needed.
   // TODO(nektar): Implement bounds that are relative to the parent.
-  return gfx::ToEnclosingRect(custom_data_.location);
+  return gfx::ToEnclosingRect(custom_data_.relative_bounds.bounds);
 }
 
 gfx::Rect AXVirtualView::GetUnclippedScreenBoundsRect() const {
   // TODO(nektar): Implement bounds that are relative to the parent.
-  return gfx::ToEnclosingRect(custom_data_.location);
+  return gfx::ToEnclosingRect(custom_data_.relative_bounds.bounds);
 }
 
 gfx::NativeViewAccessible AXVirtualView::HitTestSync(int x, int y) {

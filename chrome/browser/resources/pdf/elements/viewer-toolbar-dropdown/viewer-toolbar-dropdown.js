@@ -6,13 +6,13 @@
 /**
  * Size of additional padding in the inner scrollable section of the dropdown.
  */
-var DROPDOWN_INNER_PADDING = 12;
+const DROPDOWN_INNER_PADDING = 12;
 
 /** Size of vertical padding on the outer #dropdown element. */
-var DROPDOWN_OUTER_PADDING = 2;
+const DROPDOWN_OUTER_PADDING = 2;
 
 /** Minimum height of toolbar dropdowns (px). */
-var MIN_DROPDOWN_HEIGHT = 200;
+const MIN_DROPDOWN_HEIGHT = 200;
 
 Polymer({
   is: 'viewer-toolbar-dropdown',
@@ -32,6 +32,9 @@ Polymer({
 
     /** True if the dropdown is currently open. */
     dropdownOpen: {type: Boolean, reflectToAttribute: true, value: false},
+
+    /** Whether the dropdown should be centered or right aligned. */
+    dropdownCentered: {type: Boolean, reflectToAttribute: true, value: false},
 
     /** Toolbar icon currently being displayed. */
     dropdownIcon: {
@@ -72,22 +75,29 @@ Polymer({
         this.updateMaxHeight();
       this.fire('dropdown-opened', this.metricsId);
     }
-    this.cancelAnimation_();
+
+    if (this.dropdownOpen) {
+      const listener = (e) => {
+        if (e.path.includes(this))
+          return;
+        if (this.dropdownOpen)
+          this.toggleDropdown();
+        // Clean up the handler. The dropdown may already be closed.
+        window.removeEventListener('pointerdown', listener);
+      };
+      window.addEventListener('pointerdown', listener);
+    }
+
     this.playAnimation_(this.dropdownOpen);
   },
 
   updateMaxHeight: function() {
-    var scrollContainer = this.$['scroll-container'];
-    var height = this.lowerBound - scrollContainer.getBoundingClientRect().top -
+    const scrollContainer = this.$['scroll-container'];
+    let height = this.lowerBound - scrollContainer.getBoundingClientRect().top -
         DROPDOWN_INNER_PADDING;
     height = Math.max(height, MIN_DROPDOWN_HEIGHT);
     scrollContainer.style.maxHeight = height + 'px';
     this.maxHeightValid_ = true;
-  },
-
-  cancelAnimation_: function() {
-    if (this._animation)
-      this._animation.cancel();
   },
 
   /**
@@ -106,33 +116,41 @@ Polymer({
   },
 
   animateEntry_: function() {
-    var maxHeight =
+    let maxHeight =
         this.$.dropdown.getBoundingClientRect().height - DROPDOWN_OUTER_PADDING;
 
     if (maxHeight < 0)
       maxHeight = 0;
 
-    var fade = new KeyframeEffect(
-        this.$.dropdown, [{opacity: 0}, {opacity: 1}],
-        {duration: 150, easing: 'cubic-bezier(0, 0, 0.2, 1)'});
-    var slide = new KeyframeEffect(
-        this.$.dropdown,
+    this.$.dropdown.animate(
+        {
+          opacity: [0, 1],
+        },
+        {
+          duration: 150,
+          easing: 'cubic-bezier(0, 0, 0.2, 1)',
+        });
+    return this.$.dropdown.animate(
         [
           {height: '20px', transform: 'translateY(-10px)'},
-          {height: maxHeight + 'px', transform: 'translateY(0)'}
+          {height: maxHeight + 'px', transform: 'translateY(0)'},
         ],
-        {duration: 250, easing: 'cubic-bezier(0, 0, 0.2, 1)'});
-
-    return document.timeline.play(new GroupEffect([fade, slide]));
+        {
+          duration: 250,
+          easing: 'cubic-bezier(0, 0, 0.2, 1)',
+        });
   },
 
   animateExit_: function() {
     return this.$.dropdown.animate(
         [
           {transform: 'translateY(0)', opacity: 1},
-          {transform: 'translateY(-5px)', opacity: 0}
+          {transform: 'translateY(-5px)', opacity: 0},
         ],
-        {duration: 100, easing: 'cubic-bezier(0.4, 0, 1, 1)'});
+        {
+          duration: 100,
+          easing: 'cubic-bezier(0.4, 0, 1, 1)',
+        });
   }
 });
 

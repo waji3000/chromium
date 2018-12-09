@@ -17,6 +17,7 @@ namespace features {
 // All features in alphabetical order. The features should be documented
 // alongside the definition of their values in the .cc file.
 CONTENT_EXPORT extern const base::Feature kAllowActivationDelegationAttr;
+CONTENT_EXPORT extern const base::Feature kAllowStartingServiceManagerOnly;
 CONTENT_EXPORT extern const base::Feature
     kAllowContentInitiatedDataUrlNavigations;
 CONTENT_EXPORT extern const base::Feature
@@ -26,6 +27,7 @@ CONTENT_EXPORT extern const base::Feature kAudioServiceLaunchOnStartup;
 CONTENT_EXPORT extern const base::Feature kAudioServiceOutOfProcess;
 CONTENT_EXPORT extern const base::Feature kAwaitOptimization;
 CONTENT_EXPORT extern const base::Feature kBackgroundFetch;
+CONTENT_EXPORT extern const base::Feature kBackgroundFetchAccessActiveFetches;
 CONTENT_EXPORT extern const base::Feature kBackgroundFetchUploads;
 CONTENT_EXPORT extern const base::Feature kBlinkHeapIncrementalMarking;
 CONTENT_EXPORT extern const base::Feature kBlinkHeapUnifiedGarbageCollection;
@@ -83,7 +85,6 @@ CONTENT_EXPORT extern const base::Feature kPepper3DImageChromium;
 CONTENT_EXPORT extern const base::Feature kPurgeAndSuspend;
 CONTENT_EXPORT extern const base::Feature kRasterInducingScroll;
 CONTENT_EXPORT extern const base::Feature kRenderingPipelineThrottling;
-CONTENT_EXPORT extern const base::Feature kRequireCSSExtensionForFile;
 CONTENT_EXPORT extern const base::Feature kResamplingInputEvents;
 CONTENT_EXPORT extern const base::Feature kResourceLoadScheduler;
 CONTENT_EXPORT extern const base::Feature
@@ -104,6 +105,7 @@ CONTENT_EXPORT extern const base::Feature kSpareRendererForSitePerProcess;
 CONTENT_EXPORT extern const base::Feature kTimerThrottlingForHiddenFrames;
 CONTENT_EXPORT extern const base::Feature kTouchpadAsyncPinchEvents;
 CONTENT_EXPORT extern const base::Feature kTouchpadOverscrollHistoryNavigation;
+CONTENT_EXPORT extern const base::Feature kUserActivationSameOriginVisibility;
 CONTENT_EXPORT extern const base::Feature kUserActivationV2;
 CONTENT_EXPORT extern const base::Feature kV8ContextSnapshot;
 CONTENT_EXPORT extern const base::Feature kV8LowMemoryModeForSubframes;
@@ -127,7 +129,6 @@ CONTENT_EXPORT extern const base::Feature kWebRtcHWVP8Encoding;
 CONTENT_EXPORT extern const base::Feature kWebRtcMultiplexCodec;
 CONTENT_EXPORT extern const base::Feature kWebRtcScreenshareSwEncoding;
 CONTENT_EXPORT extern const base::Feature kWebRtcUseEchoCanceller3;
-CONTENT_EXPORT extern const base::Feature kWebRtcHybridAgc;
 CONTENT_EXPORT extern const base::Feature kWebRtcUseGpuMemoryBufferVideoFrames;
 CONTENT_EXPORT extern const base::Feature kWebRtcHideLocalIpsWithMdns;
 CONTENT_EXPORT extern const base::Feature kWebUsb;
@@ -139,6 +140,7 @@ CONTENT_EXPORT extern const base::Feature kWebXrOrientationSensorDevice;
 CONTENT_EXPORT extern const base::Feature kWipeCorruptV2IDBDatabases;
 CONTENT_EXPORT extern const base::Feature kWorkStealingInScriptRunner;
 CONTENT_EXPORT extern const base::Feature kScheduledScriptStreaming;
+CONTENT_EXPORT extern const base::Feature kScriptStreamingOnPreload;
 
 #if defined(OS_ANDROID)
 CONTENT_EXPORT extern const base::Feature kAndroidAutofillAccessibility;

@@ -29,8 +29,6 @@
 #include <memory>
 
 #include "base/memory/scoped_refptr.h"
-#include "third_party/blink/public/platform/modules/indexeddb/web_idb_database.h"
-#include "third_party/blink/public/platform/modules/indexeddb/web_idb_database_callbacks.h"
 #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
 #include "third_party/blink/renderer/bindings/core/v8/string_or_string_sequence.h"
 #include "third_party/blink/renderer/core/dom/context_lifecycle_observer.h"
@@ -43,6 +41,8 @@
 #include "third_party/blink/renderer/modules/indexeddb/idb_object_store_parameters.h"
 #include "third_party/blink/renderer/modules/indexeddb/idb_transaction.h"
 #include "third_party/blink/renderer/modules/indexeddb/indexed_db.h"
+#include "third_party/blink/renderer/modules/indexeddb/web_idb_database.h"
+#include "third_party/blink/renderer/modules/indexeddb/web_idb_database_callbacks.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_member.h"
@@ -68,7 +68,13 @@ class MODULES_EXPORT IDBDatabase final
                              std::unique_ptr<WebIDBDatabase>,
                              IDBDatabaseCallbacks*,
                              v8::Isolate*);
+
+  IDBDatabase(ExecutionContext*,
+              std::unique_ptr<WebIDBDatabase>,
+              IDBDatabaseCallbacks*,
+              v8::Isolate*);
   ~IDBDatabase() override;
+
   void Trace(blink::Visitor*) override;
 
   // Overwrites the database metadata, including object store and index
@@ -81,13 +87,12 @@ class MODULES_EXPORT IDBDatabase final
   void TransactionCreated(IDBTransaction*);
   void TransactionFinished(const IDBTransaction*);
   const String& GetObjectStoreName(int64_t object_store_id) const;
-  int32_t AddObserver(
-      IDBObserver*,
-      int64_t transaction_id,
-      bool include_transaction,
-      bool no_records,
-      bool values,
-      const std::bitset<kWebIDBOperationTypeCount>& operation_types);
+  int32_t AddObserver(IDBObserver*,
+                      int64_t transaction_id,
+                      bool include_transaction,
+                      bool no_records,
+                      bool values,
+                      std::bitset<kIDBOperationTypeCount> operation_types);
   void RemoveObservers(const Vector<int32_t>& observer_ids);
 
   // Implement the IDL
@@ -175,11 +180,6 @@ class MODULES_EXPORT IDBDatabase final
   DispatchEventResult DispatchEventInternal(Event&) override;
 
  private:
-  IDBDatabase(ExecutionContext*,
-              std::unique_ptr<WebIDBDatabase>,
-              IDBDatabaseCallbacks*,
-              v8::Isolate*);
-
   IDBObjectStore* createObjectStore(const String& name,
                                     const IDBKeyPath&,
                                     bool auto_increment,

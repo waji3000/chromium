@@ -31,13 +31,10 @@
 #include "media/base/media_switches.h"
 #include "media/base/unaligned_shared_memory.h"
 #include "media/base/video_types.h"
+#include "media/gpu/macros.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_image.h"
 #include "ui/gl/scoped_binders.h"
-
-#define DVLOGF(level) DVLOG(level) << __func__ << "(): "
-#define VLOGF(level) VLOG(level) << __func__ << "(): "
-#define VPLOGF(level) VPLOG(level) << __func__ << "(): "
 
 #define NOTIFY_ERROR(x)                       \
   do {                                        \
@@ -684,6 +681,7 @@ bool V4L2SliceVideoDecodeAccelerator::SetupFormats() {
   format.fmt.pix_mp.plane_fmt[0].sizeimage = input_size;
   format.fmt.pix_mp.num_planes = input_planes_count_;
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_S_FMT, &format);
+  DCHECK_EQ(format.fmt.pix_mp.pixelformat, input_format_fourcc_);
 
   // We have to set up the format for output, because the driver may not allow
   // changing it once we start streaming; whether it can support our chosen
@@ -711,6 +709,7 @@ bool V4L2SliceVideoDecodeAccelerator::SetupFormats() {
   format.fmt.pix_mp.pixelformat = output_format_fourcc_;
   format.fmt.pix_mp.num_planes = output_planes_count_;
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_S_FMT, &format);
+  DCHECK_EQ(format.fmt.pix_mp.pixelformat, output_format_fourcc_);
 
   return true;
 }
@@ -1649,15 +1648,14 @@ void V4L2SliceVideoDecodeAccelerator::AssignPictureBuffersTask(
     // the client, or by ourselves, if we are allocating.
     output_record.at_client = true;
     if (output_mode_ == Config::OutputMode::ALLOCATE) {
-      std::vector<base::ScopedFD> dmabuf_fds = device_->GetDmabufsForV4L2Buffer(
-          i, output_planes_count_, V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
-      if (dmabuf_fds.empty()) {
+      std::vector<base::ScopedFD> passed_dmabuf_fds =
+          device_->GetDmabufsForV4L2Buffer(i, output_planes_count_,
+                                           V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
+      if (passed_dmabuf_fds.empty()) {
         NOTIFY_ERROR(PLATFORM_FAILURE);
         return;
       }
 
-      auto passed_dmabuf_fds(base::WrapUnique(
-          new std::vector<base::ScopedFD>(std::move(dmabuf_fds))));
       ImportBufferForPictureTask(output_record.picture_id,
                                  std::move(passed_dmabuf_fds));
     }  // else we'll get triggered via ImportBufferForPicture() from client.
@@ -1679,7 +1677,7 @@ void V4L2SliceVideoDecodeAccelerator::AssignPictureBuffersTask(
 void V4L2SliceVideoDecodeAccelerator::CreateGLImageFor(
     size_t buffer_index,
     int32_t picture_buffer_id,
-    std::unique_ptr<std::vector<base::ScopedFD>> passed_dmabuf_fds,
+    std::vector<base::ScopedFD> passed_dmabuf_fds,
     GLuint client_texture_id,
     GLuint texture_id,
     const gfx::Size& size,
@@ -1700,7 +1698,7 @@ void V4L2SliceVideoDecodeAccelerator::CreateGLImageFor(
   }
 
   scoped_refptr<gl::GLImage> gl_image =
-      device_->CreateGLImage(size, fourcc, *passed_dmabuf_fds);
+      device_->CreateGLImage(size, fourcc, passed_dmabuf_fds);
   if (!gl_image) {
     VLOGF(1) << "Could not create GLImage,"
              << " index=" << buffer_index << " texture_id=" << texture_id;
@@ -1716,13 +1714,13 @@ void V4L2SliceVideoDecodeAccelerator::CreateGLImageFor(
       FROM_HERE,
       base::BindOnce(&V4L2SliceVideoDecodeAccelerator::AssignDmaBufs,
                      base::Unretained(this), buffer_index, picture_buffer_id,
-                     base::Passed(&passed_dmabuf_fds)));
+                     std::move(passed_dmabuf_fds)));
 }
 
 void V4L2SliceVideoDecodeAccelerator::AssignDmaBufs(
     size_t buffer_index,
     int32_t picture_buffer_id,
-    std::unique_ptr<std::vector<base::ScopedFD>> passed_dmabuf_fds) {
+    std::vector<base::ScopedFD> passed_dmabuf_fds) {
   DVLOGF(3) << "index=" << buffer_index;
   DCHECK(decoder_thread_task_runner_->BelongsToCurrentThread());
 
@@ -1749,7 +1747,7 @@ void V4L2SliceVideoDecodeAccelerator::AssignDmaBufs(
 
   if (output_mode_ == Config::OutputMode::IMPORT) {
     DCHECK(output_record.dmabuf_fds.empty());
-    output_record.dmabuf_fds = std::move(*passed_dmabuf_fds);
+    output_record.dmabuf_fds = std::move(passed_dmabuf_fds);
   }
 
   DCHECK_EQ(std::count(free_output_buffers_.begin(), free_output_buffers_.end(),
@@ -1766,11 +1764,11 @@ void V4L2SliceVideoDecodeAccelerator::ImportBufferForPicture(
   DVLOGF(3) << "picture_buffer_id=" << picture_buffer_id;
   DCHECK(child_task_runner_->BelongsToCurrentThread());
 
-  auto passed_dmabuf_fds(base::WrapUnique(new std::vector<base::ScopedFD>()));
+  std::vector<base::ScopedFD> passed_dmabuf_fds;
 #if defined(USE_OZONE)
   for (const auto& fd : gpu_memory_buffer_handle.native_pixmap_handle.fds) {
     DCHECK_NE(fd.fd, -1);
-    passed_dmabuf_fds->push_back(base::ScopedFD(fd.fd));
+    passed_dmabuf_fds.push_back(base::ScopedFD(fd.fd));
   }
 #endif
 
@@ -1790,14 +1788,15 @@ void V4L2SliceVideoDecodeAccelerator::ImportBufferForPicture(
 
   decoder_thread_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(&V4L2SliceVideoDecodeAccelerator::ImportBufferForPictureTask,
-                 base::Unretained(this), picture_buffer_id,
-                 base::Passed(&passed_dmabuf_fds)));
+      base::BindOnce(
+          &V4L2SliceVideoDecodeAccelerator::ImportBufferForPictureTask,
+          base::Unretained(this), picture_buffer_id,
+          std::move(passed_dmabuf_fds)));
 }
 
 void V4L2SliceVideoDecodeAccelerator::ImportBufferForPictureTask(
     int32_t picture_buffer_id,
-    std::unique_ptr<std::vector<base::ScopedFD>> passed_dmabuf_fds) {
+    std::vector<base::ScopedFD> passed_dmabuf_fds) {
   DVLOGF(3) << "picture_buffer_id=" << picture_buffer_id;
   DCHECK(decoder_thread_task_runner_->BelongsToCurrentThread());
 
@@ -1835,14 +1834,14 @@ void V4L2SliceVideoDecodeAccelerator::ImportBufferForPictureTask(
   if (iter->texture_id != 0) {
     child_task_runner_->PostTask(
         FROM_HERE,
-        base::Bind(&V4L2SliceVideoDecodeAccelerator::CreateGLImageFor,
-                   weak_this_, index, picture_buffer_id,
-                   base::Passed(&passed_dmabuf_fds), iter->client_texture_id,
-                   iter->texture_id, coded_size_, output_format_fourcc_));
+        base::BindOnce(&V4L2SliceVideoDecodeAccelerator::CreateGLImageFor,
+                       weak_this_, index, picture_buffer_id,
+                       std::move(passed_dmabuf_fds), iter->client_texture_id,
+                       iter->texture_id, coded_size_, output_format_fourcc_));
   } else {
     // No need for a GLImage, start using this buffer now.
-    DCHECK_EQ(output_planes_count_, passed_dmabuf_fds->size());
-    iter->dmabuf_fds.swap(*passed_dmabuf_fds);
+    DCHECK_EQ(output_planes_count_, passed_dmabuf_fds.size());
+    iter->dmabuf_fds = std::move(passed_dmabuf_fds);
     free_output_buffers_.push_back(index);
     ScheduleDecodeBufferTaskIfNeeded();
   }
@@ -2586,13 +2585,6 @@ V4L2SliceVideoDecodeAccelerator::V4L2VP8Accelerator::CreateVP8Picture() {
   return new V4L2VP8Picture(dec_surface);
 }
 
-#define ARRAY_MEMCPY_CHECKED(to, from)                               \
-  do {                                                               \
-    static_assert(sizeof(to) == sizeof(from),                        \
-                  #from " and " #to " arrays must be of same size"); \
-    memcpy(to, from, sizeof(to));                                    \
-  } while (0)
-
 static void FillV4L2SegmentationHeader(
     const Vp8SegmentationHeader& vp8_sgmnt_hdr,
     struct v4l2_vp8_sgmnt_hdr* v4l2_sgmnt_hdr) {
@@ -2607,12 +2599,10 @@ static void FillV4L2SegmentationHeader(
 #undef SET_V4L2_SPARM_FLAG_IF
   v4l2_sgmnt_hdr->segment_feature_mode = vp8_sgmnt_hdr.segment_feature_mode;
 
-  ARRAY_MEMCPY_CHECKED(v4l2_sgmnt_hdr->quant_update,
-                       vp8_sgmnt_hdr.quantizer_update_value);
-  ARRAY_MEMCPY_CHECKED(v4l2_sgmnt_hdr->lf_update,
-                       vp8_sgmnt_hdr.lf_update_value);
-  ARRAY_MEMCPY_CHECKED(v4l2_sgmnt_hdr->segment_probs,
-                       vp8_sgmnt_hdr.segment_prob);
+  SafeArrayMemcpy(v4l2_sgmnt_hdr->quant_update,
+                  vp8_sgmnt_hdr.quantizer_update_value);
+  SafeArrayMemcpy(v4l2_sgmnt_hdr->lf_update, vp8_sgmnt_hdr.lf_update_value);
+  SafeArrayMemcpy(v4l2_sgmnt_hdr->segment_probs, vp8_sgmnt_hdr.segment_prob);
 }
 
 static void FillV4L2LoopfilterHeader(
@@ -2631,10 +2621,10 @@ static void FillV4L2LoopfilterHeader(
   LF_HDR_TO_V4L2_LF_HDR(sharpness_level);
 #undef LF_HDR_TO_V4L2_LF_HDR
 
-  ARRAY_MEMCPY_CHECKED(v4l2_lf_hdr->ref_frm_delta_magnitude,
-                       vp8_loopfilter_hdr.ref_frame_delta);
-  ARRAY_MEMCPY_CHECKED(v4l2_lf_hdr->mb_mode_delta_magnitude,
-                       vp8_loopfilter_hdr.mb_mode_delta);
+  SafeArrayMemcpy(v4l2_lf_hdr->ref_frm_delta_magnitude,
+                  vp8_loopfilter_hdr.ref_frame_delta);
+  SafeArrayMemcpy(v4l2_lf_hdr->mb_mode_delta_magnitude,
+                  vp8_loopfilter_hdr.mb_mode_delta);
 }
 
 static void FillV4L2QuantizationHeader(
@@ -2651,13 +2641,11 @@ static void FillV4L2QuantizationHeader(
 static void FillV4L2Vp8EntropyHeader(
     const Vp8EntropyHeader& vp8_entropy_hdr,
     struct v4l2_vp8_entropy_hdr* v4l2_entropy_hdr) {
-  ARRAY_MEMCPY_CHECKED(v4l2_entropy_hdr->coeff_probs,
-                       vp8_entropy_hdr.coeff_probs);
-  ARRAY_MEMCPY_CHECKED(v4l2_entropy_hdr->y_mode_probs,
-                       vp8_entropy_hdr.y_mode_probs);
-  ARRAY_MEMCPY_CHECKED(v4l2_entropy_hdr->uv_mode_probs,
-                       vp8_entropy_hdr.uv_mode_probs);
-  ARRAY_MEMCPY_CHECKED(v4l2_entropy_hdr->mv_probs, vp8_entropy_hdr.mv_probs);
+  SafeArrayMemcpy(v4l2_entropy_hdr->coeff_probs, vp8_entropy_hdr.coeff_probs);
+  SafeArrayMemcpy(v4l2_entropy_hdr->y_mode_probs, vp8_entropy_hdr.y_mode_probs);
+  SafeArrayMemcpy(v4l2_entropy_hdr->uv_mode_probs,
+                  vp8_entropy_hdr.uv_mode_probs);
+  SafeArrayMemcpy(v4l2_entropy_hdr->mv_probs, vp8_entropy_hdr.mv_probs);
 }
 
 bool V4L2SliceVideoDecodeAccelerator::V4L2VP8Accelerator::SubmitDecode(
@@ -2833,9 +2821,9 @@ static void FillV4L2VP9LoopFilterParams(
   v4l2_lf_params->level = vp9_lf_params.level;
   v4l2_lf_params->sharpness = vp9_lf_params.sharpness;
 
-  ARRAY_MEMCPY_CHECKED(v4l2_lf_params->deltas, vp9_lf_params.ref_deltas);
-  ARRAY_MEMCPY_CHECKED(v4l2_lf_params->mode_deltas, vp9_lf_params.mode_deltas);
-  ARRAY_MEMCPY_CHECKED(v4l2_lf_params->lvl_lookup, vp9_lf_params.lvl);
+  SafeArrayMemcpy(v4l2_lf_params->deltas, vp9_lf_params.ref_deltas);
+  SafeArrayMemcpy(v4l2_lf_params->mode_deltas, vp9_lf_params.mode_deltas);
+  SafeArrayMemcpy(v4l2_lf_params->lvl_lookup, vp9_lf_params.lvl);
 }
 
 static void FillV4L2VP9QuantizationParams(
@@ -2868,12 +2856,9 @@ static void FillV4L2VP9SegmentationParams(
                          V4L2_VP9_SGMNT_PARAM_FLAG_ABS_OR_DELTA_UPDATE);
 #undef SET_SEG_PARAMS_FLAG_IF
 
-  ARRAY_MEMCPY_CHECKED(v4l2_segm_params->tree_probs,
-                       vp9_segm_params.tree_probs);
-  ARRAY_MEMCPY_CHECKED(v4l2_segm_params->pred_probs,
-                       vp9_segm_params.pred_probs);
-  ARRAY_MEMCPY_CHECKED(v4l2_segm_params->feature_data,
-                       vp9_segm_params.feature_data);
+  SafeArrayMemcpy(v4l2_segm_params->tree_probs, vp9_segm_params.tree_probs);
+  SafeArrayMemcpy(v4l2_segm_params->pred_probs, vp9_segm_params.pred_probs);
+  SafeArrayMemcpy(v4l2_segm_params->feature_data, vp9_segm_params.feature_data);
 
   static_assert(arraysize(v4l2_segm_params->feature_enabled) ==
                         arraysize(vp9_segm_params.feature_enabled) &&
@@ -2893,7 +2878,7 @@ static void FillV4L2Vp9EntropyContext(
     const Vp9FrameContext& vp9_frame_ctx,
     struct v4l2_vp9_entropy_ctx* v4l2_entropy_ctx) {
 #define ARRAY_MEMCPY_CHECKED_FRM_CTX_TO_V4L2_ENTR(a) \
-  ARRAY_MEMCPY_CHECKED(v4l2_entropy_ctx->a, vp9_frame_ctx.a)
+  SafeArrayMemcpy(v4l2_entropy_ctx->a, vp9_frame_ctx.a)
   ARRAY_MEMCPY_CHECKED_FRM_CTX_TO_V4L2_ENTR(tx_probs_8x8);
   ARRAY_MEMCPY_CHECKED_FRM_CTX_TO_V4L2_ENTR(tx_probs_16x16);
   ARRAY_MEMCPY_CHECKED_FRM_CTX_TO_V4L2_ENTR(tx_probs_32x32);
@@ -3098,7 +3083,7 @@ bool V4L2SliceVideoDecodeAccelerator::V4L2VP9Accelerator::OutputPicture(
 static void FillVp9FrameContext(struct v4l2_vp9_entropy_ctx& v4l2_entropy_ctx,
                                 Vp9FrameContext* vp9_frame_ctx) {
 #define ARRAY_MEMCPY_CHECKED_V4L2_ENTR_TO_FRM_CTX(a) \
-  ARRAY_MEMCPY_CHECKED(vp9_frame_ctx->a, v4l2_entropy_ctx.a)
+  SafeArrayMemcpy(vp9_frame_ctx->a, v4l2_entropy_ctx.a)
   ARRAY_MEMCPY_CHECKED_V4L2_ENTR_TO_FRM_CTX(tx_probs_8x8);
   ARRAY_MEMCPY_CHECKED_V4L2_ENTR_TO_FRM_CTX(tx_probs_16x16);
   ARRAY_MEMCPY_CHECKED_V4L2_ENTR_TO_FRM_CTX(tx_probs_32x32);

@@ -61,9 +61,6 @@ bool ViewsDelegate::GetSavedWindowPlacement(
   return false;
 }
 
-void ViewsDelegate::NotifyAccessibilityEvent(View* view,
-                                             ax::mojom::Event event_type) {}
-
 void ViewsDelegate::NotifyMenuItemFocused(const base::string16& menu_name,
                                           const base::string16& menu_item_name,
                                           int item_index,
@@ -130,10 +127,6 @@ int ViewsDelegate::GetAppbarAutohideEdges(HMONITOR monitor,
   return EDGE_BOTTOM;
 }
 #endif
-
-bool ViewsDelegate::ShouldMirrorArrowsInRTL() const {
-  return true;
-}
 
 #if defined(USE_AURA)
 void ViewsDelegate::SetTouchSelectionMenuRunner(

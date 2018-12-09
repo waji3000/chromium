@@ -43,7 +43,10 @@ class CORE_EXPORT HTMLIFrameElement final
  public:
   DECLARE_NODE_FACTORY(HTMLIFrameElement);
   void Trace(blink::Visitor*) override;
+
+  explicit HTMLIFrameElement(Document&);
   ~HTMLIFrameElement() override;
+
   DOMTokenList* sandbox() const;
   // Support JS introspection of frame policy (e.g. feature policy)
   Policy* policy();
@@ -59,8 +62,6 @@ class CORE_EXPORT HTMLIFrameElement final
   }
 
  private:
-  explicit HTMLIFrameElement(Document&);
-
   void SetCollapsed(bool) override;
 
   void ParseAttribute(const AttributeModificationParams&) override;
@@ -78,7 +79,7 @@ class CORE_EXPORT HTMLIFrameElement final
 
   bool IsInteractiveContent() const override;
 
-  ReferrerPolicy ReferrerPolicyAttribute() override;
+  network::mojom::ReferrerPolicy ReferrerPolicyAttribute() override;
 
   // FrameOwner overrides:
   bool AllowFullscreen() const override { return allow_fullscreen_; }
@@ -94,7 +95,7 @@ class CORE_EXPORT HTMLIFrameElement final
   Member<HTMLIFrameElementSandbox> sandbox_;
   Member<Policy> policy_;
 
-  ReferrerPolicy referrer_policy_;
+  network::mojom::ReferrerPolicy referrer_policy_;
 };
 
 }  // namespace blink

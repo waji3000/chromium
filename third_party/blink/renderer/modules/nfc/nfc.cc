@@ -5,7 +5,6 @@
 #include "third_party/blink/renderer/modules/nfc/nfc.h"
 
 #include "services/service_manager/public/cpp/interface_provider.h"
-#include "third_party/blink/public/mojom/page/page_visibility_state.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_array_buffer.h"
@@ -655,7 +654,7 @@ NFC::NFC(LocalFrame* frame)
 }
 
 NFC* NFC::Create(LocalFrame* frame) {
-  NFC* nfc = new NFC(frame);
+  NFC* nfc = MakeGarbageCollected<NFC>(frame);
   return nfc;
 }
 
@@ -819,7 +818,7 @@ void NFC::PageVisibilityChanged() {
 
   // NFC operations should be suspended.
   // https://w3c.github.io/web-nfc/#nfc-suspended
-  if (GetPage()->VisibilityState() == mojom::PageVisibilityState::kVisible)
+  if (GetPage()->IsPageVisible())
     nfc_->ResumeNFCOperations();
   else
     nfc_->SuspendNFCOperations();

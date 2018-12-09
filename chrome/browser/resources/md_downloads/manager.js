@@ -50,8 +50,11 @@ cr.define('downloads', function() {
       'itemsChanged_(items_.*)',
     ],
 
-    /** @private {?downloads.BrowserProxy} */
-    browserProxy_: null,
+    /** @private {mdDownloads.mojom.PageCallbackRouter} */
+    mojoEventTarget_: null,
+
+    /** @private {mdDownloads.mojom.PageHandlerInterface} */
+    mojoHandler_: null,
 
     /** @private {?downloads.SearchService} */
     searchService_: null,
@@ -59,15 +62,35 @@ cr.define('downloads', function() {
     /** @private {!PromiseResolver} */
     loaded_: new PromiseResolver,
 
+    /** @private {Array<number>} */
+    listenerIds_: null,
+
     /** @override */
     created: function() {
-      this.browserProxy_ = downloads.BrowserProxy.getInstance();
+      const browserProxy = downloads.BrowserProxy.getInstance();
+      this.mojoEventTarget_ = browserProxy.callbackRouter;
+      this.mojoHandler_ = browserProxy.handler;
       this.searchService_ = downloads.SearchService.getInstance();
     },
 
     /** @override */
     attached: function() {
       document.documentElement.classList.remove('loading');
+      this.listenerIds_ = [
+        this.mojoEventTarget_.clearAll.addListener(this.clearAll_.bind(this)),
+        this.mojoEventTarget_.insertItems.addListener(
+            this.insertItems_.bind(this)),
+        this.mojoEventTarget_.removeItem.addListener(
+            this.removeItem_.bind(this)),
+        this.mojoEventTarget_.updateItem.addListener(
+            this.updateItem_.bind(this)),
+      ];
+    },
+
+    /** @override */
+    detached: function() {
+      this.listenerIds_.forEach(
+          id => assert(this.mojoEventTarget_.removeListener(id)));
     },
 
     /** @private */
@@ -86,16 +109,16 @@ cr.define('downloads', function() {
 
     /**
      * @param {number} index
-     * @param {!Array<!downloads.Data>} list
+     * @param {!Array<downloads.Data>} items
      * @private
      */
-    insertItems_: function(index, list) {
-      // Insert |list| at the given |index| via Array#splice().
-      this.items_.splice.apply(this.items_, [index, 0].concat(list));
-      this.updateHideDates_(index, index + list.length);
+    insertItems_: function(index, items) {
+      // Insert |items| at the given |index| via Array#splice().
+      this.items_.splice.apply(this.items_, [index, 0].concat(items));
+      this.updateHideDates_(index, index + items.length);
       this.notifySplices('items_', [{
                            index: index,
-                           addedCount: list.length,
+                           addedCount: items.length,
                            object: this.items_,
                            type: 'splice',
                            removed: [],
@@ -163,9 +186,9 @@ cr.define('downloads', function() {
      */
     onCommand_: function(e) {
       if (e.command.id == 'clear-all-command')
-        this.browserProxy_.clearAll();
+        this.mojoHandler_.clearAll();
       else if (e.command.id == 'undo-command')
-        this.browserProxy_.undo();
+        this.mojoHandler_.undo();
       else if (e.command.id == 'find-command')
         this.$.toolbar.onFindCommand();
     },
@@ -229,7 +252,7 @@ cr.define('downloads', function() {
         if (!current)
           continue;
         const prev = this.items_[i - 1];
-        current.hideDate = !!prev && prev.date_string == current.date_string;
+        current.hideDate = !!prev && prev.dateString == current.dateString;
       }
     },
 
@@ -255,31 +278,14 @@ cr.define('downloads', function() {
     },
   });
 
-  Manager.clearAll = function() {
-    Manager.get().clearAll_();
-  };
-
   /** @return {!downloads.Manager} */
   Manager.get = function() {
     return /** @type {!downloads.Manager} */ (
         queryRequiredElement('downloads-manager'));
   };
-
-  Manager.insertItems = function(index, list) {
-    Manager.get().insertItems_(index, list);
-  };
-
   /** @return {!Promise} */
   Manager.onLoad = function() {
     return Manager.get().onLoad_();
-  };
-
-  Manager.removeItem = function(index) {
-    Manager.get().removeItem_(index);
-  };
-
-  Manager.updateItem = function(index, data) {
-    Manager.get().updateItem_(index, data);
   };
 
   return {Manager: Manager};

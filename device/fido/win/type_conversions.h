@@ -5,7 +5,7 @@
 #ifndef DEVICE_FIDO_WIN_TYPE_CONVERSIONS_H_
 #define DEVICE_FIDO_WIN_TYPE_CONVERSIONS_H_
 
-#include <webauthn.h>
+#include <windows.h>
 
 #include "base/component_export.h"
 #include "base/optional.h"
@@ -13,9 +13,9 @@
 #include "device/fido/authenticator_get_assertion_response.h"
 #include "device/fido/authenticator_make_credential_response.h"
 #include "device/fido/fido_constants.h"
+#include "third_party/microsoft_webauthn/webauthn.h"
 
 namespace device {
-namespace fido {
 
 COMPONENT_EXPORT(DEVICE_FIDO)
 base::Optional<AuthenticatorMakeCredentialResponse>
@@ -32,10 +32,23 @@ uint32_t ToWinUserVerificationRequirement(
     UserVerificationRequirement user_verification_requirement);
 
 COMPONENT_EXPORT(DEVICE_FIDO)
+uint32_t ToWinAuthenticatorAttachment(
+    AuthenticatorAttachment authenticator_attachment);
+
+COMPONENT_EXPORT(DEVICE_FIDO)
+std::vector<WEBAUTHN_CREDENTIAL> ToWinCredentialVector(
+    const base::Optional<std::vector<PublicKeyCredentialDescriptor>>&
+        credentials);
+
+COMPONENT_EXPORT(DEVICE_FIDO)
+std::vector<WEBAUTHN_CREDENTIAL_EX> ToWinCredentialExVector(
+    const base::Optional<std::vector<PublicKeyCredentialDescriptor>>&
+        credentials);
+
+COMPONENT_EXPORT(DEVICE_FIDO)
 CtapDeviceResponseCode WinErrorNameToCtapDeviceResponseCode(
     const base::string16& error_name);
 
-}  // namespace fido
 }  // namespace device
 
 #endif  // DEVICE_FIDO_WIN_TYPE_CONVERSIONS_H_

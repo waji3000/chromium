@@ -48,17 +48,22 @@ void SmbHandler::RegisterMessages() {
 }
 
 void SmbHandler::HandleSmbMount(const base::ListValue* args) {
-  CHECK_EQ(5U, args->GetSize());
+  CHECK_EQ(7U, args->GetSize());
+  std::string callback_id;
+  CHECK(args->GetString(0, &callback_id));
+
   std::string mount_url;
   std::string mount_name;
   std::string username;
   std::string password;
   bool use_kerberos;
-  CHECK(args->GetString(0, &mount_url));
-  CHECK(args->GetString(1, &mount_name));
-  CHECK(args->GetString(2, &username));
-  CHECK(args->GetString(3, &password));
-  CHECK(args->GetBoolean(4, &use_kerberos));
+  bool should_open_file_manager_after_mount;
+  CHECK(args->GetString(1, &mount_url));
+  CHECK(args->GetString(2, &mount_name));
+  CHECK(args->GetString(3, &username));
+  CHECK(args->GetString(4, &password));
+  CHECK(args->GetBoolean(5, &use_kerberos));
+  CHECK(args->GetBoolean(6, &should_open_file_manager_after_mount));
 
   smb_client::SmbService* const service = GetSmbService(profile_);
   if (!service) {
@@ -69,12 +74,13 @@ void SmbHandler::HandleSmbMount(const base::ListValue* args) {
   mo.display_name = mount_name.empty() ? mount_url : mount_name;
   mo.writable = true;
 
-  auto mount_response = base::BindOnce(&SmbHandler::HandleSmbMountResponse,
-                                       weak_ptr_factory_.GetWeakPtr());
-  auto mount_call =
-      base::BindOnce(&smb_client::SmbService::Mount, base::Unretained(service),
-                     mo, base::FilePath(mount_url), username, password,
-                     use_kerberos, std::move(mount_response));
+  auto mount_response =
+      base::BindOnce(&SmbHandler::HandleSmbMountResponse,
+                     weak_ptr_factory_.GetWeakPtr(), callback_id);
+  auto mount_call = base::BindOnce(
+      &smb_client::SmbService::Mount, base::Unretained(service), mo,
+      base::FilePath(mount_url), username, password, use_kerberos,
+      should_open_file_manager_after_mount, std::move(mount_response));
 
   if (host_discovery_done_) {
     std::move(mount_call).Run();
@@ -83,9 +89,11 @@ void SmbHandler::HandleSmbMount(const base::ListValue* args) {
   }
 }
 
-void SmbHandler::HandleSmbMountResponse(SmbMountResult result) {
+void SmbHandler::HandleSmbMountResponse(const std::string& callback_id,
+                                        SmbMountResult result) {
   AllowJavascript();
-  FireWebUIListener("on-add-smb-share", base::Value(static_cast<int>(result)));
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(static_cast<int>(result)));
 }
 
 void SmbHandler::HandleStartDiscovery(const base::ListValue* args) {

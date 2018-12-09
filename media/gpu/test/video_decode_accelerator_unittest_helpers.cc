@@ -4,20 +4,20 @@
 
 #include "media/gpu/test/video_decode_accelerator_unittest_helpers.h"
 
+#include <utility>
+
+#include "base/callback_helpers.h"
 #include "base/files/file_util.h"
-#include "base/files/scoped_file.h"
 #include "base/strings/string_split.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "media/base/video_decoder_config.h"
+#include "media/gpu/macros.h"
 #include "media/gpu/test/rendering_helper.h"
-#include "media/gpu/test/texture_ref.h"
 #include "media/video/h264_parser.h"
 
 #if defined(OS_CHROMEOS)
 #include "ui/ozone/public/ozone_gpu_test_helper.h"
 #endif
-
-#define VLOGF(level) VLOG(level) << __func__ << "(): "
 
 namespace media {
 namespace test {
@@ -72,6 +72,13 @@ VideoDecodeAcceleratorTestEnvironment::GetRenderingTaskRunner() const {
 EncodedDataHelper::EncodedDataHelper(const std::string& data,
                                      VideoCodecProfile profile)
     : data_(data), profile_(profile) {}
+
+EncodedDataHelper::EncodedDataHelper(const std::vector<uint8_t>& stream,
+                                     VideoCodecProfile profile)
+    : EncodedDataHelper(
+          std::string(reinterpret_cast<const char*>(stream.data()),
+                      stream.size()),
+          profile) {}
 
 EncodedDataHelper::~EncodedDataHelper() {
   base::STLClearObject(&data_);

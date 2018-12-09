@@ -92,6 +92,10 @@ class APP_LIST_EXPORT SearchBoxView : public search_box::SearchBoxViewBase,
   }
   ContentsView* contents_view() { return contents_view_; }
 
+  void set_highlight_range_for_test(const gfx::Range& range) {
+    highlight_range_ = range;
+  }
+
  private:
   // Gets the wallpaper prominent colors.
   void GetWallpaperProminentColors(
@@ -104,9 +108,6 @@ class APP_LIST_EXPORT SearchBoxView : public search_box::SearchBoxViewBase,
 
   // Notifies SearchBoxViewDelegate that the autocomplete text is valid.
   void AcceptAutocompleteText();
-
-  // Accepts one character in the autocomplete text and fires query.
-  void AcceptOneCharInAutocompleteText();
 
   // Returns true if there is currently an autocomplete suggestion in
   // search_box().
@@ -136,6 +137,12 @@ class APP_LIST_EXPORT SearchBoxView : public search_box::SearchBoxViewBase,
   void SearchEngineChanged() override;
   void ShowAssistantChanged() override;
 
+  // Returns true if the event to trigger autocomplete should be handled.
+  bool ShouldProcessAutocomplete();
+
+  // Clear highlight range.
+  void ResetHighlightRange();
+
   // The range of highlighted text for autocomplete.
   gfx::Range highlight_range_;
 
@@ -148,9 +155,6 @@ class APP_LIST_EXPORT SearchBoxView : public search_box::SearchBoxViewBase,
   // Owned by views hierarchy.
   app_list::AppListView* app_list_view_;
   ContentsView* contents_view_ = nullptr;
-
-  // True if new style launcher feature is enabled.
-  const bool is_new_style_launcher_enabled_;
 
   // True if app list search autocomplete is enabled.
   const bool is_app_list_search_autocomplete_enabled_;

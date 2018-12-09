@@ -38,7 +38,7 @@
 #include "ui/views/metrics.h"
 
 #if defined(OS_CHROMEOS)
-#include "ui/keyboard/keyboard_controller.h"
+#include "chrome/browser/ui/ash/keyboard/chrome_keyboard_controller_client.h"
 #endif  // defined(OS_CHROMEOS)
 
 // static
@@ -58,14 +58,12 @@ BrowserAppMenuButton::BrowserAppMenuButton(ToolbarView* toolbar_view)
 
 BrowserAppMenuButton::~BrowserAppMenuButton() {}
 
-void BrowserAppMenuButton::SetSeverity(
-    AppMenuIconController::IconType type,
-    AppMenuIconController::Severity severity) {
-  type_ = type;
-  severity_ = severity;
+void BrowserAppMenuButton::SetTypeAndSeverity(
+    AppMenuIconController::TypeAndSeverity type_and_severity) {
+  type_and_severity_ = type_and_severity;
 
   SetTooltipText(
-      severity_ == AppMenuIconController::Severity::NONE
+      type_and_severity_.severity == AppMenuIconController::Severity::NONE
           ? l10n_util::GetStringUTF16(IDS_APPMENU_TOOLTIP)
           : l10n_util::GetStringUTF16(IDS_APPMENU_TOOLTIP_UPDATE_AVAILABLE));
   UpdateIcon();
@@ -86,19 +84,17 @@ void BrowserAppMenuButton::ShowMenu(bool for_drop) {
     return;
 
 #if defined(OS_CHROMEOS)
-  // On platforms other than ChromeOS or when running under MASH, there is no
-  // KeyboardController in the browser process.
-  if (!features::IsUsingWindowService()) {
-    auto* keyboard_controller = keyboard::KeyboardController::Get();
-    if (keyboard_controller->IsKeyboardVisible())
-      keyboard_controller->HideKeyboardExplicitlyBySystem();
-  }
+  auto* keyboard_client = ChromeKeyboardControllerClient::Get();
+  if (keyboard_client->is_keyboard_visible())
+    keyboard_client->HideKeyboard(ash::mojom::HideReason::kSystem);
 #endif
 
   Browser* browser = toolbar_view_->browser();
 
-  InitMenu(std::make_unique<AppMenuModel>(toolbar_view_, browser), browser,
-           for_drop ? AppMenu::FOR_DROP : AppMenu::NO_FLAGS);
+  InitMenu(
+      std::make_unique<AppMenuModel>(toolbar_view_, browser,
+                                     toolbar_view_->app_menu_icon_controller()),
+      browser, for_drop ? AppMenu::FOR_DROP : AppMenu::NO_FLAGS);
 
   base::TimeTicks menu_open_time = base::TimeTicks::Now();
   menu()->RunMenu(this);
@@ -120,7 +116,7 @@ void BrowserAppMenuButton::UpdateIcon() {
   SkColor severity_color = gfx::kPlaceholderColor;
 
   const ui::NativeTheme* native_theme = GetNativeTheme();
-  switch (severity_) {
+  switch (type_and_severity_.severity) {
     case AppMenuIconController::Severity::NONE:
       severity_color = GetThemeProvider()->GetColor(
           ThemeProperties::COLOR_TOOLBAR_BUTTON_ICON);
@@ -141,10 +137,11 @@ void BrowserAppMenuButton::UpdateIcon() {
 
   const bool touch_ui = ui::MaterialDesignController::touch_ui();
   const gfx::VectorIcon* icon_id = nullptr;
-  switch (type_) {
+  switch (type_and_severity_.type) {
     case AppMenuIconController::IconType::NONE:
       icon_id = touch_ui ? &kBrowserToolsTouchIcon : &kBrowserToolsIcon;
-      DCHECK_EQ(AppMenuIconController::Severity::NONE, severity_);
+      DCHECK_EQ(AppMenuIconController::Severity::NONE,
+                type_and_severity_.severity);
       break;
     case AppMenuIconController::IconType::UPGRADE_NOTIFICATION:
       icon_id =

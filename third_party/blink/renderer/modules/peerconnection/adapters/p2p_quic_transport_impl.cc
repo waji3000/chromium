@@ -41,20 +41,20 @@ class DummyProofSource : public quic::ProofSource {
                 quic::QuicTransportVersion transport_version,
                 quic::QuicStringPiece chlo_hash,
                 std::unique_ptr<Callback> callback) override {
-    quic::QuicReferenceCountedPointer<ProofSource::Chain> chain;
     quic::QuicCryptoProof proof;
-    std::vector<quic::QuicString> certs;
-    certs.push_back("Dummy cert");
-    chain = new ProofSource::Chain(certs);
     proof.signature = "Dummy signature";
     proof.leaf_cert_scts = "Dummy timestamp";
-    callback->Run(true, chain, proof, nullptr /* details */);
+    callback->Run(true, GetCertChain(server_addr, hostname), proof,
+                  nullptr /* details */);
   }
 
   quic::QuicReferenceCountedPointer<Chain> GetCertChain(
       const quic::QuicSocketAddress& server_address,
       const quic::QuicString& hostname) override {
-    return quic::QuicReferenceCountedPointer<Chain>();
+    std::vector<quic::QuicString> certs;
+    certs.push_back("Dummy cert");
+    return quic::QuicReferenceCountedPointer<Chain>(
+        new ProofSource::Chain(certs));
   }
 
   void ComputeTlsSignature(
@@ -135,7 +135,9 @@ class DummyCryptoServerStreamHelper
 }  // namespace
 
 P2PQuicTransportImpl::P2PQuicTransportImpl(
-    P2PQuicTransportConfig p2p_transport_config,
+    Delegate* delegate,
+    P2PQuicPacketTransport* packet_transport,
+    const P2PQuicTransportConfig& p2p_transport_config,
     std::unique_ptr<net::QuicChromiumConnectionHelper> helper,
     std::unique_ptr<quic::QuicConnection> connection,
     const quic::QuicConfig& quic_config,
@@ -146,16 +148,19 @@ P2PQuicTransportImpl::P2PQuicTransportImpl(
                         quic::CurrentSupportedVersions()),
       helper_(std::move(helper)),
       connection_(std::move(connection)),
-      perspective_(p2p_transport_config.is_server
-                       ? quic::Perspective::IS_SERVER
-                       : quic::Perspective::IS_CLIENT),
-      packet_transport_(p2p_transport_config.packet_transport),
-      delegate_(p2p_transport_config.delegate),
-      clock_(clock) {
+      perspective_(p2p_transport_config.perspective),
+      packet_transport_(packet_transport),
+      delegate_(delegate),
+      clock_(clock),
+      stream_delegate_read_buffer_size_(
+          p2p_transport_config.stream_delegate_read_buffer_size),
+      stream_write_buffer_size_(p2p_transport_config.stream_write_buffer_size) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   DCHECK(delegate_);
   DCHECK(clock_);
   DCHECK(packet_transport_);
+  DCHECK_GT(stream_delegate_read_buffer_size_, 0u);
+  DCHECK_GT(stream_write_buffer_size_, 0u);
   DCHECK_GT(p2p_transport_config.certificates.size(), 0u);
   if (p2p_transport_config.can_respond_to_crypto_handshake) {
     InitializeCryptoStream();
@@ -250,7 +255,8 @@ P2PQuicStreamImpl* P2PQuicTransportImpl::CreateStreamInternal(
   DCHECK(crypto_stream_);
   DCHECK(IsEncryptionEstablished());
   DCHECK(!IsClosed());
-  return new P2PQuicStreamImpl(id, this);
+  return new P2PQuicStreamImpl(id, this, stream_delegate_read_buffer_size_,
+                               stream_write_buffer_size_);
 }
 
 void P2PQuicTransportImpl::InitializeCryptoStream() {

@@ -44,8 +44,8 @@ class PaintWorkletTest : public PageTestBase {
  public:
   void SetUp() override {
     PageTestBase::SetUp(IntSize());
-    test_paint_worklet_ =
-        new TestPaintWorklet(GetDocument().domWindow()->GetFrame());
+    test_paint_worklet_ = MakeGarbageCollected<TestPaintWorklet>(
+        GetDocument().domWindow()->GetFrame());
     proxy_ = test_paint_worklet_->CreateGlobalScope();
   }
 
@@ -69,7 +69,8 @@ class PaintWorkletTest : public PageTestBase {
                                int paint_cnt_to_switch,
                                size_t expected_num_paints_before_switch,
                                TestPaintWorklet* paint_worklet_to_test) {
-    paint_worklet_to_test->GetFrame()->View()->UpdateAllLifecyclePhases();
+    paint_worklet_to_test->GetFrame()->View()->UpdateAllLifecyclePhases(
+        DocumentLifecycle::LifecycleUpdateReason::kTest);
     paint_worklet_to_test->SetPaintsToSwitch(paint_cnt_to_switch);
     size_t previously_selected_global_scope =
         paint_worklet_to_test->GetActiveGlobalScope();
@@ -112,7 +113,7 @@ TEST_F(PaintWorkletTest, PaintWithNullPaintArguments) {
   PaintWorkletGlobalScope* global_scope = GetProxy()->global_scope();
   global_scope->ScriptController()->Evaluate(
       ScriptSourceCode("registerPaint('foo', class { paint() { } });"),
-      kSharableCrossOrigin);
+      SanitizeScriptErrors::kDoNotSanitize);
 
   CSSPaintDefinition* definition = global_scope->FindDefinition("foo");
   ASSERT_TRUE(definition);
@@ -134,7 +135,7 @@ TEST_F(PaintWorkletTest, SinglyRegisteredDocumentDefinitionNotUsed) {
   PaintWorkletGlobalScope* global_scope = GetProxy()->global_scope();
   global_scope->ScriptController()->Evaluate(
       ScriptSourceCode("registerPaint('foo', class { paint() { } });"),
-      kSharableCrossOrigin);
+      SanitizeScriptErrors::kDoNotSanitize);
 
   CSSPaintImageGeneratorImpl* generator =
       static_cast<CSSPaintImageGeneratorImpl*>(

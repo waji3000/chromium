@@ -18,6 +18,10 @@ namespace features {
 const base::Feature kAllowActivationDelegationAttr{
     "AllowActivationDelegationAttr", base::FEATURE_DISABLED_BY_DEFAULT};
 
+// Allows starting services without the browser process.
+const base::Feature kAllowStartingServiceManagerOnly{
+    "AllowStartingServiceManagerOnly", base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Enables content-initiated, main frame navigations to data URLs.
 // TODO(meacer): Remove when the deprecation is complete.
 //               https://www.chromestatus.com/feature/5669602927312896
@@ -52,6 +56,10 @@ const base::Feature kAwaitOptimization{"AwaitOptimization",
 // Kill switch for Background Fetch.
 const base::Feature kBackgroundFetch{"BackgroundFetch",
                                      base::FEATURE_ENABLED_BY_DEFAULT};
+
+// Enables access to active background fetches.
+const base::Feature kBackgroundFetchAccessActiveFetches{
+    "BackgroundFetchAccessActiveFetches", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Enables using uploads in a Background Fetch.
 const base::Feature kBackgroundFetchUploads{"BackgroundFetchUploads",
@@ -119,7 +127,7 @@ const base::Feature kCompositeOpaqueScrollers{"CompositeOpaqueScrollers",
 // Enables crash reporting via Reporting API.
 // https://www.w3.org/TR/reporting/#crash-report
 const base::Feature kCrashReporting{"CrashReporting",
-                                    base::FEATURE_DISABLED_BY_DEFAULT};
+                                    base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Enables specification of a target element in the fragment identifier
 // via a CSS selector.
@@ -180,6 +188,7 @@ const base::Feature kWebXrGamepadSupport{"WebXRGamepadSupport",
 
 // Causes the implementations of guests (inner WebContents) to use
 // out-of-process iframes.
+// TODO(533069): Remove once BrowserPlugin is removed.
 const base::Feature kGuestViewCrossProcessFrames{
     "GuestViewCrossProcessFrames", base::FEATURE_ENABLED_BY_DEFAULT};
 
@@ -294,7 +303,7 @@ const base::Feature kOverscrollHistoryNavigation{
 
 // Blink PageLifecycle feature. See https://crbug.com/775194
 const base::Feature kPageLifecycle{"PageLifecycle",
-                                   base::FEATURE_DISABLED_BY_DEFAULT};
+                                   base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Whether document level event listeners should default 'passive' to true.
 const base::Feature kPassiveDocumentEventListeners{
@@ -350,10 +359,6 @@ const base::Feature kRasterInducingScroll{"RasterInducingScroll",
 // Throttle Blink's rendering pipeline based on frame visibility.
 const base::Feature kRenderingPipelineThrottling{
     "RenderingPipelineThrottling", base::FEATURE_ENABLED_BY_DEFAULT};
-
-// When loading CSS from a 'file:' URL, require a CSS-like file extension.
-const base::Feature kRequireCSSExtensionForFile{
-    "RequireCSSExtensionForFile", base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Enables resampling input events on main thread.
 const base::Feature kResamplingInputEvents{"ResamplingInputEvents",
@@ -435,11 +440,18 @@ const base::Feature kTimerThrottlingForHiddenFrames{
 const base::Feature kTouchpadAsyncPinchEvents{"TouchpadAsyncPinchEvents",
                                               base::FEATURE_ENABLED_BY_DEFAULT};
 
+// Allows user activation propagation to all frames having the same origin as
+// the activation notifier frame.  This is an intermediate measure before we
+// have an iframe attribute to declaratively allow user activation propagation
+// to subframes.
+const base::Feature kUserActivationSameOriginVisibility{
+    "UserActivationSameOriginVisibility", base::FEATURE_ENABLED_BY_DEFAULT};
+
 // An experimental simple user-activation model where the user gesture state is
 // tracked through a frame-based state instead of the gesture tokens we use
 // today.
 const base::Feature kUserActivationV2{"UserActivationV2",
-                                      base::FEATURE_DISABLED_BY_DEFAULT};
+                                      base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Enables to use a snapshot file in creating V8 contexts.
 const base::Feature kV8ContextSnapshot{"V8ContextSnapshot",
@@ -464,7 +476,12 @@ const base::Feature kWebAssembly{"WebAssembly",
 
 // Enable WebAssembly baseline compilation and tier up.
 const base::Feature kWebAssemblyBaseline{"WebAssemblyBaseline",
-                                         base::FEATURE_ENABLED_BY_DEFAULT};
+#ifdef ARCH_CPU_X86_FAMILY
+                                         base::FEATURE_ENABLED_BY_DEFAULT
+#else
+                                         base::FEATURE_DISABLED_BY_DEFAULT
+#endif
+};
 
 // Enable WebAssembly threads.
 // https://github.com/WebAssembly/threads
@@ -472,8 +489,13 @@ const base::Feature kWebAssemblyThreads{"WebAssemblyThreads",
                                         base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Enable WebAssembly trap handler.
+#if defined(OS_LINUX) && defined(ARCH_CPU_X86_64)
+const base::Feature kWebAssemblyTrapHandler{"WebAssemblyTrapHandler",
+                                            base::FEATURE_ENABLED_BY_DEFAULT};
+#else
 const base::Feature kWebAssemblyTrapHandler{"WebAssemblyTrapHandler",
                                             base::FEATURE_DISABLED_BY_DEFAULT};
+#endif
 
 // Controls whether the visibility of a WebContents can be OCCLUDED. When
 // disabled, an occluded WebContents behaves exactly like a VISIBLE WebContents.
@@ -562,11 +584,6 @@ const base::Feature kWebRtcScreenshareSwEncoding{
 const base::Feature kWebRtcUseEchoCanceller3{"WebRtcUseEchoCanceller3",
                                              base::FEATURE_DISABLED_BY_DEFAULT};
 
-// Enables the WebRTC Agc2 digital adaptation with WebRTC Agc1 analog
-// adaptation. Feature for http://crbug.com/873650. Is sent to WebRTC.
-const base::Feature kWebRtcHybridAgc{"WebRtcHybridAgc",
-                                     base::FEATURE_DISABLED_BY_DEFAULT};
-
 // Use GpuMemoryBuffer backed VideoFrames in media streams.
 const base::Feature kWebRtcUseGpuMemoryBufferVideoFrames{
     "WebRTC-UseGpuMemoryBufferVideoFrames", base::FEATURE_ENABLED_BY_DEFAULT};
@@ -613,6 +630,10 @@ const base::Feature kWorkStealingInScriptRunner{
 // Enabled scheduler use for script streaming.
 const base::Feature kScheduledScriptStreaming{
     "ScheduledScriptStreaming", base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Start streaming scripts on script preload.
+const base::Feature kScriptStreamingOnPreload{
+    "ScriptStreamingOnPreload", base::FEATURE_DISABLED_BY_DEFAULT};
 
 #if defined(OS_ANDROID)
 // Autofill Accessibility in Android.

@@ -27,8 +27,8 @@ ContainerFloatingBehavior::ContainerFloatingBehavior(Delegate* delegate)
 
 ContainerFloatingBehavior::~ContainerFloatingBehavior() = default;
 
-ContainerType ContainerFloatingBehavior::GetType() const {
-  return ContainerType::FLOATING;
+mojom::ContainerType ContainerFloatingBehavior::GetType() const {
+  return mojom::ContainerType::kFloating;
 }
 
 void ContainerFloatingBehavior::DoHidingAnimation(
@@ -309,9 +309,8 @@ bool ContainerFloatingBehavior::OccludedBoundsAffectWorkspaceLayout() const {
   return false;
 }
 
-bool ContainerFloatingBehavior::SetDraggableArea(const gfx::Rect& rect) {
+void ContainerFloatingBehavior::SetDraggableArea(const gfx::Rect& rect) {
   draggable_area_ = rect;
-  return true;
 }
 
 }  //  namespace keyboard

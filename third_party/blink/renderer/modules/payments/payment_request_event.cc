@@ -21,7 +21,8 @@ namespace blink {
 PaymentRequestEvent* PaymentRequestEvent::Create(
     const AtomicString& type,
     const PaymentRequestEventInit* initializer) {
-  return new PaymentRequestEvent(type, initializer, nullptr, nullptr);
+  return MakeGarbageCollected<PaymentRequestEvent>(type, initializer, nullptr,
+                                                   nullptr);
 }
 
 PaymentRequestEvent* PaymentRequestEvent::Create(
@@ -29,14 +30,14 @@ PaymentRequestEvent* PaymentRequestEvent::Create(
     const PaymentRequestEventInit* initializer,
     RespondWithObserver* respond_with_observer,
     WaitUntilObserver* wait_until_observer) {
-  return new PaymentRequestEvent(type, initializer, respond_with_observer,
-                                 wait_until_observer);
+  return MakeGarbageCollected<PaymentRequestEvent>(
+      type, initializer, respond_with_observer, wait_until_observer);
 }
 
 PaymentRequestEvent::~PaymentRequestEvent() = default;
 
 const AtomicString& PaymentRequestEvent::InterfaceName() const {
-  return EventNames::PaymentRequestEvent;
+  return event_interface_names::kPaymentRequestEvent;
 }
 
 const String& PaymentRequestEvent::topOrigin() const {

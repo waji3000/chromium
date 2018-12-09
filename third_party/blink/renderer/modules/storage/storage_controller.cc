@@ -5,7 +5,7 @@
 #include "third_party/blink/renderer/modules/storage/storage_controller.h"
 
 #include "base/feature_list.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/platform/interface_provider.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -36,13 +36,12 @@ mojom::blink::StoragePartitionServicePtr GetAndCreateStorageInterface() {
 
 // static
 StorageController* StorageController::GetInstance() {
-  DEFINE_STATIC_LOCAL(
-      StorageController, gCachedStorageAreaController,
-      (Platform::Current()->MainThread()->Scheduler()->IPCTaskRunner(),
-       GetAndCreateStorageInterface(),
-       base::SysInfo::IsLowEndDevice()
-           ? kStorageControllerTotalCacheLimitInBytesLowEnd
-           : kStorageControllerTotalCacheLimitInBytes));
+  DEFINE_STATIC_LOCAL(StorageController, gCachedStorageAreaController,
+                      (Thread::MainThread()->Scheduler()->IPCTaskRunner(),
+                       GetAndCreateStorageInterface(),
+                       base::SysInfo::IsLowEndDevice()
+                           ? kStorageControllerTotalCacheLimitInBytesLowEnd
+                           : kStorageControllerTotalCacheLimitInBytes));
   return &gCachedStorageAreaController;
 }
 
@@ -77,14 +76,14 @@ StorageNamespace* StorageController::CreateSessionStorageNamespace(
     return it->value;
   StorageNamespace* ns = nullptr;
   if (base::FeatureList::IsEnabled(features::kOnionSoupDOMStorage)) {
-    ns = new StorageNamespace(this, namespace_id);
+    ns = MakeGarbageCollected<StorageNamespace>(this, namespace_id);
   } else {
     auto namespace_str = StringUTF8Adaptor(namespace_id);
     auto web_namespace = Platform::Current()->CreateSessionStorageNamespace(
         namespace_str.AsStringPiece());
     if (!web_namespace)
       return nullptr;
-    ns = new StorageNamespace(std::move(web_namespace));
+    ns = MakeGarbageCollected<StorageNamespace>(std::move(web_namespace));
   }
   namespaces_->insert(namespace_id, ns);
   return ns;
@@ -155,9 +154,9 @@ void StorageController::EnsureLocalStorageNamespaceCreated() {
   if (local_storage_namespace_)
     return;
   if (base::FeatureList::IsEnabled(features::kOnionSoupDOMStorage)) {
-    local_storage_namespace_ = new StorageNamespace(this);
+    local_storage_namespace_ = MakeGarbageCollected<StorageNamespace>(this);
   } else {
-    local_storage_namespace_ = new StorageNamespace(
+    local_storage_namespace_ = MakeGarbageCollected<StorageNamespace>(
         Platform::Current()->CreateLocalStorageNamespace());
   }
 }

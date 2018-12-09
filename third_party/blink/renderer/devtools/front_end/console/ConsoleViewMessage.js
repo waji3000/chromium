@@ -37,16 +37,18 @@ Console.ConsoleViewMessage = class {
    * @param {!Components.Linkifier} linkifier
    * @param {!ProductRegistry.BadgePool} badgePool
    * @param {number} nestingLevel
+   * @param {function(!Common.Event)} onResize
    */
-  constructor(consoleMessage, linkifier, badgePool, nestingLevel) {
+  constructor(consoleMessage, linkifier, badgePool, nestingLevel, onResize) {
     this._message = consoleMessage;
     this._linkifier = linkifier;
     this._badgePool = badgePool;
     this._repeatCount = 1;
     this._closeGroupDecorationCount = 0;
     this._nestingLevel = nestingLevel;
-    /** @type {!Array<!UI.TreeOutline>} */
-    this._treeOutlines = [];
+    /** @type {!Array<{element: !Element, selectFirst: function()}>} */
+    this._selectableChildren = [];
+    this._messageResized = onResize;
 
     /** @type {?DataGrid.DataGrid} */
     this._dataGrid = null;
@@ -65,16 +67,6 @@ Console.ConsoleViewMessage = class {
    */
   element() {
     return this.toMessageElement();
-  }
-
-  /**
-   * @return {!Promise<!Element>}
-   */
-  async completeElementForTest() {
-    const element = this.toMessageElement();
-    if (this._completeElementForTestPromise)
-      await this._completeElementForTestPromise;
-    return element;
   }
 
   /**
@@ -141,7 +133,7 @@ Console.ConsoleViewMessage = class {
     if (table)
       table = this._parameterToRemoteObject(table);
     if (!table || !table.preview)
-      return formattedMessage;
+      return this._buildMessage();
 
     const rawValueColumnSymbol = Symbol('rawValueColumn');
     const columnNames = [];
@@ -250,26 +242,9 @@ Console.ConsoleViewMessage = class {
         }
       }
     } else {
-      let rendered = false;
-      this._completeElementForTestPromise = null;
-      for (const extension of self.runtime.extensions(UI.Renderer, this._message)) {
-        if (extension.descriptor()['source'] === this._message.source) {
-          messageElement = createElement('span');
-          let callback;
-          this._completeElementForTestPromise = new Promise(fulfill => callback = fulfill);
-          extension.instance().then(renderer => {
-            renderer.render(this._message)
-                .then(result => {
-                  const renderedNode = result ? result.node : null;
-                  messageElement.appendChild(renderedNode || this._format([messageText]));
-                })
-                .then(callback);
-          });
-          rendered = true;
-          break;
-        }
-      }
-      if (!rendered) {
+      if (this._message.source === SDK.ConsoleMessage.MessageSource.Network) {
+        messageElement = this._formatAsNetworkRequest() || this._format([messageText]);
+      } else {
         const messageInParameters =
             this._message.parameters && messageText === /** @type {string} */ (this._message.parameters[0]);
         if (this._message.source === SDK.ConsoleMessage.MessageSource.Violation)
@@ -295,6 +270,40 @@ Console.ConsoleViewMessage = class {
       formattedMessage.appendChild(badgeElement);
     formattedMessage.appendChild(messageElement);
     return formattedMessage;
+  }
+
+  /**
+   * @return {?Element}
+   */
+  _formatAsNetworkRequest() {
+    const request = SDK.NetworkLog.requestForConsoleMessage(this._message);
+    if (!request)
+      return null;
+    const messageElement = createElement('span');
+    if (this._message.level === SDK.ConsoleMessage.MessageLevel.Error) {
+      messageElement.createTextChild(request.requestMethod + ' ');
+      const linkElement = Components.Linkifier.linkifyRevealable(request, request.url(), request.url());
+      // Focus is handled by the viewport.
+      linkElement.tabIndex = -1;
+      this._selectableChildren.push({element: linkElement, selectFirst: () => linkElement.focus()});
+      messageElement.appendChild(linkElement);
+      if (request.failed)
+        messageElement.createTextChildren(' ', request.localizedFailDescription);
+      if (request.statusCode !== 0)
+        messageElement.createTextChildren(' ', String(request.statusCode));
+      if (request.statusText)
+        messageElement.createTextChildren(' (', request.statusText, ')');
+    } else {
+      const fragment = this._linkifyWithCustomLinkifier(this._message.messageText, title => {
+        const linkElement = Components.Linkifier.linkifyRevealable(
+            /** @type {!SDK.NetworkRequest} */ (request), title, request.url());
+        linkElement.tabIndex = -1;
+        this._selectableChildren.push({element: linkElement, selectFirst: () => linkElement.focus()});
+        return linkElement;
+      });
+      messageElement.appendChild(fragment);
+    }
+    return messageElement;
   }
 
   /**
@@ -383,7 +392,11 @@ Console.ConsoleViewMessage = class {
     const stackTraceElement = contentElement.createChild('div');
     const stackTracePreview = Components.JSPresentationUtils.buildStackTracePreviewContents(
         this._message.runtimeModel().target(), this._linkifier, this._message.stackTrace);
-    stackTraceElement.appendChild(stackTracePreview);
+    stackTraceElement.appendChild(stackTracePreview.element);
+    for (const linkElement of stackTracePreview.links) {
+      linkElement.tabIndex = -1;
+      this._selectableChildren.push({element: linkElement, selectFirst: () => linkElement.focus()});
+    }
     stackTraceElement.classList.add('hidden');
     this._expandTrace = expand => {
       icon.setIconType(expand ? 'smallicon-triangle-down' : 'smallicon-triangle-right');
@@ -498,7 +511,7 @@ Console.ConsoleViewMessage = class {
     for (let i = 0; i < parameters.length; ++i) {
       // Inline strings when formatting.
       if (shouldFormatMessage && parameters[i].type === 'string')
-        formattedResult.appendChild(Console.ConsoleViewMessage._linkifyStringAsFragment(parameters[i].description));
+        formattedResult.appendChild(this._linkifyStringAsFragment(parameters[i].description));
       else
         formattedResult.appendChild(this._formatParameter(parameters[i], false, true));
       if (i < parameters.length - 1)
@@ -613,7 +626,11 @@ Console.ConsoleViewMessage = class {
     const section = new ObjectUI.ObjectPropertiesSection(obj, titleElement, this._linkifier);
     section.element.classList.add('console-view-object-properties-section');
     section.enableContextMenu();
-    this._treeOutlines.push(section);
+    section.setShowSelectionOnKeyboardFocus(true, true);
+    this._selectableChildren.push(section);
+    section.addEventListener(UI.TreeOutline.Events.ElementAttached, this._messageResized);
+    section.addEventListener(UI.TreeOutline.Events.ElementExpanded, this._messageResized);
+    section.addEventListener(UI.TreeOutline.Events.ElementCollapsed, this._messageResized);
     return section.element;
   }
 
@@ -633,14 +650,19 @@ Console.ConsoleViewMessage = class {
      */
     function formatTargetFunction(targetFunction) {
       const functionElement = createElement('span');
-      ObjectUI.ObjectPropertiesSection.formatObjectAsFunction(targetFunction, functionElement, true, includePreview);
+      const promise = ObjectUI.ObjectPropertiesSection.formatObjectAsFunction(
+          targetFunction, functionElement, true, includePreview);
       result.appendChild(functionElement);
       if (targetFunction !== func) {
         const note = result.createChild('span', 'object-info-state-note');
         note.title = Common.UIString('Function was resolved from bound function.');
       }
       result.addEventListener('contextmenu', this._contextMenuEventFired.bind(this, targetFunction), false);
+      promise.then(() => this._formattedParameterAsFunctionForTest());
     }
+  }
+
+  _formattedParameterAsFunctionForTest() {
   }
 
   /**
@@ -683,8 +705,12 @@ Console.ConsoleViewMessage = class {
       }
       const renderResult = await UI.Renderer.render(/** @type {!Object} */ (node));
       if (renderResult) {
-        if (renderResult.tree)
-          this._treeOutlines.push(renderResult.tree);
+        if (renderResult.tree) {
+          this._selectableChildren.push(renderResult.tree);
+          renderResult.tree.addEventListener(UI.TreeOutline.Events.ElementAttached, this._messageResized);
+          renderResult.tree.addEventListener(UI.TreeOutline.Events.ElementExpanded, this._messageResized);
+          renderResult.tree.addEventListener(UI.TreeOutline.Events.ElementCollapsed, this._messageResized);
+        }
         result.appendChild(renderResult.node);
       } else {
         result.appendChild(this._formatParameterAsObject(remoteObject, false));
@@ -704,7 +730,7 @@ Console.ConsoleViewMessage = class {
    */
   _formatParameterAsString(output) {
     const span = createElement('span');
-    span.appendChild(Console.ConsoleViewMessage._linkifyStringAsFragment(output.description || ''));
+    span.appendChild(this._linkifyStringAsFragment(output.description || ''));
 
     const result = createElement('span');
     result.createChild('span', 'object-value-string-quote').textContent = '"';
@@ -720,8 +746,7 @@ Console.ConsoleViewMessage = class {
   _formatParameterAsError(output) {
     const result = createElement('span');
     const errorSpan = this._tryFormatAsError(output.description || '');
-    result.appendChild(
-        errorSpan ? errorSpan : Console.ConsoleViewMessage._linkifyStringAsFragment(output.description || ''));
+    result.appendChild(errorSpan ? errorSpan : this._linkifyStringAsFragment(output.description || ''));
     return result;
   }
 
@@ -874,13 +899,13 @@ Console.ConsoleViewMessage = class {
       if (typeof b === 'undefined')
         return a;
       if (!currentStyle) {
-        a.appendChild(Console.ConsoleViewMessage._linkifyStringAsFragment(String(b)));
+        a.appendChild(this._linkifyStringAsFragment(String(b)));
         return a;
       }
       const lines = String(b).split('\n');
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
-        const lineFragment = Console.ConsoleViewMessage._linkifyStringAsFragment(line);
+        const lineFragment = this._linkifyStringAsFragment(line);
         const wrapper = createElement('span');
         wrapper.style.setProperty('contain', 'paint');
         wrapper.style.setProperty('display', 'inline-block');
@@ -1046,9 +1071,9 @@ Console.ConsoleViewMessage = class {
    * @return {number}
    */
   _focusedChildIndex() {
-    if (!this._treeOutlines.length)
+    if (!this._selectableChildren.length)
       return -1;
-    return this._treeOutlines.findIndex(child => child.element.hasFocus());
+    return this._selectableChildren.findIndex(child => child.element.hasFocus());
   }
 
   /**
@@ -1075,7 +1100,7 @@ Console.ConsoleViewMessage = class {
         return true;
       }
     }
-    if (!this._treeOutlines.length)
+    if (!this._selectableChildren.length)
       return false;
 
     if (event.key === 'ArrowLeft') {
@@ -1083,36 +1108,63 @@ Console.ConsoleViewMessage = class {
       return true;
     }
     if (event.key === 'ArrowRight') {
-      if (isWrapperFocused) {
-        this._treeOutlines[0].selectFirst();
+      if (isWrapperFocused && this._selectNearestVisibleChild(0))
         return true;
-      }
     }
     if (event.key === 'ArrowUp') {
-      if (focusedChildIndex === 0) {
+      const firstVisibleChild = this._nearestVisibleChild(0);
+      if (this._selectableChildren[focusedChildIndex] === firstVisibleChild && firstVisibleChild) {
         this._element.focus();
         return true;
-      } else if (focusedChildIndex > 0) {
-        this._treeOutlines[focusedChildIndex - 1].selectFirst();
+      } else if (this._selectNearestVisibleChild(focusedChildIndex - 1, true /* backwards */)) {
         return true;
       }
     }
     if (event.key === 'ArrowDown') {
-      if (isWrapperFocused) {
-        this._treeOutlines[0].selectFirst();
+      if (isWrapperFocused && this._selectNearestVisibleChild(0))
         return true;
-      } else if (focusedChildIndex < this._treeOutlines.length - 1) {
-        this._treeOutlines[focusedChildIndex + 1].selectFirst();
+      if (!isWrapperFocused && this._selectNearestVisibleChild(focusedChildIndex + 1))
         return true;
-      }
     }
     return false;
   }
 
+  /**
+   * @param {number} fromIndex
+   * @param {boolean=} backwards
+   * @return {boolean}
+   */
+  _selectNearestVisibleChild(fromIndex, backwards) {
+    const nearestChild = this._nearestVisibleChild(fromIndex, backwards);
+    if (nearestChild) {
+      nearestChild.selectFirst();
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * @param {number} fromIndex
+   * @param {boolean=} backwards
+   * @return {?{element: !Element, selectFirst: function()}}
+   */
+  _nearestVisibleChild(fromIndex, backwards) {
+    const childCount = this._selectableChildren.length;
+    if (fromIndex < 0 || fromIndex >= childCount)
+      return null;
+    const direction = backwards ? -1 : 1;
+    let index = fromIndex;
+
+    while (!this._selectableChildren[index].element.offsetParent) {
+      index += direction;
+      if (index < 0 || index >= childCount)
+        return null;
+    }
+    return this._selectableChildren[index];
+  }
+
   focusLastChildOrSelf() {
-    if (this._treeOutlines.length)
-      this._treeOutlines[this._treeOutlines.length - 1].selectFirst();
-    else if (this._element)
+    if (this._element && !this._selectNearestVisibleChild(this._selectableChildren.length - 1, true /* backwards */))
       this._element.focus();
   }
 
@@ -1438,15 +1490,17 @@ Console.ConsoleViewMessage = class {
     const formattedResult = createElement('span');
     let start = 0;
     for (let i = 0; i < links.length; ++i) {
-      formattedResult.appendChild(
-          Console.ConsoleViewMessage._linkifyStringAsFragment(string.substring(start, links[i].positionLeft)));
-      formattedResult.appendChild(this._linkifier.linkifyScriptLocation(
-          debuggerModel.target(), null, links[i].url, links[i].lineNumber, links[i].columnNumber));
+      formattedResult.appendChild(this._linkifyStringAsFragment(string.substring(start, links[i].positionLeft)));
+      const scriptLocationLink = this._linkifier.linkifyScriptLocation(
+          debuggerModel.target(), null, links[i].url, links[i].lineNumber, links[i].columnNumber);
+      scriptLocationLink.tabIndex = -1;
+      this._selectableChildren.push({element: scriptLocationLink, selectFirst: () => scriptLocationLink.focus()});
+      formattedResult.appendChild(scriptLocationLink);
       start = links[i].positionRight;
     }
 
     if (start !== string.length)
-      formattedResult.appendChild(Console.ConsoleViewMessage._linkifyStringAsFragment(string.substring(start)));
+      formattedResult.appendChild(this._linkifyStringAsFragment(string.substring(start)));
 
     return formattedResult;
 
@@ -1471,12 +1525,14 @@ Console.ConsoleViewMessage = class {
    * @param {function(string,string,number=,number=):!Node} linkifier
    * @return {!DocumentFragment}
    */
-  static linkifyWithCustomLinkifier(string, linkifier) {
+  _linkifyWithCustomLinkifier(string, linkifier) {
     if (string.length > Console.ConsoleViewMessage._MaxTokenizableStringLength)
       return UI.createExpandableText(string, Console.ConsoleViewMessage._LongStringVisibleLength);
     const container = createDocumentFragment();
-    const tokens = this._tokenizeMessageText(string);
+    const tokens = Console.ConsoleViewMessage._tokenizeMessageText(string);
     for (const token of tokens) {
+      if (!token.text)
+        continue;
       switch (token.type) {
         case 'url': {
           const realURL = (token.text.startsWith('www.') ? 'http://' + token.text : token.text);
@@ -1501,9 +1557,12 @@ Console.ConsoleViewMessage = class {
    * @param {string} string
    * @return {!DocumentFragment}
    */
-  static _linkifyStringAsFragment(string) {
-    return Console.ConsoleViewMessage.linkifyWithCustomLinkifier(string, (text, url, lineNumber, columnNumber) => {
-      return Components.Linkifier.linkifyURL(url, {text, lineNumber, columnNumber});
+  _linkifyStringAsFragment(string) {
+    return this._linkifyWithCustomLinkifier(string, (text, url, lineNumber, columnNumber) => {
+      const linkElement = Components.Linkifier.linkifyURL(url, {text, lineNumber, columnNumber});
+      linkElement.tabIndex = -1;
+      this._selectableChildren.push({element: linkElement, selectFirst: () => linkElement.focus()});
+      return linkElement;
     });
   }
 
@@ -1582,10 +1641,11 @@ Console.ConsoleGroupViewMessage = class extends Console.ConsoleViewMessage {
    * @param {!ProductRegistry.BadgePool} badgePool
    * @param {number} nestingLevel
    * @param {function()} onToggle
+   * @param {function(!Common.Event)} onResize
    */
-  constructor(consoleMessage, linkifier, badgePool, nestingLevel, onToggle) {
+  constructor(consoleMessage, linkifier, badgePool, nestingLevel, onToggle, onResize) {
     console.assert(consoleMessage.isGroupStartMessage());
-    super(consoleMessage, linkifier, badgePool, nestingLevel);
+    super(consoleMessage, linkifier, badgePool, nestingLevel, onResize);
     this._collapsed = consoleMessage.type === SDK.ConsoleMessage.MessageType.StartGroupCollapsed;
     /** @type {?UI.Icon} */
     this._expandGroupIcon = null;

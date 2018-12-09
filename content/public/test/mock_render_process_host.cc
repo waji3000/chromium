@@ -14,6 +14,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
+#include "base/token.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -38,7 +39,6 @@
 #include "media/media_buildflags.h"
 #include "mojo/public/cpp/bindings/associated_interface_ptr.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
-#include "services/resource_coordinator/public/mojom/coordination_unit.mojom.h"
 
 namespace content {
 
@@ -56,9 +56,11 @@ MockRenderProcessHost::MockRenderProcessHost(BrowserContext* browser_context)
       is_process_backgrounded_(false),
       is_unused_(true),
       keep_alive_ref_count_(0),
-      child_identity_(mojom::kRendererServiceName,
-                      BrowserContext::GetServiceUserIdFor(browser_context),
-                      base::StringPrintf("%d", id_)),
+      child_identity_(
+          mojom::kRendererServiceName,
+          BrowserContext::GetServiceInstanceGroupFor(browser_context),
+          base::Token::CreateRandom(),
+          base::Token::CreateRandom()),
       url_loader_factory_(nullptr),
       weak_ptr_factory_(this) {
   // Child process security operations can't be unit tested unless we add
@@ -397,8 +399,11 @@ mojom::Renderer* MockRenderProcessHost::GetRendererInterface() {
 resource_coordinator::ProcessResourceCoordinator*
 MockRenderProcessHost::GetProcessResourceCoordinator() {
   if (!process_resource_coordinator_) {
+    content::ServiceManagerConnection* connection =
+        content::ServiceManagerConnection::GetForProcess();
+    // Tests may not set up a connection.
     service_manager::Connector* connector =
-        content::ServiceManagerConnection::GetForProcess()->GetConnector();
+        connection ? connection->GetConnector() : nullptr;
     process_resource_coordinator_ =
         std::make_unique<resource_coordinator::ProcessResourceCoordinator>(
             connector);
@@ -407,7 +412,8 @@ MockRenderProcessHost::GetProcessResourceCoordinator() {
 }
 
 void MockRenderProcessHost::CreateURLLoaderFactory(
-    const url::Origin& origin,
+    const base::Optional<url::Origin>& origin,
+    network::mojom::TrustedURLLoaderHeaderClientPtrInfo header_client,
     network::mojom::URLLoaderFactoryRequest request) {
   url_loader_factory_->Clone(std::move(request));
 }
@@ -469,7 +475,9 @@ MockRenderProcessHost::StartRtpDump(
   return WebRtcStopRtpDumpCallback();
 }
 
-void MockRenderProcessHost::SetWebRtcEventLogOutput(int lid, bool enabled) {}
+void MockRenderProcessHost::EnableWebRtcEventLogOutput(int lid,
+                                                       int output_period_ms) {}
+void MockRenderProcessHost::DisableWebRtcEventLogOutput(int lid) {}
 
 bool MockRenderProcessHost::OnMessageReceived(const IPC::Message& msg) {
   IPC::Listener* listener = listeners_.Lookup(msg.routing_id());

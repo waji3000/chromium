@@ -16,6 +16,7 @@
 
 namespace blink {
 
+class BackgroundFetchRecord;
 class CacheQueryOptions;
 class ScriptPromiseResolver;
 class ScriptState;
@@ -110,6 +111,13 @@ class BackgroundFetchRegistration final
       ScriptPromiseResolver* resolver,
       bool return_all,
       Vector<mojom::blink::BackgroundFetchSettledFetchPtr> settled_fetches);
+
+  // Updates the |record| with a |response|, if one is available, else marks
+  // the |record|'s request as aborted or failed.
+  void UpdateRecord(BackgroundFetchRecord* record,
+                    mojom::blink::FetchAPIResponsePtr& response);
+
+  bool IsAborted();
 
   Member<ServiceWorkerRegistration> registration_;
 

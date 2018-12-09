@@ -80,7 +80,8 @@ class FrameSinkManagerTest : public testing::Test {
 
   // Checks if a [Root]CompositorFrameSinkImpl exists for |frame_sink_id|.
   bool CompositorFrameSinkExists(const FrameSinkId& frame_sink_id) {
-    return base::ContainsKey(manager_.sink_map_, frame_sink_id);
+    return base::ContainsKey(manager_.sink_map_, frame_sink_id) ||
+           base::ContainsKey(manager_.root_sink_map_, frame_sink_id);
   }
 
   // testing::Test implementation.
@@ -421,9 +422,11 @@ TEST_F(FrameSinkManagerTest,
 TEST_F(FrameSinkManagerTest, EvictSurfaces) {
   ParentLocalSurfaceIdAllocator allocator;
   allocator.GenerateId();
-  LocalSurfaceId local_surface_id1 = allocator.GetCurrentLocalSurfaceId();
+  LocalSurfaceId local_surface_id1 =
+      allocator.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   allocator.GenerateId();
-  LocalSurfaceId local_surface_id2 = allocator.GetCurrentLocalSurfaceId();
+  LocalSurfaceId local_surface_id2 =
+      allocator.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId surface_id1(kFrameSinkIdA, local_surface_id1);
   SurfaceId surface_id2(kFrameSinkIdB, local_surface_id2);
 

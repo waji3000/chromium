@@ -35,13 +35,13 @@ namespace {
 
 void CreateSubresourceLoaderFactoryForProviderContext(
     mojom::ServiceWorkerContainerHostPtrInfo container_host_info,
-    mojom::ControllerServiceWorkerPtrInfo controller_ptr_info,
+    blink::mojom::ControllerServiceWorkerPtrInfo controller_ptr_info,
     const std::string& client_id,
     std::unique_ptr<network::SharedURLLoaderFactoryInfo> fallback_factory_info,
-    mojom::ControllerServiceWorkerConnectorRequest connector_request,
+    blink::mojom::ControllerServiceWorkerConnectorRequest connector_request,
     network::mojom::URLLoaderFactoryRequest request,
     scoped_refptr<base::SequencedTaskRunner> task_runner) {
-  mojom::ControllerServiceWorkerPtr controller_ptr;
+  blink::mojom::ControllerServiceWorkerPtr controller_ptr;
   controller_ptr.Bind(std::move(controller_ptr_info));
   auto connector = base::MakeRefCounted<ControllerServiceWorkerConnector>(
       std::move(container_host_info), std::move(controller_ptr), client_id);
@@ -60,7 +60,7 @@ ServiceWorkerProviderContext::ServiceWorkerProviderContext(
     blink::mojom::ServiceWorkerProviderType provider_type,
     mojom::ServiceWorkerContainerAssociatedRequest request,
     mojom::ServiceWorkerContainerHostAssociatedPtrInfo host_ptr_info,
-    mojom::ControllerServiceWorkerInfoPtr controller_info,
+    blink::mojom::ControllerServiceWorkerInfoPtr controller_info,
     scoped_refptr<network::SharedURLLoaderFactory> fallback_loader_factory)
     : provider_type_(provider_type),
       provider_id_(provider_id),
@@ -172,6 +172,12 @@ const std::string& ServiceWorkerProviderContext::client_id() const {
   return state_for_client_->client_id;
 }
 
+const base::UnguessableToken&
+ServiceWorkerProviderContext::fetch_request_window_id() const {
+  DCHECK(state_for_client_);
+  return state_for_client_->fetch_request_window_id;
+}
+
 void ServiceWorkerProviderContext::SetWebServiceWorkerProvider(
     base::WeakPtr<WebServiceWorkerProviderImpl> provider) {
   DCHECK(state_for_client_);
@@ -247,7 +253,7 @@ void ServiceWorkerProviderContext::UnregisterWorkerFetchContext(
 }
 
 void ServiceWorkerProviderContext::SetController(
-    mojom::ControllerServiceWorkerInfoPtr controller_info,
+    blink::mojom::ControllerServiceWorkerInfoPtr controller_info,
     const std::vector<blink::mojom::WebFeature>& used_features,
     bool should_notify_controllerchange) {
   DCHECK(main_thread_task_runner_->RunsTasksInCurrentSequence());
@@ -262,6 +268,9 @@ void ServiceWorkerProviderContext::SetController(
   DCHECK(state->client_id.empty() ||
          state->client_id == controller_info->client_id);
   state->client_id = controller_info->client_id;
+
+  if (controller_info->fetch_request_window_id)
+    state->fetch_request_window_id = *controller_info->fetch_request_window_id;
 
   DCHECK((controller_info->mode ==
               blink::mojom::ControllerServiceWorkerMode::kNoController &&
@@ -308,7 +317,7 @@ void ServiceWorkerProviderContext::SetController(
       // depending on when the request is actually passed to the factory (this
       // part is inherently racy).
       state->controller_connector->UpdateController(
-          mojom::ControllerServiceWorkerPtr(
+          blink::mojom::ControllerServiceWorkerPtr(
               std::move(state->controller_endpoint)));
     }
   }

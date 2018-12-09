@@ -59,10 +59,28 @@ Status GetMouseButton(const base::DictionaryValue& params,
   if (!params.GetInteger("button", &button_num)) {
     button_num = 0;  // Default to left mouse button.
   } else if (button_num < 0 || button_num > 2) {
-    return Status(kUnknownError,
+    return Status(kInvalidArgument,
                   base::StringPrintf("invalid button: %d", button_num));
   }
   *button = static_cast<MouseButton>(button_num);
+  return Status(kOk);
+}
+
+Status IntToStringButton(int button, std::string& out) {
+  if (button == 0) {
+    out = "left";
+  } else if (button == 1) {
+    out = "middle";
+  } else if (button == 2) {
+    out = "right";
+  } else if (button == 3) {
+    out = "back";
+  } else if (button == 4) {
+    out = "forward";
+  } else {
+    return Status(kInvalidArgument,
+                  "'button' must be an integer between 0 and 4 inclusive");
+  }
   return Status(kOk);
 }
 
@@ -76,6 +94,32 @@ Status GetUrl(WebView* web_view, const std::string& frame, std::string* url) {
   if (!value->GetAsString(url))
     return Status(kUnknownError, "javascript failed to return the url");
   return Status(kOk);
+}
+
+MouseEventType StringToMouseEventType(std::string action_type) {
+  if (action_type == "pointerDown")
+    return kPressedMouseEventType;
+  else if (action_type == "pointerUp")
+    return kReleasedMouseEventType;
+  else if (action_type == "pointerMove")
+    return kMovedMouseEventType;
+  else
+    return kPressedMouseEventType;
+}
+
+MouseButton StringToMouseButton(std::string button_type) {
+  if (button_type == "left")
+    return kLeftMouseButton;
+  else if (button_type == "middle")
+    return kMiddleMouseButton;
+  else if (button_type == "right")
+    return kRightMouseButton;
+  else if (button_type == "back")
+    return kBackMouseButton;
+  else if (button_type == "forward")
+    return kForwardMouseButton;
+  else
+    return kNoneMouseButton;
 }
 
 struct Cookie {
@@ -204,9 +248,9 @@ Status ExecuteTouchEvent(
     const base::DictionaryValue& params) {
   int x, y;
   if (!params.GetInteger("x", &x))
-    return Status(kUnknownError, "'x' must be an integer");
+    return Status(kInvalidArgument, "'x' must be an integer");
   if (!params.GetInteger("y", &y))
-    return Status(kUnknownError, "'y' must be an integer");
+    return Status(kInvalidArgument, "'y' must be an integer");
   int relative_x = x;
   int relative_y = y;
   Status status = ScrollCoordinateInToView(
@@ -217,6 +261,29 @@ Status ExecuteTouchEvent(
   events.push_back(
       TouchEvent(type, relative_x, relative_y));
   return web_view->DispatchTouchEvents(events);
+}
+
+Status WindowViewportSize(Session* session,
+                          WebView* web_view,
+                          int* innerWidth,
+                          int* innerHeight) {
+  std::unique_ptr<base::Value> value;
+  base::ListValue args;
+  Status status =
+      web_view->CallFunction(std::string(),
+                             "function() {"
+                             "  return {"
+                             "    view_width: Math.floor(window.innerWidth),"
+                             "    view_height: Math.floor(window.innerHeight)};"
+                             "}",
+                             args, &value);
+  if (!status.IsOk())
+    return status;
+  base::DictionaryValue* view_attrib;
+  value->GetAsDictionary(&view_attrib);
+  view_attrib->GetInteger("view_width", innerWidth);
+  view_attrib->GetInteger("view_height", innerHeight);
+  return Status(kOk);
 }
 
 }  // namespace
@@ -249,15 +316,20 @@ Status ExecuteWindowCommand(const WindowCommand& command,
 
     // Close the dialog depending on the unexpectedalert behaviour set by user
     // before returning an error, so that subsequent commands do not fail.
-    std::string prompt_behavior = session->unhandled_prompt_behavior;
-    if (prompt_behavior == kAccept)
+    const std::string& prompt_behavior = session->unhandled_prompt_behavior;
+
+    if (prompt_behavior == kAccept || prompt_behavior == kAcceptAndNotify)
       status = dialog_manager->HandleDialog(true, session->prompt_text.get());
-    else if (prompt_behavior == kDismiss)
+    else if (prompt_behavior == kDismiss ||
+             prompt_behavior == kDismissAndNotify)
       status = dialog_manager->HandleDialog(false, session->prompt_text.get());
     if (status.IsError())
       return status;
 
-    return Status(kUnexpectedAlertOpen, "{Alert text : " + alert_text + "}");
+    // For backward compatibility, in legacy mode we always notify.
+    if (!session->w3c_compliant || prompt_behavior == kAcceptAndNotify ||
+        prompt_behavior == kDismissAndNotify || prompt_behavior == kIgnore)
+      return Status(kUnexpectedAlertOpen, "{Alert text : " + alert_text + "}");
   }
 
   Status nav_status(kOk);
@@ -368,7 +440,7 @@ Status ExecuteSwitchToFrame(Session* session,
                             Timeout* timeout) {
   const base::Value* id;
   if (!params.Get("id", &id))
-    return Status(kUnknownError, "missing 'id'");
+    return Status(kInvalidArgument, "missing 'id'");
 
   if (id->is_none()) {
     session->SwitchToTopFrame();
@@ -381,7 +453,7 @@ Status ExecuteSwitchToFrame(Session* session,
   if (id->GetAsDictionary(&id_dict)) {
     std::string element_id;
     if (!id_dict->GetString(GetElementKey(), &element_id))
-      return Status(kUnknownError, "missing 'ELEMENT'");
+      return Status(kInvalidArgument, "missing 'ELEMENT'");
     bool is_displayed = false;
     Status status = IsElementDisplayed(
           session, web_view, element_id, true, &is_displayed);
@@ -404,7 +476,7 @@ Status ExecuteSwitchToFrame(Session* session,
     } else if (id->GetAsInteger(&id_int)) {
       xpath += base::StringPrintf("[%d]", id_int + 1);
     } else {
-      return Status(kUnknownError, "invalid 'id'");
+      return Status(kInvalidArgument, "invalid 'id'");
     }
     args.AppendString(xpath);
   }
@@ -584,7 +656,8 @@ Status ExecuteMouseMoveTo(Session* session,
   bool has_offset = params.GetInteger("xoffset", &x_offset) &&
       params.GetInteger("yoffset", &y_offset);
   if (!has_element && !has_offset)
-    return Status(kUnknownError, "at least an element or offset should be set");
+    return Status(kInvalidArgument,
+                  "at least an element or offset should be set");
 
   WebPoint location;
   if (has_element) {
@@ -729,10 +802,10 @@ Status ExecuteTouchScroll(Session* session,
   }
   int xoffset;
   if (!params.GetInteger("xoffset", &xoffset))
-    return Status(kUnknownError, "'xoffset' must be an integer");
+    return Status(kInvalidArgument, "'xoffset' must be an integer");
   int yoffset;
   if (!params.GetInteger("yoffset", &yoffset))
-    return Status(kUnknownError, "'yoffset' must be an integer");
+    return Status(kInvalidArgument, "'yoffset' must be an integer");
   return web_view->SynthesizeScrollGesture(
       location.x, location.y, xoffset, yoffset);
 }
@@ -744,24 +817,24 @@ Status ExecuteTouchPinch(Session* session,
                          Timeout* timeout) {
   WebPoint location;
   if (!params.GetInteger("x", &location.x))
-    return Status(kUnknownError, "'x' must be an integer");
+    return Status(kInvalidArgument, "'x' must be an integer");
   if (!params.GetInteger("y", &location.y))
-    return Status(kUnknownError, "'y' must be an integer");
+    return Status(kInvalidArgument, "'y' must be an integer");
   double scale_factor;
   if (!params.GetDouble("scale", &scale_factor))
-    return Status(kUnknownError, "'scale' must be an integer");
+    return Status(kInvalidArgument, "'scale' must be an integer");
   return web_view->SynthesizePinchGesture(location.x, location.y, scale_factor);
 }
 
-Status ProcessInputActionSequence(Session* session,
-                                  const base::DictionaryValue* action_sequence,
-                                  std::unique_ptr<base::ListValue>* result) {
+Status ProcessInputActionSequence(
+    Session* session,
+    const base::DictionaryValue* action_sequence,
+    std::unique_ptr<base::DictionaryValue>* action_sequence_result) {
   std::string id;
   std::string type;
   const base::DictionaryValue* source;
   const base::DictionaryValue* parameters;
-  std::string pointer_type = "mouse";
-
+  std::string pointer_type;
   if (!action_sequence->GetString("type", &type) ||
       ((type != "key") && (type != "pointer") && (type != "none"))) {
     return Status(
@@ -775,17 +848,23 @@ Status ProcessInputActionSequence(Session* session,
   if (type == "pointer") {
     if (action_sequence->GetDictionary("parameters", &parameters)) {
       // error check arguments
-      if (parameters->GetString("pointerType", &pointer_type) &&
+      if (!parameters->GetString("pointerType", &pointer_type) ||
           (pointer_type != "mouse" && pointer_type != "pen" &&
            pointer_type != "touch"))
-        return Status(kInvalidArgument,
-                      "'pointerType' must be one of mouse, pen or touch");
+        return Status(
+            kInvalidArgument,
+            "'pointerType' must be a string and one of mouse, pen or touch");
+    } else {
+      pointer_type = "mouse";
     }
   }
+  (*action_sequence_result)->SetString("sourceType", type);
+  (*action_sequence_result)->SetString("pointerType", pointer_type);
+  (*action_sequence_result)->SetString("id", id);
 
   bool found = false;
-  for (size_t i = 0; i < session->active_input_sources->GetSize(); i++) {
-    session->active_input_sources->GetDictionary(i, &source);
+  for (size_t i = 0; i < session->active_input_sources.GetSize(); i++) {
+    session->active_input_sources.GetDictionary(i, &source);
     DCHECK(source);
 
     std::string source_id;
@@ -812,19 +891,19 @@ Status ProcessInputActionSequence(Session* session,
   }
 
   // if we found no matching active input source
-  base::DictionaryValue tmp_source;
+  std::unique_ptr<base::DictionaryValue> tmp_source(new base::DictionaryValue);
   if (!found) {
     // create input source
-    tmp_source.SetString("id", id);
-    tmp_source.SetString("type", type);
+    tmp_source->SetString("id", id);
+    tmp_source->SetString("type", type);
     if (type == "pointer") {
-      tmp_source.SetString("pointerType", pointer_type);
+      tmp_source->SetString("pointerType", pointer_type);
     }
 
-    session->active_input_sources->Append(
-        std::make_unique<base::DictionaryValue>(std::move(tmp_source)));
+    session->active_input_sources.Append(std::move(tmp_source));
 
     base::DictionaryValue tmp_state;
+    tmp_state.SetString("id", id);
     if (type == "key") {
       std::unique_ptr<base::ListValue> pressed(new base::ListValue);
       bool alt = false;
@@ -848,16 +927,15 @@ Status ProcessInputActionSequence(Session* session,
       tmp_state.SetInteger("x", x);
       tmp_state.SetInteger("y", y);
     }
-    session->input_state_table->SetDictionary(
+    session->input_state_table.SetDictionary(
         id, std::make_unique<base::DictionaryValue>(std::move(tmp_state)));
   }
 
   const base::ListValue* actions;
-  if (!action_sequence->GetList("actions", &actions)) {
-    return Status(kInvalidArgument, "actions must be an array");
-  }
+  if (!action_sequence->GetList("actions", &actions))
+    return Status(kInvalidArgument, "'actions' must be an array");
 
-  std::unique_ptr<base::ListValue> ret(new base::ListValue);
+  std::unique_ptr<base::ListValue> actions_result(new base::ListValue);
   for (size_t i = 0; i < actions->GetSize(); i++) {
     std::unique_ptr<base::DictionaryValue> action(new base::DictionaryValue());
     const base::DictionaryValue* action_item;
@@ -867,7 +945,7 @@ Status ProcessInputActionSequence(Session* session,
           "each argument in the action sequence must be a dictionary");
 
     if (type == "none") {
-      // process null action
+      // process none action
       std::string subtype;
       if (!action_item->GetString("type", &subtype) || subtype != "pause")
         return Status(kInvalidArgument,
@@ -923,67 +1001,77 @@ Status ProcessInputActionSequence(Session* session,
                       "type of action must be the string 'pointerUp', "
                       "'pointerDown', 'pointerMove' or 'pause'");
 
-      action->SetString("id", id);
-      action->SetString("type", "pointer");
-      action->SetString("subtype", subtype);
+      action->SetString("type", subtype);
+      if (subtype == "pointerDown" || subtype == "pointerUp") {
+        int button;
+        if (!action_item->GetInteger("button", &button) || button < 0 ||
+            button > 4) {
+          return Status(
+              kInvalidArgument,
+              "'button' must be a non-negative int and between 0 and 4");
+        }
+        std::string button_str;
+        Status status = IntToStringButton(button, button_str);
+        if (status.IsError())
+          return status;
+        action->SetString("button", button_str);
+      } else if (subtype == "pointerMove") {
+        int x;
+        if (!action_item->GetInteger("x", &x))
+          return Status(kInvalidArgument, "'x' must be an int");
+        int y;
+        if (!action_item->GetInteger("y", &y))
+          return Status(kInvalidArgument, "'y' must be an int");
+        action->SetInteger("x", x);
+        action->SetInteger("y", y);
 
-      if (subtype == "pause") {
+        std::string origin;
+        if (action_item->HasKey("origin")) {
+          if (!action_item->GetString("origin", &origin)) {
+            const base::DictionaryValue* origin_dict;
+            if (!action_item->GetDictionary("origin", &origin_dict))
+              return Status(kInvalidArgument,
+                            "'origin' must be either a string or a dictionary");
+            std::string element_id;
+            if (!origin_dict->GetString(GetElementKey(), &element_id))
+              return Status(kInvalidArgument, "'element' is missing");
+            std::unique_ptr<base::DictionaryValue> origin_result =
+                std::make_unique<base::DictionaryValue>();
+            origin_result->SetString(GetElementKey(), element_id);
+            action->SetDictionary("origin", std::move(origin_result));
+          } else {
+            if (origin != "viewport" && origin != "pointer")
+              return Status(kInvalidArgument,
+                            "if 'origin' is a string, it must be either "
+                            "'viewport' or 'pointer'");
+            action->SetString("origin", origin);
+          }
+        } else {
+          action->SetString("origin", "viewport");
+        }
+
         int duration;
-        if (action_item->GetInteger("duration", &duration)) {
-          if (duration < 0)
+        if (action_item->HasKey("duration")) {
+          if (!action_item->GetInteger("duration", &duration) || duration < 0) {
             return Status(kInvalidArgument,
-                          "duration must be a non-negative int");
+                          "'duration' must be a non-negative int");
+          }
+          action->SetInteger("duration", duration);
+        }
+      } else {
+        int duration;
+        if (action_item->HasKey("duration")) {
+          if (!action_item->GetInteger("duration", &duration) || duration < 0) {
+            return Status(kInvalidArgument,
+                          "'duration' must be a non-negative int");
+          }
           action->SetInteger("duration", duration);
         }
       }
-
-      action->SetString("pointerType", pointer_type);
-      if (subtype == "pointerUp" || subtype == "pointerDown") {
-        int button;
-        if (!action_item->GetInteger("button", &button) || button < 0)
-          return Status(kInvalidArgument,
-                        "'button' must be a non-negative int");
-        action->SetInteger("button", button);
-        if (subtype == "pointerDown") {
-          int x;
-          if (!action_item->GetInteger("x", &x))
-            return Status(kInvalidArgument, "'x' must be an integer");
-          int y;
-          if (!action_item->GetInteger("y", &y))
-            return Status(kInvalidArgument, "'y' must be an integer");
-
-          action->SetInteger("x", x);
-          action->SetInteger("y", y);
-        }
-      } else {
-        // pointerMove
-        int duration;
-        if (!action_item->GetInteger("duration", &duration) || duration < 0)
-          return Status(kInvalidArgument,
-                        "'duration' must be a non-negative int");
-
-        std::string origin;
-        if (!action_item->GetString("origin", &origin))
-          origin = "viewport";
-        if (origin != "viewport" && origin != "pointer")
-          return Status(kInvalidArgument, "'origin' must be a string");
-
-        action->SetString("origin", origin);
-
-        int x;
-        if (!action_item->GetInteger("x", &x))
-          return Status(kInvalidArgument, "'x' must be an integer");
-        int y;
-        if (!action_item->GetInteger("y", &y))
-          return Status(kInvalidArgument, "'y' must be an integer");
-
-        action->SetInteger("x", x);
-        action->SetInteger("y", y);
-      }
     }
-    ret->Append(std::move(action));
+    actions_result->Append(std::move(action));
   }
-  *result = std::move(ret);
+  (*action_sequence_result)->SetList("actions", std::move(actions_result));
   return Status(kOk);
 }
 
@@ -992,76 +1080,61 @@ Status ExecutePerformActions(Session* session,
                              const base::DictionaryValue& params,
                              std::unique_ptr<base::Value>* value,
                              Timeout* timeout) {
-  // TODO(kereliuk): check if the current browsing context is still open
-  // or if this error check is handled elsewhere
-
-  // TODO(kereliuk): handle prompts
-
   // extract action sequence
-  const base::ListValue* actions;
-  if (!params.GetList("actions", &actions))
+  const base::DictionaryValue* actions_dict;
+  const base::ListValue* actions_input;
+
+  // TODO(lanwei): The below line will be removed after this pull request is
+  // merged, https://github.com/web-platform-tests/wpt/pull/14345.
+  if (!params.GetDictionary("actions", &actions_dict))
+    actions_dict = &params;
+
+  if (!actions_dict->GetList("actions", &actions_input))
     return Status(kInvalidArgument, "'actions' must be an array");
 
   // the processed actions
-  base::ListValue actions_by_tick;
-  // the type of each action list in actions_by_tick
-  std::list<std::string> action_list_types;
+  base::ListValue actions_list;
+  // the type of each action list in actions_list
+  std::list<std::string> input_source_types;
 
-  for (size_t i = 0; i < actions->GetSize(); i++) {
-    std::unique_ptr<base::ListValue> input_source_actions(
-        new base::ListValue());
+  for (size_t i = 0; i < actions_input->GetSize(); i++) {
+    std::unique_ptr<base::DictionaryValue> input_source_actions(
+        new base::DictionaryValue());
     // proccess input action sequence
     const base::DictionaryValue* action_sequence;
-    if (!actions->GetDictionary(i, &action_sequence))
+    if (!actions_input->GetDictionary(i, &action_sequence))
       return Status(kInvalidArgument, "each argument must be a dictionary");
-
-    std::string type;
-    if (!action_sequence->GetString("type", &type) ||
-        ((type != "key") && (type != "pointer") && (type != "none"))) {
-      return Status(
-          kInvalidArgument,
-          "'type' must be one of the strings 'key', 'pointer' or 'none'");
-    }
-    action_list_types.push_back(type);
 
     Status status = ProcessInputActionSequence(session, action_sequence,
                                                &input_source_actions);
     if (status.IsError())
       return Status(kInvalidArgument, status);
-
-    actions_by_tick.Append(std::move(input_source_actions));
+    std::string type;
+    action_sequence->GetString("type", &type);
+    input_source_types.push_back(type);
+    actions_list.Append(std::move(input_source_actions));
   }
 
-  for (size_t i = 0; i < actions_by_tick.GetSize(); i++) {
-    // compute duration
-    int max_duration = 0;
-    int duration;
-    base::ListValue* action_sequence;
-    actions_by_tick.GetList(i, &action_sequence);
-    DCHECK(action_sequence);
-    for (size_t j = 0; j < action_sequence->GetSize(); j++) {
-      base::DictionaryValue* action;
-      if (!action_sequence->GetDictionary(i, &action))
-        return Status(kInvalidArgument, "each argument must be a dictionary");
-      if (action->GetInteger("duration", &duration) &&
-          duration > max_duration) {
-        max_duration = duration;
-      }
-    }
+  std::string input_pointer_type;
+  std::set<std::string> pointer_id_set;
+  std::string type;
+  for (size_t i = 0; i < actions_list.GetSize(); i++) {
+    base::DictionaryValue* action_sequence;
+    actions_list.GetDictionary(i, &action_sequence);
+    const base::ListValue* actions;
+    action_sequence->GetList("actions", &actions);
+    DCHECK(actions);
 
-    // get the type of the actions so we can dispatch all at once for that type
-    std::string type = action_list_types.back();
-    action_list_types.pop_back();
-
-    // pause only
+    type = input_source_types.back();
+    input_source_types.pop_back();
 
     // key actions
     if (type == "key") {
       KeyEventBuilder builder;
       std::list<KeyEvent> key_events;
-      for (size_t j = 0; j < action_sequence->GetSize(); j++) {
-        base::DictionaryValue* action;
-        if (!action_sequence->GetDictionary(j, &action))
+      for (size_t j = 0; j < actions->GetSize(); j++) {
+        const base::DictionaryValue* action;
+        if (!actions->GetDictionary(j, &action))
           return Status(kInvalidArgument, "each argument must be a dictionary");
         std::string subtype;
         if (!action->GetString("subtype", &subtype))
@@ -1110,9 +1183,107 @@ Status ExecutePerformActions(Session* session,
       if (status.IsError())
         return status;
     } else if (type == "pointer") {
-      // TODO:implement this
+      std::string pointer_type;
+      action_sequence->GetString("pointerType", &pointer_type);
+      if (input_pointer_type.empty())
+        input_pointer_type = pointer_type;
+
+      if (input_pointer_type != pointer_type) {
+        return Status(kInvalidArgument,
+                      "multiple input pointer types are not supported now");
+      }
+
+      if (pointer_type != "touch" && i > 0) {
+        return Status(kInvalidArgument,
+                      "for pointer type of mouse and pen, multiple devices are "
+                      "not supported now");
+      }
+
+      std::string pointer_id;
+      action_sequence->GetString("id", &pointer_id);
+      if (pointer_id_set.find(pointer_id) != pointer_id_set.end())
+        return Status(kInvalidArgument, "'id' already exists");
+      pointer_id_set.insert(pointer_id);
+
+      std::list<MouseEvent> events;
+      if (pointer_type == "mouse") {
+        double x = 0;
+        double y = 0;
+        for (size_t j = 0; j < actions->GetSize(); j++) {
+          const base::DictionaryValue* mouse_action;
+          actions->GetDictionary(j, &mouse_action);
+          std::string action_type;
+          mouse_action->GetString("type", &action_type);
+          if (action_type == "pointerMove") {
+            mouse_action->GetDouble("x", &x);
+            mouse_action->GetDouble("y", &y);
+            const base::DictionaryValue* origin_dict;
+            if (mouse_action->HasKey("origin") &&
+                mouse_action->GetDictionary("origin", &origin_dict)) {
+              std::string element_id;
+              origin_dict->GetString(GetElementKey(), &element_id);
+              WebRect region;
+              Status status =
+                  GetElementRegion(session, web_view, element_id, &region);
+              if (status.IsError())
+                return status;
+              WebPoint region_offset;
+              status = ScrollElementRegionIntoView(
+                  session, web_view, element_id, region, true /* center */,
+                  std::string(), &region_offset);
+              if (status.IsError())
+                return status;
+              int innerWidth, innerHeight;
+              status = WindowViewportSize(session, web_view, &innerWidth,
+                                          &innerHeight);
+              if (status.IsError())
+                return status;
+              int left = std::max(
+                  0,
+                  std::min(region_offset.x, region_offset.x + region.Width()));
+              int right = std::min(
+                  innerWidth,
+                  std::max(region_offset.x, region_offset.x + region.Width()));
+              int top = std::max(
+                  0,
+                  std::min(region_offset.y, region_offset.y + region.Height()));
+              int bottom = std::min(
+                  innerHeight,
+                  std::max(region_offset.y, region_offset.y + region.Height()));
+              x += (left + right) / 2;
+              y += (top + bottom) / 2;
+            }
+          }
+
+          std::string button_type;
+          int click_count = 0;
+          if (action_type == "pointerDown" || action_type == "pointerUp") {
+            mouse_action->GetString("button", &button_type);
+            click_count = 1;
+          }
+          events.push_back(MouseEvent(StringToMouseEventType(action_type),
+                                      StringToMouseButton(button_type), x, y, 0,
+                                      click_count));
+        }
+        Status status =
+            web_view->DispatchMouseEvents(events, session->GetCurrentFrameId());
+        return status;
+      }
     }
   }
+  return Status(kOk);
+}
+
+Status ExecuteReleaseActions(Session* session,
+                             WebView* web_view,
+                             const base::DictionaryValue& params,
+                             std::unique_ptr<base::Value>* value,
+                             Timeout* timeout) {
+  // TODO(https://crbug.com/chromedriver/1897): Process "input cancel list".
+
+  session->input_state_table.Clear();
+  session->active_input_sources.Clear();
+
   return Status(kOk);
 }
 
@@ -1123,11 +1294,11 @@ Status ExecuteSendCommand(Session* session,
                           Timeout* timeout) {
   std::string cmd;
   if (!params.GetString("cmd", &cmd)) {
-    return Status(kUnknownError, "command not passed");
+    return Status(kInvalidArgument, "command not passed");
   }
   const base::DictionaryValue* cmdParams;
   if (!params.GetDictionary("params", &cmdParams)) {
-    return Status(kUnknownError, "params not passed");
+    return Status(kInvalidArgument, "params not passed");
   }
   return web_view->SendCommand(cmd, *cmdParams);
 }
@@ -1139,11 +1310,11 @@ Status ExecuteSendCommandAndGetResult(Session* session,
                                       Timeout* timeout) {
   std::string cmd;
   if (!params.GetString("cmd", &cmd)) {
-    return Status(kUnknownError, "command not passed");
+    return Status(kInvalidArgument, "command not passed");
   }
   const base::DictionaryValue* cmdParams;
   if (!params.GetDictionary("params", &cmdParams)) {
-    return Status(kUnknownError, "params not passed");
+    return Status(kInvalidArgument, "params not passed");
   }
   return web_view->SendCommandAndGetResult(cmd, *cmdParams, value);
 }
@@ -1163,7 +1334,7 @@ Status ExecuteSendKeysToActiveElement(Session* session,
                                       Timeout* timeout) {
   const base::ListValue* key_list;
   if (!params.GetList("value", &key_list))
-    return Status(kUnknownError, "'value' must be a list");
+    return Status(kInvalidArgument, "'value' must be a list");
   return SendKeysOnWindow(
       web_view, key_list, false, &session->sticky_modifiers);
 }
@@ -1198,7 +1369,7 @@ Status ExecuteGetStorageItem(const char* storage,
                              Timeout* timeout) {
   std::string key;
   if (!params.GetString("key", &key))
-    return Status(kUnknownError, "'key' must be a string");
+    return Status(kInvalidArgument, "'key' must be a string");
   base::ListValue args;
   args.AppendString(key);
   return web_view->CallFunction(
@@ -1235,10 +1406,10 @@ Status ExecuteSetStorageItem(const char* storage,
                              Timeout* timeout) {
   std::string key;
   if (!params.GetString("key", &key))
-    return Status(kUnknownError, "'key' must be a string");
+    return Status(kInvalidArgument, "'key' must be a string");
   std::string storage_value;
   if (!params.GetString("value", &storage_value))
-    return Status(kUnknownError, "'value' must be a string");
+    return Status(kInvalidArgument, "'value' must be a string");
   base::ListValue args;
   args.AppendString(key);
   args.AppendString(storage_value);
@@ -1257,7 +1428,7 @@ Status ExecuteRemoveStorageItem(const char* storage,
                                 Timeout* timeout) {
   std::string key;
   if (!params.GetString("key", &key))
-    return Status(kUnknownError, "'key' must be a string");
+    return Status(kInvalidArgument, "'key' must be a string");
   base::ListValue args;
   args.AppendString(key);
   return web_view->CallFunction(
@@ -1353,7 +1524,7 @@ Status ExecuteGetNamedCookie(Session* session,
                              Timeout* timeout) {
   std::string name;
   if (!params.GetString("name", &name))
-    return Status(kUnknownError, "missing 'cookie name'");
+    return Status(kInvalidArgument, "missing 'cookie name'");
 
   std::list<Cookie> cookies;
   Status status = GetVisibleCookies(web_view, &cookies);
@@ -1377,7 +1548,7 @@ Status ExecuteAddCookie(Session* session,
                         Timeout* timeout) {
   const base::DictionaryValue* cookie;
   if (!params.GetDictionary("cookie", &cookie))
-    return Status(kUnknownError, "missing 'cookie'");
+    return Status(kInvalidArgument, "missing 'cookie'");
   std::string name;
   std::string cookie_value;
   if (!cookie->GetString("name", &name))
@@ -1411,7 +1582,7 @@ Status ExecuteDeleteCookie(Session* session,
                            Timeout* timeout) {
   std::string name;
   if (!params.GetString("name", &name))
-    return Status(kUnknownError, "missing 'name'");
+    return Status(kInvalidArgument, "missing 'name'");
   base::DictionaryValue params_url;
   std::unique_ptr<base::Value> value_url;
   std::string url;
@@ -1473,10 +1644,10 @@ Status ExecuteSetLocation(Session* session,
   if (!params.GetDictionary("location", &location) ||
       !location->GetDouble("latitude", &geoposition.latitude) ||
       !location->GetDouble("longitude", &geoposition.longitude))
-    return Status(kUnknownError, "missing or invalid 'location'");
+    return Status(kInvalidArgument, "missing or invalid 'location'");
   if (location->HasKey("accuracy") &&
       !location->GetDouble("accuracy", &geoposition.accuracy)) {
-    return Status(kUnknownError, "invalid 'accuracy'");
+    return Status(kInvalidArgument, "invalid 'accuracy'");
   } else {
     // |accuracy| is not part of the WebDriver spec yet, so if it is not given
     // default to 100 meters accuracy.
@@ -1506,7 +1677,7 @@ Status ExecuteSetNetworkConditions(Session* session,
   } else if (params.GetDictionary("network_conditions", &conditions)) {
     // |latency| is required.
     if (!conditions->GetDouble("latency", &network_conditions->latency))
-      return Status(kUnknownError,
+      return Status(kInvalidArgument,
                     "invalid 'network_conditions' is missing 'latency'");
 
     // Either |throughput| or the pair |download_throughput| and
@@ -1514,7 +1685,7 @@ Status ExecuteSetNetworkConditions(Session* session,
     if (conditions->HasKey("throughput")) {
       if (!conditions->GetDouble("throughput",
                                  &network_conditions->download_throughput))
-        return Status(kUnknownError, "invalid 'throughput'");
+        return Status(kInvalidArgument, "invalid 'throughput'");
       conditions->GetDouble("throughput",
                             &network_conditions->upload_throughput);
     } else if (conditions->HasKey("download_throughput") &&
@@ -1523,10 +1694,10 @@ Status ExecuteSetNetworkConditions(Session* session,
                                  &network_conditions->download_throughput) ||
           !conditions->GetDouble("upload_throughput",
                                  &network_conditions->upload_throughput))
-        return Status(kUnknownError,
+        return Status(kInvalidArgument,
                       "invalid 'download_throughput' or 'upload_throughput'");
     } else {
-      return Status(kUnknownError,
+      return Status(kInvalidArgument,
                     "invalid 'network_conditions' is missing 'throughput' or "
                     "'download_throughput'/'upload_throughput' pair");
     }
@@ -1534,12 +1705,12 @@ Status ExecuteSetNetworkConditions(Session* session,
     // |offline| is optional.
     if (conditions->HasKey("offline")) {
       if (!conditions->GetBoolean("offline", &network_conditions->offline))
-        return Status(kUnknownError, "invalid 'offline'");
+        return Status(kInvalidArgument, "invalid 'offline'");
     } else {
       network_conditions->offline = false;
     }
   } else {
-    return Status(kUnknownError,
+    return Status(kInvalidArgument,
                   "either 'network_conditions' or 'network_name' must be "
                   "supplied");
   }
@@ -1579,4 +1750,130 @@ Status ExecuteTakeHeapSnapshot(Session* session,
                                std::unique_ptr<base::Value>* value,
                                Timeout* timeout) {
   return web_view->TakeHeapSnapshot(value);
+}
+
+// TODO(johnchen): There is no public method in Chrome or ChromeDesktopImpl to
+// get both size and position in one call. What we're doing now is kind of
+// wasteful, since both GetWindowPosition and GetWindowSize end up getting both
+// position and size, and then discard one of the two pieces.
+Status ExecuteGetWindowRect(Session* session,
+                            WebView* web_view,
+                            const base::DictionaryValue& params,
+                            std::unique_ptr<base::Value>* value,
+                            Timeout* timeout) {
+  int x, y;
+  int width, height;
+
+  Status status = session->chrome->GetWindowPosition(session->window, &x, &y);
+  if (status.IsError())
+    return status;
+  status = session->chrome->GetWindowSize(session->window, &width, &height);
+
+  if (status.IsError())
+    return status;
+
+  base::DictionaryValue rect;
+  rect.SetInteger("x", x);
+  rect.SetInteger("y", y);
+  rect.SetInteger("width", width);
+  rect.SetInteger("height", height);
+  value->reset(rect.DeepCopy());
+  return Status(kOk);
+}
+
+Status ExecuteSetWindowRect(Session* session,
+                            WebView* web_view,
+                            const base::DictionaryValue& params,
+                            std::unique_ptr<base::Value>* value,
+                            Timeout* timeout) {
+  const double max_range = 2147483647; // 2^31 - 1
+  const double min_range = -2147483648; // -2^31
+  const base::Value* temp;
+  double width = 0;
+  double height = 0;
+  double x = 0;
+  double y = 0;
+
+  bool has_x = params.Get("x", &temp) && !temp->is_none();
+  if (has_x) {
+    if (!temp->GetAsDouble(&x))
+      return Status(kInvalidArgument, "'x' must be a number");
+    if (x > max_range || x < min_range)
+      return Status(kInvalidArgument, "'x' out of range");
+  }
+  bool has_y = params.Get("y", &temp) && !temp->is_none();
+  if (has_y) {
+    if (!temp->GetAsDouble(&y))
+      return Status(kInvalidArgument, "'y' must be a number");
+    if (y > max_range || y < min_range )
+      return Status(kInvalidArgument, "'y' out of range");
+  }
+  bool has_width = params.Get("width", &temp) && !temp->is_none();
+  if (has_width) {
+    if (!temp->GetAsDouble(&width))
+      return Status(kInvalidArgument, "'width' must be a number");
+    if (width > max_range || width < 0 )
+      return Status(kInvalidArgument, "'width' out of range");
+  }
+  bool has_height = params.Get("height", &temp) && !temp->is_none();
+  if (has_height) {
+    if (!temp->GetAsDouble(&height))
+      return Status(kInvalidArgument, "'height' must be a number");
+    if (height > max_range || height < 0 )
+      return Status(kInvalidArgument, "'height' out of range");
+  }
+
+  // to pass to the set window rect command
+  base::DictionaryValue rect_params;
+  // only set position if both x and y are given
+  if (has_x && has_y) {
+    rect_params.SetInteger("x", static_cast<int>(x));
+    rect_params.SetInteger("y", static_cast<int>(y));
+  }  // only set size if both height and width are given
+  if (has_width && has_height) {
+    rect_params.SetInteger("width", static_cast<int>(width));
+    rect_params.SetInteger("height", static_cast<int>(height));
+  }
+  Status status = session->chrome->SetWindowRect(session->window, rect_params);
+  if (status.IsError())
+    return status;
+
+  // return the current window rect
+  return ExecuteGetWindowRect(session, web_view, params, value, timeout);
+}
+
+Status ExecuteMaximizeWindow(Session* session,
+                             WebView* web_view,
+                             const base::DictionaryValue& params,
+                             std::unique_ptr<base::Value>* value,
+                             Timeout* timeout) {
+  Status status = session->chrome->MaximizeWindow(session->window);
+  if (status.IsError())
+    return status;
+
+  return ExecuteGetWindowRect(session, web_view, params, value, timeout);
+}
+
+Status ExecuteMinimizeWindow(Session* session,
+                             WebView* web_view,
+                             const base::DictionaryValue& params,
+                             std::unique_ptr<base::Value>* value,
+                             Timeout* timeout) {
+  Status status = session->chrome->MinimizeWindow(session->window);
+  if (status.IsError())
+    return status;
+
+  return ExecuteGetWindowRect(session, web_view, params, value, timeout);
+}
+
+Status ExecuteFullScreenWindow(Session* session,
+                               WebView* web_view,
+                               const base::DictionaryValue& params,
+                               std::unique_ptr<base::Value>* value,
+                               Timeout* timeout) {
+  Status status = session->chrome->FullScreenWindow(session->window);
+  if (status.IsError())
+    return status;
+
+  return ExecuteGetWindowRect(session, web_view, params, value, timeout);
 }

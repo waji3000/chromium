@@ -50,7 +50,8 @@ class CONTENT_EXPORT DelegatedFrameHostClient {
   virtual void OnBeginFrame(base::TimeTicks frame_time) = 0;
   virtual void OnFrameTokenChanged(uint32_t frame_token) = 0;
   virtual float GetDeviceScaleFactor() const = 0;
-  virtual void WasEvicted() = 0;
+  virtual void InvalidateLocalSurfaceIdOnEviction() = 0;
+  virtual std::vector<viz::SurfaceId> CollectSurfaceIdsForEviction() = 0;
 };
 
 // The DelegatedFrameHost is used to host all of the RenderWidgetHostView state
@@ -85,18 +86,14 @@ class CONTENT_EXPORT DelegatedFrameHost
   void OnLostSharedContext() override;
   void OnLostVizProcess() override;
 
-  // FrameEvictorClient implementation.
-  void EvictDelegatedFrame() override;
-
   void ResetFallbackToFirstNavigationSurface();
 
   // viz::mojom::CompositorFrameSinkClient implementation.
   void DidReceiveCompositorFrameAck(
       const std::vector<viz::ReturnedResource>& resources) override;
-  void DidPresentCompositorFrame(
-      uint32_t presentation_token,
-      const gfx::PresentationFeedback& feedback) override;
-  void OnBeginFrame(const viz::BeginFrameArgs& args) override;
+  void OnBeginFrame(const viz::BeginFrameArgs& args,
+                    const base::flat_map<uint32_t, gfx::PresentationFeedback>&
+                        feedbacks) override;
   void ReclaimResources(
       const std::vector<viz::ReturnedResource>& resources) override;
   void OnBeginFramePausedChanged(bool paused) override;
@@ -113,7 +110,6 @@ class CONTENT_EXPORT DelegatedFrameHost
       const viz::LocalSurfaceId& local_surface_id,
       viz::CompositorFrame frame,
       base::Optional<viz::HitTestRegionList> hit_test_region_list);
-  void ClearDelegatedFrame();
   void WasHidden();
   // TODO(ccameron): Include device scale factor here.
   void WasShown(const viz::LocalSurfaceId& local_surface_id,
@@ -186,6 +182,9 @@ class CONTENT_EXPORT DelegatedFrameHost
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
                            DiscardDelegatedFramesWithLocking);
 
+  // FrameEvictorClient implementation.
+  void EvictDelegatedFrame() override;
+
   SkColor GetGutterColor() const;
 
   void CreateCompositorFrameSinkSupport();
@@ -221,6 +220,10 @@ class CONTENT_EXPORT DelegatedFrameHost
   std::unique_ptr<viz::FrameEvictor> frame_evictor_;
 
   viz::LocalSurfaceId first_local_surface_id_after_navigation_;
+
+#ifdef OS_CHROMEOS
+  bool seen_first_activation_ = false;
+#endif
 
   base::WeakPtrFactory<DelegatedFrameHost> weak_factory_;
 

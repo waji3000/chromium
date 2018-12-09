@@ -55,13 +55,13 @@ IPC_STRUCT_TRAITS_BEGIN(content::VisualProperties)
   IPC_STRUCT_TRAITS_MEMBER(scroll_focused_node_into_view)
   IPC_STRUCT_TRAITS_MEMBER(top_controls_height)
   IPC_STRUCT_TRAITS_MEMBER(bottom_controls_height)
-  IPC_STRUCT_TRAITS_MEMBER(local_surface_id)
-  IPC_STRUCT_TRAITS_MEMBER(local_surface_id_allocation_time)
+  IPC_STRUCT_TRAITS_MEMBER(local_surface_id_allocation)
   IPC_STRUCT_TRAITS_MEMBER(visible_viewport_size)
   IPC_STRUCT_TRAITS_MEMBER(is_fullscreen_granted)
   IPC_STRUCT_TRAITS_MEMBER(display_mode)
   IPC_STRUCT_TRAITS_MEMBER(capture_sequence_number)
   IPC_STRUCT_TRAITS_MEMBER(zoom_level)
+  IPC_STRUCT_TRAITS_MEMBER(page_scale_factor)
 IPC_STRUCT_TRAITS_END()
 
 // Traits for WebDeviceEmulationParams.
@@ -155,8 +155,9 @@ IPC_MESSAGE_ROUTED0(WidgetMsg_DisableDeviceEmulation)
 IPC_MESSAGE_ROUTED0(WidgetMsg_WasHidden)
 
 // Tells the render view that it is no longer hidden (see WasHidden).
-IPC_MESSAGE_ROUTED1(WidgetMsg_WasShown,
-                    base::TimeTicks /* show_request_timestamp */)
+IPC_MESSAGE_ROUTED2(WidgetMsg_WasShown,
+                    base::TimeTicks /* show_request_timestamp */,
+                    bool /* was_evicted */)
 
 // Activate/deactivate the RenderWidget (i.e., set its controls' tint
 // accordingly, etc.).
@@ -334,5 +335,11 @@ IPC_MESSAGE_ROUTED0(WidgetHostMsg_DidCommitAndDrawCompositorFrame)
 // Notifies whether there are JavaScript touch event handlers or not.
 IPC_MESSAGE_ROUTED1(WidgetHostMsg_HasTouchEventHandlers,
                     bool /* has_handlers */)
+
+// Sent by a widget to the browser to request a page scale animation in the
+// main-frame's widget.
+IPC_MESSAGE_ROUTED2(WidgetHostMsg_AnimateDoubleTapZoomInMainFrame,
+                    gfx::Point /* tap point */,
+                    gfx::Rect /* rect_to_zoom */)
 
 #endif  //  CONTENT_COMMON_WIDGET_MESSAGES_H_

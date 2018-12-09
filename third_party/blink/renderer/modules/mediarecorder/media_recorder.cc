@@ -139,7 +139,7 @@ void AllocateVideoAndAudioBitrates(ExceptionState& exception_state,
 MediaRecorder* MediaRecorder::Create(ExecutionContext* context,
                                      MediaStream* stream,
                                      ExceptionState& exception_state) {
-  MediaRecorder* recorder = new MediaRecorder(
+  MediaRecorder* recorder = MakeGarbageCollected<MediaRecorder>(
       context, stream, MediaRecorderOptions::Create(), exception_state);
   recorder->PauseIfNeeded();
 
@@ -150,8 +150,8 @@ MediaRecorder* MediaRecorder::Create(ExecutionContext* context,
                                      MediaStream* stream,
                                      const MediaRecorderOptions* options,
                                      ExceptionState& exception_state) {
-  MediaRecorder* recorder =
-      new MediaRecorder(context, stream, options, exception_state);
+  MediaRecorder* recorder = MakeGarbageCollected<MediaRecorder>(
+      context, stream, options, exception_state);
   recorder->PauseIfNeeded();
 
   return recorder;
@@ -175,8 +175,13 @@ MediaRecorder::MediaRecorder(ExecutionContext* context,
           this,
           &MediaRecorder::DispatchScheduledEvent,
           context->GetTaskRunner(TaskType::kDOMManipulation))) {
-  DCHECK(stream_->getTracks().size());
+  if (context->IsContextDestroyed()) {
+    exception_state.ThrowDOMException(DOMExceptionCode::kNotAllowedError,
+                                      "Execution context is detached.");
+    return;
+  }
 
+  DCHECK(stream_->getTracks().size());
   recorder_handler_ = Platform::Current()->CreateMediaRecorderHandler(
       context->GetTaskRunner(TaskType::kInternalMediaRealTime));
   DCHECK(recorder_handler_);

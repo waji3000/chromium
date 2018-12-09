@@ -22,6 +22,7 @@
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loader_options.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_request.h"
 #include "third_party/blink/renderer/platform/scheduler/public/background_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_impl.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
@@ -96,13 +97,13 @@ void BackgroundFetchIconLoader::DidGetIconDisplaySizeIfSoLoadIcon(
   resource_request.SetPriority(ResourceLoadPriority::kMedium);
   resource_request.SetKeepalive(true);
   resource_request.SetFetchRequestMode(
-      network::mojom::FetchRequestMode::kNoCORS);
+      network::mojom::FetchRequestMode::kNoCors);
   resource_request.SetFetchCredentialsMode(
       network::mojom::FetchCredentialsMode::kInclude);
   resource_request.SetSkipServiceWorker(true);
 
-  threadable_loader_ =
-      new ThreadableLoader(*execution_context, this, resource_loader_options);
+  threadable_loader_ = MakeGarbageCollected<ThreadableLoader>(
+      *execution_context, this, resource_loader_options);
   threadable_loader_->SetTimeout(
       TimeDelta::FromMilliseconds(kIconFetchTimeoutInMs));
   threadable_loader_->Start(resource_request);
@@ -161,7 +162,7 @@ void BackgroundFetchIconLoader::DidFinishLoading(
   }
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner =
-      Platform::Current()->CurrentThread()->GetTaskRunner();
+      Thread::Current()->GetTaskRunner();
 
   background_scheduler::PostOnBackgroundThread(
       FROM_HERE,

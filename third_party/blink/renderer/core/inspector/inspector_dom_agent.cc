@@ -450,8 +450,8 @@ Response InspectorDOMAgent::AssertEditableElement(int node_id,
 
 void InspectorDOMAgent::EnableAndReset() {
   enabled_.Set(true);
-  history_ = new InspectorHistory();
-  dom_editor_ = new DOMEditor(history_.Get());
+  history_ = MakeGarbageCollected<InspectorHistory>();
+  dom_editor_ = MakeGarbageCollected<DOMEditor>(history_.Get());
   document_ = inspected_frames_->Root()->GetDocument();
   instrumenting_agents_->addInspectorDOMAgent(this);
 }
@@ -1139,7 +1139,7 @@ Response InspectorDOMAgent::NodeForRemoteObjectId(const String& object_id,
   if (!v8_session_->unwrapObject(&error, ToV8InspectorStringView(object_id),
                                  &value, &context, nullptr))
     return Response::Error(ToCoreString(std::move(error)));
-  if (!V8Node::hasInstance(value, isolate_))
+  if (!V8Node::HasInstance(value, isolate_))
     return Response::Error("Object id doesn't reference a Node");
   node = V8Node::ToImpl(v8::Local<v8::Object>::Cast(value));
   if (!node) {
@@ -1967,7 +1967,7 @@ void InspectorDOMAgent::CharacterDataModified(CharacterData* character_data) {
 
 InspectorRevalidateDOMTask* InspectorDOMAgent::RevalidateTask() {
   if (!revalidate_task_)
-    revalidate_task_ = new InspectorRevalidateDOMTask(this);
+    revalidate_task_ = MakeGarbageCollected<InspectorRevalidateDOMTask>(this);
   return revalidate_task_.Get();
 }
 

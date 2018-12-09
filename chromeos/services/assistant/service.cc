@@ -22,7 +22,6 @@
 #include "google_apis/gaia/oauth2_token_service.h"
 #include "services/identity/public/mojom/constants.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
-#include "services/service_manager/public/cpp/service_context.h"
 
 #if BUILDFLAG(ENABLE_CROS_LIBASSISTANT)
 #include "chromeos/assistant/internal/internal_constants.h"
@@ -52,13 +51,17 @@ constexpr base::TimeDelta kMaxTokenRefreshDelay =
 
 }  // namespace
 
-Service::Service(network::NetworkConnectionTracker* network_connection_tracker)
-    : platform_binding_(this),
+Service::Service(service_manager::mojom::ServiceRequest request,
+                 network::NetworkConnectionTracker* network_connection_tracker,
+                 scoped_refptr<base::SingleThreadTaskRunner> io_task_runner)
+    : service_binding_(this, std::move(request)),
+      platform_binding_(this),
       session_observer_binding_(this),
       token_refresh_timer_(std::make_unique<base::OneShotTimer>()),
       main_thread_task_runner_(base::ThreadTaskRunnerHandle::Get()),
       power_manager_observer_(this),
       network_connection_tracker_(network_connection_tracker),
+      io_task_runner_(std::move(io_task_runner)),
       weak_ptr_factory_(this) {
   registry_.AddInterface<mojom::AssistantPlatform>(base::BindRepeating(
       &Service::BindAssistantPlatformConnection, base::Unretained(this)));
@@ -211,14 +214,14 @@ void Service::Init(mojom::ClientPtr client,
                    mojom::DeviceActionsPtr device_actions) {
   client_ = std::move(client);
   device_actions_ = std::move(device_actions);
-  assistant_state_.Init(context()->connector());
+  assistant_state_.Init(service_binding_.GetConnector());
   assistant_state_.AddObserver(this);
   RequestAccessToken();
 }
 
 identity::mojom::IdentityManager* Service::GetIdentityManager() {
   if (!identity_manager_) {
-    context()->connector()->BindInterface(
+    service_binding_.GetConnector()->BindInterface(
         identity::mojom::kServiceName, mojo::MakeRequest(&identity_manager_));
   }
   return identity_manager_.get();
@@ -273,26 +276,14 @@ void Service::RetryRefreshToken() {
 void Service::CreateAssistantManagerService() {
 #if BUILDFLAG(ENABLE_CROS_LIBASSISTANT)
   device::mojom::BatteryMonitorPtr battery_monitor;
-  context()->connector()->BindInterface(device::mojom::kServiceName,
-                                        mojo::MakeRequest(&battery_monitor));
+  service_binding_.GetConnector()->BindInterface(
+      device::mojom::kServiceName, mojo::MakeRequest(&battery_monitor));
   assistant_manager_service_ = std::make_unique<AssistantManagerServiceImpl>(
-      context()->connector(), std::move(battery_monitor), this,
+      service_binding_.GetConnector(), std::move(battery_monitor), this,
       network_connection_tracker_);
-
-  // Bind to Assistant controller in ash.
-  context()->connector()->BindInterface(ash::mojom::kServiceName,
-                                        &assistant_controller_);
-  mojom::AssistantPtr ptr;
-  BindAssistantConnection(mojo::MakeRequest(&ptr));
-  assistant_controller_->SetAssistant(std::move(ptr));
-
-  registry_.AddInterface<mojom::Assistant>(base::BindRepeating(
-      &Service::BindAssistantConnection, base::Unretained(this)));
 
   assistant_settings_manager_ =
       assistant_manager_service_.get()->GetAssistantSettingsManager();
-  registry_.AddInterface<mojom::AssistantSettingsManager>(base::BindRepeating(
-      &Service::BindAssistantSettingsManager, base::Unretained(this)));
 #else
   assistant_manager_service_ =
       std::make_unique<FakeAssistantManagerServiceImpl>();
@@ -303,8 +294,28 @@ void Service::FinalizeAssistantManagerService() {
   DCHECK(assistant_manager_service_->GetState() ==
          AssistantManagerService::State::RUNNING);
 
-  if (!session_observer_binding_)
+  // Using session_observer_binding_ as a flag to control onetime initialization
+  if (!session_observer_binding_) {
+    // Bind to the AssistantController in ash.
+    service_binding_.GetConnector()->BindInterface(ash::mojom::kServiceName,
+                                                   &assistant_controller_);
+
+    mojom::AssistantPtr ptr;
+    BindAssistantConnection(mojo::MakeRequest(&ptr));
+    assistant_controller_->SetAssistant(std::move(ptr));
+
+    // Bind to the AssistantScreenContextController in ash.
+    service_binding_.GetConnector()->BindInterface(
+        ash::mojom::kServiceName, &assistant_screen_context_controller_);
+
+    registry_.AddInterface<mojom::Assistant>(base::BindRepeating(
+        &Service::BindAssistantConnection, base::Unretained(this)));
+
+    registry_.AddInterface<mojom::AssistantSettingsManager>(base::BindRepeating(
+        &Service::BindAssistantSettingsManager, base::Unretained(this)));
+
     AddAshSessionObserver();
+  }
 
   client_->OnAssistantStatusChanged(true /* running */);
   UpdateListeningState();
@@ -319,8 +330,8 @@ void Service::StopAssistantManagerService() {
 
 void Service::AddAshSessionObserver() {
   ash::mojom::SessionControllerPtr session_controller;
-  context()->connector()->BindInterface(ash::mojom::kServiceName,
-                                        &session_controller);
+  service_binding_.GetConnector()->BindInterface(ash::mojom::kServiceName,
+                                                 &session_controller);
   ash::mojom::SessionActivationObserverPtr observer;
   session_observer_binding_.Bind(mojo::MakeRequest(&observer));
   session_controller->AddSessionActivationObserverForAccountId(

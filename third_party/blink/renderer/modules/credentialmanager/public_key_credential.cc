@@ -10,6 +10,7 @@
 #include "third_party/blink/renderer/modules/credentialmanager/credential_manager_proxy.h"
 #include "third_party/blink/renderer/modules/credentialmanager/scoped_promise_resolver.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 
 namespace blink {
 
@@ -29,7 +30,8 @@ PublicKeyCredential* PublicKeyCredential::Create(
     DOMArrayBuffer* raw_id,
     AuthenticatorResponse* response,
     const AuthenticationExtensionsClientOutputs* extension_outputs) {
-  return new PublicKeyCredential(id, raw_id, response, extension_outputs);
+  return MakeGarbageCollected<PublicKeyCredential>(id, raw_id, response,
+                                                   extension_outputs);
 }
 
 PublicKeyCredential::PublicKeyCredential(

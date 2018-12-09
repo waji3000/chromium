@@ -75,6 +75,7 @@
 <translation id="1339601241726513588">Kayıt alan adı:</translation>
 <translation id="1340482604681802745">Alınacağı adres</translation>
 <translation id="1348198688976932919">Girmekte olduğunuz site tehlikeli uygulamalar içeriyor</translation>
+<translation id="1348779747280417563">Adı onaylayın</translation>
 <translation id="1374468813861204354">öneriler</translation>
 <translation id="1375198122581997741">Sürüm Hakkında</translation>
 <translation id="1376836354785490390">Daha Az Göster</translation>
@@ -86,6 +87,7 @@
 <translation id="1426410128494586442">Evet</translation>
 <translation id="1430915738399379752">Yazdır</translation>
 <translation id="1484290072879560759">Gönderim Adresi Seç</translation>
+<translation id="1501859676467574491">Google Hesabınızdaki kartlar gösterilsin</translation>
 <translation id="1506687042165942984">Bu sayfanın kaydedilmiş (eski olduğu bilinen) bir kopyasını gösterin.</translation>
 <translation id="1507202001669085618">&lt;p&gt;İnternete girmek için oturum açmanızı gerektiren bir kablosuz portal kullanıyorsanız bu hatayı görürsünüz.&lt;/p&gt;
     &lt;p&gt;Hatayı gidermek için, açmaya çalıştığınız sayfada &lt;strong&gt;Bağlan&lt;/strong&gt;'ı tıklayın.&lt;/p&gt;</translation>
@@ -139,12 +141,13 @@
 <translation id="1787142507584202372">Açık sekmeleriniz burada görünür</translation>
 <translation id="1791429645902722292">Google Smart Lock</translation>
 <translation id="1803264062614276815">Kart Sahibinin Adı</translation>
+<translation id="1809549658008855907">Kartlarınız Google Hesabınıza kaydedilsin mi?</translation>
 <translation id="1821930232296380041">Geçersiz istek veya istek parametreleri</translation>
 <translation id="1826516787628120939">Kontrol ediliyor</translation>
 <translation id="1834321415901700177">Bu site zararlı programlar içeriyor</translation>
 <translation id="1839551713262164453">Politika değerlerini doğrulama işlemi hatalarla başarısız oldu</translation>
-<translation id="1840414022444569775">Bu kart numarası zaten kullanılıyor</translation>
 <translation id="1842969606798536927">Ödeme</translation>
+<translation id="1866450167992311397">Kartlarınızı daha fazla yerde kullanın</translation>
 <translation id="1871208020102129563">Proxy, bir .pac komut dosyası URL'sini değil, sabit proxy sunucuları kullanacak şekilde ayarlanır.</translation>
 <translation id="1871284979644508959">Zorunlu alan</translation>
 <translation id="1874765382782611674">Kabul Edilen Banka Kartları</translation>
@@ -181,6 +184,7 @@
 <translation id="2108755909498034140">Bilgisayarınızı yeniden başlatın</translation>
 <translation id="2113977810652731515">Kart</translation>
 <translation id="2114841414352855701"><ph name="POLICY_NAME" /> tarafından geçersiz kılındığı için yoksayıldı.</translation>
+<translation id="2129308444951592399">Şartlar ve Koşullar</translation>
 <translation id="213826338245044447">Mobil Yer İşaretleri</translation>
 <translation id="214556005048008348">Ödemeyi iptal et</translation>
 <translation id="2147827593068025794">Arka Plan Senkronizasyonu</translation>
@@ -333,7 +337,7 @@
 <translation id="3157931365184549694">Geri yükle</translation>
 <translation id="3162559335345991374">Kullandığınız Kablosuz ağ, giriş sayfasını ziyaret etmenizi gerektiriyor olabilir.</translation>
 <translation id="3167968892399408617">Gizli sekmelerde görüntülediğiniz sayfalar, açık olan tüm gizli sekmeler kapatıldıktan sonra tarayıcınızın geçmişinden, çerez deposundan veya arama geçmişinden silinecektir. İndirdiğiniz dosyalar veya oluşturduğunuz yer işaretleri kalacaktır.</translation>
-<translation id="3169472444629675720">Bul</translation>
+<translation id="3169472444629675720">Discover</translation>
 <translation id="3174168572213147020">Ada</translation>
 <translation id="3176929007561373547">Proxy sunucunun çalışıyor olduğundan emin olmak için
     proxy ayarlarınızı kontrol edin veya ağ yöneticinize danışın. Proxy sunucu
@@ -381,6 +385,7 @@
 <translation id="3427092606871434483">İzin ver (varsayılan)</translation>
 <translation id="3427342743765426898">&amp;Düzenlemeyi Yeniden Yap</translation>
 <translation id="342781501876943858">Chromium, şifrenizi başka sitelerde kullandıysanız sıfırlamanızı önerir.</translation>
+<translation id="3430691998045392297">Film filtrelemesi farklı, devam etmek istiyor musunuz?</translation>
 <translation id="3431636764301398940">Bu kartı bu cihaza kaydet</translation>
 <translation id="3447661539832366887">Bu cihazın sahibi dinozor oyununu kapattı.</translation>
 <translation id="3447884698081792621">Sertifikayı göster (yayınlayan: <ph name="ISSUER" />)</translation>
@@ -398,6 +403,7 @@
 <translation id="3566021033012934673">Bağlantınız gizli değil</translation>
 <translation id="3574305903863751447"><ph name="CITY" />, <ph name="STATE" /> <ph name="COUNTRY" /></translation>
 <translation id="3576616784287504635"><ph name="SITE" /> web sitesindeki yerleşik bir sayfanın mesajı</translation>
+<translation id="3581089476000296252">Bu sayfa hazır olduğunda Chrome tarafından bilgilendirileceksiniz. &lt;a&gt;İptal&lt;/a&gt;</translation>
 <translation id="358285529439630156">Kredi ve ön ödemeli kartlar kabul edilir.</translation>
 <translation id="3582930987043644930">Ad ekleyin</translation>
 <translation id="3583757800736429874">Taşımayı &amp;Yeniden Yap</translation>
@@ -429,6 +435,7 @@
 <translation id="3736520371357197498">Güvenliğinizle ilgili riskleri anlıyorsanız tehlikeli programlar kaldırılmadan önce <ph name="BEGIN_LINK" />güvenli olmayan bu siteyi ziyaret edebilirsiniz<ph name="END_LINK" />.</translation>
 <translation id="3739623965217189342">Kopyaladığınız bağlantı</translation>
 <translation id="3744899669254331632">Web sitesi Chromium'un işleyemediği karışık kimlik bilgileri gönderdiğinden <ph name="SITE" /> sitesini şu anda ziyaret edemezsiniz. Ağ hataları ve saldırılar genellikle geçici türdendir, dolayısıyla bu sayfa muhtemelen daha sonra çalışacaktır.</translation>
+<translation id="3745099705178523657">Onayladığınızda Google Hesabınızdaki kart bilgileriniz bu siteyle paylaşılır.</translation>
 <translation id="3748148204939282805"><ph name="BEGIN_BOLD" /><ph name="SITE" /><ph name="END_BOLD" /> sitesine saldıranlar sizi yanıltarak yazılım yüklemek veya kişisel bilgilerinizi (örneğin, şifreler, telefon numaraları veya kredi kartları) ifşa etmek gibi tehlikeli bir şey yapmanızı sağlayabilirler. <ph name="BEGIN_LEARN_MORE_LINK" />Daha fazla bilgi<ph name="END_LEARN_MORE_LINK" /></translation>
 <translation id="375403751935624634">Çeviri, bir sunucu hatası nedeniyle başarısız oldu.</translation>
 <translation id="3759461132968374835">Son zamanda herhangi bir kilitlenme bildirmediniz. Kilitlenme bildirme özelliği devre dışıyken oluşan kilitlenmeler burada görünmez.</translation>
@@ -450,10 +457,12 @@
 <translation id="3909695131102177774"><ph name="LABEL" /> <ph name="ERROR" /></translation>
 <translation id="3945915738023014686">Kilitlenme Raporu Kimliği <ph name="CRASH_ID" /> Yüklendi (Yerel Kilitlenme Kimliği: <ph name="CRASH_LOCAL_ID" />)</translation>
 <translation id="3946209740501886391">Bu sitede her zaman sor</translation>
+<translation id="3947577358805392297">Sayfayı sonrası için kaydet</translation>
 <translation id="3949571496842715403">Bu sunucu <ph name="DOMAIN" /> olduğunu kanıtlayamadı. Güvenlik sertifikasında Konu Diğer Adları belirtilmiyor. Bu durum, bir yanlış yapılandırmadan veya bağlantınıza müdahale eden bir saldırgandan kaynaklanıyor olabilir.</translation>
 <translation id="3949601375789751990">Göz atma geçmişiniz burada görünür</translation>
 <translation id="3950820424414687140">Oturum açın</translation>
 <translation id="3963721102035795474">Okuyucu Modu</translation>
+<translation id="3963837677003247395">Manuel olarak devam edilsin mi?</translation>
 <translation id="3964661563329879394">{COUNT,plural, =0{Yok}=1{1 siteden }other{# siteden }}</translation>
 <translation id="397105322502079400">Hesaplanııyor...</translation>
 <translation id="3973234410852337861"><ph name="HOST_NAME" /> engellendi</translation>
@@ -473,7 +482,6 @@
 <translation id="4110652170750985508">Ödemenizi inceleyin</translation>
 <translation id="4116663294526079822">Bu sitede her zaman izin ver</translation>
 <translation id="4117700440116928470">Politika kapsamı desteklenmiyor.</translation>
-<translation id="4119109454650683048">Lütfen aşağıdaki bilgileri kontrol edin ve gerekiyorsa hataları düzeltin</translation>
 <translation id="4129401438321186435">{COUNT,plural, =1{1 öğe daha}other{# öğe daha}}</translation>
 <translation id="4130226655945681476">Ağ kabloları, modem ve yönlendirici kontrol ediliyor</translation>
 <translation id="413544239732274901">Daha fazla bilgi</translation>
@@ -568,6 +576,7 @@
 <translation id="4771973620359291008">Bilinmeyen bir hata oluştu.</translation>
 <translation id="4785689107224900852">Bu sekmeye geç</translation>
 <translation id="4792143361752574037">Oturum dosyalarına erişimle ilgili bir sorun oluştu. Diske kaydetme şu anda devre dışı bırakıldı. Tekrar denemek için lütfen sayfayı yeniden yükleyin.</translation>
+<translation id="4798078619018708837">Kart bilgilerinizi güncellemek için <ph name="CREDIT_CARD" /> numaralı karta ait son kullanma tarihini ve CVC kodunu girin. Onayladığınızda Googe Hesabınızdaki kart bilgileriniz bu siteyle paylaşılır.</translation>
 <translation id="4800132727771399293">Son kullanma tarihinizi ve CVC'nizi kontrol edip tekrar deneyin</translation>
 <translation id="4803924862070940586"><ph name="FORMATTED_TOTAL_AMOUNT" /> <ph name="CURRENCY_CODE" /></translation>
 <translation id="4807049035289105102"><ph name="SITE" /> web sitesi Google Chrome'un işleyemediği karışık kimlik bilgileri gönderdiği için bu siteyi şu anda ziyaret edemezsiniz. Ağ hataları ve saldırılar genellikle geçici olduğundan bu sayfa muhtemelen daha sonra çalışacaktır.</translation>
@@ -583,7 +592,6 @@
 <translation id="4895877746940133817"><ph name="TYPE_1" />, <ph name="TYPE_2" />, <ph name="TYPE_3" /></translation>
 <translation id="4914479371620770914">{URL_count,plural, =1{ve 1 web sayfası daha}other{ve # web sayfası daha}}</translation>
 <translation id="4916962322362512664"><ph name="DEVICE_NAME" /></translation>
-<translation id="4919958102839282947"><ph name="CREDIT_CARD" /> numaralı kartın CVC kodunu girin. Onayladığınızda Google Payments hesabınızdaki kart bilgileriniz bu siteyle paylaşılır.</translation>
 <translation id="4923417429809017348">Bu sayfa, bilinmeyen bir dilden <ph name="LANGUAGE_LANGUAGE" /> diline çevrildi</translation>
 <translation id="4923459931733593730">Ödeme</translation>
 <translation id="4926049483395192435">Belirtilmelidir.</translation>
@@ -615,12 +623,12 @@
 <translation id="5095208057601539847">Bölge</translation>
 <translation id="5098332213681597508">Bu ad Google Hesabınızdan gelmektedir.</translation>
 <translation id="5115563688576182185">(64 bit)</translation>
-<translation id="5121084798328133320">Onayladığınızda Google Payments hesabınızdaki kart bilgileriniz bu siteyle paylaşılır.</translation>
 <translation id="5128122789703661928">Silmek üzere gönderilen bu oturum adı geçerli değil.</translation>
 <translation id="5135404736266831032">Adresleri yönet...</translation>
 <translation id="5141240743006678641">Senkronize edilen şifreleri Google kimlik bilgilerinizle şifreleyin</translation>
 <translation id="5145883236150621069">Politika yanıtında hata kodu var</translation>
 <translation id="5159010409087891077">Sayfayı yeni Gizli pencerede açın (⇧⌘N)</translation>
+<translation id="516920405563544094"><ph name="CREDIT_CARD" /> numaralı kartın CVC kodunu girin. Onayladığınızda Google Hesabınızdaki kart bilgileriniz bu siteyle paylaşılır.</translation>
 <translation id="5169827969064885044">Kuruluşunuzun hesabına erişimi kaybedebilir veya kimlik hırsızlığına maruz kalabilirsiniz. Chrome, şifrenizi hemen değiştirmenizi önerir.</translation>
 <translation id="5171045022955879922">Arayın veya URL'yi yazın</translation>
 <translation id="5172758083709347301">Makine</translation>
@@ -637,6 +645,7 @@
 <translation id="5287240709317226393">Çerezleri göster</translation>
 <translation id="5288108484102287882">Politika değerlerini doğrulama işlemi uyarılarla sonuçlandı</translation>
 <translation id="5299298092464848405">Politika ayrıştırma hatası</translation>
+<translation id="5300589172476337783">Göster</translation>
 <translation id="5308380583665731573">Bağlan</translation>
 <translation id="5308689395849655368">Kilitlenme bildirme devre dışı.</translation>
 <translation id="5317780077021120954">Kaydet</translation>
@@ -704,6 +713,7 @@
 <translation id="5720705177508910913">Geçerli kullanıcı</translation>
 <translation id="5730040223043577876">Chrome, şifrenizi başka sitelerde kullandıysanız sıfırlamanızı önerir.</translation>
 <translation id="5732392974455271431">Ebeveynleriniz engellemeyi kaldırabilir</translation>
+<translation id="5746168374457656589">{NUM_CARDS,plural, =1{Bu kartlar ve fatura adresleri Google Hesabınıza kaydedilecek. Bu şekilde nerede oturum açarsanız açın daha hızlı ödeme yapabilirsiniz}other{Bu kartlar ve fatura adresleri Google Hesabınıza kaydedilecek. Bu şekilde nerede oturum açarsanız açın daha hızlı ödeme yapabilirsiniz}}</translation>
 <translation id="5763042198335101085">Geçerli bir e-posta adresi girin</translation>
 <translation id="5765072501007116331">Teslimat yöntemlerini ve gereksinimleri görmek için bir adres seçin</translation>
 <translation id="5770114862687765385">Dosya bozuk gibi görünüyor. Oturumu sıfırlamak için "Sıfırla" düğmesini tıklayın.</translation>
@@ -717,6 +727,7 @@
 <translation id="5810442152076338065"><ph name="DOMAIN" /> ile olan bağlantınız eski bir şifre seti kullanılarak şifrelendi.</translation>
 <translation id="5813119285467412249">Eklemeyi &amp;Yeniden Yap</translation>
 <translation id="5838278095973806738">Bu sitede hiçbir hassas bilginizi (örneğin şifrelerinizi veya kredi kartı bilgilerinizi) girmemelisiniz. Aksi takdirde bu bilgiler saldırganlar tarafından çalınabilir.</translation>
+<translation id="5844286946362376359"><ph name="BEGIN_BOLD" /><ph name="ORIGIN" /><ph name="END_BOLD" /> şartları ve koşulları, gizlilik politikası ve para çekme hakkı konusunda bilgi sahibiyim (okumak için işaretlemeden bırakın).</translation>
 <translation id="5863847714970149516">Gireceğiniz sayfa sizden para almaya çalışabilir</translation>
 <translation id="5866257070973731571">Telefon Numarası Ekleyin</translation>
 <translation id="5869405914158311789">Bu siteye ulaşılamıyor</translation>
@@ -725,9 +736,11 @@
 <translation id="5893752035575986141">Kredi kartları kabul edilir.</translation>
 <translation id="5908541034548427511"><ph name="TYPE_1" /> (senkronize edildi)</translation>
 <translation id="5920262536204764679">{NUM_COOKIES,plural, =1{1 çerez kullanımda}other{# çerez kullanımda}}</translation>
+<translation id="5921639886840618607">Kart Google Hesabı'na kaydedilsin mi?</translation>
 <translation id="5922853866070715753">Tamamlanmak üzere</translation>
 <translation id="5932224571077948991">Site, araya giren veya yanıltıcı reklamlar gösteriyor</translation>
 <translation id="5939518447894949180">Sıfırla</translation>
+<translation id="5946937721014915347"><ph name="SITE_NAME" /> açılıyor…</translation>
 <translation id="5951495562196540101">Tüketici hesabına kaydedilemiyor (paket lisans mevcut).</translation>
 <translation id="5966151627327109289">Çoğu sitedeki oturumunuzu kapatır. <ph name="SITE" /> ve diğer bazı sitelerden alınan korunan içeriğe erişiminizi kaybedebilirsiniz.</translation>
 <translation id="5967592137238574583">İletişim Bilgilerini Düzenleyin</translation>
@@ -784,6 +797,7 @@
 <translation id="6337133576188860026"><ph name="SIZE" /> boyutundan daha az yer açar. Bir sonraki ziyaretinizde bazı siteler daha yavaş yüklenebilir.</translation>
 <translation id="6337534724793800597">Politikalara ada göre filtre uygula</translation>
 <translation id="6358450015545214790">Bunlar ne anlama geliyor?</translation>
+<translation id="635989537247018238">Sonraki adımda, hangi kartların kaydedileceğini seçebilirsiniz</translation>
 <translation id="6383221683286411806">Devam etmeniz halinde ödeme yapmanız gerekebilir.</translation>
 <translation id="6386120369904791316">{COUNT,plural, =1{1 öneri daha}other{# öneri daha}}</translation>
 <translation id="6387754724289022810">Gelecek sefer daha hızlı ödeme yapabilmek için kartınızı ve fatura adresinizi Google hesabınıza kaydedin.</translation>
@@ -809,6 +823,7 @@
 <translation id="6569060085658103619">Bir uzantı sayfası görüntülüyorsunuz</translation>
 <translation id="6596325263575161958">Şifreleme seçenekleri</translation>
 <translation id="6604181099783169992">Hareket veya Işık Sensörleri</translation>
+<translation id="6607617806003952240">Daha fazla yardımcı olamıyorum, lütfen manuel olarak devam edin.</translation>
 <translation id="6624427990725312378">İletişim Bilgileri</translation>
 <translation id="6626291197371920147">Geçerli kart numarası ekle</translation>
 <translation id="6628463337424475685"><ph name="ENGINE" /> Arama</translation>
@@ -852,6 +867,7 @@
 <translation id="6950684638814147129">JSON değeri ayrıştırılırken hata oluştu: <ph name="ERROR" /></translation>
 <translation id="6957624206566198865">Sayfayı yeni bir Gizli sekmede aç</translation>
 <translation id="6957887021205513506">Sunucunun sertifikası sahte görünüyor.</translation>
+<translation id="6964255747740675745">Ağ yapılandırması ayrıştırılamadı (geçersiz JSON).</translation>
 <translation id="6965382102122355670">Tamam</translation>
 <translation id="6965978654500191972">Cihaz</translation>
 <translation id="6970216967273061347">Bölge</translation>
@@ -863,13 +879,13 @@
 <translation id="7012363358306927923">China UnionPay</translation>
 <translation id="7016992613359344582">Bu ödemeler bir defalık alınabileceği gibi yinelenen ödemeler de olabilir ve bu durum açıkça belli olmayabilir.</translation>
 <translation id="7029809446516969842">Şifreler</translation>
-<translation id="7041710477964360998">{NUM_CARDS,plural, =1{Bu kart ve fatura adresi, farklı cihazlarda daha hızlı ödeme yapabilmeniz için Google Hesabınıza kaydedilir.}other{Bu kartlar ve fatura adresleri, farklı cihazlarda daha hızlı ödeme yapabilmeniz için Google Hesabınıza kaydedilir.}}</translation>
 <translation id="7050187094878475250"><ph name="DOMAIN" /> alan adına erişmeyi denediniz, ancak sunucu, geçerlilik dönemi güvenilir olmayacak kadar uzun olan bir sertifika sundu.</translation>
 <translation id="7053983685419859001">Engelle</translation>
 <translation id="7064851114919012435">İletişim bilgileri</translation>
 <translation id="7079718277001814089">Bu site kötü amaçlı yazılım içeriyor</translation>
 <translation id="7087282848513945231">İlçe</translation>
 <translation id="7090678807593890770">Google'da <ph name="LINK" /> araması yapın</translation>
+<translation id="7108338896283013870">Gizle</translation>
 <translation id="7108819624672055576">Bir uzantı tarafından izin verildi</translation>
 <translation id="7111012039238467737">(Geçerli)</translation>
 <translation id="7119414471315195487">Diğer sekmeleri veya programları kapatın</translation>
@@ -950,7 +966,6 @@ Ek ayrıntılar:
 <translation id="7549584377607005141">Bu Web sayfasının düzgün şekilde görüntülenmesi için, önceden girdiğiniz veriler gerekiyor. Bu verileri tekrar gönderebilirsiniz, ancak bunu yaptığınızda bu sayfanın daha önce gerçekleştirdiği işlemler de tekrar edilir.</translation>
 <translation id="7552846755917812628">Aşağıdaki ipuçlarını deneyin:</translation>
 <translation id="7554791636758816595">Yeni Sekme</translation>
-<translation id="7560085949372856518">Sonraki adımda, Google Hesabınıza hangi kartların kaydedileceğini seçebilirsiniz.</translation>
 <translation id="7564049878696755256"><ph name="ORG_NAME" /> hesabınıza erişimi kaybedebilir veya kimlik hırsızlığına maruz kalabilirsiniz. Chrome, şifrenizi hemen değiştirmenizi önerir.</translation>
 <translation id="7567204685887185387">Bu sunucu <ph name="DOMAIN" /> olduğunu kanıtlayamadı. Güvenlik sertifikası hileli bir şekilde yayınlanmış olabilir. Bu durum, bir yanlış yapılandırmadan veya bağlantıya müdahale eden bir saldırgandan kaynaklanıyor olabilir.</translation>
 <translation id="7569952961197462199">Kredi kartı Chrome'dan kaldırılsın mı?</translation>
@@ -967,7 +982,6 @@ Ek ayrıntılar:
 <translation id="7658239707568436148">İptal</translation>
 <translation id="7662298039739062396">Ayar bir uzantının kontrolü altında</translation>
 <translation id="7663736086183791259">Sertifika <ph name="CERTIFICATE_VALIDITY" /></translation>
-<translation id="7665886282480776333">Kartlarınız Google'a kaydedilsin mi?</translation>
 <translation id="7667346355482952095">Döndürülen politika jetonu boş veya mevcut jetonla eşleşmiyor</translation>
 <translation id="7668654391829183341">Bilinmeyen cihaz</translation>
 <translation id="7669271284792375604">Bu sitedeki saldırganlar web'e göz atma deneyiminize zarar veren programlar yüklemeniz için sizi kandırmayı (örneğin ana sayfanızı değiştirerek ya da ziyaret ettiğiniz sitelerde ek reklamlar görüntüleyerek) deneyebilir.</translation>
@@ -1120,7 +1134,6 @@ Ek ayrıntılar:
 <translation id="8725066075913043281">Yeniden dene</translation>
 <translation id="8728672262656704056">Gizli moda geçtiniz</translation>
 <translation id="8730621377337864115">Bitti</translation>
-<translation id="8733831205558190772">Tüm kartlarınız tek bir yerde</translation>
 <translation id="8738058698779197622">Güvenli bir bağlantı kurmak için saatinizin doğru ayarlanmış olması gerekir. Bunun sebebi, web sitelerinin kendilerini tanımlamak için kullandıkları sertifikaların sadece belli süreler için geçerli olmasıdır. Cihazınızın saati yanlış olduğundan, Chromium bu sertifikaları doğrulayamaz.</translation>
 <translation id="8740359287975076522"><ph name="HOST_NAME" /> ana makinesinin &lt;abbr id="dnsDefinition"&gt;DNS adresi&lt;/abbr&gt; bulunamadı. Sorun teşhis ediliyor.</translation>
 <translation id="874846938927089722">Kabul Edilen Kredi Kartları ve Ön Ödemeli Kartlar</translation>
@@ -1141,7 +1154,6 @@ Ek ayrıntılar:
 <translation id="8866481888320382733">Politika ayarlarını ayrıştırma hatası</translation>
 <translation id="8870413625673593573">Son Kapatılan</translation>
 <translation id="8874824191258364635">Geçerli bir kart numarası girin</translation>
-<translation id="8876793034577346603">Ağ yapılandırması ayrıştırılamadı.</translation>
 <translation id="8891727572606052622">Geçersiz proxy modu.</translation>
 <translation id="8892964541482452187">Sekme değiştirme düğmesi, bu sekmeye geçmek için enter tuşuna basın</translation>
 <translation id="8903921497873541725">Yakınlaştır</translation>
@@ -1149,13 +1161,14 @@ Ek ayrıntılar:
 <translation id="8932102934695377596">Saatiniz geri</translation>
 <translation id="893332455753468063">Ad Ekleyin</translation>
 <translation id="8938939909778640821">Kabul edilen kredi kartları ve ön ödemeli kartlar</translation>
-<translation id="8952525071319348207">Kart bilgilerinizi güncellemek için <ph name="CREDIT_CARD" /> numaralı karta ilişkin son kullanma tarihini ve CVC kodunu girin. Onayladığınızda Googe Payments hesabınızdaki kart bilgileriniz bu siteyle paylaşılır.</translation>
 <translation id="8957210676456822347">Giriş Portalı Yetkilendirmesi</translation>
+<translation id="8968766641738584599">Kartı kaydet</translation>
 <translation id="8971063699422889582">Sunucu sertifikasının süresi doldu.</translation>
 <translation id="8975012916872825179">Telefon numaraları, e-posta adresleri ve gönderim adresleri gibi bilgileri içerir</translation>
 <translation id="8978053250194585037">Google Güvenli Tarama yakın bir zamanda <ph name="SITE" /> sitesinde <ph name="BEGIN_LINK" />kimlik avı yapıldığını tespit etti<ph name="END_LINK" />. Kimlik avı siteleri sizi aldatmak için başka web siteleri gibi görünür.</translation>
 <translation id="8983003182662520383">Google Pay'i Kullanan Ödeme Yöntemleri ve Adresler</translation>
 <translation id="8987927404178983737">Ay</translation>
+<translation id="8988408250700415532">Bir sorun oluştu. Siparişinizi web sitesinde tamamlayabilirsiniz.</translation>
 <translation id="8989148748219918422"><ph name="ORGANIZATION" /> [<ph name="COUNTRY" />]</translation>
 <translation id="8996941253935762404">Girmekte olduğunuz site zararlı programlar içermektedir</translation>
 <translation id="8997023839087525404">Sunucu, Sertifika Şeffaflığı politikası kullanılarak herkese açık bir şekilde açıklanmayan bir sertifika sundu. Güvenilir olduklarından emin olmak ve saldırganlara karşı koruma sağlamak için bazı sertifikalarda bu zorunludur.</translation>
@@ -1180,7 +1193,6 @@ Ek ayrıntılar:
 <translation id="9103872766612412690"><ph name="SITE" /> normalde bilgilerinizi korumak için şifreleme kullanmaktadır. Chromium bu sefer <ph name="SITE" /> sitesine bağlanmayı denediğinde, web sitesi sıra dışı ve yanlış kimlik bilgileri döndürdü. Bir saldırgan <ph name="SITE" /> gibi davranmaya çalışıyor olabilir ya da bir Kablosuz oturum açma ekranı bağlantıyı kesmiştir. Chromium herhangi bir veri alışverişinden önce bağlantıyı durdurduğu için bilgileriniz hâlâ güvendedir.</translation>
 <translation id="9106062320799175032">Fatura Adresi Ekleyin</translation>
 <translation id="9114524666733003316">Kart onaylanıyor...</translation>
-<translation id="9117895703580314323">Hizmet kullanılamıyor, daha sonra tekrar deneyin.</translation>
 <translation id="9128870381267983090">Ağa bağlan</translation>
 <translation id="9137013805542155359">Orijinali göster</translation>
 <translation id="9137248913990643158">Lütfen bu uygulamayı kullanmadan önce Chrome'u başlatıp oturum açın.</translation>
@@ -1203,6 +1215,7 @@ Ek ayrıntılar:
 <translation id="935608979562296692">FORMU TEMİZLE</translation>
 <translation id="936602727769022409">Google Hesabınıza erişimi kaybedebilirsiniz. Chromium, şifrenizi hemen değiştirmenizi önerir. Oturum açmanız istenecektir.</translation>
 <translation id="939736085109172342">Yeni klasör</translation>
+<translation id="945855313015696284">Aşağıdaki bilgileri kontrol edin ve geçersiz kartları silin</translation>
 <translation id="951104842009476243">Kabul Edilen Banka ve Ön Ödemeli Kartlar</translation>
 <translation id="962484866189421427">Bu içerik başka bir şeyi taklit eden aldatıcı uygulamalar yükleyebilir veya sizi izlemek için kullanılabilecek veriler toplayabilir. <ph name="BEGIN_LINK" />Yine de göster<ph name="END_LINK" /></translation>
 <translation id="969892804517981540">Resmi Derleme</translation>

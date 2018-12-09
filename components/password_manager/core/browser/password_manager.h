@@ -18,6 +18,8 @@
 #include "build/build_config.h"
 #include "components/autofill/core/common/password_form.h"
 #include "components/autofill/core/common/password_form_fill_data.h"
+#include "components/autofill/core/common/signatures_util.h"
+#include "components/password_manager/core/browser/form_parsing/password_field_prediction.h"
 #include "components/password_manager/core/browser/form_submission_observer.h"
 #include "components/password_manager/core/browser/login_model.h"
 #include "components/password_manager/core/browser/password_form_manager.h"
@@ -102,9 +104,8 @@ class PasswordManager : public LoginModel, public FormSubmissionObserver {
   void ProvisionallySavePassword(const autofill::PasswordForm& form,
                                  const PasswordManagerDriver* driver);
 
-  // Should be called when the user navigates the main frame. Not called for
-  // in-page navigation.
-  void DidNavigateMainFrame();
+  // FormSubmissionObserver:
+  void DidNavigateMainFrame(bool form_may_be_submitted) override;
 
   // Handles password forms being parsed.
   void OnPasswordFormsParsed(PasswordManagerDriver* driver,
@@ -175,10 +176,6 @@ class PasswordManager : public LoginModel, public FormSubmissionObserver {
     return GetSubmittedManager();
   }
 
-  void set_skip_old_form_managers_in_tests(bool value) {
-    skip_old_form_managers_in_tests_ = value;
-  }
-
 #endif
 
   NavigationEntryToCheck entry_to_check() const { return entry_to_check_; }
@@ -194,9 +191,6 @@ class PasswordManager : public LoginModel, public FormSubmissionObserver {
   FRIEND_TEST_ALL_PREFIXES(
       PasswordManagerTest,
       ShouldBlockPasswordForSameOriginButDifferentSchemeTest);
-
-  // FormSubmissionObserver:
-  void OnStartNavigation(PasswordManagerDriver* driver) override;
 
   // Clones |matched_manager| and keeps it as |provisional_save_manager_|.
   // |form| is saved provisionally to |provisional_save_manager_|.
@@ -237,15 +231,16 @@ class PasswordManager : public LoginModel, public FormSubmissionObserver {
   void CreateFormManagers(PasswordManagerDriver* driver,
                           const std::vector<autofill::PasswordForm>& forms);
 
-  // Passes |submitted_form| to NewPasswordManager that manages it for using it
-  // after detecting submission success for saving. |driver| is needed to
-  // determine the match.
-  // If the function is called multiple times, only the form from the last call
-  // is considered to be submitted. Multiple calls is possible because there can
-  // be multiple submitted forms on a page or our heuristics might have
-  // incorrectly found submissions.
-  void ProcessSubmittedForm(const autofill::FormData& submitted_form,
-                            const PasswordManagerDriver* driver);
+  // Passes |form| to NewPasswordManager that manages it for using it after
+  // detecting submission success for saving. |driver| is needed to determine
+  // the match. If the function is called multiple times, only the form from the
+  // last call is provisionally saved. Multiple calls is possible because it is
+  // called on any user keystroke.
+  // Returns manager which manages |form| or nullptr if such manager is not
+  // found.
+  NewPasswordFormManager* ProvisionallySaveForm(
+      const autofill::FormData& form,
+      const PasswordManagerDriver* driver);
 
   // Returns the best match in |pending_login_managers_| for |form|. May return
   // nullptr if no match exists.
@@ -346,6 +341,9 @@ class PasswordManager : public LoginModel, public FormSubmissionObserver {
   // (to see if the login was a failure), and clears the vector.
   std::vector<autofill::PasswordForm> all_visible_forms_;
 
+  // Server predictions for the forms on the page.
+  std::map<autofill::FormSignature, FormPredictions> predictions_;
+
   // The user-visible URL from the last time a password was provisionally saved.
   GURL main_frame_url_;
 
@@ -357,10 +355,8 @@ class PasswordManager : public LoginModel, public FormSubmissionObserver {
 
   const bool is_new_form_parsing_for_saving_enabled_;
 
-  // If true, it turns off using PasswordFormManager in PasswordManager. Now it
-  // is used only in tests and later the old PasswordFormManager will disappear
-  // and with it also this flag.
-  bool skip_old_form_managers_in_tests_ = false;
+  // If true, it turns off using PasswordFormManager in PasswordManager.
+  const bool is_only_new_parser_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(PasswordManager);
 };

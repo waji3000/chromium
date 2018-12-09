@@ -20,9 +20,11 @@
 #include "base/threading/thread_local.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "base/time/clock.h"
+#include "base/time/tick_clock.h"
 #include "base/time/time.h"
 
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) || defined(OS_FUCHSIA)
 #include "base/files/file_descriptor_watcher_posix.h"
 #endif
 
@@ -50,6 +52,23 @@ std::unique_ptr<MessageLoop> CreateMessageLoopForMainThreadType(
   return nullptr;
 }
 
+class TickClockBasedClock : public Clock {
+ public:
+  explicit TickClockBasedClock(const TickClock* tick_clock)
+      : tick_clock_(*tick_clock),
+        start_ticks_(tick_clock_.NowTicks()),
+        start_time_(Time::UnixEpoch()) {}
+
+  Time Now() const override {
+    return start_time_ + (tick_clock_.NowTicks() - start_ticks_);
+  }
+
+ private:
+  const TickClock& tick_clock_;
+  const TimeTicks start_ticks_;
+  const Time start_time_;
+};
+
 }  // namespace
 
 class ScopedTaskEnvironment::TestTaskTracker
@@ -76,6 +95,7 @@ class ScopedTaskEnvironment::TestTaskTracker
   // internal::TaskSchedulerImpl::TaskTrackerImpl:
   void RunOrSkipTask(internal::Task task,
                      internal::Sequence* sequence,
+                     const TaskTraits& traits,
                      bool can_run_task) override;
 
   // Synchronizes accesses to members below.
@@ -116,12 +136,16 @@ ScopedTaskEnvironment::ScopedTaskEnvironment(
                     internal::ScopedSetSequenceLocalStorageMapForCurrentThread>(
                     slsm_for_mock_time_.get())
               : nullptr),
-#if defined(OS_POSIX)
+      mock_clock_(mock_time_task_runner_
+                      ? std::make_unique<TickClockBasedClock>(
+                            mock_time_task_runner_->GetMockTickClock())
+                      : nullptr),
+#if defined(OS_POSIX) || defined(OS_FUCHSIA)
       file_descriptor_watcher_(main_thread_type == MainThreadType::IO
                                    ? std::make_unique<FileDescriptorWatcher>(
                                          message_loop_->task_runner())
                                    : nullptr),
-#endif  // defined(OS_POSIX)
+#endif  // defined(OS_POSIX) || defined(OS_FUCHSIA)
       task_tracker_(new TestTaskTracker()) {
   CHECK(!TaskScheduler::GetInstance())
       << "Someone has already initialized TaskScheduler. If nothing in your "
@@ -145,8 +169,25 @@ ScopedTaskEnvironment::ScopedTaskEnvironment(
   TaskScheduler::SetInstance(std::make_unique<internal::TaskSchedulerImpl>(
       "ScopedTaskEnvironment", WrapUnique(task_tracker_)));
   task_scheduler_ = TaskScheduler::GetInstance();
-  TaskScheduler::GetInstance()->Start({worker_pool_params, worker_pool_params,
-                                       worker_pool_params, worker_pool_params});
+  TaskScheduler::GetInstance()->Start({
+    worker_pool_params, worker_pool_params, worker_pool_params,
+        worker_pool_params
+#if defined(OS_WIN)
+        ,
+        // Enable the MTA in unit tests to match the browser process'
+        // TaskScheduler configuration.
+        //
+        // This has the adverse side-effect of enabling the MTA in non-browser
+        // unit tests as well but the downside there is not as bad as not having
+        // it in browser unit tests. It just means some COM asserts may pass in
+        // unit tests where they wouldn't in integration tests or prod. That's
+        // okay because unit tests are already generally very loose on allowing
+        // I/O, waits, etc. Such misuse will still be caught in later phases
+        // (and COM usage should already be pretty much inexistent in sandboxed
+        // processes).
+        TaskScheduler::InitParams::SharedWorkerPoolEnvironment::COM_MTA
+#endif
+  });
 
   if (execution_control_mode_ == ExecutionMode::QUEUED)
     CHECK(task_tracker_->DisallowRunTasks());
@@ -292,7 +333,7 @@ void ScopedTaskEnvironment::FastForwardUntilNoTasksRemain() {
   mock_time_task_runner_->FastForwardUntilNoTasksRemain();
 }
 
-const TickClock* ScopedTaskEnvironment::GetMockTickClock() {
+const TickClock* ScopedTaskEnvironment::GetMockTickClock() const {
   DCHECK(mock_time_task_runner_);
   return mock_time_task_runner_->GetMockTickClock();
 }
@@ -305,6 +346,11 @@ std::unique_ptr<TickClock> ScopedTaskEnvironment::DeprecatedGetMockTickClock() {
 base::TimeTicks ScopedTaskEnvironment::NowTicks() const {
   DCHECK(mock_time_task_runner_);
   return mock_time_task_runner_->NowTicks();
+}
+
+const Clock* ScopedTaskEnvironment::GetMockClock() const {
+  DCHECK(mock_clock_);
+  return mock_clock_.get();
 }
 
 size_t ScopedTaskEnvironment::GetPendingMainThreadTaskCount() const {
@@ -347,6 +393,7 @@ bool ScopedTaskEnvironment::TestTaskTracker::DisallowRunTasks() {
 void ScopedTaskEnvironment::TestTaskTracker::RunOrSkipTask(
     internal::Task task,
     internal::Sequence* sequence,
+    const TaskTraits& traits,
     bool can_run_task) {
   {
     AutoLock auto_lock(lock_);
@@ -358,7 +405,7 @@ void ScopedTaskEnvironment::TestTaskTracker::RunOrSkipTask(
   }
 
   internal::TaskSchedulerImpl::TaskTrackerImpl::RunOrSkipTask(
-      std::move(task), sequence, can_run_task);
+      std::move(task), sequence, traits, can_run_task);
 
   {
     AutoLock auto_lock(lock_);

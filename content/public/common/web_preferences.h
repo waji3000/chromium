@@ -14,7 +14,7 @@
 #include "build/build_config.h"
 #include "content/common/content_export.h"
 #include "net/nqe/effective_connection_type.h"
-#include "ui/base/touch/touch_device.h"
+#include "ui/base/pointer/pointer_device.h"
 #include "url/gurl.h"
 
 namespace blink {
@@ -69,7 +69,6 @@ enum class SavePreviousDocumentResources {
 enum class AutoplayPolicy {
   kNoUserGestureRequired,
   kUserGestureRequired,
-  kUserGestureRequiredForCrossOrigin,
   kDocumentUserActivationRequired,
 };
 
@@ -319,6 +318,9 @@ struct CONTENT_EXPORT WebPreferences {
   // estimate corresponding to |network_quality_estimator_web_holdback|
   // regardless of the actual quality.
   net::EffectiveConnectionType network_quality_estimator_web_holdback;
+
+  // Whether lazy loading of frames and images is enabled.
+  bool lazy_load_enabled = true;
 
   // Specifies how close a lazily loaded iframe or image should be from the
   // viewport before it should start being loaded in, depending on the effective

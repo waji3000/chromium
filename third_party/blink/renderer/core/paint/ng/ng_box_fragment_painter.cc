@@ -42,6 +42,7 @@
 #include "third_party/blink/renderer/platform/graphics/graphics_context_state_saver.h"
 #include "third_party/blink/renderer/platform/graphics/paint/display_item_cache_skipper.h"
 #include "third_party/blink/renderer/platform/graphics/paint/drawing_recorder.h"
+#include "third_party/blink/renderer/platform/graphics/paint/hit_test_display_item.h"
 #include "third_party/blink/renderer/platform/scroll/scroll_types.h"
 
 namespace blink {
@@ -219,7 +220,7 @@ void NGBoxFragmentPainter::RecordHitTestData(const PaintInfo& paint_info,
   if (physical_fragment.IsInline())
     border_box.offset += box_fragment_.InlineOffsetToContainerBox();
   border_box.offset += NGPhysicalOffset(paint_offset);
-  HitTestData::RecordHitTestRect(
+  HitTestDisplayItem::Record(
       paint_info.context, box_fragment_,
       HitTestRect(border_box.ToLayoutRect(), touch_action));
 }
@@ -246,7 +247,7 @@ void NGBoxFragmentPainter::PaintObject(
     // Record the scroll hit test after the background so background squashing
     // is not affected. Hit test order would be equivalent if this were
     // immediately before the background.
-    // if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+    // if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
     //  PaintScrollHitTestDisplayItem(paint_info);
 
     // We're done. We don't bother painting any children.
@@ -319,17 +320,15 @@ void NGBoxFragmentPainter::PaintBlockFlowContents(
 
   LayoutRect overflow_rect(box_fragment_.ChildrenInkOverflow());
   overflow_rect.MoveBy(paint_offset);
-  if (!paint_info.GetCullRect().IntersectsCullRect(overflow_rect))
+  if (!paint_info.GetCullRect().Intersects(overflow_rect))
     return;
 
   if (paint_info.phase == PaintPhase::kMask) {
     if (DrawingRecorder::UseCachedDrawingIfPossible(
-            paint_info.context, box_fragment_,
-            DisplayItem::PaintPhaseToDrawingType(paint_info.phase)))
+            paint_info.context, box_fragment_, paint_info.phase))
       return;
-    DrawingRecorder recorder(
-        paint_info.context, box_fragment_,
-        DisplayItem::PaintPhaseToDrawingType(paint_info.phase));
+    DrawingRecorder recorder(paint_info.context, box_fragment_,
+                             paint_info.phase);
     PaintMask(paint_info, paint_offset);
     return;
   }
@@ -534,7 +533,7 @@ void NGBoxFragmentPainter::PaintBoxDecorationBackgroundWithRect(
   BoxDecorationData box_decoration_data(PhysicalFragment());
   GraphicsContextStateSaver state_saver(paint_info.context, false);
 
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled() &&
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled() &&
       LayoutRect(EnclosingIntRect(paint_rect)) == paint_rect &&
       BackgroundIsKnownToBeOpaque(paint_info))
     recorder.SetKnownToBeOpaque();
@@ -802,11 +801,9 @@ void NGBoxFragmentPainter::PaintTextChild(const NGPaintFragment& text_fragment,
   base::Optional<DrawingRecorder> recorder;
   if (paint_info.phase != PaintPhase::kTextClip) {
     if (DrawingRecorder::UseCachedDrawingIfPossible(
-            paint_info.context, text_fragment,
-            DisplayItem::PaintPhaseToDrawingType(paint_info.phase)))
+            paint_info.context, text_fragment, paint_info.phase))
       return;
-    recorder.emplace(paint_info.context, text_fragment,
-                     DisplayItem::PaintPhaseToDrawingType(paint_info.phase));
+    recorder.emplace(paint_info.context, text_fragment, paint_info.phase);
   }
 
   const NGPhysicalTextFragment& physical_text_fragment =

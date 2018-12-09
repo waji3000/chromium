@@ -28,7 +28,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "base/task/post_task.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/values.h"
@@ -1190,8 +1190,19 @@ void DeviceStatusCollector::UpdateChildUsageTime() {
   }
 
   if (!last_active_check_.is_null() && last_state_active_) {
-    activity_storage_->AddActivityPeriod(last_active_check_, now, now,
-                                         GetUserForActivityReporting());
+    // If it's been too long since the last report, or if the activity is
+    // negative (which can happen when the clock changes), assume a single
+    // interval of activity. This is the same strategy used to enterprise users.
+    base::TimeDelta active_seconds = now - last_active_check_;
+    if (active_seconds < base::TimeDelta::FromSeconds(0) ||
+        active_seconds >= (2 * kUpdateChildActiveTimeInterval)) {
+      activity_storage_->AddActivityPeriod(now - kUpdateChildActiveTimeInterval,
+                                           now, now,
+                                           GetUserForActivityReporting());
+    } else {
+      activity_storage_->AddActivityPeriod(last_active_check_, now, now,
+                                           GetUserForActivityReporting());
+    }
 
     activity_storage_->PruneActivityPeriods(
         now, max_stored_past_activity_interval_,

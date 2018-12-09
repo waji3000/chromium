@@ -29,6 +29,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model_delegate.h"
 #include "chrome/browser/ui/tabs/tab_utils.h"
 #include "chrome/browser/ui/views/tabs/tab.h"
+#include "chrome/browser/ui/views/tabs/tab_drag_controller.h"
 #include "chrome/browser/ui/views/tabs/tab_renderer_data.h"
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
 #include "chrome/common/chrome_switches.h"
@@ -71,6 +72,19 @@ bool DetermineTabStripLayoutStacked(PrefService* prefs, bool* adjust_layout) {
   return base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kForceStackedTabStripLayout);
 #endif
+}
+
+// Gets the source browser view during a tab dragging. Returns nullptr if there
+// is none.
+BrowserView* GetSourceBrowserViewInTabDragging() {
+  TabStrip* source_tabstrip = TabDragController::GetSourceTabStrip();
+  if (source_tabstrip) {
+    gfx::NativeWindow source_window =
+        source_tabstrip->GetWidget()->GetNativeWindow();
+    if (source_window)
+      return BrowserView::GetBrowserViewForNativeWindow(source_window);
+  }
+  return nullptr;
 }
 
 }  // namespace
@@ -366,10 +380,6 @@ bool BrowserTabStripController::IsSingleTabModeAvailable() {
   return GetFrameView()->IsSingleTabModeAvailable();
 }
 
-bool BrowserTabStripController::ShouldDrawStrokes() const {
-  return GetFrameView()->ShouldDrawStrokes();
-}
-
 void BrowserTabStripController::OnStartedDraggingTabs() {
   if (!immersive_reveal_lock_.get()) {
     // The top-of-window views should be revealed while the user is dragging
@@ -380,10 +390,25 @@ void BrowserTabStripController::OnStartedDraggingTabs() {
         browser_view_->immersive_mode_controller()->GetRevealedLock(
             ImmersiveModeController::ANIMATE_REVEAL_NO));
   }
+
+  browser_view_->TabDraggingStatusChanged(/*is_dragging=*/true);
+  // We also use fast resize for the source browser window as the source browser
+  // window may also change bounds during dragging.
+  BrowserView* source_browser_view = GetSourceBrowserViewInTabDragging();
+  if (source_browser_view && source_browser_view != browser_view_)
+    source_browser_view->TabDraggingStatusChanged(/*is_dragging=*/true);
 }
 
 void BrowserTabStripController::OnStoppedDraggingTabs() {
   immersive_reveal_lock_.reset();
+
+  BrowserView* source_browser_view = GetSourceBrowserViewInTabDragging();
+  // Only reset the source window's fast resize bit after the entire drag
+  // ends.
+  if (browser_view_ != source_browser_view)
+    browser_view_->TabDraggingStatusChanged(/*is_dragging=*/false);
+  if (source_browser_view && !TabDragController::IsActive())
+    source_browser_view->TabDraggingStatusChanged(/*is_dragging=*/false);
 }
 
 bool BrowserTabStripController::IsFrameCondensed() const {
@@ -399,20 +424,21 @@ bool BrowserTabStripController::EverHasVisibleBackgroundTabShapes() const {
   return GetFrameView()->EverHasVisibleBackgroundTabShapes();
 }
 
-SkColor BrowserTabStripController::GetFrameColor() const {
-  return GetFrameView()->GetFrameColor();
+bool BrowserTabStripController::ShouldPaintAsActiveFrame() const {
+  return GetFrameView()->ShouldPaintAsActive();
+}
+
+bool BrowserTabStripController::CanDrawStrokes() const {
+  return GetFrameView()->CanDrawStrokes();
+}
+
+SkColor BrowserTabStripController::GetFrameColor(
+    BrowserNonClientFrameView::ActiveState active_state) const {
+  return GetFrameView()->GetFrameColor(active_state);
 }
 
 SkColor BrowserTabStripController::GetToolbarTopSeparatorColor() const {
   return GetFrameView()->GetToolbarTopSeparatorColor();
-}
-
-SkColor BrowserTabStripController::GetTabBackgroundColor(TabState state) const {
-  return GetFrameView()->GetTabBackgroundColor(state);
-}
-
-SkColor BrowserTabStripController::GetTabForegroundColor(TabState state) const {
-  return GetFrameView()->GetTabForegroundColor(state);
 }
 
 int BrowserTabStripController::GetTabBackgroundResourceId(

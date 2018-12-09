@@ -10,6 +10,7 @@
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "services/service_manager/public/cpp/bind_source_info.h"
 #include "services/ws/common/switches.h"
+#include "services/ws/common/util.h"
 #include "services/ws/embedding.h"
 #include "services/ws/event_injector.h"
 #include "services/ws/event_queue.h"
@@ -25,12 +26,23 @@
 #include "services/ws/window_service_observer.h"
 #include "services/ws/window_tree.h"
 #include "services/ws/window_tree_factory.h"
+#include "ui/aura/client/aura_constants.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window_occlusion_tracker.h"
 #include "ui/base/mojo/clipboard_host.h"
 #include "ui/wm/core/shadow_types.h"
 
 namespace ws {
+
+namespace {
+
+// Returns true if |window| has remote client and marked as has-content.
+bool IsRemoteOpaqueWindow(const aura::Window* window) {
+  return WindowService::HasRemoteClient(window) &&
+         window->GetProperty(aura::client::kClientWindowHasContent);
+}
+
+}  // namespace
 
 WindowService::WindowService(
     WindowServiceDelegate* delegate,
@@ -63,10 +75,9 @@ WindowService::WindowService(
       mojom::WindowManager::kShadowElevation_Property,
       aura::PropertyConverter::CreateAcceptAnyValueCallback());
 
-  // Extends WindowOcclusionTracker to treat windows with remote client as
-  // has-content.
+  // Extends WindowOcclusionTracker to check whether remote window has content.
   env_->GetWindowOcclusionTracker()->set_window_has_content_callback(
-      base::BindRepeating(&WindowService::HasRemoteClient));
+      base::BindRepeating(&IsRemoteOpaqueWindow));
 }
 
 WindowService::~WindowService() {
@@ -76,6 +87,12 @@ WindowService::~WindowService() {
   // WindowTrees are destroyed before ScreenProvider.
   window_tree_factory_.reset();
   DCHECK(window_trees_.empty());
+}
+
+void WindowService::BindServiceRequest(
+    service_manager::mojom::ServiceRequest request) {
+  DCHECK(!service_binding_.is_bound());
+  service_binding_.Bind(std::move(request));
 }
 
 ServerWindow* WindowService::GetServerWindowForWindowCreateIfNecessary(
@@ -124,6 +141,28 @@ bool WindowService::HasRemoteClient(const aura::Window* window) {
 bool WindowService::IsTopLevelWindow(const aura::Window* window) {
   const ServerWindow* server_window = ServerWindow::GetMayBeNull(window);
   return server_window && server_window->IsTopLevel();
+}
+
+aura::Window* WindowService::GetWindowByClientId(Id transport_id) {
+  const ClientSpecificId client_id = ClientIdFromTransportId(transport_id);
+  WindowTree* window_tree = GetTreeById(client_id);
+  return window_tree ? window_tree->GetWindowByTransportId(transport_id)
+                     : nullptr;
+}
+
+Id WindowService::GetCompleteTransportIdForWindow(aura::Window* window) {
+  ServerWindow* server_window = ServerWindow::GetMayBeNull(window);
+  if (!server_window)
+    return kInvalidTransportId;
+  if (!server_window->owning_window_tree())
+    return kInvalidTransportId;
+  // NOTE: WindowTree::TransportIdForWindow() is the id sent to the client,
+  // which has the client_id portion set to 0. This function wants to see the
+  // real client_id, so it has to build it.
+  return BuildTransportId(
+      server_window->owning_window_tree()->client_id(),
+      ClientWindowIdFromTransportId(
+          server_window->owning_window_tree()->TransportIdForWindow(window)));
 }
 
 WindowService::TreeAndWindowId
@@ -270,6 +309,14 @@ void WindowService::OnBindInterface(
                                                    remote_info)) {
     registry_.BindInterface(interface_name, std::move(handle));
   }
+}
+
+WindowTree* WindowService::GetTreeById(ClientSpecificId id) {
+  for (WindowTree* tree : window_trees_) {
+    if (tree->client_id() == id)
+      return tree;
+  }
+  return nullptr;
 }
 
 void WindowService::SetSurfaceActivationCallback(

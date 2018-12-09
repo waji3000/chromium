@@ -32,7 +32,8 @@ namespace fileManagerPrivateInternal {
   callback ValidatePathNameLengthCallback = void(boolean result);
   callback GetDirectorySizeCallback = void(double size);
   callback GetRecentFilesCallback = void(EntryDescription[] entries);
-  callback GetCrostiniSharedPathsCallback = void(EntryDescription[] entries);
+  callback GetCrostiniSharedPathsCallback =
+      void(EntryDescription[] entries, boolean firstForSession);
   callback GetLinuxPackageInfoCallback =
       void(fileManagerPrivate.LinuxPackageInfo linux_package_info);
   callback InstallLinuxPackageCallback =
@@ -105,6 +106,7 @@ namespace fileManagerPrivateInternal {
                                GetRecentFilesCallback callback);
     static void sharePathsWithCrostini(DOMString[] urls, boolean persist,
                                       SimpleCallback callback);
+    static void unsharePathWithCrostini(DOMString url, SimpleCallback callback);
     static void getCrostiniSharedPaths(
         GetCrostiniSharedPathsCallback callback);
     static void getLinuxPackageInfo(DOMString url,

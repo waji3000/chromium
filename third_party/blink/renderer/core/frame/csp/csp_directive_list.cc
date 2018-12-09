@@ -96,7 +96,8 @@ CSPDirectiveList* CSPDirectiveList::Create(
     ContentSecurityPolicyHeaderType type,
     ContentSecurityPolicyHeaderSource source,
     bool should_parse_wasm_eval) {
-  CSPDirectiveList* directives = new CSPDirectiveList(policy, type, source);
+  CSPDirectiveList* directives =
+      MakeGarbageCollected<CSPDirectiveList>(policy, type, source);
   directives->Parse(begin, end, should_parse_wasm_eval);
 
   if (!directives->CheckEval(directives->OperativeDirective(
@@ -709,8 +710,9 @@ bool CSPDirectiveList::AllowEval(
         "Policy directive: ",
         script_state, exception_status, content);
   }
-  return CheckEval(
-      OperativeDirective(ContentSecurityPolicy::DirectiveType::kScriptSrc));
+  return IsReportOnly() ||
+         CheckEval(OperativeDirective(
+             ContentSecurityPolicy::DirectiveType::kScriptSrc));
 }
 
 bool CSPDirectiveList::AllowWasmEval(
@@ -726,8 +728,9 @@ bool CSPDirectiveList::AllowWasmEval(
         "Content Security Policy directive: ",
         script_state, exception_status, content);
   }
-  return CheckWasmEval(
-      OperativeDirective(ContentSecurityPolicy::DirectiveType::kScriptSrc));
+  return IsReportOnly() ||
+         CheckWasmEval(OperativeDirective(
+             ContentSecurityPolicy::DirectiveType::kScriptSrc));
 }
 
 bool CSPDirectiveList::AllowPluginType(
@@ -1302,7 +1305,7 @@ void CSPDirectiveList::SetCSPDirective(const String& name,
     return;
   }
 
-  directive = new CSPDirectiveType(name, value, policy_);
+  directive = MakeGarbageCollected<CSPDirectiveType>(name, value, policy_);
 }
 
 void CSPDirectiveList::ApplySandboxPolicy(const String& name,
@@ -1358,7 +1361,8 @@ void CSPDirectiveList::RequireTrustedTypes(const String& name,
     return;
   }
   policy_->RequireTrustedTypes();
-  trusted_types_ = new StringListDirective(name, value, policy_);
+  trusted_types_ =
+      MakeGarbageCollected<StringListDirective>(name, value, policy_);
 }
 
 void CSPDirectiveList::EnforceStrictMixedContentChecking(const String& name,
@@ -1700,7 +1704,8 @@ bool CSPDirectiveList::Subsumes(const CSPDirectiveListVector& other) {
 
 WebContentSecurityPolicy CSPDirectiveList::ExposeForNavigationalChecks() const {
   WebContentSecurityPolicy policy;
-  policy.disposition = static_cast<WebContentSecurityPolicyType>(header_type_);
+  policy.disposition =
+      static_cast<mojom::ContentSecurityPolicyType>(header_type_);
   policy.source = static_cast<WebContentSecurityPolicySource>(header_source_);
   std::vector<WebContentSecurityPolicyDirective> directives;
   for (const auto& directive :

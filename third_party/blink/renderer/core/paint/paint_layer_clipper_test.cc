@@ -10,8 +10,8 @@
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/testing/core_unit_test_helper.h"
-#include "third_party/blink/renderer/platform/layout_test_support.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
+#include "third_party/blink/renderer/platform/web_test_support.h"
 
 namespace blink {
 
@@ -20,12 +20,12 @@ class PaintLayerClipperTest : public RenderingTest {
   PaintLayerClipperTest() : RenderingTest(EmptyLocalFrameClient::Create()) {}
 
   void SetUp() override {
-    LayoutTestSupport::SetMockThemeEnabledForTest(true);
+    WebTestSupport::SetMockThemeEnabledForTest(true);
     RenderingTest::SetUp();
   }
 
   void TearDown() override {
-    LayoutTestSupport::SetMockThemeEnabledForTest(false);
+    WebTestSupport::SetMockThemeEnabledForTest(false);
     RenderingTest::TearDown();
   }
 };
@@ -435,9 +435,9 @@ TEST_F(PaintLayerClipperTest, LocalClipRectFixedUnderTransform) {
 }
 
 TEST_F(PaintLayerClipperTest, ClearClipRectsRecursive) {
-  // SPv2 will re-use a global GeometryMapper, so this
+  // CAP will re-use a global GeometryMapper, so this
   // logic does not apply.
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
     return;
 
   SetBodyInnerHTML(R"HTML(
@@ -470,9 +470,9 @@ TEST_F(PaintLayerClipperTest, ClearClipRectsRecursive) {
 }
 
 TEST_F(PaintLayerClipperTest, ClearClipRectsRecursiveChild) {
-  // SPv2 will re-use a global GeometryMapper, so this
+  // CAP will re-use a global GeometryMapper, so this
   // logic does not apply.
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
     return;
 
   SetBodyInnerHTML(R"HTML(
@@ -877,10 +877,6 @@ TEST_F(PaintLayerClipperTest, ScrollbarClipBehaviorParent) {
   PaintLayer* parent_paint_layer =
       ToLayoutBoxModelObject(parent->GetLayoutObject())->Layer();
 
-  Element* child = GetDocument().getElementById("child");
-  PaintLayer* child_paint_layer =
-      ToLayoutBoxModelObject(child->GetLayoutObject())->Layer();
-
   ClipRectsContext context(
       parent_paint_layer,
       &parent_paint_layer->GetLayoutObject().FirstFragment(),
@@ -890,7 +886,7 @@ TEST_F(PaintLayerClipperTest, ScrollbarClipBehaviorParent) {
   ClipRect background_rect, foreground_rect;
   parent_paint_layer->Clipper(PaintLayer::kUseGeometryMapper)
       .CalculateRects(context,
-                      &child_paint_layer->GetLayoutObject().FirstFragment(),
+                      &parent_paint_layer->GetLayoutObject().FirstFragment(),
                       nullptr, layer_bounds, background_rect, foreground_rect);
 
   // Only the foreground is clipped by the scrollbar size, because we

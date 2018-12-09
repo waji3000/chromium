@@ -30,7 +30,7 @@ class StylePropertyShorthand;
 // tokens from the range and also consume any whitespace which follows. When
 // the start of the range doesn't match the type we're looking for, the range
 // will not be modified.
-namespace CSSPropertyParserHelpers {
+namespace css_property_parser_helpers {
 
 void Complete4Sides(CSSValue* side[4]);
 
@@ -60,7 +60,8 @@ CSSPrimitiveValue* ConsumeLengthOrPercent(
     ValueRange,
     UnitlessQuirk = UnitlessQuirk::kForbid);
 CSSPrimitiveValue* ConsumeSVGGeometryPropertyLength(CSSParserTokenRange&,
-                                                    const CSSParserContext&);
+                                                    const CSSParserContext&,
+                                                    ValueRange);
 
 CSSPrimitiveValue* ConsumeAngle(
     CSSParserTokenRange&,
@@ -78,7 +79,8 @@ inline bool IdentMatches(CSSValueID id);
 template <CSSValueID... allowedIdents>
 CSSIdentifierValue* ConsumeIdent(CSSParserTokenRange&);
 
-CSSCustomIdentValue* ConsumeCustomIdent(CSSParserTokenRange&);
+CSSCustomIdentValue* ConsumeCustomIdent(CSSParserTokenRange&,
+                                        const CSSParserContext&);
 CSSStringValue* ConsumeString(CSSParserTokenRange&);
 StringView ConsumeUrlAsStringView(CSSParserTokenRange&);
 CSSURIValue* ConsumeUrl(CSSParserTokenRange&, const CSSParserContext*);
@@ -208,7 +210,7 @@ CSSValue* ConsumeTransformList(CSSParserTokenRange&, const CSSParserContext&);
 CSSValue* ConsumeFilterFunctionList(CSSParserTokenRange&,
                                     const CSSParserContext&);
 
-}  // namespace CSSPropertyParserHelpers
+}  // namespace css_property_parser_helpers
 
 }  // namespace blink
 

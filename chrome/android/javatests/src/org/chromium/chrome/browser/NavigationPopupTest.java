@@ -163,11 +163,6 @@ public class NavigationPopupTest {
         }
 
         @Override
-        public String getOriginalUrlForVisibleNavigationEntry() {
-            return null;
-        }
-
-        @Override
         public void clearSslPreferences() {
         }
 
@@ -208,23 +203,6 @@ public class NavigationPopupTest {
         @Override
         public boolean removeEntryAtIndex(int index) {
             return false;
-        }
-
-        @Override
-        public boolean canCopyStateOver() {
-            return false;
-        }
-
-        @Override
-        public boolean canPruneAllButLastCommitted() {
-            return false;
-        }
-
-        @Override
-        public void copyStateFrom(NavigationController source, boolean needsReload) {}
-
-        @Override
-        public void copyStateFromAndPrune(NavigationController source, boolean replaceEntry) {
         }
 
         @Override
@@ -333,7 +311,9 @@ public class NavigationPopupTest {
         return ThreadUtils.runOnUiThreadBlocking(() -> {
             NavigationPopup popup = new NavigationPopup(mProfile, mActivityTestRule.getActivity(),
                     controller, NavigationPopup.Type.TABLET_FORWARD);
-            popup.show(mActivityTestRule.getActivity().getToolbarManager().getToolbarLayout());
+            popup.show(mActivityTestRule.getActivity()
+                               .getToolbarManager()
+                               .getToolbarLayoutForTesting());
             return popup.getPopupForTesting();
         });
     }

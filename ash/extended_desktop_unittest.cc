@@ -7,7 +7,6 @@
 #include "ash/shell.h"
 #include "ash/system/status_area_widget.h"
 #include "ash/system/status_area_widget_test_helper.h"
-#include "ash/system/tray/system_tray.h"
 #include "ash/system/unified/unified_system_tray.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/window_factory.h"
@@ -436,7 +435,7 @@ TEST_F(ExtendedDesktopTest, CaptureEventLocation) {
   ui::test::EventGenerator* generator = GetEventGenerator();
   generator->MoveMouseToCenterOf(r2_w1.get());
   EXPECT_EQ(gfx::Point(1060, 60).ToString(),
-            generator->current_location().ToString());
+            generator->current_screen_location().ToString());
 
   EventLocationHandler location_handler;
   r1_w1->AddPreTargetHandler(&location_handler);
@@ -468,7 +467,7 @@ TEST_F(ExtendedDesktopTest, CaptureEventLocationHighDPI) {
   ui::test::EventGenerator* generator = GetEventGenerator();
   generator->MoveMouseToCenterOf(r2_w1.get());
   EXPECT_EQ(gfx::Point(560, 60).ToString(),
-            generator->current_location().ToString());
+            generator->current_screen_location().ToString());
 
   EventLocationHandler location_handler;
   r1_w1->AddPreTargetHandler(&location_handler);
@@ -500,7 +499,7 @@ TEST_F(ExtendedDesktopTest, CaptureEventLocationHighDPI_2) {
   ui::test::EventGenerator* generator = GetEventGenerator();
   generator->MoveMouseToCenterOf(r2_w1.get());
   EXPECT_EQ(gfx::Point(1060, 60).ToString(),
-            generator->current_location().ToString());
+            generator->current_screen_location().ToString());
 
   EventLocationHandler location_handler;
   r1_w1->AddPreTargetHandler(&location_handler);

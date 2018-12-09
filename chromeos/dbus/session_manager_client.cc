@@ -43,6 +43,8 @@ using RetrievePolicyResponseType =
     SessionManagerClient::RetrievePolicyResponseType;
 
 constexpr char kEmptyAccountId[] = "";
+// The timeout used when starting the android container is 90 seconds
+constexpr int kStartArcTimeout = 90 * 1000;
 
 // Helper to get the enum type of RetrievePolicyResponseType based on error
 // name.
@@ -403,14 +405,14 @@ class SessionManagerClientImpl : public SessionManagerClient {
     writer.AppendProtoAsArrayOfBytes(request);
 
     session_manager_proxy_->CallMethod(
-        &method_call, dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
+        &method_call, kStartArcTimeout,
         base::BindOnce(&SessionManagerClientImpl::OnStartArcMiniContainer,
                        weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
   }
 
   void UpgradeArcContainer(
       const login_manager::UpgradeArcContainerRequest& request,
-      UpgradeArcContainerCallback success_callback,
+      base::OnceClosure success_callback,
       UpgradeErrorCallback error_callback) override {
     DCHECK(!success_callback.is_null());
     DCHECK(!error_callback.is_null());
@@ -471,18 +473,6 @@ class SessionManagerClientImpl : public SessionManagerClient {
     session_manager_proxy_->CallMethod(
         &method_call, dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
         base::BindOnce(&SessionManagerClientImpl::OnGetArcStartTime,
-                       weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
-  }
-
-  void RemoveArcData(const cryptohome::AccountIdentifier& cryptohome_id,
-                     VoidDBusMethodCallback callback) override {
-    dbus::MethodCall method_call(login_manager::kSessionManagerInterface,
-                                 login_manager::kSessionManagerRemoveArcData);
-    dbus::MessageWriter writer(&method_call);
-    writer.AppendString(cryptohome_id.account_id());
-    session_manager_proxy_->CallMethod(
-        &method_call, dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
-        base::BindOnce(&SessionManagerClientImpl::OnVoidMethod,
                        weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
   }
 
@@ -821,7 +811,7 @@ class SessionManagerClientImpl : public SessionManagerClient {
     std::move(callback).Run(std::move(container_instance_id));
   }
 
-  void OnUpgradeArcContainer(UpgradeArcContainerCallback success_callback,
+  void OnUpgradeArcContainer(base::OnceClosure success_callback,
                              UpgradeErrorCallback error_callback,
                              dbus::Response* response,
                              dbus::ErrorResponse* error) {
@@ -833,15 +823,7 @@ class SessionManagerClientImpl : public SessionManagerClient {
                             login_manager::dbus_error::kLowFreeDisk);
       return;
     }
-
-    dbus::MessageReader reader(response);
-    base::ScopedFD server_socket;
-    if (!reader.PopFileDescriptor(&server_socket)) {
-      LOG(ERROR) << "Invalid response: " << response->ToString();
-      std::move(error_callback).Run(false);
-      return;
-    }
-    std::move(success_callback).Run(std::move(server_socket));
+    std::move(success_callback).Run();
   }
 
   dbus::ObjectProxy* session_manager_proxy_ = nullptr;

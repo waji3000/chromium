@@ -16,6 +16,7 @@
 #include "third_party/blink/renderer/platform/network/http_names.h"
 #include "third_party/blink/renderer/platform/network/parsed_content_disposition.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
+#include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/typed_arrays/array_buffer_builder.h"
@@ -140,7 +141,8 @@ class FetchDataLoaderAsArrayBuffer final : public FetchDataLoader,
         return;
       if (result == BytesConsumer::Result::kOk) {
         if (available > 0) {
-          unsigned bytes_appended = raw_data_->Append(buffer, available);
+          unsigned bytes_appended =
+              raw_data_->Append(buffer, SafeCast<wtf_size_t>(available));
           if (!bytes_appended) {
             auto unused = consumer_->EndRead(0);
             ALLOW_UNUSED_LOCAL(unused);
@@ -262,8 +264,8 @@ class FetchDataLoaderAsFormData final : public FetchDataLoader,
 
     client_ = client;
     form_data_ = FormData::Create();
-    multipart_parser_ =
-        new MultipartParser(std::move(multipart_boundary_vector), this);
+    multipart_parser_ = MakeGarbageCollected<MultipartParser>(
+        std::move(multipart_boundary_vector), this);
     consumer_ = consumer;
     consumer_->SetClient(this);
     OnStateChange();
@@ -561,7 +563,7 @@ class FetchDataLoaderAsDataPipe final : public FetchDataLoader,
         if (available == 0) {
           result = consumer_->EndRead(0);
         } else {
-          uint32_t num_bytes = available;
+          uint32_t num_bytes = SafeCast<uint32_t>(available);
           MojoResult mojo_result = out_data_pipe_->WriteData(
               buffer, &num_bytes, MOJO_WRITE_DATA_FLAG_NONE);
           if (mojo_result == MOJO_RESULT_OK) {
@@ -625,29 +627,30 @@ class FetchDataLoaderAsDataPipe final : public FetchDataLoader,
 
 FetchDataLoader* FetchDataLoader::CreateLoaderAsBlobHandle(
     const String& mime_type) {
-  return new FetchDataLoaderAsBlobHandle(mime_type);
+  return MakeGarbageCollected<FetchDataLoaderAsBlobHandle>(mime_type);
 }
 
 FetchDataLoader* FetchDataLoader::CreateLoaderAsArrayBuffer() {
-  return new FetchDataLoaderAsArrayBuffer();
+  return MakeGarbageCollected<FetchDataLoaderAsArrayBuffer>();
 }
 
 FetchDataLoader* FetchDataLoader::CreateLoaderAsFailure() {
-  return new FetchDataLoaderAsFailure();
+  return MakeGarbageCollected<FetchDataLoaderAsFailure>();
 }
 
 FetchDataLoader* FetchDataLoader::CreateLoaderAsFormData(
     const String& multipartBoundary) {
-  return new FetchDataLoaderAsFormData(multipartBoundary);
+  return MakeGarbageCollected<FetchDataLoaderAsFormData>(multipartBoundary);
 }
 
 FetchDataLoader* FetchDataLoader::CreateLoaderAsString() {
-  return new FetchDataLoaderAsString();
+  return MakeGarbageCollected<FetchDataLoaderAsString>();
 }
 
 FetchDataLoader* FetchDataLoader::CreateLoaderAsDataPipe(
     scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
-  return new FetchDataLoaderAsDataPipe(std::move(task_runner));
+  return MakeGarbageCollected<FetchDataLoaderAsDataPipe>(
+      std::move(task_runner));
 }
 
 }  // namespace blink

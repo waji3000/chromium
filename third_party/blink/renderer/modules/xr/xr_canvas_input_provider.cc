@@ -26,7 +26,7 @@ class XRCanvasInputEventListener : public EventListener {
     return this == &that;
   }
 
-  void handleEvent(ExecutionContext* execution_context, Event* event) override {
+  void Invoke(ExecutionContext* execution_context, Event* event) override {
     if (!input_provider_->ShouldProcessEvents())
       return;
 
@@ -52,7 +52,7 @@ class XRCanvasInputEventListener : public EventListener {
 XRCanvasInputProvider::XRCanvasInputProvider(XRSession* session,
                                              HTMLCanvasElement* canvas)
     : session_(session), canvas_(canvas) {
-  listener_ = new XRCanvasInputEventListener(this);
+  listener_ = MakeGarbageCollected<XRCanvasInputEventListener>(this);
   canvas->addEventListener(event_type_names::kPointerdown, listener_);
   canvas->addEventListener(event_type_names::kPointerup, listener_);
   canvas->addEventListener(event_type_names::kPointercancel, listener_);
@@ -97,7 +97,7 @@ void XRCanvasInputProvider::UpdateInputSource(PointerEvent* event) {
     return;
 
   if (!input_source_) {
-    input_source_ = new XRInputSource(session_, 0);
+    input_source_ = MakeGarbageCollected<XRInputSource>(session_, 0);
     input_source_->SetTargetRayMode(XRInputSource::kScreen);
   }
 

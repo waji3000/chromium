@@ -26,7 +26,7 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/post_task.h"
-#include "base/threading/thread_restrictions.h"
+#include "base/threading/scoped_blocking_call.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/apps/app_shim/extension_app_shim_handler_mac.h"
 #include "chrome/browser/apps/platform_apps/app_window_registry_util.h"
@@ -179,7 +179,7 @@ void RecordLastRunAppBundlePath() {
   // real, user-visible app bundle directory. (The alternatives give either the
   // framework's path or the initial app's path, which may be an app mode shim
   // or a unit test.)
-  base::AssertBlockingAllowedDeprecated();
+  base::ScopedBlockingCall scoped_blocking_call(base::BlockingType::MAY_BLOCK);
 
   base::FilePath app_bundle_path =
       chrome::GetVersionedDirectory().DirName().DirName().DirName();
@@ -463,12 +463,6 @@ static base::mac::ScopedObjCClassSwizzler* g_swizzle_imk_input_session;
   // them in, but I'm not sure about UX; we'd also want to disable other things
   // though.) http://crbug.com/40861
 
-  // Check if the user really wants to quit by employing the confirm-to-quit
-  // mechanism.
-  if (!browser_shutdown::IsTryingToQuit() &&
-      [self applicationShouldTerminate:app] != NSTerminateNow)
-    return NO;
-
   // Check for active apps. If quitting is prevented, only close browsers and
   // sessions.
   if (!browser_shutdown::IsTryingToQuit() && !isPoweringOff &&
@@ -519,30 +513,26 @@ static base::mac::ScopedObjCClassSwizzler* g_swizzle_imk_input_session;
   }
 }
 
-- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)app {
+- (BOOL)runConfirmQuitPanel {
   // If there are no windows, quit immediately.
   if (BrowserList::GetInstance()->empty() &&
       !AppWindowRegistryUtil::IsAppWindowVisibleInAnyProfile(0)) {
-    return NSTerminateNow;
+    return YES;
   }
 
   // Check if the preference is turned on.
   const PrefService* prefs = g_browser_process->local_state();
   if (!prefs->GetBoolean(prefs::kConfirmToQuitEnabled)) {
     confirm_quit::RecordHistogram(confirm_quit::kNoConfirm);
-    return NSTerminateNow;
+    return YES;
   }
 
-  // If the application is going to terminate as the result of a Cmd+Q
-  // invocation, use the special sauce to prevent accidental quitting.
-  // http://dev.chromium.org/developers/design-documents/confirm-to-quit-experiment
-
-  // This logic is only for keyboard-initiated quits.
-  if (![ConfirmQuitPanelController eventTriggersFeature:[app currentEvent]])
+  // Run only for keyboard-initiated quits.
+  if ([[NSApp currentEvent] type] != NSKeyDown)
     return NSTerminateNow;
 
   return [[ConfirmQuitPanelController sharedController]
-      runModalLoopForApplication:app];
+      runModalLoopForApplication:NSApp];
 }
 
 // Called when the app is shutting down. Clean-up as appropriate.

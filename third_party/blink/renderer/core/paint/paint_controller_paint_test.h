@@ -27,7 +27,7 @@ class PaintControllerPaintTestBase : public RenderingTest {
  protected:
   LayoutView& GetLayoutView() const { return *GetDocument().GetLayoutView(); }
   PaintController& RootPaintController() const {
-    if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+    if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
       return *GetDocument().View()->GetPaintController();
     return GetLayoutView()
         .Layer()
@@ -42,13 +42,12 @@ class PaintControllerPaintTestBase : public RenderingTest {
 
   bool PaintWithoutCommit(const IntRect* interest_rect = nullptr) {
     GetDocument().View()->Lifecycle().AdvanceTo(DocumentLifecycle::kInPaint);
-    if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+    if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
       if (GetLayoutView().Layer()->NeedsRepaint()) {
         GraphicsContext graphics_context(RootPaintController());
         GetDocument().View()->Paint(
             graphics_context, kGlobalPaintNormalPhase,
-            interest_rect ? CullRect(*interest_rect)
-                          : CullRect(LayoutRect::InfiniteIntRect()));
+            interest_rect ? CullRect(*interest_rect) : CullRect::Infinite());
         return true;
       }
       GetDocument().View()->Lifecycle().AdvanceTo(
@@ -107,7 +106,7 @@ class PaintControllerPaintTestBase : public RenderingTest {
 
   void InvalidateAll(PaintController& paint_controller) {
     paint_controller.InvalidateAllForTesting();
-    if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+    if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
       DCHECK_EQ(&paint_controller, GetDocument().View()->GetPaintController());
       GetLayoutView().Layer()->SetNeedsRepaint();
     }
@@ -115,6 +114,11 @@ class PaintControllerPaintTestBase : public RenderingTest {
 
   bool ClientCacheIsValid(const DisplayItemClient& client) {
     return RootPaintController().ClientCacheIsValid(client);
+  }
+
+  using SubsequenceMarkers = PaintController::SubsequenceMarkers;
+  SubsequenceMarkers* GetSubsequenceMarkers(const DisplayItemClient& client) {
+    return RootPaintController().GetSubsequenceMarkers(client);
   }
 };
 
@@ -136,6 +140,17 @@ const DisplayItem::Type kNonScrollingContentsBackgroundChunkType =
 const DisplayItem::Type kScrollingContentsBackgroundChunkType =
     DisplayItem::PaintPhaseToClipType(
         PaintPhase::kDescendantBlockBackgroundsOnly);
+
+#define EXPECT_SUBSEQUENCE(client, expected_start, expected_end)        \
+  do {                                                                  \
+    auto* subsequence = GetSubsequenceMarkers(client);                  \
+    ASSERT_NE(nullptr, subsequence);                                    \
+    EXPECT_EQ(static_cast<size_t>(expected_start), subsequence->start); \
+    EXPECT_EQ(static_cast<size_t>(expected_end), subsequence->end);     \
+  } while (false)
+
+#define EXPECT_NO_SUBSEQUENCE(client) \
+  EXPECT_EQ(nullptr, GetSubsequenceMarkers(client)
 
 }  // namespace blink
 

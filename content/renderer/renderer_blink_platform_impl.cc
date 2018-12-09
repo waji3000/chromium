@@ -46,7 +46,6 @@
 #include "content/renderer/dom_storage/session_web_storage_namespace_impl.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/image_capture/image_capture_frame_grabber.h"
-#include "content/renderer/indexed_db/webidbfactory_impl.h"
 #include "content/renderer/loader/child_url_loader_factory_bundle.h"
 #include "content/renderer/loader/code_cache_loader_impl.h"
 #include "content/renderer/loader/resource_dispatcher.h"
@@ -112,22 +111,12 @@
 
 #if defined(OS_MACOSX)
 #include "content/child/child_process_sandbox_support_impl_mac.h"
-#include "content/common/mac/font_loader.h"
-#include "third_party/blink/public/platform/mac/web_sandbox_support.h"
+#elif defined(OS_LINUX)
+#include "content/child/child_process_sandbox_support_impl_linux.h"
 #endif
 
 #if defined(OS_POSIX)
 #include "base/file_descriptor_posix.h"
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
-#include <map>
-#include <string>
-
-#include "base/synchronization/lock.h"
-#include "content/child/child_process_sandbox_support_impl_linux.h"
-#include "third_party/blink/public/platform/linux/out_of_process_font.h"
-#include "third_party/blink/public/platform/linux/web_sandbox_support.h"
-#include "third_party/icu/source/common/unicode/utf16.h"
-#endif
 #endif
 
 #include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
@@ -140,7 +129,6 @@ using blink::WebAudioLatencyHint;
 using blink::WebBlobRegistry;
 using blink::WebCanvasCaptureHandler;
 using blink::WebDatabaseObserver;
-using blink::WebIDBFactory;
 using blink::WebImageCaptureFrameGrabber;
 using blink::WebMediaPlayer;
 using blink::WebMediaRecorderHandler;
@@ -196,48 +184,6 @@ gpu::ContextType ToGpuContextType(blink::Platform::ContextType type) {
 
 //------------------------------------------------------------------------------
 
-#if !defined(OS_ANDROID) && !defined(OS_WIN) && !defined(OS_FUCHSIA)
-class RendererBlinkPlatformImpl::SandboxSupport
-    : public blink::WebSandboxSupport {
- public:
-#if defined(OS_LINUX)
-  explicit SandboxSupport(sk_sp<font_service::FontLoader> font_loader)
-      : font_loader_(std::move(font_loader)) {}
-#endif
-  ~SandboxSupport() override {}
-
-#if defined(OS_MACOSX)
-  bool LoadFont(CTFontRef src_font,
-                CGFontRef* container,
-                uint32_t* font_id) override;
-#elif defined(OS_LINUX)
-  void GetFallbackFontForCharacter(
-      blink::WebUChar32 character,
-      const char* preferred_locale,
-      blink::OutOfProcessFont* fallbackFont) override;
-  void MatchFontByPostscriptNameOrFullFontName(
-      const char* font_unique_name,
-      blink::OutOfProcessFont* fallback_font) override;
-  void GetWebFontRenderStyleForStrike(const char* family,
-                                      int size,
-                                      bool is_bold,
-                                      bool is_italic,
-                                      float device_scale_factor,
-                                      blink::WebFontRenderStyle* out) override;
-
- private:
-  // WebKit likes to ask us for the correct font family to use for a set of
-  // unicode code points. It needs this information frequently so we cache it
-  // here.
-  base::Lock unicode_font_families_mutex_;
-  std::map<int32_t, blink::OutOfProcessFont> unicode_font_families_;
-  sk_sp<font_service::FontLoader> font_loader_;
-#endif
-};
-#endif  // !defined(OS_ANDROID) && !defined(OS_WIN)
-
-//------------------------------------------------------------------------------
-
 RendererBlinkPlatformImpl::RendererBlinkPlatformImpl(
     blink::scheduler::WebThreadScheduler* main_thread_scheduler)
     : BlinkPlatformImpl(main_thread_scheduler->DefaultTaskRunner(),
@@ -267,13 +213,12 @@ RendererBlinkPlatformImpl::RendererBlinkPlatformImpl(
     connector_ = service_manager::Connector::Create(&request);
   }
 
-#if !defined(OS_ANDROID) && !defined(OS_WIN) && !defined(OS_FUCHSIA)
+#if defined(OS_LINUX) || defined(OS_MACOSX)
   if (g_sandbox_enabled && sandboxEnabled()) {
 #if defined(OS_MACOSX)
-    sandbox_support_.reset(new RendererBlinkPlatformImpl::SandboxSupport());
+    sandbox_support_.reset(new WebSandboxSupportMac(connector_.get()));
 #else
-    sandbox_support_.reset(
-        new RendererBlinkPlatformImpl::SandboxSupport(font_loader_));
+    sandbox_support_.reset(new WebSandboxSupportLinux(font_loader_));
 #endif
   } else {
     DVLOG(1) << "Disabling sandbox support for testing.";
@@ -296,7 +241,7 @@ RendererBlinkPlatformImpl::~RendererBlinkPlatformImpl() {
 }
 
 void RendererBlinkPlatformImpl::Shutdown() {
-#if !defined(OS_ANDROID) && !defined(OS_WIN) && !defined(OS_FUCHSIA)
+#if defined(OS_LINUX) || defined(OS_MACOSX)
   // SandboxSupport contains a map of OutOfProcessFont objects, which hold
   // WebStrings and WebVectors, which become invalidated when blink is shut
   // down. Hence, we need to clear that map now, just before blink::shutdown()
@@ -390,11 +335,11 @@ blink::BlameContext* RendererBlinkPlatformImpl::GetTopLevelBlameContext() {
 }
 
 blink::WebSandboxSupport* RendererBlinkPlatformImpl::GetSandboxSupport() {
-#if defined(OS_ANDROID) || defined(OS_WIN) || defined(OS_FUCHSIA)
-  // These platforms do not require sandbox support.
-  return NULL;
-#else
+#if defined(OS_LINUX) || defined(OS_MACOSX)
   return sandbox_support_.get();
+#else
+  // These platforms do not require sandbox support.
+  return nullptr;
 #endif
 }
 
@@ -563,78 +508,11 @@ void RendererBlinkPlatformImpl::CloneSessionStorageNamespace(
 
 //------------------------------------------------------------------------------
 
-std::unique_ptr<blink::WebIDBFactory>
-RendererBlinkPlatformImpl::CreateIdbFactory() {
-  blink::mojom::IDBFactoryPtrInfo web_idb_factory_host_info;
-  GetInterfaceProvider()->GetInterface(
-      mojo::MakeRequest(&web_idb_factory_host_info));
-  return std::make_unique<WebIDBFactoryImpl>(
-      std::move(web_idb_factory_host_info));
-}
-
-//------------------------------------------------------------------------------
-
 WebString RendererBlinkPlatformImpl::FileSystemCreateOriginIdentifier(
     const blink::WebSecurityOrigin& origin) {
   return WebString::FromUTF8(
       storage::GetIdentifierFromOrigin(WebSecurityOriginToGURL(origin)));
 }
-
-//------------------------------------------------------------------------------
-
-#if defined(OS_MACOSX)
-
-bool RendererBlinkPlatformImpl::SandboxSupport::LoadFont(CTFontRef src_font,
-                                                         CGFontRef* out,
-                                                         uint32_t* font_id) {
-  return content::LoadFont(src_font, out, font_id);
-}
-
-#elif defined(OS_POSIX) && !defined(OS_ANDROID)
-
-void RendererBlinkPlatformImpl::SandboxSupport::GetFallbackFontForCharacter(
-    blink::WebUChar32 character,
-    const char* preferred_locale,
-    blink::OutOfProcessFont* fallbackFont) {
-  base::AutoLock lock(unicode_font_families_mutex_);
-  const std::map<int32_t, blink::OutOfProcessFont>::const_iterator iter =
-      unicode_font_families_.find(character);
-  if (iter != unicode_font_families_.end()) {
-    fallbackFont->name = iter->second.name;
-    fallbackFont->filename = iter->second.filename;
-    fallbackFont->fontconfig_interface_id =
-        iter->second.fontconfig_interface_id;
-    fallbackFont->ttc_index = iter->second.ttc_index;
-    fallbackFont->is_bold = iter->second.is_bold;
-    fallbackFont->is_italic = iter->second.is_italic;
-    return;
-  }
-
-  content::GetFallbackFontForCharacter(font_loader_, character,
-                                       preferred_locale, fallbackFont);
-  unicode_font_families_.insert(std::make_pair(character, *fallbackFont));
-}
-
-void RendererBlinkPlatformImpl::SandboxSupport::
-    MatchFontByPostscriptNameOrFullFontName(
-        const char* font_unique_name,
-        blink::OutOfProcessFont* fallback_font) {
-  content::MatchFontByPostscriptNameOrFullFontName(
-      font_loader_, font_unique_name, fallback_font);
-}
-
-void RendererBlinkPlatformImpl::SandboxSupport::GetWebFontRenderStyleForStrike(
-    const char* family,
-    int size,
-    bool is_bold,
-    bool is_italic,
-    float device_scale_factor,
-    blink::WebFontRenderStyle* out) {
-  GetRenderStyleForStrike(font_loader_, family, size, is_bold, is_italic,
-                          device_scale_factor, out);
-}
-
-#endif
 
 //------------------------------------------------------------------------------
 

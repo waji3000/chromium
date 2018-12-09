@@ -11,14 +11,14 @@
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColorFilter.h"
 #include "third_party/skia/include/core/SkDrawLooper.h"
+#include "third_party/skia/include/core/SkFont.h"
+#include "third_party/skia/include/core/SkFontTypes.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "third_party/skia/include/core/SkMaskFilter.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkPathEffect.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "third_party/skia/include/core/SkTypeface.h"
-
-class SkPaint;
 
 namespace cc {
 class PaintFilter;
@@ -75,10 +75,11 @@ class CC_PAINT_EXPORT PaintFlags {
     SetInternalFlag(lcd_text, SkPaint::kLCDRenderText_Flag);
   }
   enum Hinting {
-    kNo_Hinting = SkPaint::kNo_Hinting,
-    kSlight_Hinting = SkPaint::kSlight_Hinting,
-    kNormal_Hinting = SkPaint::kNormal_Hinting,  //!< this is the default
-    kFull_Hinting = SkPaint::kFull_Hinting
+    kNo_Hinting = static_cast<unsigned>(SkFontHinting::kNone),
+    kSlight_Hinting = static_cast<unsigned>(SkFontHinting::kSlight),
+    kNormal_Hinting =
+        static_cast<unsigned>(SkFontHinting::kNormal),  //!< this is the default
+    kFull_Hinting = static_cast<unsigned>(SkFontHinting::kFull)
   };
   ALWAYS_INLINE Hinting getHinting() const {
     return static_cast<Hinting>(bitfields_.hinting_);
@@ -99,10 +100,10 @@ class CC_PAINT_EXPORT PaintFlags {
     SetInternalFlag(dither, SkPaint::kDither_Flag);
   }
   enum TextEncoding {
-    kUTF8_TextEncoding = SkPaint::kUTF8_TextEncoding,
-    kUTF16_TextEncoding = SkPaint::kUTF16_TextEncoding,
-    kUTF32_TextEncoding = SkPaint::kUTF32_TextEncoding,
-    kGlyphID_TextEncoding = SkPaint::kGlyphID_TextEncoding
+    kUTF8_TextEncoding = static_cast<unsigned>(kUTF8_SkTextEncoding),
+    kUTF16_TextEncoding = static_cast<unsigned>(kUTF16_SkTextEncoding),
+    kUTF32_TextEncoding = static_cast<unsigned>(kUTF32_SkTextEncoding),
+    kGlyphID_TextEncoding = static_cast<unsigned>(kGlyphID_SkTextEncoding)
   };
   ALWAYS_INLINE TextEncoding getTextEncoding() const {
     return static_cast<TextEncoding>(bitfields_.text_encoding_);
@@ -208,6 +209,7 @@ class CC_PAINT_EXPORT PaintFlags {
   bool SupportsFoldingAlpha() const;
 
   SkPaint ToSkPaint() const;
+  SkFont ToSkFont() const;
 
   bool IsValid() const;
   bool operator==(const PaintFlags& other) const;

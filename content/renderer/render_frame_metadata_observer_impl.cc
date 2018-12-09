@@ -113,12 +113,13 @@ bool RenderFrameMetadataObserverImpl::ShouldSendRenderFrameMetadata(
       rfm1.is_scroll_offset_at_top != rfm2.is_scroll_offset_at_top ||
       rfm1.selection != rfm2.selection ||
       rfm1.page_scale_factor != rfm2.page_scale_factor ||
+      rfm1.external_page_scale_factor != rfm2.external_page_scale_factor ||
       rfm1.is_mobile_optimized != rfm2.is_mobile_optimized ||
       rfm1.device_scale_factor != rfm2.device_scale_factor ||
       rfm1.viewport_size_in_pixels != rfm2.viewport_size_in_pixels ||
       rfm1.top_controls_height != rfm2.top_controls_height ||
       rfm1.top_controls_shown_ratio != rfm2.top_controls_shown_ratio ||
-      rfm1.local_surface_id != rfm2.local_surface_id) {
+      rfm1.local_surface_id_allocation != rfm2.local_surface_id_allocation) {
     *needs_activation_notification = true;
     return true;
   }

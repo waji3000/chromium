@@ -16,9 +16,11 @@
 #include "ui/events/test/event_generator.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/views/test/views_test_base.h"
+#include "ui/views/widget/widget_utils.h"
 #include "ui/views/window/non_client_view.h"
 
 #if defined(USE_AURA)
+#include "ui/aura/env.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
 #endif
@@ -42,9 +44,10 @@ class OverlayAgentTest : public views::ViewsTestBase {
     fake_frontend_channel_ = std::make_unique<FakeFrontendChannel>();
     uber_dispatcher_ = std::make_unique<protocol::UberDispatcher>(
         fake_frontend_channel_.get());
-    dom_agent_ = std::make_unique<DOMAgentAura>();
+    aura::Env* env = aura::Env::GetInstance();
+    dom_agent_ = std::make_unique<DOMAgentAura>(env);
     dom_agent_->Init(uber_dispatcher_.get());
-    overlay_agent_ = std::make_unique<OverlayAgentAura>(dom_agent_.get());
+    overlay_agent_ = std::make_unique<OverlayAgentAura>(dom_agent_.get(), env);
     overlay_agent_->Init(uber_dispatcher_.get());
     overlay_agent_->enable();
     views::ViewsTestBase::SetUp();
@@ -90,6 +93,16 @@ class OverlayAgentTest : public views::ViewsTestBase {
             "{\"method\":\"Overlay.inspectNodeRequested\",\"params\":{"
             "\"backendNodeId\":%d}}",
             node_id));
+  }
+
+  std::unique_ptr<aura::Window> CreateWindowElement(const gfx::Rect& bounds) {
+    std::unique_ptr<aura::Window> window = std::make_unique<aura::Window>(
+        nullptr, aura::client::WINDOW_TYPE_NORMAL);
+    window->Init(ui::LAYER_NOT_DRAWN);
+    window->SetBounds(bounds);
+    GetContext()->AddChild(window.get());
+    window->Show();
+    return window;
   }
 
   std::unique_ptr<views::Widget> CreateWidget() {
@@ -229,7 +242,7 @@ TEST_F(OverlayAgentTest, HighlightRects) {
 
     overlay_agent()->setInspectMode(
         "searchForNode", protocol::Maybe<protocol::Overlay::HighlightConfig>());
-    ui::test::EventGenerator generator(widget->GetNativeWindow());
+    ui::test::EventGenerator generator(GetRootWindow(widget.get()));
 
     // Highlight child 1.
     generator.MoveMouseTo(GetOriginInScreen(child_1));
@@ -267,7 +280,7 @@ TEST_F(OverlayAgentTest, MouseEventsGenerateFEEventsInInspectMode) {
 
   // Moving the mouse cursor over the widget bounds should request a node
   // highlight.
-  ui::test::EventGenerator generator(widget->GetNativeWindow());
+  ui::test::EventGenerator generator(GetRootWindow(widget.get()));
   generator.MoveMouseBy(p.x(), p.y());
 
   // 2 mouse events ET_MOUSE_ENTERED and ET_MOUSE_MOVED are generated.
@@ -333,12 +346,7 @@ TEST_F(OverlayAgentTest, HighlightWindow) {
   dom_agent()->getDocument(&root);
 
   std::unique_ptr<aura::Window> window =
-      std::make_unique<aura::Window>(nullptr, aura::client::WINDOW_TYPE_NORMAL);
-  window->Init(ui::LAYER_NOT_DRAWN);
-  window->SetBounds(gfx::Rect());
-  GetContext()->AddChild(window.get());
-  window->Show();
-
+      CreateWindowElement(gfx::Rect(0, 0, 20, 20));
   int window_id =
       dom_agent()
           ->element_root()
@@ -354,6 +362,38 @@ TEST_F(OverlayAgentTest, HighlightWindow) {
 
   overlay_agent()->hideHighlight();
   EXPECT_FALSE(highlightingLayer->visible());
+}
+
+TEST_F(OverlayAgentTest, HighlightEmptyOrInvisibleWindow) {
+  std::unique_ptr<protocol::DOM::Node> root;
+  dom_agent()->getDocument(&root);
+
+  std::unique_ptr<aura::Window> window = CreateWindowElement(gfx::Rect());
+  int window_id =
+      dom_agent()
+          ->element_root()
+          ->FindUIElementIdForBackendElement<aura::Window>(window.get());
+  DCHECK_NE(window_id, 0);
+
+  overlay_agent()->highlightNode(nullptr, window_id);
+  ui::Layer* highlightingLayer = overlay_agent()->layer_for_highlighting();
+  DCHECK(highlightingLayer);
+
+  // Highlight doesn't show for empty element.
+  EXPECT_FALSE(highlightingLayer->parent());
+  EXPECT_FALSE(highlightingLayer->visible());
+
+  // Make the window non-empty, the highlight shows up.
+  window->SetBounds(gfx::Rect(10, 10, 50, 50));
+  overlay_agent()->highlightNode(nullptr, window_id);
+  EXPECT_EQ(highlightingLayer->parent(), GetContext()->layer());
+  EXPECT_TRUE(highlightingLayer->visible());
+
+  // Make the window invisible, the highlight still shows.
+  window->Hide();
+  overlay_agent()->highlightNode(nullptr, window_id);
+  EXPECT_EQ(highlightingLayer->parent(), GetContext()->layer());
+  EXPECT_TRUE(highlightingLayer->visible());
 }
 #endif
 

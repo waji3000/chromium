@@ -13,7 +13,9 @@ import org.json.JSONObject;
 
 import org.chromium.base.ContextUtils;
 import org.chromium.base.Log;
+import org.chromium.base.StrictModeContext;
 import org.chromium.base.VisibleForTesting;
+import org.chromium.base.metrics.CachedMetrics;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -28,6 +30,7 @@ import java.util.Set;
 public class LazySubscriptionsManager {
     private static final String TAG = "LazySubscriptions";
     private static final String FCM_LAZY_SUBSCRIPTIONS = "fcm_lazy_subscriptions";
+    private static final String HAS_PERSISTED_MESSAGES_KEY = "has_persisted_messages";
     private static final String PREF_PACKAGE =
             "org.chromium.components.gcm_driver.lazy_subscriptions";
 
@@ -39,6 +42,33 @@ public class LazySubscriptionsManager {
     // Private constructor because all methods in this class are static, and it
     // shouldn't be instantiated.
     private LazySubscriptionsManager() {}
+
+    /**
+     * Stores a global flag that indicates whether there are any persisted
+     * messages to read. The flag could be read using hasPersistedMessages().
+     * @param hasPersistedMessages
+     */
+    public static void storeHasPersistedMessages(boolean hasPersistedMessages) {
+        // Store the global flag in the default preferences instead of special one
+        // for the GCM messages. The reason is the default preferences file is used in
+        // many places in Chrome and should be already cached in memory by the
+        // time this method is called. Therefore, it should provide a cheap way
+        // that (most probably) doesn't require disk access to read that global flag.
+        SharedPreferences sharedPrefs = ContextUtils.getAppSharedPreferences();
+        sharedPrefs.edit().putBoolean(HAS_PERSISTED_MESSAGES_KEY, hasPersistedMessages).apply();
+    }
+
+    /**
+     * Whether some messages are persisted and should be replayed next time
+     * Chrome is running. It should be cheaper to call than actually reading the
+     * stored messages. Call this method to decide whether there is a need to
+     * read any persisted messages.
+     * @return whether some messages are persisted.
+     */
+    public static boolean hasPersistedMessages() {
+        SharedPreferences sharedPrefs = ContextUtils.getAppSharedPreferences();
+        return sharedPrefs.getBoolean(HAS_PERSISTED_MESSAGES_KEY, false);
+    }
 
     /**
      * Given an appId and a senderId, this methods builds a unique identifier for a subscription.
@@ -55,30 +85,54 @@ public class LazySubscriptionsManager {
      * Stores the information about lazy subscriptions in SharedPreferences.
      */
     public static void storeLazinessInformation(final String subscriptionId, boolean isLazy) {
-        if (isLazy) {
-            Context context = ContextUtils.getApplicationContext();
-            SharedPreferences sharedPrefs =
-                    context.getSharedPreferences(PREF_PACKAGE, Context.MODE_PRIVATE);
-            Set<String> lazyIds = new HashSet<>(
-                    sharedPrefs.getStringSet(FCM_LAZY_SUBSCRIPTIONS, Collections.emptySet()));
-            lazyIds.add(subscriptionId);
-            sharedPrefs.edit().putStringSet(FCM_LAZY_SUBSCRIPTIONS, lazyIds).apply();
+        boolean isAlreadyLazy = isSubscriptionLazy(subscriptionId);
+        if (isAlreadyLazy == isLazy) {
+            return;
         }
-        // TODO(https://crbug.com/882887): Check if that
-        // subscription was marked lazy before and handle the change
-        // accordingly.
+        if (isAlreadyLazy) {
+            // Switching from lazy to unlazy.
+            // Delete any queued messages.
+            deletePersistedMessagesForSubscriptionId(subscriptionId);
+        }
+        Context context = ContextUtils.getApplicationContext();
+        SharedPreferences sharedPrefs =
+                context.getSharedPreferences(PREF_PACKAGE, Context.MODE_PRIVATE);
+        Set<String> lazyIds = new HashSet<>(
+                sharedPrefs.getStringSet(FCM_LAZY_SUBSCRIPTIONS, Collections.emptySet()));
+        if (isAlreadyLazy) {
+            lazyIds.remove(subscriptionId);
+        } else { // Switching from unlazy to lazy.
+            lazyIds.add(subscriptionId);
+        }
+        sharedPrefs.edit().putStringSet(FCM_LAZY_SUBSCRIPTIONS, lazyIds).apply();
     }
 
     /**
      * Returns whether the subscription with the |appId| and |senderId| is lazy.
      */
     public static boolean isSubscriptionLazy(final String subscriptionId) {
-        Context context = ContextUtils.getApplicationContext();
-        SharedPreferences sharedPrefs =
-                context.getSharedPreferences(PREF_PACKAGE, Context.MODE_PRIVATE);
-        Set<String> lazyIds = new HashSet<>(
-                sharedPrefs.getStringSet(FCM_LAZY_SUBSCRIPTIONS, Collections.emptySet()));
-        return lazyIds.contains(subscriptionId);
+        try (StrictModeContext unused = StrictModeContext.allowDiskReads()) {
+            Context context = ContextUtils.getApplicationContext();
+            SharedPreferences sharedPrefs =
+                    context.getSharedPreferences(PREF_PACKAGE, Context.MODE_PRIVATE);
+            Set<String> lazyIds = new HashSet<>(
+                    sharedPrefs.getStringSet(FCM_LAZY_SUBSCRIPTIONS, Collections.emptySet()));
+            return lazyIds.contains(subscriptionId);
+        }
+    }
+
+    /**
+     * Returns the ids of all lazy subscriptions.
+     * @return Set of subscriptions ids.
+     */
+    public static Set<String> getLazySubscriptionIds() {
+        try (StrictModeContext unused = StrictModeContext.allowDiskReads()) {
+            Context context = ContextUtils.getApplicationContext();
+            SharedPreferences sharedPrefs =
+                    context.getSharedPreferences(PREF_PACKAGE, Context.MODE_PRIVATE);
+            return new HashSet<>(
+                    sharedPrefs.getStringSet(FCM_LAZY_SUBSCRIPTIONS, Collections.emptySet()));
+        }
     }
 
     /**
@@ -104,9 +158,11 @@ public class LazySubscriptionsManager {
             if (message.getCollapseKey() != null) {
                 queueJSON = filterMessageBasedOnCollapseKey(queueJSON, message.getCollapseKey());
             }
-            // TODO(https://crbug.com/882887):Add UMA to record how many
-            // messages are currently in the queue, to identify how often we hit
-            // the limit.
+
+            // Use {@link CachedMetrics} so this gets reported when native is
+            // loaded instead of calling native right away.
+            new CachedMetrics.Count100HistogramSample("PushMessaging.QueuedMessagesCount")
+                    .record(queueJSON.length());
 
             // If the queue is full remove the oldest message.
             if (queueJSON.length() == MESSAGES_QUEUE_SIZE) {
@@ -123,6 +179,7 @@ public class LazySubscriptionsManager {
             // Add the new message to the end.
             queueJSON.put(message.toJSON());
             sharedPrefs.edit().putString(subscriptionId, queueJSON.toString()).apply();
+            storeHasPersistedMessages(/*hasPersistedMessages=*/true);
         } catch (JSONException e) {
             Log.e(TAG,
                     "Error when parsing the persisted message queue for subscriber:"
@@ -137,8 +194,6 @@ public class LazySubscriptionsManager {
      *  @return The messages stored. Returns an empty list in case of failure.
      */
     public static GCMMessage[] readMessages(String subscriptionId) {
-        // TODO(https://crbug.com/882887): Make sure to delete subscription
-        // information when the token goes.
         Context context = ContextUtils.getApplicationContext();
         SharedPreferences sharedPrefs =
                 context.getSharedPreferences(PREF_PACKAGE, Context.MODE_PRIVATE);
@@ -174,7 +229,18 @@ public class LazySubscriptionsManager {
     }
 
     /**
-     * Filters our any messages in |messagesJSON| with the given collpase key. It returns the
+     * Deletes all persisted messages for the given subscription id.
+     * @param subscriptionId
+     */
+    public static void deletePersistedMessagesForSubscriptionId(String subscriptionId) {
+        Context context = ContextUtils.getApplicationContext();
+        SharedPreferences sharedPrefs =
+                context.getSharedPreferences(PREF_PACKAGE, Context.MODE_PRIVATE);
+        sharedPrefs.edit().remove(subscriptionId).apply();
+    }
+
+    /**
+     * Filters out any messages in |messagesJSON| with the given collpase key. It returns the
      * filtered list.
      */
     private static JSONArray filterMessageBasedOnCollapseKey(JSONArray messages, String collapseKey)

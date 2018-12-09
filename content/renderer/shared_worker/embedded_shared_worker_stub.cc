@@ -71,7 +71,7 @@ class SharedWorkerWebApplicationCacheHostImpl
       const WebApplicationCacheHost* spawning_host) override {}
   void DidReceiveResponseForMainResource(
       const blink::WebURLResponse&) override {}
-  void DidReceiveDataForMainResource(const char* data, unsigned len) override {}
+  void DidReceiveDataForMainResource(const char* data, size_t len) override {}
   void DidFinishLoadingMainResource(bool success) override {}
 
   // Cache selection is also different for workers. We know at construction
@@ -207,7 +207,7 @@ class WebServiceWorkerNetworkProviderForSharedWorker
 }  // namespace
 
 EmbeddedSharedWorkerStub::EmbeddedSharedWorkerStub(
-    mojom::SharedWorkerInfoPtr info,
+    blink::mojom::SharedWorkerInfoPtr info,
     bool pause_on_start,
     const base::UnguessableToken& devtools_worker_token,
     const RendererPreferences& renderer_preferences,
@@ -218,10 +218,10 @@ EmbeddedSharedWorkerStub::EmbeddedSharedWorkerStub(
     int appcache_host_id,
     network::mojom::URLLoaderFactoryAssociatedPtrInfo
         main_script_loader_factory,
-    blink::mojom::SharedWorkerMainScriptLoadParamsPtr main_script_load_params,
+    blink::mojom::WorkerMainScriptLoadParamsPtr main_script_load_params,
     std::unique_ptr<URLLoaderFactoryBundleInfo> factory_bundle,
-    mojom::ControllerServiceWorkerInfoPtr controller_info,
-    mojom::SharedWorkerHostPtr host,
+    blink::mojom::ControllerServiceWorkerInfoPtr controller_info,
+    blink::mojom::SharedWorkerHostPtr host,
     mojom::SharedWorkerRequest request,
     service_manager::mojom::InterfaceProviderPtr interface_provider)
     : binding_(this, std::move(request)),
@@ -360,13 +360,6 @@ void EmbeddedSharedWorkerStub::SelectAppCacheID(long long app_cache_id) {
   }
 }
 
-blink::WebNotificationPresenter*
-EmbeddedSharedWorkerStub::NotificationPresenter() {
-  // TODO(horo): delete this method if we have no plan to implement this.
-  NOTREACHED();
-  return nullptr;
-}
-
 std::unique_ptr<blink::WebApplicationCacheHost>
 EmbeddedSharedWorkerStub::CreateApplicationCacheHost(
     blink::WebApplicationCacheHostClient* client) {
@@ -400,7 +393,7 @@ void EmbeddedSharedWorkerStub::WaitForServiceWorkerControllerInfo(
   context->PingContainerHost(std::move(callback));
 }
 
-std::unique_ptr<blink::WebWorkerFetchContext>
+scoped_refptr<blink::WebWorkerFetchContext>
 EmbeddedSharedWorkerStub::CreateWorkerFetchContext(
     blink::WebServiceWorkerNetworkProvider* web_network_provider) {
   DCHECK(web_network_provider);
@@ -429,7 +422,7 @@ EmbeddedSharedWorkerStub::CreateWorkerFetchContext(
   std::unique_ptr<network::SharedURLLoaderFactoryInfo> fallback_factory =
       subresource_loader_factories_->CloneWithoutDefaultFactory();
 
-  auto worker_fetch_context = std::make_unique<WebWorkerFetchContextImpl>(
+  auto worker_fetch_context = base::MakeRefCounted<WebWorkerFetchContextImpl>(
       std::move(renderer_preferences_), std::move(preference_watcher_request_),
       std::move(worker_client_request),
       std::move(worker_client_registry_ptr_info),

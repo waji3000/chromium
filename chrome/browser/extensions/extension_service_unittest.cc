@@ -63,6 +63,7 @@
 #include "chrome/browser/extensions/pack_extension_job.h"
 #include "chrome/browser/extensions/pending_extension_info.h"
 #include "chrome/browser/extensions/pending_extension_manager.h"
+#include "chrome/browser/extensions/permissions_test_util.h"
 #include "chrome/browser/extensions/permissions_updater.h"
 #include "chrome/browser/extensions/test_blacklist.h"
 #include "chrome/browser/extensions/test_extension_system.h"
@@ -145,6 +146,7 @@
 #include "testing/platform_test.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 // The blacklist tests rely on the safe-browsing database.
 #if defined(SAFE_BROWSING_DB_LOCAL)
@@ -168,13 +170,13 @@ const char good0[] = "behllobkkfkfnphdnhnkndlbkcpglgmj";
 const char good1[] = "hpiknbiabeeppbpihjehijgoemciehgk";
 const char good2[] = "bjafgdebaacbbbecmhlhpofkepfkgcpa";
 const char all_zero[] = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-const char good2048[] = "nmgjhmhbleinmjpbdhgajfjkbijcmgbh";
+const char good2048[] = "dfhpodpjggiioolfhoimofdbfjibmedp";
 const char good_crx[] = "ldnnhddmnhbkjipkidpdiheffobcpfmf";
 const char minimal_platform_app_crx[] = "jjeoclcdfjddkdjokiejckgcildcflpp";
 const char hosted_app[] = "kbmnembihfiondgfjekmnmcbddelicoi";
 const char page_action[] = "dpfmafkdlbmopmcepgpjkpldjbghdibm";
-const char theme_crx[] = "iamefpfkojoapidjnbafmgkgncegbkad";
-const char theme2_crx[] = "pjpgmfcmabopnnfonnhmdjglfpjjfkbf";
+const char theme_crx[] = "idlfhncioikpdnlhnmcjogambnefbbfp";
+const char theme2_crx[] = "ibcijncamhmjjdodjamgiipcgnnaeagd";
 const char permissions_crx[] = "eagpmdpfmaekmmcejjbmjoecnejeiiin";
 const char updates_from_webstore[] = "akjooamlhcgeopfifcmlggaebeocgokj";
 const char updates_from_webstore2[] = "oolblhbomdbcpmafphaodhjfcgbihcdg";
@@ -616,9 +618,8 @@ class ExtensionServiceTest : public ExtensionServiceTestWithInstall {
     const Extension* extension = service()->GetInstalledExtension(id);
     const PermissionSet& all_optional_permissions =
         PermissionsParser::GetOptionalPermissions(extension);
-    PermissionsUpdater perms_updater(profile());
-    perms_updater.GrantOptionalPermissions(*extension,
-                                           all_optional_permissions);
+    permissions_test_util::GrantOptionalPermissionsAndWaitForCompletion(
+        profile(), *extension, all_optional_permissions);
   }
 
   testing::AssertionResult IsBlocked(const std::string& id) {
@@ -4888,7 +4889,8 @@ TEST_F(ExtensionServiceTest, ClearExtensionData) {
   // "known" origins.
   IndexedDBContext* idb_context = BrowserContext::GetDefaultStoragePartition(
                                       profile())->GetIndexedDBContext();
-  base::FilePath idb_path = idb_context->GetFilePathForTesting(ext_url);
+  base::FilePath idb_path =
+      idb_context->GetFilePathForTesting(url::Origin::Create(ext_url));
   EXPECT_TRUE(base::CreateDirectory(idb_path));
   EXPECT_TRUE(base::DirectoryExists(idb_path));
   idb_context->ResetCachesForTesting();
@@ -5031,7 +5033,8 @@ TEST_F(ExtensionServiceTest, ClearAppData) {
   // "known" origins.
   IndexedDBContext* idb_context = BrowserContext::GetDefaultStoragePartition(
                                       profile())->GetIndexedDBContext();
-  base::FilePath idb_path = idb_context->GetFilePathForTesting(origin1);
+  base::FilePath idb_path =
+      idb_context->GetFilePathForTesting(url::Origin::Create(origin1));
   EXPECT_TRUE(base::CreateDirectory(idb_path));
   EXPECT_TRUE(base::DirectoryExists(idb_path));
   idb_context->ResetCachesForTesting();
@@ -7320,6 +7323,64 @@ TEST_F(ExtensionServiceTest, UninstallDisabledMigratedExtension) {
 
   service()->UninstallMigratedExtensionsForTest();
   EXPECT_FALSE(service()->GetInstalledExtension(cast_stable));
+}
+
+// Tests the case of a user installing a non-policy extension (e.g. through the
+// webstore), and that extension later becoming required by policy.
+// Regression test for https://crbug.com/894184.
+TEST_F(ExtensionServiceTest, UserInstalledExtensionThenRequiredByPolicy) {
+  InitializeEmptyExtensionServiceWithTestingPrefs();
+
+  // Install an extension as if the user did it.
+  base::FilePath path = data_dir().AppendASCII("good.crx");
+  const Extension* extension = InstallCRX(path, INSTALL_NEW);
+  ASSERT_TRUE(extension);
+  EXPECT_EQ(good_crx, extension->id());
+  EXPECT_EQ(Manifest::INTERNAL, extension->location());
+
+  std::string kVersionStr = "1.0.0.0";
+  EXPECT_EQ(kVersionStr, extension->VersionString());
+
+  {
+    ManagementPrefUpdater pref(profile_->GetTestingPrefService());
+    // Mark good.crx for force-installation.
+    pref.SetIndividualExtensionAutoInstalled(
+        good_crx, "http://example.com/update_url", true);
+  }
+
+  // Require good.crx by policy.
+  MockExternalProvider* provider =
+      AddMockExternalProvider(Manifest::EXTERNAL_POLICY_DOWNLOAD);
+  // TODO(devlin): Do we also need to check installing extensions with different
+  // versions?
+  provider->UpdateOrAddExtension(good_crx, kVersionStr,
+                                 data_dir().AppendASCII("good.crx"));
+  service()->CheckForExternalUpdates();
+
+  ExtensionManagement* management =
+      ExtensionManagementFactory::GetForBrowserContext(profile());
+  ExtensionManagement::InstallationMode installation_mode =
+      management->GetInstallationMode(extension);
+  EXPECT_EQ(ExtensionManagement::INSTALLATION_FORCED, installation_mode);
+
+  // Reload all extensions.
+  service()->ReloadExtensionsForTest();
+
+  extension = registry()->GetInstalledExtension(good_crx);
+  ASSERT_TRUE(extension);
+  ManagementPolicy* policy =
+      ExtensionSystem::Get(browser_context())->management_policy();
+  // The extension should still be installed, and should be required to
+  // remain installed.
+  EXPECT_TRUE(policy->MustRemainInstalled(extension, nullptr));
+  // TODO(devlin): This currently doesn't work, because the extension is still
+  // installed with Manifest::Location INTERNAL.
+  // EXPECT_FALSE(policy->UserMayModifySettings(extension, nullptr));
+
+  EXPECT_TRUE(registry()->enabled_extensions().GetByID(good_crx));
+  ExtensionPrefs* prefs = ExtensionPrefs::Get(profile());
+  EXPECT_EQ(disable_reason::DISABLE_NONE, prefs->GetDisableReasons(good_crx));
+  EXPECT_FALSE(prefs->IsExtensionDisabled(good_crx));
 }
 
 }  // namespace extensions

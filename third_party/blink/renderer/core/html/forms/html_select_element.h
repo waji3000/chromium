@@ -53,6 +53,8 @@ class CORE_EXPORT HTMLSelectElement final
 
  public:
   static HTMLSelectElement* Create(Document&);
+
+  explicit HTMLSelectElement(Document&);
   ~HTMLSelectElement() override;
 
   int selectedIndex() const;
@@ -176,9 +178,6 @@ class CORE_EXPORT HTMLSelectElement final
   void CloneNonAttributePropertiesFrom(const Element&,
                                        CloneChildrenFlag) override;
 
- protected:
-  explicit HTMLSelectElement(Document&);
-
  private:
   const AtomicString& FormControlType() const override;
 
@@ -197,7 +196,7 @@ class CORE_EXPORT HTMLSelectElement final
   bool IsEnumeratable() const override { return true; }
   bool IsInteractiveContent() const override;
   bool SupportsAutofocus() const override;
-  bool SupportLabels() const override { return true; }
+  bool IsLabelable() const override { return true; }
 
   FormControlState SaveFormControlState() const override;
   void RestoreFormControlState(const FormControlState&) override;

@@ -819,6 +819,40 @@ be describing additional metrics about the same event.
       the sample window. An int in the range [0,100].
     </summary>
   </metric>
+  <metric name="ScrollingCoordinator.Average">
+    <summary>
+      The average time taken by the style and layout phases in microseconds in
+      the event period.
+    </summary>
+    <aggregation>
+      <history>
+        <index fields="profile.country"/>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+  <metric name="ScrollingCoordinator.AverageRatio">
+    <summary>
+      The average over frames within the event period of the ratio of time taken
+      to update the scrolling coordinator after painting to the total time for
+      the main frame, expressed as a percentage. An int in the range [0,100].
+    </summary>
+  </metric>
+  <metric name="ScrollingCoordinator.WorstCase">
+    <summary>
+      The longest single time within the event period that was used to update
+      the ScrollingCoordinator after painting (in microseconds).
+    </summary>
+  </metric>
+  <metric name="ScrollingCoordinator.WorstCaseRatio">
+    <summary>
+      The highest proportion of a frame within the event period that was used to
+      update the ScrollingCoordinator after painting, expressed as a percentage.
+      An int in the range [0,100].
+    </summary>
+  </metric>
   <metric name="StyleAndLayout.Average">
     <summary>
       The average time taken by the style and layout phases in microseconds in
@@ -868,7 +902,6 @@ be describing additional metrics about the same event.
     </summary>
     <aggregation>
       <history>
-        <index fields="profile.country"/>
         <statistics>
           <enumeration/>
         </statistics>
@@ -1234,10 +1267,11 @@ be describing additional metrics about the same event.
   </metric>
   <metric name="TriggerEvent">
     <summary>
-      Emits an integer in the range 0-1 to indicate whether the peeking sheet
-      was ever triggered and how it was triggered. A value of 0 indicates
-      never-shown, a 1 indicates peeked in response to a reverse-scroll (the
-      only trigger currently supported).
+      Emits an integer in the range 0-2 to indicate whether the contextual
+      suggestions UI was ever triggered and how it was triggered. A value of 0
+      indicates never-shown, a 1 indicates peeked in response to a
+      reverse-scroll (deprecated), and 2 indicates that the toolbar button was
+      shown (the only trigger currently supported).
     </summary>
   </metric>
 </event>
@@ -2039,8 +2073,7 @@ be describing additional metrics about the same event.
   </summary>
   <metric name="AudibleTime">
     <summary>
-      The number of seconds of audio that were audible during the entire
-      lifetime of the AudioContext.
+      Audible time in milliseconds for this event.
     </summary>
   </metric>
   <metric name="IsMainFrame">
@@ -2723,6 +2756,18 @@ be describing additional metrics about the same event.
       Measure of memory consumed by live objects in the main heap of V8.
     </summary>
   </metric>
+  <metric name="V8.Main.Heap.CodeLargeObjectSpace">
+    <summary>
+      Measure of memory consumed by the code large object space of the main heap
+      of V8.
+    </summary>
+  </metric>
+  <metric name="V8.Main.Heap.CodeLargeObjectSpace.AllocatedObjects">
+    <summary>
+      Measure of memory consumed by live objects in the code large object space
+      of the main heap of V8.
+    </summary>
+  </metric>
   <metric name="V8.Main.Heap.CodeSpace">
     <summary>
       Measure of memory consumed by the code space of the main heap of V8.
@@ -2868,6 +2913,13 @@ be describing additional metrics about the same event.
       render process used by other tabs. If this is undefined, TabPMF will be
       undefined.
     </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
   </metric>
   <metric name="SubFrameProcessPMF.Excluded">
     <summary>
@@ -2876,11 +2928,25 @@ be describing additional metrics about the same event.
       the process has responsiblities outside the scope of the relevant tab. If
       this is non-zero, TabPMF will be undefined.
     </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
   </metric>
   <metric name="SubFrameProcessPMF.Included">
     <summary>
       Number of render processes that contributed to SubFrameProcessPMF.Total.
     </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
   </metric>
   <metric name="SubFrameProcessPMF.Total">
     <summary>
@@ -2889,6 +2955,13 @@ be describing additional metrics about the same event.
       hosts frames of other tabs, it isn't considered to be 'dedicated' and so
       it doesn't contribute to this total.
     </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
   </metric>
   <metric name="TabPMF">
     <summary>
@@ -2897,7 +2970,22 @@ be describing additional metrics about the same event.
       responsible for hosting parts of this tab while hosting parts of other
       tabs.
     </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
   </metric>
+</event>
+
+<event name="Net.LegacyTLSVersion">
+  <owner>davidben@chromium.org</owner>
+  <summary>
+    Recorded when a page is loaded whose main frame load used TLS 1.0 or TLS
+    1.1.
+  </summary>
 </event>
 
 <event name="Notification">
@@ -3206,6 +3294,12 @@ be describing additional metrics about the same event.
       meaningful input with longest queuing delay per navigation. In ms.
     </summary>
   </metric>
+  <metric name="LayoutStability.JankScore">
+    <summary>
+      Measures the amount of layout jank (bit.ly/lsm-explainer) that has
+      occurred during the session.
+    </summary>
+  </metric>
   <metric name="MainFrameResource.ConnectDelay">
     <summary>
       The duration between the start of the connection establishment to the end
@@ -3237,6 +3331,12 @@ be describing additional metrics about the same event.
     <summary>
       The duration from when the request headers were sent to when its response
       headers were received. Recorded only for the main frame request. In ms.
+    </summary>
+  </metric>
+  <metric name="MainFrameResource.SocketReused">
+    <summary>
+      True if the socket was reused when establishing connection to the origin
+      of the main frame request.
     </summary>
   </metric>
   <metric name="Navigation.PageEndReason">
@@ -3363,6 +3463,11 @@ be describing additional metrics about the same event.
       start to the time the parser started, for main frame documents.
     </summary>
   </metric>
+  <metric name="WasCached">
+    <summary>
+      Set to 1 if the main resource was served from cache.
+    </summary>
+  </metric>
 </event>
 
 <event name="PageLoadCapping" singular="True">
@@ -3407,6 +3512,15 @@ be describing additional metrics about the same event.
     <summary>
       Records a low entropy hash of the form signature in order to be able to
       distinguish two forms on the same site.
+    </summary>
+  </metric>
+  <metric name="FillOnLoad">
+    <summary>
+      Deprecated in November 2018, because the decision this metric supported
+      was made. Records the comparison of the old and new decision about filling
+      a form on load. Should only be logged for fillig with non-PSL matched
+      credentials, in non-Incognito mode. Values are from
+      password_manager::PasswordFormMetricsRecorder::FillOnLoad.
     </summary>
   </metric>
   <metric name="Generation.GeneratedPassword">
@@ -3508,8 +3622,7 @@ be describing additional metrics about the same event.
     <summary>
       Records the event that led the password manager to believe the submission
       was successful. Metrics is recorded only when the password is saved.
-      Recorded values correspond to the enum
-      autofill::PasswordForm::SubmissionIndicatorEvent.
+      Recorded values correspond to the enum autofill::SubmissionIndicatorEvent.
     </summary>
   </metric>
   <metric name="Submission.Observed">
@@ -3692,6 +3805,14 @@ be describing additional metrics about the same event.
     interactions with them. No events are created for pages that don't contain
     password forms.
   </summary>
+  <metric name="FormManagerAvailable">
+    <summary>
+      Records whether Chrome was sufficiently aware of forms during various
+      stages of saving a credential on the site, or whether saving was aborted
+      due to absence of the corresponding form manager. Values correspond to the
+      enum PasswordManagerMetricsRecorder::FormManagerAvailable.
+    </summary>
+  </metric>
   <metric name="PageLevelUserAction">
     <summary>
       Records if the user interacts with the password manager in a way that
@@ -3772,7 +3893,6 @@ be describing additional metrics about the same event.
   <metric name="Source">
     <summary>
       An enum of type PermissionSourceUI. The UI surface for this action.
-      Currently we only record when this is PROMPT.
     </summary>
   </metric>
 </event>
@@ -3788,7 +3908,7 @@ be describing additional metrics about the same event.
   <owner>ryansturm@chromium.org</owner>
   <summary>
     Previews related metrics associated with a page load. See
-    //componenets/previews/.
+    //components/previews/.
   </summary>
   <metric name="client_lofi">
     <summary>
@@ -3836,6 +3956,58 @@ be describing additional metrics about the same event.
   <metric name="server_lofi">
     <summary>
       Set to 1 when a user is shown a server lo-fi image in a page load.
+    </summary>
+  </metric>
+</event>
+
+<event name="PreviewsResourceLoadingHints" singular="True">
+  <owner>jegray@chromium.org</owner>
+  <summary>
+    Metrics associated with loading a resource loading hints based preview. This
+    is recorded when the URL's document finishes loading. See
+    //components/previews/.
+  </summary>
+  <metric name="blocked_high_priority">
+    <summary>
+      The number of high priority resource requests that were blocked by the
+      resource loading hints based preview while the URL's document was loading.
+    </summary>
+  </metric>
+  <metric name="blocked_low_priority">
+    <summary>
+      The number of low priority resource requests that were blocked by the
+      resource loading hints based preview while the URL's document was loading.
+    </summary>
+  </metric>
+  <metric name="blocked_medium_priority">
+    <summary>
+      The number of medium priority resource requests that were blocked by the
+      resource loading hints based preview while the URL's document was loading.
+    </summary>
+  </metric>
+  <metric name="blocked_very_high_priority">
+    <summary>
+      The number of very high priority resource requests that were blocked by
+      the resource loading hints based preview while the URL's document was
+      loading.
+    </summary>
+  </metric>
+  <metric name="blocked_very_low_priority">
+    <summary>
+      The number of very low priority resource requests that were blocked by the
+      resource loading hints based preview while the URL's document was loading.
+    </summary>
+  </metric>
+  <metric name="patterns_to_block_total">
+    <summary>
+      The total number of patterns to block included in the resource loading
+      hints based preview.
+    </summary>
+  </metric>
+  <metric name="patterns_to_block_used">
+    <summary>
+      The number of patterns that blocked at least one resource request in the
+      resource loading hints based preview while the URL's document was loading.
     </summary>
   </metric>
 </event>
@@ -3967,6 +4139,20 @@ be describing additional metrics about the same event.
       The time (in ms, rounded down to the nearest power of 2) a popup
       WebContents is visible / foregrounded, until it is closed. Keyed by the
       popup opener's URL (not the URL of the popup).
+    </summary>
+  </metric>
+  <metric name="NumInteractions">
+    <summary>
+      Integer value representing how many user interactions the popup had. This
+      is capped at 100. See IsUserInteractionInputType in web_contents_impl for
+      what an interaction is. Currently it is a mouse, scroll begin, touch
+      start, or raw key down event.
+    </summary>
+  </metric>
+  <metric name="Trusted">
+    <summary>
+      Boolean value representing whether the popup was opened via some trusted
+      event (e.g. context menu, ctrl-click, etc).
     </summary>
   </metric>
   <metric name="UserInitiatedClose">
@@ -4404,6 +4590,12 @@ be describing additional metrics about the same event.
       brought to foreground again.
     </summary>
   </metric>
+  <metric name="LabelId">
+    <summary>
+      An int64 random number generated when TabManager.TabMetric is logged. The
+      same number is also logged here, so that feature label can be paired.
+    </summary>
+  </metric>
   <metric name="MRUIndex">
     <summary>
       Index of the tab in most-recently-used order. A value of N means there are
@@ -4412,10 +4604,14 @@ be describing additional metrics about the same event.
     </summary>
   </metric>
   <metric name="SequenceId">
+    <obsolete>
+      Deprecated 11/2018 in favor LabelId.
+    </obsolete>
     <summary>
-      The sequence of this event and TabManager.TabMetrics event in the current
-      session. Incremented by 1 each time one of the two events is logged to
-      provide an ordering of events.
+      This metric is obsolete in 11/2018 in favor of LabelId for pairing with
+      Tabmanager.TabMetrics event. The sequence of this event and
+      TabManager.TabMetrics event in the current session. Incremented by 1 each
+      time one of the two events is logged to provide an ordering of events.
     </summary>
   </metric>
   <metric name="TimeFromBackgrounded">
@@ -5211,15 +5407,34 @@ be describing additional metrics about the same event.
       Number of key events that were sent to the page.
     </summary>
   </metric>
+  <metric name="LabelId">
+    <summary>
+      An int64 random number generated at logging time. The same number will
+      also be logged to the TabManager.Background.ForegroundedOrClosed event, so
+      that feature label can be paired.
+    </summary>
+  </metric>
   <metric name="MouseEventCount">
     <summary>
       Number of mouse events that were sent to the page.
+    </summary>
+  </metric>
+  <metric name="MRUIndex">
+    <summary>
+      Index of the tab in most-recently-used order. A value of N means there are
+      N tabs more recently used than the one that is being foregrounded or
+      closed.
     </summary>
   </metric>
   <metric name="NavigationEntryCount">
     <summary>
       Number of navigation entries in the tab's NavigationController.
       Corresponds to the size of the tab's back/forward list.
+    </summary>
+  </metric>
+  <metric name="NumReactivationBefore">
+    <summary>
+      Number of reactivations that this tab had till now.
     </summary>
   </metric>
   <metric name="PageTransitionCoreType">
@@ -5240,17 +5455,41 @@ be describing additional metrics about the same event.
       PageTransition type may not be accurate.
     </summary>
   </metric>
-  <metric name="SequenceId">
+  <metric name="QueryId">
     <summary>
-      The sequence of this event and TabManager.ForegroundedOrClosed event in
-      the current session. Incremented by 1 each time one of the two events is
-      logged to provide an ordering of events.
+      An int64 random number generated at query time of
+      TabManager::GetSortedLifecycleUnitsFromTabRanker. Tabs with the same
+      QueryId will be later on combined in one full list for further analysis.
+    </summary>
+  </metric>
+  <metric name="SequenceId">
+    <obsolete>
+      Deprecated 11/2018 in favor LabelId.
+    </obsolete>
+    <summary>
+      This metric is obsolete in 11/2018 in favor of LabelId for pairing with
+      Tabmanager.ForegroundedOrClosed event. The sequence of this event and
+      TabManager.ForegroundedOrClosed event in the current session. Incremented
+      by 1 each time one of the two events is logged to provide an ordering of
+      events.
     </summary>
   </metric>
   <metric name="SiteEngagementScore">
     <summary>
       Site engagement score in the range [0, 100], rounded down to a multiple of
       10 to limit granularity.
+    </summary>
+  </metric>
+  <metric name="TimeFromBackgrounded">
+    <summary>
+      Duration in MS from when the tab is backgrounded to when it is brought to
+      foreground or closed.
+    </summary>
+  </metric>
+  <metric name="TotalTabCount">
+    <summary>
+      Total number of tabs open across all non-incognito browser windows. Helps
+      contextualize the MRUIndex value.
     </summary>
   </metric>
   <metric name="TouchEventCount">
@@ -5265,9 +5504,39 @@ be describing additional metrics about the same event.
     </summary>
   </metric>
   <metric name="WindowId">
+    <obsolete>
+      Deprecated 11/2018 in favor of putting window features directly in this
+      event.
+    </obsolete>
     <summary>
       WindowId of the WindowMetrics entry corresponding to the browser window
-      containing this tab.
+      containing this tab. This metrics is not populated from 11/2018 because we
+      don't need to join this event with other WindowMetrics any more.
+    </summary>
+  </metric>
+  <metric name="WindowIsActive">
+    <summary>
+      Boolean value indicating whether the window is the active (frontmost)
+      window.
+    </summary>
+  </metric>
+  <metric name="WindowShowState">
+    <summary>
+      Enumeration of the window show state, such as fullscreen or minimized.
+      Values are enumerated in metrics::WindowMetricsEvent::ShowState.
+    </summary>
+  </metric>
+  <metric name="WindowTabCount">
+    <summary>
+      Number of tabs in the tab strip. Rounded down to the nearest exponential
+      bucket (with a bucket spacing factor of 1.5). Will be 1 for windows with
+      only one top-level WebContents, such as app windows.
+    </summary>
+  </metric>
+  <metric name="WindowType">
+    <summary>
+      Enumeration for the type of the window. Values are enumerated in
+      metrics::WindowMetricsEvent::Type.
     </summary>
   </metric>
 </event>
@@ -5404,6 +5673,14 @@ be describing additional metrics about the same event.
       Type of a input field which the user is trying to use the Virtual Keyboard
       on.
     </summary>
+    <aggregation>
+      <history>
+        <index fields="profile.form_factor"/>
+        <statistics>
+          <enumeration/>
+        </statistics>
+      </history>
+    </aggregation>
   </metric>
 </event>
 
@@ -5420,6 +5697,24 @@ be describing additional metrics about the same event.
       The usage pattern detected (an int encoding bit values). The bits are
       defined in third_party/webrtc/pc/peerconnection.h, in the
       &quot;PeerConnection::UsageEvent&quot; enum.
+    </summary>
+  </metric>
+</event>
+
+<event name="WebRTC.ComplexSdp">
+  <owner>hbos@chromium.org</owner>
+  <owner>guidou@chromium.org</owner>
+  <summary>
+    Logged when an application uses complex SDP in a WebRTC PeerConnection or
+    experiences an error attempting to parse SDP. Such cases will result in
+    errors if the application assumes the wrong default SDP format. This is an
+    important concern during the transition of the default SDP format from Plan
+    B to Unified Plan.
+  </summary>
+  <metric name="Category">
+    <summary>
+      A value that represents how complex/unparsable SDP is used. The categories
+      are defined in blink::ComplexSdpCategory.
     </summary>
   </metric>
 </event>
@@ -5449,6 +5744,13 @@ be describing additional metrics about the same event.
     <summary>
       True if there was a mismatch.
     </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <enumeration/>
+        </statistics>
+      </history>
+    </aggregation>
   </metric>
 </event>
 
@@ -5467,6 +5769,19 @@ be describing additional metrics about the same event.
   <metric name="Status">
     <summary>
       An enum with 0 representing started, 1 failed, and 2 response received.
+    </summary>
+  </metric>
+</event>
+
+<event name="SSL.MixedContentShown">
+  <owner>carlosil@chromium.org</owner>
+  <summary>
+    Logged when mixed content is displayed on a site.
+  </summary>
+  <metric name="Type">
+    <summary>
+      A value of the MixedContentType enum, detailing the type of mixed content
+      included on the site.
     </summary>
   </metric>
 </event>

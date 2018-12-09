@@ -79,6 +79,10 @@ void Frame::Detach(FrameDetachType type) {
   lifecycle_.AdvanceTo(FrameLifecycle::kDetaching);
 
   DetachImpl(type);
+
+  if (GetPage())
+    GetPage()->GetFocusController().FrameDetached(this);
+
   // Due to re-entrancy, |this| could have completed detaching already.
   // TODO(dcheng): This DCHECK is not always true. See https://crbug.com/838348.
   DCHECK(IsDetached() == !client_);
@@ -199,15 +203,9 @@ bool Frame::ConsumeTransientUserActivationInLocalTree() {
   return was_active;
 }
 
-bool Frame::DeprecatedIsFeatureEnabled(
-    mojom::FeaturePolicyFeature feature) const {
-  return GetSecurityContext()->IsFeatureEnabled(feature,
-                                                ReportOptions::kDoNotReport);
-}
-
-bool Frame::DeprecatedIsFeatureEnabled(mojom::FeaturePolicyFeature feature,
-                                       ReportOptions report_on_failure) const {
-  return GetSecurityContext()->IsFeatureEnabled(feature, report_on_failure);
+void Frame::ClearUserActivationInLocalTree() {
+  for (Frame* node = this; node; node = node->Tree().TraverseNext(this))
+    node->user_activation_state_.Clear();
 }
 
 void Frame::SetOwner(FrameOwner* owner) {

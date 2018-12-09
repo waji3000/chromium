@@ -29,8 +29,8 @@
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/content_features.h"
+#include "content/public/common/navigation_policy.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_util.h"
@@ -433,7 +433,7 @@ ServiceWorkerFetchDispatcher::ServiceWorkerFetchDispatcher(
 #if DCHECK_IS_ON()
   if (blink::ServiceWorkerUtils::IsServicificationEnabled()) {
     DCHECK((request_body_blob_uuid_.empty() && request_body_blob_size_ == 0 &&
-            !request_body_blob_ && client_id_.empty()));
+            !request_body_blob_));
   }
 #endif  // DCHECK_IS_ON()
   net_log_.BeginEvent(net::NetLogEventType::SERVICE_WORKER_DISPATCH_FETCH_EVENT,
@@ -619,7 +619,9 @@ bool ServiceWorkerFetchDispatcher::MaybeStartNavigationPreload(
   ResourceRequesterInfo* requester_info = original_info->requester_info();
   DCHECK(requester_info->IsBrowserSideNavigation());
   auto url_loader_factory = std::make_unique<URLLoaderFactoryImpl>(
-      ResourceRequesterInfo::CreateForNavigationPreload(requester_info));
+      ResourceRequesterInfo::CreateForNavigationPreload(
+          requester_info,
+          const_cast<net::URLRequestContext*>(original_request->context())));
 
   network::ResourceRequest request;
   request.method = original_request->method();
@@ -758,8 +760,7 @@ void ServiceWorkerFetchDispatcher::OnFetchEventFinished(
     ServiceWorkerVersion* version,
     int event_finish_id,
     scoped_refptr<URLLoaderAssets> url_loader_assets,
-    blink::mojom::ServiceWorkerEventStatus status,
-    base::TimeTicks /* dispatch_event_time */) {
+    blink::mojom::ServiceWorkerEventStatus status) {
   version->FinishRequest(
       event_finish_id,
       status != blink::mojom::ServiceWorkerEventStatus::ABORTED);

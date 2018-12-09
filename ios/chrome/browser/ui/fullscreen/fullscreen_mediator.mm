@@ -50,6 +50,14 @@ void FullscreenMediator::ExitFullscreen() {
   AnimateWithStyle(FullscreenAnimatorStyle::EXIT_FULLSCREEN);
 }
 
+void FullscreenMediator::StopFrameChangeCompensation() {
+  resizer_.compensateFrameChangeByOffset = NO;
+}
+
+void FullscreenMediator::StartFrameChangeCompensation() {
+  resizer_.compensateFrameChangeByOffset = YES;
+}
+
 void FullscreenMediator::Disconnect() {
   for (auto& observer : observers_) {
     observer.FullscreenControllerWillShutDown(controller_);
@@ -61,6 +69,13 @@ void FullscreenMediator::Disconnect() {
   model_->RemoveObserver(this);
   model_ = nullptr;
   controller_ = nullptr;
+}
+
+void FullscreenMediator::FullscreenModelToolbarHeightsUpdated(
+    FullscreenModel* model) {
+  for (auto& observer : observers_) {
+    observer.FullscreenViewportInsetRangeChanged(controller_);
+  }
 }
 
 void FullscreenMediator::FullscreenModelProgressUpdated(

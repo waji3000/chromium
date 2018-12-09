@@ -181,6 +181,7 @@ const gfx::FontList& AutofillPopupLayoutModel::GetValueFontListForRow(
     case POPUP_ITEM_ID_ALL_SAVED_PASSWORDS_ENTRY:
     case POPUP_ITEM_ID_GENERATE_PASSWORD_ENTRY:
     case POPUP_ITEM_ID_GOOGLE_PAY_BRANDING:
+    case POPUP_ITEM_ID_SHOW_ACCOUNT_CARDS:
       return normal_font_list_;
     case POPUP_ITEM_ID_AUTOCOMPLETE_ENTRY:
     case POPUP_ITEM_ID_DATALIST_ENTRY:
@@ -232,6 +233,10 @@ gfx::ImageSkia AutofillPopupLayoutModel::GetIconImage(size_t index) const {
     return gfx::CreateVectorIcon(kKeyIcon, kIconSize, gfx::kChromeIconGrey);
   if (icon_str == base::ASCIIToUTF16("globeIcon"))
     return gfx::CreateVectorIcon(kGlobeIcon, kIconSize, gfx::kChromeIconGrey);
+  if (icon_str == base::ASCIIToUTF16("google")) {
+    return gfx::CreateVectorIcon(kGoogleGLogoIcon, kIconSize,
+                                 gfx::kPlaceholderColor);
+  }
 
   // For other suggestion entries, get icon from PNG files.
   int icon_id = GetIconResourceID(icon_str);

@@ -20,7 +20,7 @@
 
 #include "third_party/blink/renderer/core/html/html_frame_owner_element.h"
 
-#include "third_party/blink/public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
+#include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-shared.h"
 #include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
@@ -32,6 +32,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/remote_frame.h"
 #include "third_party/blink/renderer/core/frame/remote_frame_view.h"
+#include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/html/lazy_load_frame_observer.h"
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/layout/layout_embedded_content.h"
@@ -45,6 +46,7 @@
 #include "third_party/blink/renderer/core/timing/window_performance.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/heap/heap_allocator.h"
+#include "third_party/blink/renderer/platform/network/network_state_notifier.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 
@@ -386,8 +388,8 @@ bool HTMLFrameOwnerElement::LoadOrRedirectSubframe(
   if (!child_frame)
     return false;
 
-  ResourceRequest request(url);
-  ReferrerPolicy policy = ReferrerPolicyAttribute();
+  ResourceRequest request(url.IsNull() ? BlankURL() : url);
+  network::mojom::ReferrerPolicy policy = ReferrerPolicyAttribute();
   request.SetReferrerPolicy(policy);
 
   WebFrameLoadType child_load_type = WebFrameLoadType::kReplaceCurrentItem;
@@ -407,6 +409,8 @@ bool HTMLFrameOwnerElement::LoadOrRedirectSubframe(
 
   if ((RuntimeEnabledFeatures::LazyFrameLoadingEnabled() ||
        RuntimeEnabledFeatures::LazyFrameVisibleLoadTimeMetricsEnabled()) &&
+      GetDocument().GetSettings() &&
+      GetDocument().GetSettings()->GetLazyLoadEnabled() &&
       !lazy_load_frame_observer_ &&
       // Only http:// or https:// URLs are eligible for lazy loading, excluding
       // URLs like invalid or empty URLs, "about:blank", local file URLs, etc.
@@ -415,6 +419,14 @@ bool HTMLFrameOwnerElement::LoadOrRedirectSubframe(
       (EqualIgnoringASCIICase(FastGetAttribute(html_names::kLazyloadAttr),
                               "on") ||
        (should_lazy_load_children_ &&
+        // If lazy loading is restricted to only Data Saver users, then avoid
+        // lazy loading unless Data Saver is enabled, taking the Data Saver
+        // holdback into consideration.
+        (!RuntimeEnabledFeatures::
+             RestrictLazyFrameLoadingToDataSaverEnabled() ||
+         (!(GetDocument().GetSettings() &&
+            GetDocument().GetSettings()->GetDataSaverHoldbackWebApi()) &&
+          GetNetworkStateNotifier().SaveDataEnabled())) &&
         // Disallow lazy loading by default if javascript in the embedding
         // document would be able to access the contents of the frame, since in
         // those cases deferring the frame could break the page. Note that this
@@ -428,7 +440,8 @@ bool HTMLFrameOwnerElement::LoadOrRedirectSubframe(
     // near the viewport or visible.
     should_lazy_load_children_ = false;
 
-    lazy_load_frame_observer_ = new LazyLoadFrameObserver(*this);
+    lazy_load_frame_observer_ =
+        MakeGarbageCollected<LazyLoadFrameObserver>(*this);
 
     if (RuntimeEnabledFeatures::LazyFrameVisibleLoadTimeMetricsEnabled())
       lazy_load_frame_observer_->StartTrackingVisibilityMetrics();

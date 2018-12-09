@@ -7,6 +7,7 @@
 #include <iterator>
 
 #include "base/bind.h"
+#include "base/debug/dump_without_crashing.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/optional.h"
@@ -37,7 +38,6 @@
 #include "content/public/browser/navigation_ui_data.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/site_instance.h"
-#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
@@ -164,6 +164,7 @@ std::unique_ptr<NavigationHandleImpl> NavigationHandleImpl::Create(
     bool is_external_protocol,
     blink::mojom::RequestContextType request_context_type,
     blink::WebMixedContentContextType mixed_content_context_type,
+    const std::string& href_translate,
     base::TimeTicks input_start) {
   return std::unique_ptr<NavigationHandleImpl>(new NavigationHandleImpl(
       url, redirect_chain, frame_tree_node, is_renderer_initiated,
@@ -172,7 +173,7 @@ std::unique_ptr<NavigationHandleImpl> NavigationHandleImpl::Create(
       is_form_submission, std::move(navigation_ui_data), method,
       std::move(request_headers), resource_request_body, sanitized_referrer,
       has_user_gesture, transition, is_external_protocol, request_context_type,
-      mixed_content_context_type, input_start));
+      mixed_content_context_type, href_translate, input_start));
 }
 
 NavigationHandleImpl::NavigationHandleImpl(
@@ -196,6 +197,7 @@ NavigationHandleImpl::NavigationHandleImpl(
     bool is_external_protocol,
     blink::mojom::RequestContextType request_context_type,
     blink::WebMixedContentContextType mixed_content_context_type,
+    const std::string& href_translate,
     base::TimeTicks input_start)
     : url_(url),
       has_user_gesture_(has_user_gesture),
@@ -210,6 +212,7 @@ NavigationHandleImpl::NavigationHandleImpl(
       should_update_history_(false),
       subframe_entry_committed_(false),
       connection_info_(net::HttpResponseInfo::CONNECTION_INFO_UNKNOWN),
+      href_translate_(href_translate),
       original_url_(url),
       method_(method),
       request_headers_(std::move(request_headers)),
@@ -656,6 +659,10 @@ bool NavigationHandleImpl::IsFormSubmission() {
   return is_form_submission_;
 }
 
+const std::string& NavigationHandleImpl::GetHrefTranslate() {
+  return href_translate_;
+}
+
 bool NavigationHandleImpl::IsSignedExchangeInnerResponse() {
   return is_signed_exchange_inner_response_;
 }
@@ -861,8 +868,13 @@ void NavigationHandleImpl::WillProcessResponse(
   // If the navigation is done processing the response, then it's ready to
   // commit. Inform observers that the navigation is now ready to commit, unless
   // it is not set to commit (204/205s/downloads).
-  if (result.action() == NavigationThrottle::PROCEED && render_frame_host_)
+  if (result.action() == NavigationThrottle::PROCEED && render_frame_host_) {
+    base::WeakPtr<NavigationHandleImpl> weak_ptr = weak_factory_.GetWeakPtr();
     ReadyToCommitNavigation(render_frame_host_, false);
+    // TODO(https://crbug.com/880741): Remove this once the bug is fixed.
+    if (!weak_ptr)
+      base::debug::DumpWithoutCrashing();
+  }
 
   TRACE_EVENT_ASYNC_STEP_INTO1("navigation", "NavigationHandle", this,
                                "ProcessResponse", "result", result.action());

@@ -225,6 +225,7 @@ public class WebViewChromiumFactoryProvider implements WebViewFactoryProvider {
         }
     }
 
+    @SuppressWarnings("NoContextGetApplicationContext")
     private void initialize(WebViewDelegate webViewDelegate) {
         long startTime = SystemClock.elapsedRealtime();
         try (ScopedSysTraceEvent e1 =
@@ -521,7 +522,7 @@ public class WebViewChromiumFactoryProvider implements WebViewFactoryProvider {
 
     @Override
     public TokenBindingService getTokenBindingService() {
-        return mAwInit.getTokenBindingService();
+        return null;
     }
 
     @Override

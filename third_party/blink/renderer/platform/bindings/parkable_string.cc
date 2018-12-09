@@ -10,13 +10,14 @@
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/single_thread_task_runner.h"
+#include "base/timer/elapsed_timer.h"
 #include "base/trace_event/trace_event.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/platform/bindings/parkable_string_manager.h"
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/scheduler/public/background_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
-#include "third_party/blink/renderer/platform/web_task_runner.h"
 #include "third_party/blink/renderer/platform/wtf/address_sanitizer.h"
 #include "third_party/blink/renderer/platform/wtf/thread_specific.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
@@ -28,6 +29,37 @@ namespace {
 
 void RecordParkingAction(ParkableStringImpl::ParkingAction action) {
   UMA_HISTOGRAM_ENUMERATION("Memory.MovableStringParkingAction", action);
+}
+
+void RecordStatistics(size_t size,
+                      base::TimeDelta duration,
+                      ParkableStringImpl::ParkingAction action) {
+  size_t throughput_mb_s =
+      static_cast<size_t>(size / duration.InSecondsF()) / 1000000;
+  size_t size_kb = size / 1000;
+  if (action == ParkableStringImpl::ParkingAction::kParkedInBackground) {
+    UMA_HISTOGRAM_COUNTS_10000("Memory.ParkableString.Compression.SizeKb",
+                               size_kb);
+    // Size is at least 10kB, and at most ~1MB, and compression throughput
+    // ranges from single-digit MB/s to ~40MB/s depending on the CPU, hence
+    // the range.
+    UMA_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(
+        "Memory.ParkableString.Compression.Latency", duration,
+        base::TimeDelta::FromMicroseconds(500), base::TimeDelta::FromSeconds(1),
+        100);
+    UMA_HISTOGRAM_COUNTS_1000(
+        "Memory.ParkableString.Compression.ThroughputMBps", throughput_mb_s);
+  } else {
+    UMA_HISTOGRAM_COUNTS_10000("Memory.ParkableString.Decompression.SizeKb",
+                               size_kb);
+    UMA_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(
+        "Memory.ParkableString.Decompression.Latency", duration,
+        base::TimeDelta::FromMicroseconds(500), base::TimeDelta::FromSeconds(1),
+        100);
+    // Decompression speed can go up to >500MB/s.
+    UMA_HISTOGRAM_COUNTS_1000(
+        "Memory.ParkableString.Decompression.ThroughputMBps", throughput_mb_s);
+  }
 }
 
 void AsanPoisonString(const String& string) {
@@ -79,8 +111,8 @@ struct CompressionTaskParams final {
   const size_t size;
   const scoped_refptr<base::SingleThreadTaskRunner> callback_task_runner;
 
-  DISALLOW_COPY_AND_ASSIGN(CompressionTaskParams);
   CompressionTaskParams(CompressionTaskParams&&) = delete;
+  DISALLOW_COPY_AND_ASSIGN(CompressionTaskParams);
 };
 
 // Valid transitions are:
@@ -144,10 +176,19 @@ void ParkableStringImpl::Unlock() {
   // the owning thread may concurrently call |ToString()|. It is then allowed
   // to use the string until the end of the current owning thread task.
   // Requires DCHECK_IS_ON() for the |owning_thread_| check.
-  if (CanParkNow() && owning_thread_ == CurrentThread()) {
+  //
+  // Checking the owning thread first as CanParkNow() can only be called from
+  // the owning thread.
+  if (owning_thread_ == CurrentThread() && CanParkNow()) {
     AsanPoisonString(string_);
   }
 #endif  // defined(ADDRESS_SANITIZER) && DCHECK_IS_ON()
+}
+
+void ParkableStringImpl::PurgeMemory() {
+  AssertOnValidThread();
+  if (state_ == State::kUnparked)
+    compressed_ = nullptr;
 }
 
 const String& ParkableStringImpl::ToString() {
@@ -164,21 +205,32 @@ unsigned ParkableStringImpl::CharactersSizeInBytes() const {
   return length_ * (is_8bit() ? sizeof(LChar) : sizeof(UChar));
 }
 
-bool ParkableStringImpl::Park() {
+bool ParkableStringImpl::Park(ParkingMode mode) {
   AssertOnValidThread();
   MutexLocker locker(mutex_);
   DCHECK(may_be_parked_);
   if (state_ == State::kUnparked && CanParkNow()) {
-    // |string_|'s data should not be touched except in the compression task.
-    AsanPoisonString(string_);
-    // |params| keeps |this| alive until |OnParkingCompleteOnMainThread()|.
-    auto params = std::make_unique<CompressionTaskParams>(
-        this, string_.Bytes(), string_.CharactersSizeInBytes(),
-        Platform::Current()->CurrentThread()->GetTaskRunner());
-    background_scheduler::PostOnBackgroundThread(
-        FROM_HERE, CrossThreadBind(&ParkableStringImpl::CompressInBackground,
-                                   WTF::Passed(std::move(params))));
-    state_ = State::kParkingInProgress;
+    // Parking can proceed synchronously.
+    if (has_compressed_data()) {
+      RecordParkingAction(ParkingAction::kParkedInBackground);
+      state_ = State::kParked;
+      ParkableStringManager::Instance().OnParked(this, string_.Impl());
+
+      // Must unpoison the memory before releasing it.
+      AsanUnpoisonString(string_);
+      string_ = String();
+    } else if (mode == ParkingMode::kAlways) {
+      // |string_|'s data should not be touched except in the compression task.
+      AsanPoisonString(string_);
+      // |params| keeps |this| alive until |OnParkingCompleteOnMainThread()|.
+      auto params = std::make_unique<CompressionTaskParams>(
+          this, string_.Bytes(), string_.CharactersSizeInBytes(),
+          Thread::Current()->GetTaskRunner());
+      background_scheduler::PostOnBackgroundThread(
+          FROM_HERE, CrossThreadBind(&ParkableStringImpl::CompressInBackground,
+                                     WTF::Passed(std::move(params))));
+      state_ = State::kParkingInProgress;
+    }
   }
 
   return state_ == State::kParked || state_ == State::kParkingInProgress;
@@ -207,6 +259,7 @@ void ParkableStringImpl::Unpark() {
   TRACE_EVENT1("blink", "ParkableStringImpl::Unpark", "size",
                CharactersSizeInBytes());
   DCHECK(compressed_);
+  base::ElapsedTimer timer;
 
   base::StringPiece compressed_string_piece(
       reinterpret_cast<const char*>(compressed_->data()),
@@ -235,15 +288,16 @@ void ParkableStringImpl::Unpark() {
   // the string we need, nothing else to do than to abort.
   CHECK(compression::GzipUncompress(compressed_string_piece,
                                     uncompressed_string_piece));
-  compressed_ = nullptr;
   string_ = uncompressed;
   state_ = State::kUnparked;
+  ParkableStringManager::Instance().OnUnparked(this, string_.Impl());
 
   bool backgrounded =
       ParkableStringManager::Instance().IsRendererBackgrounded();
-  RecordParkingAction(backgrounded ? ParkingAction::kUnparkedInBackground
-                                   : ParkingAction::kUnparkedInForeground);
-  ParkableStringManager::Instance().OnUnparked(this, string_.Impl());
+  auto action = backgrounded ? ParkingAction::kUnparkedInBackground
+                             : ParkingAction::kUnparkedInForeground;
+  RecordParkingAction(action);
+  RecordStatistics(CharactersSizeInBytes(), timer.Elapsed(), action);
 }
 
 void ParkableStringImpl::OnParkingCompleteOnMainThread(
@@ -265,9 +319,9 @@ void ParkableStringImpl::OnParkingCompleteOnMainThread(
   if (CanParkNow() && compressed) {
     RecordParkingAction(ParkingAction::kParkedInBackground);
     state_ = State::kParked;
+    compressed_ = std::move(compressed);
     ParkableStringManager::Instance().OnParked(this, string_.Impl());
 
-    compressed_ = std::move(compressed);
     // Must unpoison the memory before releasing it.
     AsanUnpoisonString(string_);
     string_ = String();
@@ -282,6 +336,12 @@ void ParkableStringImpl::CompressInBackground(
   TRACE_EVENT1("blink", "ParkableStringImpl::CompressInBackground", "size",
                params->size);
 
+  base::ElapsedTimer timer;
+#if defined(ADDRESS_SANITIZER)
+  // Lock the string to prevent a concurrent |Unlock()| on the main thread from
+  // poisoning the string in the meantime.
+  params->string->Lock();
+#endif  // defined(ADDRESS_SANITIZER)
   // Compression touches the string.
   AsanUnpoisonString(params->string->string_);
   base::StringPiece data(reinterpret_cast<const char*>(params->data),
@@ -296,9 +356,12 @@ void ParkableStringImpl::CompressInBackground(
         reinterpret_cast<const uint8_t*>(compressed_string.c_str()),
         compressed_string.size());
   }
-  AsanPoisonString(params->string->string_);
+#if defined(ADDRESS_SANITIZER)
+  params->string->Unlock();
+#endif  // defined(ADDRESS_SANITIZER)
 
   auto* task_runner = params->callback_task_runner.get();
+  size_t size = params->size;
   PostCrossThreadTask(
       *task_runner, FROM_HERE,
       CrossThreadBind(
@@ -309,6 +372,7 @@ void ParkableStringImpl::CompressInBackground(
                                                   std::move(compressed));
           },
           WTF::Passed(std::move(params)), WTF::Passed(std::move(compressed))));
+  RecordStatistics(size, timer.Elapsed(), ParkingAction::kParkedInBackground);
 }
 
 ParkableString::ParkableString(scoped_refptr<StringImpl>&& impl) {

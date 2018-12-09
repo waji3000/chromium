@@ -305,8 +305,12 @@ error::Error GLES2DecoderPassthroughImpl::HandleGetActiveUniformsiv(
   GLsizei uniformCount = static_cast<GLsizei>(bucket->size() / sizeof(GLuint));
   const GLuint* indices = bucket->GetDataAs<const GLuint*>(0, bucket->size());
   typedef cmds::GetActiveUniformsiv::Result Result;
-  Result* result = GetSharedMemoryAs<Result*>(
-      params_shm_id, params_shm_offset, Result::ComputeSize(uniformCount));
+  uint32_t checked_size = 0;
+  if (!Result::ComputeSize(uniformCount).AssignIfValid(&checked_size)) {
+    return error::kOutOfBounds;
+  }
+  Result* result = GetSharedMemoryAs<Result*>(params_shm_id, params_shm_offset,
+                                              checked_size);
   GLint* params = result ? result->GetData() : nullptr;
   if (params == nullptr) {
     return error::kOutOfBounds;
@@ -338,8 +342,12 @@ error::Error GLES2DecoderPassthroughImpl::HandleGetAttachedShaders(
 
   typedef cmds::GetAttachedShaders::Result Result;
   uint32_t maxCount = Result::ComputeMaxResults(result_size);
+  uint32_t checked_size = 0;
+  if (!Result::ComputeSize(maxCount).AssignIfValid(&checked_size)) {
+    return error::kOutOfBounds;
+  }
   Result* result = GetSharedMemoryAs<Result*>(result_shm_id, result_shm_offset,
-                                              Result::ComputeSize(maxCount));
+                                              checked_size);
   if (!result) {
     return error::kOutOfBounds;
   }
@@ -760,9 +768,12 @@ error::Error GLES2DecoderPassthroughImpl::HandleGetUniformIndices(
     return error::kInvalidArguments;
   }
   typedef cmds::GetUniformIndices::Result Result;
-  Result* result = GetSharedMemoryAs<Result*>(
-      indices_shm_id, indices_shm_offset,
-      Result::ComputeSize(static_cast<size_t>(count)));
+  uint32_t checked_size = 0;
+  if (!Result::ComputeSize(count).AssignIfValid(&checked_size)) {
+    return error::kOutOfBounds;
+  }
+  Result* result = GetSharedMemoryAs<Result*>(indices_shm_id,
+                                              indices_shm_offset, checked_size);
   GLuint* indices = result ? result->GetData() : nullptr;
   if (indices == nullptr) {
     return error::kOutOfBounds;
@@ -1604,6 +1615,202 @@ error::Error GLES2DecoderPassthroughImpl::HandleDrawElementsInstancedANGLE(
   return DoDrawElementsInstancedANGLE(mode, count, type, indices, primcount);
 }
 
+error::Error GLES2DecoderPassthroughImpl::HandleMultiDrawArraysWEBGL(
+    uint32_t immediate_data_size,
+    const volatile void* cmd_data) {
+  const volatile gles2::cmds::MultiDrawArraysWEBGL& c =
+      *static_cast<const volatile gles2::cmds::MultiDrawArraysWEBGL*>(cmd_data);
+  if (!features().webgl_multi_draw) {
+    return error::kUnknownCommand;
+  }
+
+  GLenum mode = static_cast<GLenum>(c.mode);
+  GLsizei drawcount = static_cast<GLsizei>(c.drawcount);
+
+  uint32_t firsts_size, counts_size;
+  base::CheckedNumeric<uint32_t> checked_size(drawcount);
+  if (!(checked_size * sizeof(GLint)).AssignIfValid(&firsts_size)) {
+    return error::kOutOfBounds;
+  }
+  if (!(checked_size * sizeof(GLsizei)).AssignIfValid(&counts_size)) {
+    return error::kOutOfBounds;
+  }
+  const GLint* firsts = GetSharedMemoryAs<const GLint*>(
+      c.firsts_shm_id, c.firsts_shm_offset, firsts_size);
+  const GLsizei* counts = GetSharedMemoryAs<const GLsizei*>(
+      c.counts_shm_id, c.counts_shm_offset, counts_size);
+  if (firsts == nullptr) {
+    return error::kOutOfBounds;
+  }
+  if (counts == nullptr) {
+    return error::kOutOfBounds;
+  }
+  // Copy these arrays out of shared memory because it is possible
+  // for the shared memory to be modified after validation but
+  // before drawing.
+  std::vector<GLint> firsts_copy(firsts, firsts + drawcount);
+  std::vector<GLsizei> counts_copy(counts, counts + drawcount);
+  return DoMultiDrawArraysWEBGL(mode, firsts_copy.data(), counts_copy.data(),
+                                drawcount);
+}
+
+error::Error GLES2DecoderPassthroughImpl::HandleMultiDrawArraysInstancedWEBGL(
+    uint32_t immediate_data_size,
+    const volatile void* cmd_data) {
+  const volatile gles2::cmds::MultiDrawArraysInstancedWEBGL& c =
+      *static_cast<const volatile gles2::cmds::MultiDrawArraysInstancedWEBGL*>(
+          cmd_data);
+  if (!features().webgl_multi_draw_instanced) {
+    return error::kUnknownCommand;
+  }
+
+  GLenum mode = static_cast<GLenum>(c.mode);
+  GLsizei drawcount = static_cast<GLsizei>(c.drawcount);
+
+  uint32_t firsts_size, counts_size, instance_counts_size;
+  base::CheckedNumeric<uint32_t> checked_size(drawcount);
+  if (!(checked_size * sizeof(GLint)).AssignIfValid(&firsts_size)) {
+    return error::kOutOfBounds;
+  }
+  if (!(checked_size * sizeof(GLsizei)).AssignIfValid(&counts_size)) {
+    return error::kOutOfBounds;
+  }
+  if (!(checked_size * sizeof(GLsizei)).AssignIfValid(&instance_counts_size)) {
+    return error::kOutOfBounds;
+  }
+  const GLint* firsts = GetSharedMemoryAs<const GLint*>(
+      c.firsts_shm_id, c.firsts_shm_offset, firsts_size);
+  const GLsizei* counts = GetSharedMemoryAs<const GLsizei*>(
+      c.counts_shm_id, c.counts_shm_offset, counts_size);
+  const GLsizei* instance_counts = GetSharedMemoryAs<const GLsizei*>(
+      c.instance_counts_shm_id, c.instance_counts_shm_offset,
+      instance_counts_size);
+  if (firsts == nullptr) {
+    return error::kOutOfBounds;
+  }
+  if (counts == nullptr) {
+    return error::kOutOfBounds;
+  }
+  if (instance_counts == nullptr) {
+    return error::kOutOfBounds;
+  }
+  // Copy these arrays out of shared memory because it is possible
+  // for the shared memory to be modified after validation but
+  // before drawing.
+  std::vector<GLint> firsts_copy(firsts, firsts + drawcount);
+  std::vector<GLsizei> counts_copy(counts, counts + drawcount);
+  std::vector<GLsizei> instance_counts_copy(instance_counts,
+                                            instance_counts + drawcount);
+  return DoMultiDrawArraysInstancedWEBGL(
+      mode, firsts_copy.data(), counts_copy.data(), instance_counts_copy.data(),
+      drawcount);
+}
+
+error::Error GLES2DecoderPassthroughImpl::HandleMultiDrawElementsWEBGL(
+    uint32_t immediate_data_size,
+    const volatile void* cmd_data) {
+  const volatile gles2::cmds::MultiDrawElementsWEBGL& c =
+      *static_cast<const volatile gles2::cmds::MultiDrawElementsWEBGL*>(
+          cmd_data);
+  if (!features().webgl_multi_draw) {
+    return error::kUnknownCommand;
+  }
+
+  GLenum mode = static_cast<GLenum>(c.mode);
+  GLenum type = static_cast<GLenum>(c.type);
+  GLsizei drawcount = static_cast<GLsizei>(c.drawcount);
+
+  uint32_t counts_size, offsets_size;
+  base::CheckedNumeric<uint32_t> checked_size(drawcount);
+  if (!(checked_size * sizeof(GLsizei)).AssignIfValid(&counts_size)) {
+    return error::kOutOfBounds;
+  }
+  if (!(checked_size * sizeof(GLsizei)).AssignIfValid(&offsets_size)) {
+    return error::kOutOfBounds;
+  }
+  const GLsizei* counts = GetSharedMemoryAs<const GLsizei*>(
+      c.counts_shm_id, c.counts_shm_offset, counts_size);
+  const GLsizei* offsets = GetSharedMemoryAs<const GLsizei*>(
+      c.offsets_shm_id, c.offsets_shm_offset, offsets_size);
+  if (counts == nullptr) {
+    return error::kOutOfBounds;
+  }
+  if (offsets == nullptr) {
+    return error::kOutOfBounds;
+  }
+  // The do-er for this function calls the ANGLE implementation which
+  // requires an array of pointers, not 32-bit integers
+  std::vector<const GLvoid*> indices(drawcount);
+  for (GLsizei draw_id = 0; draw_id < drawcount; ++draw_id) {
+    indices[draw_id] =
+        reinterpret_cast<GLvoid*>(static_cast<GLintptr>(offsets[draw_id]));
+  }
+  // Copy these arrays out of shared memory because it is possible
+  // for the shared memory to be modified after validation but
+  // before drawing.
+  std::vector<GLsizei> counts_copy(counts, counts + drawcount);
+  return DoMultiDrawElementsWEBGL(mode, counts_copy.data(), type,
+                                  indices.data(), drawcount);
+}
+
+error::Error GLES2DecoderPassthroughImpl::HandleMultiDrawElementsInstancedWEBGL(
+    uint32_t immediate_data_size,
+    const volatile void* cmd_data) {
+  const volatile gles2::cmds::MultiDrawElementsInstancedWEBGL& c = *static_cast<
+      const volatile gles2::cmds::MultiDrawElementsInstancedWEBGL*>(cmd_data);
+  if (!features().webgl_multi_draw_instanced) {
+    return error::kUnknownCommand;
+  }
+
+  GLenum mode = static_cast<GLenum>(c.mode);
+  GLenum type = static_cast<GLenum>(c.type);
+  GLsizei drawcount = static_cast<GLsizei>(c.drawcount);
+
+  uint32_t counts_size, offsets_size, instance_counts_size;
+  base::CheckedNumeric<uint32_t> checked_size(drawcount);
+  if (!(checked_size * sizeof(GLsizei)).AssignIfValid(&counts_size)) {
+    return error::kOutOfBounds;
+  }
+  if (!(checked_size * sizeof(GLsizei)).AssignIfValid(&offsets_size)) {
+    return error::kOutOfBounds;
+  }
+  if (!(checked_size * sizeof(GLsizei)).AssignIfValid(&instance_counts_size)) {
+    return error::kOutOfBounds;
+  }
+  const GLsizei* counts = GetSharedMemoryAs<const GLsizei*>(
+      c.counts_shm_id, c.counts_shm_offset, counts_size);
+  const GLsizei* offsets = GetSharedMemoryAs<const GLsizei*>(
+      c.offsets_shm_id, c.offsets_shm_offset, offsets_size);
+  const GLsizei* instance_counts = GetSharedMemoryAs<const GLsizei*>(
+      c.instance_counts_shm_id, c.instance_counts_shm_offset,
+      instance_counts_size);
+  if (counts == nullptr) {
+    return error::kOutOfBounds;
+  }
+  if (offsets == nullptr) {
+    return error::kOutOfBounds;
+  }
+  if (instance_counts == nullptr) {
+    return error::kOutOfBounds;
+  }
+  // The do-er for this function calls the ANGLE implementation which
+  // requires an array of pointers, not 32-bit integers
+  std::vector<const GLvoid*> indices(drawcount);
+  for (GLsizei draw_id = 0; draw_id < drawcount; ++draw_id) {
+    indices[draw_id] =
+        reinterpret_cast<GLvoid*>(static_cast<GLintptr>(offsets[draw_id]));
+  }
+  // Copy these arrays out of shared memory because it is possible
+  // for the shared memory to be modified after validation but
+  // before drawing.
+  std::vector<GLsizei> counts_copy(counts, counts + drawcount);
+  std::vector<GLsizei> instance_counts_copy(instance_counts,
+                                            instance_counts + drawcount);
+  return DoMultiDrawElementsInstancedWEBGL(
+      mode, counts_copy.data(), type, indices.data(),
+      instance_counts_copy.data(), drawcount);
+}
+
 error::Error GLES2DecoderPassthroughImpl::HandleVertexAttribDivisorANGLE(
     uint32_t immediate_data_size,
     const volatile void* cmd_data) {
@@ -1788,63 +1995,6 @@ error::Error GLES2DecoderPassthroughImpl::HandleScheduleCALayerCHROMIUM(
   const GLfloat* bounds_rect = mem + 4;
   return DoScheduleCALayerCHROMIUM(contents_texture_id, contents_rect,
                                    background_color, edge_aa_mask, bounds_rect);
-}
-
-error::Error
-GLES2DecoderPassthroughImpl::HandleScheduleDCLayerSharedStateCHROMIUM(
-    uint32_t immediate_data_size,
-    const volatile void* cmd_data) {
-  const volatile gles2::cmds::ScheduleDCLayerSharedStateCHROMIUM& c =
-      *static_cast<
-          const volatile gles2::cmds::ScheduleDCLayerSharedStateCHROMIUM*>(
-          cmd_data);
-  GLfloat opacity = static_cast<GLfloat>(c.opacity);
-  GLboolean is_clipped = static_cast<GLboolean>(c.is_clipped);
-  GLint z_order = static_cast<GLint>(c.z_order);
-  uint32_t shm_id = c.shm_id;
-  uint32_t shm_offset = c.shm_offset;
-
-  const GLfloat* mem = GetSharedMemoryAs<const GLfloat*>(shm_id, shm_offset,
-                                                         20 * sizeof(GLfloat));
-  if (!mem) {
-    return error::kOutOfBounds;
-  }
-  const GLfloat* clip_rect = mem + 0;
-  const GLfloat* transform = mem + 4;
-  return DoScheduleDCLayerSharedStateCHROMIUM(opacity, is_clipped, clip_rect,
-                                              z_order, transform);
-}
-
-error::Error GLES2DecoderPassthroughImpl::HandleScheduleDCLayerCHROMIUM(
-    uint32_t immediate_data_size,
-    const volatile void* cmd_data) {
-  const volatile gles2::cmds::ScheduleDCLayerCHROMIUM& c =
-      *static_cast<const volatile gles2::cmds::ScheduleDCLayerCHROMIUM*>(
-          cmd_data);
-  GLuint background_color = static_cast<GLuint>(c.background_color);
-  GLuint edge_aa_mask = static_cast<GLuint>(c.edge_aa_mask);
-  GLenum filter = static_cast<GLenum>(c.filter);
-  const GLsizei num_textures = c.num_textures;
-  uint32_t shm_id = c.shm_id;
-  uint32_t shm_offset = c.shm_offset;
-
-  unsigned int size;
-  const GLfloat* mem = GetSharedMemoryAndSizeAs<const GLfloat*>(
-      shm_id, shm_offset, 8 * sizeof(GLfloat), &size);
-  if (!mem) {
-    return error::kOutOfBounds;
-  }
-  if (num_textures < 0 || (size - 8 * sizeof(GLfloat)) / sizeof(GLuint) <
-                              static_cast<GLuint>(num_textures)) {
-    return error::kOutOfBounds;
-  }
-  const volatile GLuint* contents_texture_ids =
-      reinterpret_cast<const volatile GLuint*>(mem + 8);
-  const GLfloat* contents_rect = mem;
-  const GLfloat* bounds_rect = mem + 4;
-  return DoScheduleDCLayerCHROMIUM(
-      num_textures, contents_texture_ids, contents_rect, background_color,
-      edge_aa_mask, filter, bounds_rect, c.is_protected_video);
 }
 
 error::Error GLES2DecoderPassthroughImpl::HandleSetColorSpaceMetadataCHROMIUM(

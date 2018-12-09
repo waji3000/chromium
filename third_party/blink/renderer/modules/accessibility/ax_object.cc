@@ -440,16 +440,17 @@ static ARIARoleMap* CreateARIARoleMap() {
 static Vector<AtomicString>* CreateRoleNameVector() {
   Vector<AtomicString>* role_name_vector =
       new Vector<AtomicString>(base::size(kInternalRoles));
-  for (size_t i = 0; i < base::size(kInternalRoles); i++)
+  for (wtf_size_t i = 0; i < base::size(kInternalRoles); i++)
     (*role_name_vector)[i] = g_null_atom;
 
-  for (size_t i = 0; i < base::size(kRoles); ++i) {
-    (*role_name_vector)[static_cast<size_t>(kRoles[i].webcore_role)] =
+  for (wtf_size_t i = 0; i < base::size(kRoles); ++i) {
+    (*role_name_vector)[static_cast<wtf_size_t>(kRoles[i].webcore_role)] =
         AtomicString(kRoles[i].aria_role);
   }
 
-  for (size_t i = 0; i < base::size(kReverseRoles); ++i) {
-    (*role_name_vector)[static_cast<size_t>(kReverseRoles[i].webcore_role)] =
+  for (wtf_size_t i = 0; i < base::size(kReverseRoles); ++i) {
+    (*role_name_vector)[static_cast<wtf_size_t>(
+        kReverseRoles[i].webcore_role)] =
         AtomicString(kReverseRoles[i].aria_role);
   }
 
@@ -459,8 +460,8 @@ static Vector<AtomicString>* CreateRoleNameVector() {
 static Vector<AtomicString>* CreateInternalRoleNameVector() {
   Vector<AtomicString>* internal_role_name_vector =
       new Vector<AtomicString>(base::size(kInternalRoles));
-  for (size_t i = 0; i < base::size(kInternalRoles); i++) {
-    (*internal_role_name_vector)[static_cast<size_t>(
+  for (wtf_size_t i = 0; i < base::size(kInternalRoles); i++) {
+    (*internal_role_name_vector)[static_cast<wtf_size_t>(
         kInternalRoles[i].webcore_role)] =
         AtomicString(kInternalRoles[i].internal_role_name);
   }
@@ -938,9 +939,14 @@ AXObjectInclusion AXObject::AccessibilityPlatformIncludesObject() const {
 AXObjectInclusion AXObject::DefaultObjectInclusion(
     IgnoredReasons* ignored_reasons) const {
   if (IsInertOrAriaHidden()) {
-    if (ignored_reasons)
-      ComputeIsInertOrAriaHidden(ignored_reasons);
-    return kIgnoreObject;
+    // Keep focusable elements that are aria-hidden in tree, so that they can
+    // still fire events such as focus and value changes.
+    const Element* elem = GetElement();
+    if (!elem || !elem->SupportsFocus() || elem->IsInert()) {
+      if (ignored_reasons)
+        ComputeIsInertOrAriaHidden(ignored_reasons);
+      return kIgnoreObject;
+    }
   }
 
   return AccessibilityPlatformIncludesObject();
@@ -1000,6 +1006,10 @@ bool AXObject::ComputeIsInertOrAriaHidden(
   }
 
   return false;
+}
+
+bool AXObject::IsVisible() const {
+  return !IsInertOrAriaHidden();
 }
 
 bool AXObject::IsDescendantOfLeafNode() const {
@@ -1086,10 +1096,11 @@ bool AXObject::DispatchEventToAOMEventListeners(Event& event) {
   // that if it didn't previously exist it won't be part of the event path.
   AccessibleNode* target = GetAccessibleNode();
   if (!target) {
-    Element* element = GetElement();
-    if (element)
+    if (Element* element = GetElement())
       target = element->accessibleNode();
   }
+  if (!target)
+    return false;
   event.SetTarget(target);
 
   // Capturing phase.
@@ -1628,7 +1639,7 @@ String AXObject::TextFromElements(
       String result = RecursiveTextAlternative(
           *ax_element, in_aria_labelledby_traversal, visited);
       local_related_objects.push_back(
-          new NameSourceRelatedObject(ax_element, result));
+          MakeGarbageCollected<NameSourceRelatedObject>(ax_element, result));
       if (!result.IsEmpty()) {
         if (!accumulated_text.IsEmpty())
           accumulated_text.Append(' ');
@@ -1896,7 +1907,7 @@ int AXObject::IndexInParent() const {
     return 0;
 
   const AXObjectVector& siblings = ParentObjectUnignored()->Children();
-  size_t index = siblings.Find(this);
+  wtf_size_t index = siblings.Find(this);
   return (index == kNotFound) ? 0 : static_cast<int>(index);
 }
 
@@ -3453,7 +3464,7 @@ ax::mojom::Role AXObject::ButtonRoleType() const {
 const AtomicString& AXObject::RoleName(ax::mojom::Role role) {
   static const Vector<AtomicString>* role_name_vector = CreateRoleNameVector();
 
-  return role_name_vector->at(static_cast<size_t>(role));
+  return role_name_vector->at(static_cast<wtf_size_t>(role));
 }
 
 // static
@@ -3461,7 +3472,7 @@ const AtomicString& AXObject::InternalRoleName(ax::mojom::Role role) {
   static const Vector<AtomicString>* internal_role_name_vector =
       CreateInternalRoleNameVector();
 
-  return internal_role_name_vector->at(static_cast<size_t>(role));
+  return internal_role_name_vector->at(static_cast<wtf_size_t>(role));
 }
 
 // static
@@ -3504,6 +3515,13 @@ const AXObject* AXObject::LowestCommonAncestor(const AXObject& first,
   }
 
   return common_ancestor;
+}
+
+String AXObject::ToString() const {
+  return AXObject::InternalRoleName(RoleValue())
+             .GetString()
+             .EncodeForDebugging() +
+         ": " + ComputedName().EncodeForDebugging();
 }
 
 VisiblePosition AXObject::VisiblePositionForIndex(int) const {
@@ -3561,8 +3579,7 @@ bool operator>=(const AXObject& first, const AXObject& second) {
 }
 
 std::ostream& operator<<(std::ostream& stream, const AXObject& obj) {
-  return stream << AXObject::InternalRoleName(obj.RoleValue()) << ": "
-                << obj.ComputedName();
+  return stream << obj.ToString().Utf8().data();
 }
 
 void AXObject::Trace(blink::Visitor* visitor) {

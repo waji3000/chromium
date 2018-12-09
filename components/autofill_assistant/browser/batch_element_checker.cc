@@ -15,60 +15,61 @@
 namespace autofill_assistant {
 namespace {
 // Waiting period between two checks.
-static constexpr base::TimeDelta kCheckPeriod =
-    base::TimeDelta::FromMilliseconds(100);
+static constexpr base::TimeDelta kCheckPeriod = base::TimeDelta::FromSeconds(1);
 }  // namespace
 
 BatchElementChecker::BatchElementChecker(WebController* web_controller)
     : web_controller_(web_controller),
       pending_checks_count_(0),
       all_found_(false),
-      stopped_(false),
+      started_(false),
       weak_ptr_factory_(this) {
   DCHECK(web_controller);
 }
 
 BatchElementChecker::~BatchElementChecker() {}
 
-void BatchElementChecker::AddElementCheck(
-    ElementCheckType check_type,
-    const std::vector<std::string>& selectors,
-    ElementCheckCallback callback) {
-  DCHECK(!try_done_callback_);
+void BatchElementChecker::AddElementCheck(ElementCheckType check_type,
+                                          const Selector& selector,
+                                          ElementCheckCallback callback) {
+  DCHECK(!started_);
 
-  element_check_callbacks_[std::make_pair(check_type, selectors)].emplace_back(
+  element_check_callbacks_[std::make_pair(check_type, selector)].emplace_back(
       std::move(callback));
 }
 
-void BatchElementChecker::AddFieldValueCheck(
-    const std::vector<std::string>& selectors,
-    GetFieldValueCallback callback) {
-  DCHECK(!try_done_callback_);
+void BatchElementChecker::AddFieldValueCheck(const Selector& selector,
+                                             GetFieldValueCallback callback) {
+  DCHECK(!started_);
 
-  get_field_value_callbacks_[selectors].emplace_back(std::move(callback));
+  get_field_value_callbacks_[selector].emplace_back(std::move(callback));
 }
 
 void BatchElementChecker::Run(const base::TimeDelta& duration,
                               base::RepeatingCallback<void()> try_done,
                               base::OnceCallback<void()> all_done) {
+  started_ = true;
   int64_t try_count = duration / kCheckPeriod;
   if (try_count <= 0) {
     try_count = 1;
   }
 
-  Try(base::BindOnce(
-      &BatchElementChecker::OnTryDone,
-      // Callback is run from this class, so this is guaranteed to still exist.
-      base::Unretained(this), try_count, try_done, std::move(all_done)));
+  Try(base::BindOnce(&BatchElementChecker::OnTryDone,
+                     weak_ptr_factory_.GetWeakPtr(), try_count, try_done,
+                     std::move(all_done)));
+}
+
+bool BatchElementChecker::all_found() {
+  if (!started_) {
+    return element_check_callbacks_.empty() &&
+           get_field_value_callbacks_.empty();
+  }
+  return all_found_;
 }
 
 void BatchElementChecker::Try(base::OnceCallback<void()> try_done_callback) {
   DCHECK(!try_done_callback_);
 
-  if (stopped_) {
-    std::move(try_done_callback).Run();
-    return;
-  }
   try_done_callback_ = std::move(try_done_callback);
 
   DCHECK_EQ(pending_checks_count_, 0);
@@ -123,6 +124,8 @@ void BatchElementChecker::Try(base::OnceCallback<void()> try_done_callback) {
 void BatchElementChecker::OnTryDone(int64_t remaining_attempts,
                                     base::RepeatingCallback<void()> try_done,
                                     base::OnceCallback<void()> all_done) {
+  // Warning: try_done or all_done can indirectly delete this. this must not
+  // be used after calling either of these.
   if (all_found_) {
     try_done.Run();
     std::move(all_done).Run();
@@ -130,7 +133,7 @@ void BatchElementChecker::OnTryDone(int64_t remaining_attempts,
   }
 
   --remaining_attempts;
-  if (remaining_attempts <= 0 || stopped_) {
+  if (remaining_attempts <= 0) {
     // GiveUp is run before calling try_done, so its effects are visible right
     // away.
     GiveUp();
@@ -138,7 +141,6 @@ void BatchElementChecker::OnTryDone(int64_t remaining_attempts,
     std::move(all_done).Run();
     return;
   }
-  try_done.Run();
 
   base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
       FROM_HERE,
@@ -148,6 +150,10 @@ void BatchElementChecker::OnTryDone(int64_t remaining_attempts,
                          weak_ptr_factory_.GetWeakPtr(), remaining_attempts,
                          try_done, std::move(all_done))),
       kCheckPeriod);
+
+  // try_done must be called after creating the delayed task, in case
+  // try_done.Run() deletes this.
+  try_done.Run();
 }
 
 void BatchElementChecker::GiveUp() {

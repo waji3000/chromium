@@ -32,17 +32,19 @@ PasswordCredential* PasswordCredential::Create(
   if (exception_state.HadException())
     return nullptr;
 
-  return new PasswordCredential(data->id(), data->password(), data->name(),
-                                icon_url);
+  return MakeGarbageCollected<PasswordCredential>(data->id(), data->password(),
+                                                  data->name(), icon_url);
 }
 
-// https://w3c.github.im/webappsec-credential-management/#construct-passwordcredential-form
+// https://w3c.github.io/webappsec-credential-management/#construct-passwordcredential-form
 PasswordCredential* PasswordCredential::Create(
     HTMLFormElement* form,
     ExceptionState& exception_state) {
   // Extract data from the form, then use the extracted |form_data| object's
   // value to populate |data|.
-  FormData* form_data = FormData::Create(form);
+  FormData* form_data = FormData::Create(form, exception_state);
+  if (exception_state.HadException())
+    return nullptr;
   PasswordCredentialData* data = PasswordCredentialData::Create();
   for (ListedElement* submittable_element : form->ListedElements()) {
     // The "form data set" contains an entry for a |submittable_element| only if
@@ -82,7 +84,7 @@ PasswordCredential* PasswordCredential::Create(const String& id,
                                                const String& password,
                                                const String& name,
                                                const KURL& icon_url) {
-  return new PasswordCredential(id, password, name, icon_url);
+  return MakeGarbageCollected<PasswordCredential>(id, password, name, icon_url);
 }
 
 PasswordCredential::PasswordCredential(const String& id,

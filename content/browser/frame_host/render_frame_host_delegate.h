@@ -107,7 +107,7 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
 
   // Gets the last committed URL. See WebContents::GetLastCommittedURL for a
   // description of the semantics.
-  virtual const GURL& GetMainFrameLastCommittedURL() const;
+  virtual const GURL& GetMainFrameLastCommittedURL();
 
   // A message was added to to the console.
   virtual bool DidAddMessageToConsole(int32_t level,
@@ -148,6 +148,15 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
       RenderFrameHost* render_frame_host,
       std::unique_ptr<content::FileSelectListener> listener,
       const blink::mojom::FileChooserParams& params);
+
+  // Request to enumerate a directory.  This is equivalent to running the file
+  // chooser in directory-enumeration mode and having the user select the given
+  // directory.
+  // Overrides of this function must call either listener->FileSelected() or
+  // listener->FileSelectionCanceled().
+  virtual void EnumerateDirectory(RenderFrameHost* render_frame_host,
+                                  std::unique_ptr<FileSelectListener> listener,
+                                  const base::FilePath& directory_path);
 
   // The pending page load was canceled, so the address bar should be updated.
   virtual void DidCancelLoading() {}
@@ -206,7 +215,7 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   virtual std::string GetDefaultMediaDeviceID(MediaStreamType type);
 
   // Get the accessibility mode for the WebContents that owns this frame.
-  virtual ui::AXMode GetAccessibilityMode() const;
+  virtual ui::AXMode GetAccessibilityMode();
 
   // Called when accessibility events or location changes are received
   // from a render frame, when the accessibility mode has the
@@ -374,7 +383,7 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
 
   // Whether the delegate is being destroyed, in which case the RenderFrameHost
   // should not be asked to create a RenderFrame.
-  virtual bool IsBeingDestroyed() const;
+  virtual bool IsBeingDestroyed();
 
   // Notifies that the render frame started loading a subresource.
   virtual void SubresourceResponseStarted(const GURL& url,
@@ -398,7 +407,7 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
                                                const gfx::Size& natural_size) {}
 
   // Returns the visibility of the delegate.
-  virtual Visibility GetVisibility() const;
+  virtual Visibility GetVisibility();
 
   // Get the UKM source ID for current content. This is used for providing
   // data about the content to the URL-keyed metrics service.

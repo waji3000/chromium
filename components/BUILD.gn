@@ -105,6 +105,7 @@ test("components_unittests") {
     "//components/gcm_driver/crypto:unit_tests",
     "//components/google/core/browser:unit_tests",
     "//components/grpc_support/test:unit_tests",
+    "//components/gwp_asan:unit_tests",
     "//components/history/core/browser:unit_tests",
     "//components/history/core/common:unit_tests",
     "//components/image_fetcher/core:unit_tests",
@@ -176,7 +177,10 @@ test("components_unittests") {
   ]
 
   if (toolkit_views && use_aura) {
-    deps += [ "//components/ui_devtools/views:unit_tests" ]
+    deps += [
+      "//components/ui_devtools:unit_tests",
+      "//components/ui_devtools/views:unit_tests",
+    ]
   }
 
   if (enable_nacl) {
@@ -234,6 +238,7 @@ test("components_unittests") {
       "//components/policy/core/browser:unit_tests",
       "//components/policy/core/common:unit_tests",
       "//components/previews/content:unit_tests",
+      "//components/printing/common:unit_tests",
       "//components/safe_browsing/common:unit_tests",
       "//components/safe_browsing/password_protection:password_protection_unittest",
       "//components/safe_browsing/triggers:unit_tests",
@@ -274,11 +279,14 @@ test("components_unittests") {
       "//base:base_java_unittest_support",
       "//components/autofill_assistant/browser:unit_tests",
       "//components/cdm/browser:unit_tests",
+      "//components/crash/android:java",
+      "//components/crash/android:unit_tests",
       "//components/gcm_driver/instance_id:test_support",
       "//components/gcm_driver/instance_id/android:instance_id_driver_java",
       "//components/gcm_driver/instance_id/android:instance_id_driver_test_support_java",
       "//components/invalidation/impl",
       "//components/invalidation/impl:java",
+      "//components/journey:unit_tests",
       "//components/policy/android:policy_java",
       "//components/signin/core/browser",
       "//components/signin/core/browser/android:java",
@@ -328,7 +336,6 @@ test("components_unittests") {
       "//components/cryptauth:unit_tests",
       "//components/ownership:unit_tests",
       "//components/pairing:unit_tests",
-      "//components/sync_wifi:unit_tests",
       "//components/timers:unit_tests",
       "//components/user_manager:unit_tests",
     ]
@@ -339,10 +346,7 @@ test("components_unittests") {
   }
 
   if (is_win) {
-    deps += [
-      "//components/browser_watcher:unit_tests",
-      "//components/gwp_asan/common:unit_tests",
-    ]
+    deps += [ "//components/browser_watcher:unit_tests" ]
   }
 
   if (enable_basic_printing) {
@@ -533,7 +537,7 @@ if (!is_ios) {
         "//components/autofill_assistant/browser",
         "//components/autofill_assistant/browser:proto",
         "//content/public/test/android:layouttest_java_support",
-        "//content/test:layouttest_support",
+        "//content/test:web_test_support",
         "//testing/android/native_test:native_test_support",
       ]
       use_default_launcher = false

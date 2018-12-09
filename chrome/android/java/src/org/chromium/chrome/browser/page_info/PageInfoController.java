@@ -12,7 +12,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
-import android.os.Bundle;
 import android.provider.Settings;
 import android.support.annotation.IntDef;
 import android.text.Spannable;
@@ -35,14 +34,14 @@ import org.chromium.chrome.browser.instantapps.InstantAppsHandler;
 import org.chromium.chrome.browser.modaldialog.DialogDismissalCause;
 import org.chromium.chrome.browser.modaldialog.ModalDialogView;
 import org.chromium.chrome.browser.modaldialog.ModalDialogView.ButtonType;
+import org.chromium.chrome.browser.modelutil.PropertyModel;
 import org.chromium.chrome.browser.offlinepages.OfflinePageItem;
 import org.chromium.chrome.browser.offlinepages.OfflinePageUtils;
 import org.chromium.chrome.browser.omnibox.OmniboxUrlEmphasizer;
 import org.chromium.chrome.browser.page_info.PageInfoView.ConnectionInfoParams;
 import org.chromium.chrome.browser.page_info.PageInfoView.PageInfoViewParams;
-import org.chromium.chrome.browser.preferences.Preferences;
 import org.chromium.chrome.browser.preferences.PreferencesLauncher;
-import org.chromium.chrome.browser.preferences.website.ContentSetting;
+import org.chromium.chrome.browser.preferences.website.ContentSettingValues;
 import org.chromium.chrome.browser.preferences.website.SingleWebsitePreferences;
 import org.chromium.chrome.browser.previews.PreviewsAndroidBridge;
 import org.chromium.chrome.browser.previews.PreviewsUma;
@@ -232,12 +231,9 @@ public class PageInfoController
                 // Delay while the dialog closes.
                 runAfterDismiss(() -> {
                     recordAction(PageInfoAction.PAGE_INFO_SITE_SETTINGS_OPENED);
-                    Bundle fragmentArguments =
-                            SingleWebsitePreferences.createFragmentArgsForSite(mFullUrl);
                     Intent preferencesIntent = PreferencesLauncher.createIntentForSettingsPage(
-                            mContext, SingleWebsitePreferences.class.getName());
-                    preferencesIntent.putExtra(
-                            Preferences.EXTRA_SHOW_FRAGMENT_ARGUMENTS, fragmentArguments);
+                            mContext, SingleWebsitePreferences.class.getName(),
+                            SingleWebsitePreferences.createFragmentArgsForSite(mFullUrl));
                     // Disabling StrictMode to avoid violations (https://crbug.com/819410).
                     try (StrictModeContext unused = StrictModeContext.allowDiskReads()) {
                         mContext.startActivity(preferencesIntent);
@@ -346,7 +342,8 @@ public class PageInfoController
                     bridge.loadOriginal(mTab.getWebContents());
                 });
             };
-            final String previewOriginalHost = bridge.getOriginalHost(mTab.getWebContents());
+            final String previewOriginalHost =
+                    bridge.getOriginalHost(mTab.getWebContents().getVisibleUrl());
             final String loadOriginalText = mContext.getString(
                     R.string.page_info_preview_load_original, previewOriginalHost);
             final SpannableString loadOriginalSpan = SpanApplier.applySpans(loadOriginalText,
@@ -377,9 +374,9 @@ public class PageInfoController
      * @param currentSettingValue The ContentSetting value of the currently selected setting.
      */
     @CalledByNative
-    private void addPermissionSection(String name, int type, int currentSettingValue) {
-        mPermissionParamsListBuilder.addPermissionEntry(
-                name, type, ContentSetting.fromInt(currentSettingValue));
+    private void addPermissionSection(
+            String name, int type, @ContentSettingValues int currentSettingValue) {
+        mPermissionParamsListBuilder.addPermissionEntry(name, type, currentSettingValue);
     }
 
     /**
@@ -482,10 +479,10 @@ public class PageInfoController
     }
 
     @Override
-    public void onClick(@ButtonType int buttonType) {}
+    public void onClick(PropertyModel model, @ButtonType int buttonType) {}
 
     @Override
-    public void onDismiss(@DialogDismissalCause int dismissalCause) {
+    public void onDismiss(PropertyModel model, @DialogDismissalCause int dismissalCause) {
         assert mNativePageInfoController != 0;
         if (mPendingRunAfterDismissTask != null) {
             mPendingRunAfterDismissTask.run();

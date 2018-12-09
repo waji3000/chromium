@@ -48,7 +48,6 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/bindings_policy.h"
-#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/screen_info.h"
 #include "content/public/common/url_constants.h"
@@ -1790,6 +1789,9 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   FrameTreeNode* root =
       static_cast<WebContentsImpl*>(shell()->web_contents())->
           GetFrameTree()->root();
+  url::Origin main_origin =
+      root->current_frame_host()->GetLastCommittedOrigin();
+  EXPECT_EQ(url::Origin::Create(main_url), main_origin);
 
   // 1. Create a iframe with no URL.
   {
@@ -1808,6 +1810,7 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   EXPECT_EQ(main_url, entry->GetURL());
   FrameNavigationEntry* root_entry = entry->root_node()->frame_entry.get();
   EXPECT_EQ(main_url, root_entry->url());
+  EXPECT_EQ(main_origin, root_entry->origin());
 
   // Verify subframe entries.  The entry should now have one blank subframe
   // FrameNavigationEntry, but this does not count as committing a real load.
@@ -1815,6 +1818,7 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   FrameNavigationEntry* frame_entry =
       entry->root_node()->children[0]->frame_entry.get();
   EXPECT_EQ(about_blank_url, frame_entry->url());
+  EXPECT_EQ(main_origin, frame_entry->origin());
   EXPECT_FALSE(root->child_at(0)->has_committed_real_load());
 
   // 1a. A nested iframe with no URL should also create a subframe entry but not
@@ -1834,6 +1838,7 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   ASSERT_EQ(1U, entry->root_node()->children[0]->children.size());
   frame_entry = entry->root_node()->children[0]->children[0]->frame_entry.get();
   EXPECT_EQ(about_blank_url, frame_entry->url());
+  EXPECT_EQ(main_origin, frame_entry->origin());
   EXPECT_FALSE(root->child_at(0)->child_at(0)->has_committed_real_load());
 
   // 2. Create another iframe with an explicit about:blank URL.
@@ -1857,6 +1862,7 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   ASSERT_EQ(2U, entry->root_node()->children.size());
   frame_entry = entry->root_node()->children[1]->frame_entry.get();
   EXPECT_EQ(about_blank_url, frame_entry->url());
+  EXPECT_EQ(main_origin, frame_entry->origin());
   EXPECT_FALSE(root->child_at(1)->has_committed_real_load());
 
   // 3. A real same-site navigation in the nested iframe should be AUTO.
@@ -1883,6 +1889,7 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   ASSERT_EQ(1U, entry->root_node()->children[0]->children.size());
   frame_entry = entry->root_node()->children[0]->children[0]->frame_entry.get();
   EXPECT_EQ(frame_url, frame_entry->url());
+  EXPECT_EQ(url::Origin::Create(frame_url), frame_entry->origin());
   EXPECT_FALSE(root->child_at(0)->has_committed_real_load());
   EXPECT_TRUE(root->child_at(0)->child_at(0)->has_committed_real_load());
   EXPECT_FALSE(root->child_at(1)->has_committed_real_load());
@@ -1910,9 +1917,12 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   ASSERT_EQ(2U, entry->root_node()->children.size());
   frame_entry = entry->root_node()->children[1]->frame_entry.get();
   EXPECT_EQ(foo_url, frame_entry->url());
+  EXPECT_EQ(url::Origin::Create(foo_url), frame_entry->origin());
   EXPECT_FALSE(root->child_at(0)->has_committed_real_load());
   EXPECT_TRUE(root->child_at(0)->child_at(0)->has_committed_real_load());
   EXPECT_TRUE(root->child_at(1)->has_committed_real_load());
+  EXPECT_EQ(frame_entry->origin(),
+            root->child_at(1)->current_frame_host()->GetLastCommittedOrigin());
 
   // 5. A new navigation to about:blank in the nested frame should count as a
   // real load, since that frame has already committed a real load and this is
@@ -1937,6 +1947,7 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   frame_entry =
       entry2->root_node()->children[0]->children[0]->frame_entry.get();
   EXPECT_EQ(about_blank_url, frame_entry->url());
+  EXPECT_EQ(main_origin, frame_entry->origin());
   EXPECT_FALSE(root->child_at(0)->has_committed_real_load());
   EXPECT_TRUE(root->child_at(0)->child_at(0)->has_committed_real_load());
   EXPECT_TRUE(root->child_at(1)->has_committed_real_load());
@@ -4797,25 +4808,9 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   EXPECT_EQ(frame_entry->redirect_chain()[1], frame_final_url);
 }
 
-// Support a set of tests that isolate only a subset of sites with
-// out-of-process iframes (OOPIFs).
-class NavigationControllerOopifBrowserTest
-    : public NavigationControllerBrowserTest {
- public:
-  NavigationControllerOopifBrowserTest() {}
-
-  void SetUpCommandLine(base::CommandLine* command_line) override {
-    // Enable the OOPIF framework but only isolate sites from a single TLD.
-    command_line->AppendSwitchASCII(switches::kIsolateSitesForTesting, "*.is");
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(NavigationControllerOopifBrowserTest);
-};
-
 // Verify that restoring a NavigationEntry with cross-site subframes does not
 // create out-of-process iframes unless the current SiteIsolationPolicy says to.
-IN_PROC_BROWSER_TEST_F(NavigationControllerOopifBrowserTest,
+IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
                        RestoreWithoutExtraOopifs) {
   // 1. Start on a page with a data URL iframe.
   GURL main_url_a(embedded_test_server()->GetURL(
@@ -8053,80 +8048,6 @@ class NavigationControllerControllableResponseBrowserTest
     content::SetupCrossSiteRedirector(embedded_test_server());
   }
 };
-
-// This test reproduces issue 769645. It happens when the user reloads the page
-// and an "unload" event triggers a back navigation. If the reload navigation
-// has reached the ReadyToCommit stage but has not committed, the back
-// navigation may interrupt its load.
-// See https://crbug.com/769645.
-// See https://crbug.com/773683.
-IN_PROC_BROWSER_TEST_F(ContentBrowserTest, HistoryBackInUnloadCancelsReload) {
-  net::test_server::ControllableHttpResponse response_1(embedded_test_server(),
-                                                        "/main_document");
-  net::test_server::ControllableHttpResponse response_2(
-      embedded_test_server(), "/main_document?attribute=1");
-
-  EXPECT_TRUE(embedded_test_server()->Start());
-
-  // 1) Navigate to a document that will:
-  //    * Use history.pushState() during page load.
-  //    * Use history.back() on "unload".
-  GURL main_document_url(embedded_test_server()->GetURL("/main_document"));
-  shell()->LoadURL(main_document_url);
-  response_1.WaitForRequest();
-  response_1.Send(
-      "HTTP/1.1 200 OK\r\n"
-      "Content-Type: text/html; charset=utf-8\r\n"
-      "\r\n"
-      "<iframe srcdoc=\""
-      "  <script>"
-      "    parent.history.pushState({},'','?attribute=1');"
-      "    window.addEventListener('unload', function() {"
-      "      parent.history.back();"
-      "    });"
-      "  </script>"
-      "\"></iframe>");
-  response_1.Done();
-  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
-
-  // 2) Reload. Due to https://crbug.com/773683, two parallel navigations will
-  //    happen:
-  //    * The reload.
-  //    * The parent.history.back().
-  GURL main_document_url_page_2(main_document_url.spec() + "?attribute=1");
-  TestNavigationManager observer_reload(shell()->web_contents(),
-                                        main_document_url_page_2);
-  TestNavigationManager observer_back(shell()->web_contents(),
-                                      main_document_url);
-
-  shell()->Reload();
-
-  // 2.1) The reload reaches the ReadyToCommitNavigation stage.
-  EXPECT_TRUE(observer_reload.WaitForRequestStart());
-  observer_reload.ResumeNavigation();
-  response_2.WaitForRequest();
-  response_2.Send(
-      "HTTP/1.1 200 OK\r\n"
-      "Content-Type: text/html; charset=utf-8\r\n"
-      "\r\n"
-      "<html><body>First part of the response...");
-  EXPECT_TRUE(observer_reload.WaitForResponse());
-  observer_reload.ResumeNavigation();
-
-  // 2.2) Back navigation starts and commits.
-  observer_back.WaitForNavigationFinished();
-
-  // The server sends the remaining part of the response.
-  response_2.Send(" ...and the second part!</body></html>");
-  response_2.Done();
-
-  observer_reload.WaitForNavigationFinished();
-  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
-
-  // Test what is in the loaded document.
-  EXPECT_EQ("First part of the response... ...and the second part!",
-            EvalJs(shell(), "document.body.textContent"));
-}
 
 // Data URLs can have a reference fragment like any other URLs. In this test,
 // there are two navigations with the same data URL, but with a different

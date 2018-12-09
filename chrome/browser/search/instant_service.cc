@@ -25,12 +25,10 @@
 #include "chrome/browser/search/ntp_features.h"
 #include "chrome/browser/search/ntp_icon_source.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search/thumbnail_source.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
-#include "chrome/browser/thumbnails/thumbnail_list_source.h"
 #include "chrome/browser/ui/webui/favicon_source.h"
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/chrome_paths.h"
@@ -102,21 +100,20 @@ bool CheckLocalBackgroundImageExists(const base::FilePath& profile_path) {
   base::PathService::Get(chrome::DIR_USER_DATA, &user_data_dir);
   base::FilePath profile_image =
       profile_path.AppendASCII(chrome::kChromeSearchLocalNtpBackgroundFilename);
-  base::FilePath user_data_image = user_data_dir.AppendASCII(
-      chrome::kChromeSearchLocalNtpBackgroundFilename);
 
-  if (base::PathExists(profile_image))
-    return true;
+  return base::PathExists(profile_image);
+}
 
-  // The image was originally stored in the user data dir, it needs to be moved
-  // to the profile path if it's still there.
-  if (base::PathExists(user_data_image)) {
-    base::CopyFile(user_data_image, profile_image);
-    base::DeleteFile(user_data_image, false);
-    return true;
+void DoDeleteThumbnailDataIfExists(
+    const base::FilePath& database_dir,
+    base::Optional<base::OnceCallback<void(bool)>> callback) {
+  bool result = false;
+  if (base::PathExists(database_dir)) {
+    base::DeleteFile(database_dir, true);
+    result = true;
   }
-
-  return false;
+  if (callback.has_value())
+    std::move(*callback).Run(result);
 }
 
 bool IsLocalFileUrl(GURL url) {
@@ -211,11 +208,15 @@ InstantService::InstantService(Profile* profile)
     most_visited_sites_->EnableCustomLinks(custom_links_enabled);
   }
 
-  if (profile_ && profile_->GetResourceContext()) {
-    base::PostTaskWithTraits(
-        FROM_HERE, {content::BrowserThread::IO},
-        base::BindOnce(&InstantIOContext::SetUserDataOnIO,
-                       profile->GetResourceContext(), instant_io_context_));
+  if (profile_) {
+    DeleteThumbnailDataIfExists(profile_->GetPath(), base::nullopt);
+
+    if (profile_->GetResourceContext()) {
+      base::PostTaskWithTraits(
+          FROM_HERE, {content::BrowserThread::IO},
+          base::BindOnce(&InstantIOContext::SetUserDataOnIO,
+                         profile->GetResourceContext(), instant_io_context_));
+    }
   }
 
   background_service_ = NtpBackgroundServiceFactory::GetForProfile(profile_);
@@ -232,12 +233,6 @@ InstantService::InstantService(Profile* profile)
                               std::make_unique<LocalNtpSource>(profile_));
   content::URLDataSource::Add(profile_,
                               std::make_unique<NtpIconSource>(profile_));
-  content::URLDataSource::Add(
-      profile_, std::make_unique<ThumbnailSource>(profile_, false));
-  content::URLDataSource::Add(
-      profile_, std::make_unique<ThumbnailSource>(profile_, true));
-  content::URLDataSource::Add(profile_,
-                              std::make_unique<ThumbnailListSource>(profile_));
   content::URLDataSource::Add(profile_,
                               std::make_unique<FaviconSource>(profile_));
   content::URLDataSource::Add(profile_,
@@ -313,6 +308,12 @@ bool InstantService::UpdateCustomLink(const GURL& url,
     return most_visited_sites_->UpdateCustomLink(url, new_url,
                                                  base::UTF8ToUTF16(new_title));
   }
+  return false;
+}
+
+bool InstantService::ReorderCustomLink(const GURL& url, int new_pos) {
+  if (most_visited_sites_)
+    return most_visited_sites_->ReorderCustomLink(url, new_pos);
   return false;
 }
 
@@ -488,7 +489,6 @@ void InstantService::OnURLsAvailable(
     InstantMostVisitedItem item;
     item.url = tile.url;
     item.title = tile.title;
-    item.thumbnail = tile.thumbnail_url;
     item.favicon = tile.favicon_url;
     item.source = tile.source;
     item.title_source = tile.title_source;
@@ -614,8 +614,6 @@ void InstantService::BuildThemeInfo() {
   }
 }
 
-// TODO(crbug.com/863942): Should switching default search provider retain the
-// copy of user uploaded photos?
 void InstantService::ApplyOrResetCustomBackgroundThemeInfo() {
   // Reset the pref if the feature is disabled.
   if (!features::IsCustomBackgroundsEnabled()) {
@@ -630,19 +628,8 @@ void InstantService::ApplyOrResetCustomBackgroundThemeInfo() {
   }
 
   // Attempt to get custom background URL from preferences.
-  const base::DictionaryValue* background_info =
-      pref_service_->GetDictionary(prefs::kNtpCustomBackgroundDict);
-  const base::Value* background_url =
-      background_info->FindKey(kNtpCustomBackgroundURL);
-  if (!background_url) {
-    ResetCustomBackgroundThemeInfo();
-    return;
-  }
-
-  // Verify that the custom background URL is valid.
-  GURL custom_background_url(
-      background_info->FindKey(kNtpCustomBackgroundURL)->GetString());
-  if (!custom_background_url.is_valid()) {
+  GURL custom_background_url;
+  if (!IsCustomBackgroundPrefValid(custom_background_url)) {
     ResetCustomBackgroundThemeInfo();
     return;
   }
@@ -739,12 +726,51 @@ void InstantService::FallbackToDefaultThemeInfo() {
   theme_info_->custom_background_attribution_action_url = GURL();
 }
 
+bool InstantService::IsCustomBackgroundSet() {
+  GURL custom_background_url;
+  if (!IsCustomBackgroundPrefValid(custom_background_url))
+    return false;
+
+  if (IsLocalFileUrl(custom_background_url) &&
+      !pref_service_->GetBoolean(prefs::kNtpCustomBackgroundLocalToDevice)) {
+    return false;
+  }
+
+  return true;
+}
+
+bool InstantService::IsCustomBackgroundPrefValid(GURL& custom_background_url) {
+  const base::DictionaryValue* background_info =
+      profile_->GetPrefs()->GetDictionary(prefs::kNtpCustomBackgroundDict);
+  if (!background_info)
+    return false;
+
+  const base::Value* background_url =
+      background_info->FindKey(kNtpCustomBackgroundURL);
+  if (!background_url)
+    return false;
+
+  custom_background_url = GURL(background_url->GetString());
+  return custom_background_url.is_valid();
+}
+
 void InstantService::RemoveLocalBackgroundImageCopy() {
   base::FilePath path = profile_->GetPath().AppendASCII(
       chrome::kChromeSearchLocalNtpBackgroundFilename);
   base::PostTaskWithTraits(
       FROM_HERE, {base::TaskPriority::BEST_EFFORT, base::MayBlock()},
       base::BindOnce(IgnoreResult(&base::DeleteFile), path, false));
+}
+
+void InstantService::DeleteThumbnailDataIfExists(
+    const base::FilePath& profile_path,
+    base::Optional<base::OnceCallback<void(bool)>> callback) {
+  base::FilePath database_dir(
+      profile_path.Append(FILE_PATH_LITERAL("Thumbnails")));
+  base::PostTaskWithTraits(FROM_HERE,
+                           {base::TaskPriority::BEST_EFFORT, base::MayBlock()},
+                           base::BindOnce(&DoDeleteThumbnailDataIfExists,
+                                          database_dir, std::move(callback)));
 }
 
 void InstantService::AddValidBackdropUrlForTesting(const GURL& url) const {

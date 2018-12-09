@@ -27,7 +27,7 @@ import zipfile
 # Do NOT CHANGE this if you don't know what you're doing -- see
 # https://chromium.googlesource.com/chromium/src/+/master/docs/updating_clang.md
 # Reverting problematic clang rolls is safe, though.
-CLANG_REVISION = '344066'
+CLANG_REVISION = '346388'
 
 use_head_revision = bool(os.environ.get('LLVM_FORCE_HEAD_REVISION', '0')
                          in ('1', 'YES'))
@@ -35,7 +35,7 @@ if use_head_revision:
   CLANG_REVISION = 'HEAD'
 
 # This is incremented when pushing a new build of Clang at the same revision.
-CLANG_SUB_REVISION=1
+CLANG_SUB_REVISION=5
 
 PACKAGE_VERSION = "%s-%s" % (CLANG_REVISION, CLANG_SUB_REVISION)
 
@@ -347,7 +347,7 @@ def AddGnuWinToPath():
     return
 
   gnuwin_dir = os.path.join(LLVM_BUILD_TOOLS_DIR, 'gnuwin')
-  GNUWIN_VERSION = '8'
+  GNUWIN_VERSION = '9'
   GNUWIN_STAMP = os.path.join(gnuwin_dir, 'stamp')
   if ReadStampFile(GNUWIN_STAMP) == GNUWIN_VERSION:
     print 'GNU Win tools already up to date.'
@@ -357,6 +357,17 @@ def AddGnuWinToPath():
     WriteStampFile(GNUWIN_VERSION, GNUWIN_STAMP)
 
   os.environ['PATH'] = gnuwin_dir + os.pathsep + os.environ.get('PATH', '')
+
+  # find.exe, mv.exe and rm.exe are from MSYS (see crrev.com/389632). MSYS uses
+  # Cygwin under the hood, and initializing Cygwin has a race-condition when
+  # getting group and user data from the Active Directory is slow. To work
+  # around this, use a horrible hack telling it not to do that.
+  # See https://crbug.com/905289
+  etc = os.path.join(gnuwin_dir, '..', '..', 'etc')
+  EnsureDirExists(etc)
+  with open(os.path.join(etc, 'nsswitch.conf'), 'w') as f:
+    f.write('passwd: files\n')
+    f.write('group: files\n')
 
 
 win_sdk_dir = None
@@ -780,6 +791,14 @@ def UpdateClang(args):
               'arm': 'arm',
               'i686': 'x86',
           }[target_arch]])
+
+      # NDK r16 "helpfully" installs libc++ as libstdc++ "so the compiler will
+      # pick it up by default". Only these days, the compiler tries to find
+      # libc++ instead. See https://crbug.com/902270.
+      shutil.copy(os.path.join(toolchain_dir, 'sysroot/usr/lib/libstdc++.a'),
+                  os.path.join(toolchain_dir, 'sysroot/usr/lib/libc++.a'))
+      shutil.copy(os.path.join(toolchain_dir, 'sysroot/usr/lib/libstdc++.so'),
+                  os.path.join(toolchain_dir, 'sysroot/usr/lib/libc++.so'))
 
       # Build compiler-rt runtimes needed for Android in a separate build tree.
       build_dir = os.path.join(LLVM_BUILD_DIR, 'android-' + target_arch)

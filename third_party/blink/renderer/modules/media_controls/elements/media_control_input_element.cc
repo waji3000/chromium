@@ -20,7 +20,7 @@
 namespace {
 
 // The default size of an overflow button in pixels.
-constexpr int kDefaultButtonSize = 36;
+constexpr int kDefaultButtonSize = 48;
 
 const char kOverflowContainerWithSubtitleCSSClass[] = "with-subtitle";
 const char kOverflowSubtitleCSSClass[] = "subtitle";
@@ -125,6 +125,10 @@ void MediaControlInputElement::RemoveOverflowSubtitleElement() {
   overflow_menu_container_->RemoveChild(overflow_menu_subtitle_);
   overflow_menu_container_->removeAttribute("class");
   overflow_menu_subtitle_ = nullptr;
+}
+
+bool MediaControlInputElement::OverflowElementIsWanted() {
+  return overflow_element_ && overflow_element_->IsWanted();
 }
 
 void MediaControlInputElement::SetOverflowElementIsWanted(bool wanted) {

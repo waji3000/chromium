@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/chromeos/arc/accessibility/accessibility_node_info_data_wrapper.h"
+
+#include "base/strings/string_util.h"
 #include "chrome/browser/chromeos/arc/accessibility/ax_tree_source_arc.h"
 #include "components/exo/wm_helper.h"
 #include "ui/accessibility/platform/ax_android_constants.h"
@@ -81,7 +83,9 @@ void AccessibilityNodeInfoDataWrapper::PopulateAXRole(
                                  class_name);
   }
 
-  if (!GetProperty(AXBooleanProperty::IMPORTANCE)) {
+  if (!GetProperty(AXBooleanProperty::IMPORTANCE) &&
+      !HasProperty(AXStringProperty::TEXT) &&
+      !HasProperty(AXStringProperty::CONTENT_DESCRIPTION)) {
     out_data->role = ax::mojom::Role::kIgnored;
     return;
   }
@@ -135,19 +139,18 @@ void AccessibilityNodeInfoDataWrapper::PopulateAXRole(
     // need additional information contained only in the CollectionInfo. The
     // CollectionInfo should be an ancestor of this node.
     AXCollectionInfoData* collection_info = nullptr;
-    for (AXNodeInfoData* container = node_ptr_; container;) {
-      if (!container)
+    for (const ArcAccessibilityInfoData* container =
+             static_cast<const ArcAccessibilityInfoData*>(this);
+         container;) {
+      if (!container || !container->IsNode())
         break;
-      if (container->collection_info.get()) {
-        collection_info = container->collection_info.get();
+      if (container->IsNode() && container->GetNode()->collection_info.get()) {
+        collection_info = container->GetNode()->collection_info.get();
         break;
       }
 
-      ArcAccessibilityInfoData* container_data =
-          tree_source_->GetParent(tree_source_->GetFromId(container->id));
-      if (!container_data->IsNode())
-        break;
-      container = container_data->GetNode();
+      container =
+          tree_source_->GetParent(tree_source_->GetFromId(container->GetId()));
     }
 
     if (collection_info) {
@@ -302,6 +305,12 @@ void AccessibilityNodeInfoDataWrapper::Serialize(
       out_data->AddStringAttribute(ax::mojom::StringAttribute::kValue, name);
     else
       out_data->SetName(name);
+  } else if (GetProperty(AXBooleanProperty::CLICKABLE)) {
+    // Compute the name by joining all nodes with names.
+    std::vector<std::string> names;
+    ComputeNameFromContents(this, &names);
+    if (!names.empty())
+      out_data->SetName(base::JoinString(names, " "));
   }
 
   std::string role_description;
@@ -350,6 +359,11 @@ void AccessibilityNodeInfoDataWrapper::Serialize(
     out_data->AddBoolAttribute(ax::mojom::BoolAttribute::kSelected, true);
   }
 
+  if (GetProperty(AXBooleanProperty::SUPPORTS_TEXT_LOCATION)) {
+    out_data->AddBoolAttribute(ax::mojom::BoolAttribute::kSupportsTextLocation,
+                               true);
+  }
+
   // Range info.
   AXRangeInfoData* range_info = node_ptr_->range_info.get();
   if (range_info) {
@@ -373,9 +387,14 @@ void AccessibilityNodeInfoDataWrapper::Serialize(
                                       : wm_helper->GetActiveWindow();
     const gfx::Rect& local_bounds = tree_source_->GetBounds(
         tree_source_->GetFromId(GetId()), active_window);
-    out_data->location.SetRect(local_bounds.x(), local_bounds.y(),
-                               local_bounds.width(), local_bounds.height());
+    out_data->relative_bounds.bounds.SetRect(local_bounds.x(), local_bounds.y(),
+                                             local_bounds.width(),
+                                             local_bounds.height());
   }
+  // TODO(katie): Try using offset_container_id to make bounds calculations
+  // more efficient. If this is the child of the root, set the
+  // offset_container_id to be the root. Otherwise, set it to the first node
+  // child of the root.
 
   // Integer properties.
   int32_t val;
@@ -422,15 +441,16 @@ void AccessibilityNodeInfoDataWrapper::Serialize(
   }
 }
 
-const std::vector<int32_t>* AccessibilityNodeInfoDataWrapper::GetChildren()
-    const {
+void AccessibilityNodeInfoDataWrapper::GetChildren(
+    std::vector<ArcAccessibilityInfoData*>* children) const {
   if (!node_ptr_->int_list_properties)
-    return nullptr;
+    return;
   auto it =
       node_ptr_->int_list_properties->find(AXIntListProperty::CHILD_NODE_IDS);
   if (it == node_ptr_->int_list_properties->end())
-    return nullptr;
-  return &(it->second);
+    return;
+  for (int32_t id : it->second)
+    children->push_back(tree_source_->GetFromId(id));
 }
 
 bool AccessibilityNodeInfoDataWrapper::GetProperty(
@@ -531,6 +551,31 @@ bool AccessibilityNodeInfoDataWrapper::HasCoveringSpan(
       return true;
   }
   return false;
+}
+
+void AccessibilityNodeInfoDataWrapper::ComputeNameFromContents(
+    const AccessibilityNodeInfoDataWrapper* data,
+    std::vector<std::string>* names) const {
+  // Take the name from either content description or text. It's not clear
+  // whether labelled by should be taken into account here.
+  std::string name;
+  if (!data->GetProperty(AXStringProperty::CONTENT_DESCRIPTION, &name) ||
+      name.empty())
+    data->GetProperty(AXStringProperty::TEXT, &name);
+
+  // Stop when we get a name for this subtree.
+  if (!name.empty()) {
+    names->push_back(name);
+    return;
+  }
+
+  // Otherwise, continue looking for a name in this subtree.
+  std::vector<ArcAccessibilityInfoData*> children;
+  data->GetChildren(&children);
+  for (ArcAccessibilityInfoData* child : children) {
+    ComputeNameFromContents(
+        static_cast<AccessibilityNodeInfoDataWrapper*>(child), names);
+  }
 }
 
 }  // namespace arc

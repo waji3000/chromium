@@ -13,6 +13,7 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/path_service.h"
+#include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread_restrictions.h"
@@ -21,6 +22,7 @@
 #include "chrome/browser/chromeos/file_manager/volume_manager.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/ash/keyboard/chrome_keyboard_controller_client.h"
 #include "chrome/browser/ui/ash/tablet_mode_client_test_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_navigator.h"
@@ -28,6 +30,7 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
@@ -35,12 +38,37 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
 #include "extensions/test/extension_test_message_listener.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
 #include "services/service_manager/public/cpp/connector.h"
-#include "ui/keyboard/keyboard_switches.h"
-#include "ui/keyboard/test/keyboard_test_util.h"
+#include "ui/keyboard/public/keyboard_switches.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
 #include "ui/shell_dialogs/select_file_policy.h"
 #include "ui/shell_dialogs/selected_file_info.h"
+
+namespace {
+
+class KeyboardVisibleWaiter : public ChromeKeyboardControllerClient::Observer {
+ public:
+  KeyboardVisibleWaiter() {
+    ChromeKeyboardControllerClient::Get()->AddObserver(this);
+  }
+  ~KeyboardVisibleWaiter() override {
+    ChromeKeyboardControllerClient::Get()->RemoveObserver(this);
+  }
+
+  void Wait() { run_loop_.Run(); }
+
+  // ChromeKeyboardControllerClient::Observer
+  void OnKeyboardVisibilityChanged(bool visible) override {
+    if (visible)
+      run_loop_.QuitWhenIdle();
+  }
+
+ private:
+  base::RunLoop run_loop_;
+};
+
+}  // namespace
 
 class MockSelectFileDialogListener : public ui::SelectFileDialog::Listener {
  public:
@@ -284,7 +312,8 @@ class SelectFileDialogExtensionBrowserTest
     listener_->WaitForCalled();
 
     // Dialog no longer believes it is running.
-    ASSERT_FALSE(dialog_->IsRunning(owning_window));
+    if (owning_window)
+      ASSERT_FALSE(dialog_->IsRunning(owning_window));
   }
 
   base::ScopedTempDir tmp_dir_;
@@ -298,12 +327,12 @@ class SelectFileDialogExtensionBrowserTest
 };
 
 IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest, CreateAndDestroy) {
-  // Browser window must be up for us to test dialog window parent.
-  gfx::NativeWindow native_window = browser()->window()->GetNativeWindow();
-  ASSERT_TRUE(native_window != NULL);
+  // The browser window must exist for us to test dialog's parent window.
+  gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
+  ASSERT_NE(nullptr, owning_window);
 
-  // Before we call SelectFile, dialog is not running/visible.
-  ASSERT_FALSE(dialog_->IsRunning(native_window));
+  // Before we call SelectFile, the dialog should not be running/visible.
+  ASSERT_FALSE(dialog_->IsRunning(owning_window));
 }
 
 IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest, DestroyListener) {
@@ -315,6 +344,7 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest, DestroyListener) {
 
 IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest, CanResize) {
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
+  ASSERT_NE(nullptr, owning_window);
 
   // Open the file dialog on the default path.
   ASSERT_NO_FATAL_FAILURE(OpenDialog(ui::SelectFileDialog::SELECT_OPEN_FILE,
@@ -327,6 +357,7 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest, CanResize) {
 IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
                        CanResize_TabletMode) {
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
+  ASSERT_NE(nullptr, owning_window);
 
   // Setup tablet mode.
   test::SetAndWaitForTabletMode(true);
@@ -339,13 +370,10 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
   ASSERT_FALSE(OpenDialogIsResizable());
 }
 
-// TODO(jamescook): Add a test for selecting a file for an <input type='file'/>
-// page element, as that uses different memory management pathways.
-// crbug.com/98791
-
 IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
                        SelectFileAndCancel) {
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
+  ASSERT_NE(nullptr, owning_window);
 
   // Open the file dialog on the default path.
   ASSERT_NO_FATAL_FAILURE(OpenDialog(ui::SelectFileDialog::SELECT_OPEN_FILE,
@@ -362,6 +390,7 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
 IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
                        SelectFileAndOpen) {
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
+  ASSERT_NE(nullptr, owning_window);
 
   // Create an empty file to provide the file to open.
   const base::FilePath test_file =
@@ -392,6 +421,7 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
 IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
                        SelectFileAndSave) {
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
+  ASSERT_NE(nullptr, owning_window);
 
   // Open the file dialog to save a file, providing a suggested file path.
   // Ensure the "Save" button is enabled by waiting for notification from
@@ -414,6 +444,7 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
 IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
                        SelectFileVirtualKeyboard_TabletMode) {
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
+  ASSERT_NE(nullptr, owning_window);
 
   // Setup tablet mode.
   test::SetAndWaitForTabletMode(true);
@@ -425,6 +456,9 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
       ->BindInterface(ash::mojom::kServiceName, &shell_test_api);
   ash::mojom::ShellTestApiAsyncWaiter waiter(shell_test_api.get());
   waiter.EnableVirtualKeyboard();
+
+  auto* client = ChromeKeyboardControllerClient::Get();
+  EXPECT_FALSE(client->is_keyboard_visible());
 
   // Open the file dialog to save a file, providing a suggested file path.
   // Ensure the "Save" button is enabled by waiting for notification from
@@ -438,13 +472,14 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
   ASSERT_NO_FATAL_FAILURE(ClickElement("#filename-input-textbox"));
 
   // The virtual keyboard should be shown.
-  keyboard::WaitUntilShown();
-  ASSERT_TRUE(keyboard::IsKeyboardShowing());
+  KeyboardVisibleWaiter().Wait();
+  EXPECT_TRUE(client->is_keyboard_visible());
 }
 
 IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
                        OpenSingletonTabAndCancel) {
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
+  ASSERT_NE(nullptr, owning_window);
 
   // Open the file dialog on the default path.
   ASSERT_NO_FATAL_FAILURE(OpenDialog(ui::SelectFileDialog::SELECT_OPEN_FILE,
@@ -468,6 +503,7 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest, OpenTwoDialogs) {
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
+  ASSERT_NE(nullptr, owning_window);
 
   // Open the file dialog on the default path.
   ASSERT_NO_FATAL_FAILURE(OpenDialog(ui::SelectFileDialog::SELECT_OPEN_FILE,
@@ -482,6 +518,55 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest, OpenTwoDialogs) {
 
   // Listener should have been informed of the cancellation.
   ASSERT_FALSE(listener_->file_selected());
+  ASSERT_TRUE(listener_->canceled());
+  ASSERT_EQ(this, listener_->params());
+}
+
+IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest, FileInputElement) {
+  gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
+  ASSERT_NE(nullptr, owning_window);
+
+  // Start the embedded test server.
+  base::FilePath source_dir;
+  ASSERT_TRUE(base::PathService::Get(base::DIR_SOURCE_ROOT, &source_dir));
+  auto test_data_dir = source_dir.AppendASCII("chrome")
+                           .AppendASCII("test")
+                           .AppendASCII("data")
+                           .AppendASCII("chromeos")
+                           .AppendASCII("file_manager");
+  embedded_test_server()->ServeFilesFromDirectory(test_data_dir);
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  // Navigate the browser to the file input element test page.
+  const GURL url = embedded_test_server()->GetURL("/file_input/element.html");
+  ui_test_utils::NavigateToURL(browser(), url);
+  content::WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  ASSERT_EQ(url, web_contents->GetLastCommittedURL());
+
+  // Create a listener for the file dialog's "ready" message.
+  ExtensionTestMessageListener listener("ready", false);
+
+  // Click the file <input> element to open the file dialog.
+  constexpr auto kButton = blink::WebMouseEvent::Button::kLeft;
+  content::SimulateMouseClickAt(web_contents, 0, kButton, gfx::Point(0, 0));
+
+  // Wait for file dialog's "ready" message.
+  EXPECT_TRUE(listener.WaitUntilSatisfied());
+}
+
+IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
+                       OpenDialogWithoutOwningWindow) {
+  gfx::NativeWindow owning_window = nullptr;
+
+  // Open the file dialog with no |owning_window|.
+  ASSERT_NO_FATAL_FAILURE(OpenDialog(ui::SelectFileDialog::SELECT_OPEN_FILE,
+                                     base::FilePath(), owning_window, ""));
+
+  // Click the "Cancel" button.
+  CloseDialog(DIALOG_BTN_CANCEL, owning_window);
+
+  // Listener should have been informed of the cancellation.
   ASSERT_TRUE(listener_->canceled());
   ASSERT_EQ(this, listener_->params());
 }

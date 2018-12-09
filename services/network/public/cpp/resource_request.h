@@ -43,6 +43,12 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceRequest {
   // done if there really is no way to determine the correct value.
   GURL site_for_cookies;
 
+  // If the optional is valid, contains the origin of the top frame of the page
+  // making the request. Note that this is experimental and is only set for
+  // navigation and document subresource requests but not other cases such as
+  // workers.
+  base::Optional<url::Origin> top_frame_origin;
+
   // Boolean indicating whether SameSite cookies are allowed to be attached
   // to the request. It should be used as additional input to network side
   // checks.
@@ -75,7 +81,14 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceRequest {
   // Network Service), so the value is stored here (rather than in |headers|)
   // and later populated in the headers after CORS check.
   // TODO(toyoshim): Remove it once PPAPI is deprecated.
-  std::string requested_with;
+  std::string requested_with_header;
+
+  // 'X-Client-Data' header value. See comments for |requested_with_header|
+  // above, too.
+  // TODO(toyoshim): Consider to rename this to have a chrome specific prefix
+  // such as 'Chrome-' instead of 'X-', and to add 'Chrome-' prefixed header
+  // names into the forbidden header name list.
+  std::string client_data_header;
 
   // net::URLRequest load flags (0 by default).
   int load_flags = 0;
@@ -116,8 +129,8 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceRequest {
   bool is_external_request = false;
 
   // A policy to decide if CORS-preflight fetch should be performed.
-  mojom::CORSPreflightPolicy cors_preflight_policy =
-      mojom::CORSPreflightPolicy::kConsiderPreflight;
+  mojom::CorsPreflightPolicy cors_preflight_policy =
+      mojom::CorsPreflightPolicy::kConsiderPreflight;
 
   // Indicates which frame (or worker context) the request is being loaded into.
   // -1 corresponds to kInvalidServiceWorkerProviderId.
@@ -138,9 +151,9 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceRequest {
   // https://fetch.spec.whatwg.org/#concept-request-mode
   // Used mainly by CORS handling (out-of-blink CORS), CORB, Service Worker.
   // CORS handling needs a proper origin (including a unique opaque origin).
-  // Hence a request with kSameOrigin, kCORS, or kCORSWithForcedPreflight should
+  // Hence a request with kSameOrigin, kCors, or kCorsWithForcedPreflight should
   // have a non-null request_initiator.
-  mojom::FetchRequestMode fetch_request_mode = mojom::FetchRequestMode::kNoCORS;
+  mojom::FetchRequestMode fetch_request_mode = mojom::FetchRequestMode::kNoCors;
 
   // https://fetch.spec.whatwg.org/#concept-request-credentials-mode
   // Used mainly by CORS handling (out-of-blink CORS), Service Worker.
@@ -151,7 +164,7 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceRequest {
 
   // https://fetch.spec.whatwg.org/#concept-request-redirect-mode
   // Used mainly by CORS handling (out-of-blink CORS), Service Worker.
-  // This member must be kFollow as long as |fetch_request_mode| is kNoCORS.
+  // This member must be kFollow as long as |fetch_request_mode| is kNoCors.
   mojom::FetchRedirectMode fetch_redirect_mode =
       mojom::FetchRedirectMode::kFollow;
 
@@ -240,6 +253,25 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceRequest {
 
   // Whether to use the alternate proxies set in the custom proxy config.
   bool custom_proxy_use_alternate_proxy_list = false;
+
+  // See https://fetch.spec.whatwg.org/#concept-request-window
+  //
+  // This is an opaque id of the original requestor of the resource, which might
+  // be different to the current requestor which is |render_frame_id|. For
+  // example, if a navigation for window "abc" is intercepted by a service
+  // worker, which re-issues the request via fetch, the re-issued request has
+  // |render_frame_id| of MSG_ROUTING_NONE (the service worker) and |window_id|
+  // of "abc". This is used for, e.g., client certificate selection. It's
+  // important that this id be unguessable so renderers cannot impersonate
+  // other renderers.
+  //
+  // This may be empty when the original requestor is the current requestor or
+  // is not a window. When it's empty, use |render_frame_id| instead. In
+  // practical terms, it's empty for requests that didn't go through a service
+  // worker, or if the original requestor is not a window. When the request
+  // goes through a service worker, the id is
+  // ServiceWorkerProviderHost::fetch_request_window_id.
+  base::Optional<base::UnguessableToken> fetch_window_id;
 };
 
 }  // namespace network

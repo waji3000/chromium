@@ -41,7 +41,7 @@ class MediaControlDisplayCutoutFullscreenButtonElementTest
   }
 
   void SetUp() override {
-    chrome_client_ = new MockDisplayCutoutChromeClient();
+    chrome_client_ = MakeGarbageCollected<MockDisplayCutoutChromeClient>();
 
     Page::PageClients clients;
     FillWithEmptyClients(clients);
@@ -52,7 +52,7 @@ class MediaControlDisplayCutoutFullscreenButtonElementTest
 
     video_ = HTMLVideoElement::Create(GetDocument());
     GetDocument().body()->AppendChild(video_);
-    controls_ = new MediaControlsImpl(*video_);
+    controls_ = MakeGarbageCollected<MediaControlsImpl>(*video_);
     controls_->InitializeControls();
     display_cutout_fullscreen_button_ =
         controls_->display_cutout_fullscreen_button_;

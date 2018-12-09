@@ -85,6 +85,10 @@ void AssertURLIs(const GURL& expectedURL) {
 // Verifies that the content offset of the web view is set up at the correct
 // initial value when initially displaying a PDF.
 - (void)testLongPDFInitialState {
+  // TODO(crbug.com/904694): This test is failing on iOS11.
+  if (!base::ios::IsRunningOnIOS12OrLater())
+    EARL_GREY_TEST_DISABLED(@"Disabled on iOS 11.");
+
   web::test::SetUpFileBasedHttpServer();
   GURL URL = web::test::HttpServer::MakeUrl(
       "http://ios/testing/data/http_server_files/two_pages.pdf");
@@ -111,12 +115,8 @@ void AssertURLIs(const GURL& expectedURL) {
   if (base::FeatureList::IsEnabled(
           web::features::kBrowserContainerFullscreen) &&
       base::FeatureList::IsEnabled(web::features::kOutOfWebFullscreen)) {
-    if (@available(iOS 11, *)) {
-      yOffset -=
-          chrome_test_util::GetCurrentWebState()->GetView().safeAreaInsets.top;
-    } else {
-      yOffset -= StatusBarHeight();
-    }
+    yOffset -=
+        chrome_test_util::GetCurrentWebState()->GetView().safeAreaInsets.top;
   }
   DCHECK_LT(yOffset, 0);
   [[EarlGrey
@@ -170,6 +170,10 @@ void AssertURLIs(const GURL& expectedURL) {
 // Verifies that the toolbar properly appears/disappears when scrolling up/down
 // on a PDF that is long in length and wide in width.
 - (void)testLongPDFScroll {
+  // TODO(crbug.com/904694): This test is failing on iOS11.
+  if (!base::ios::IsRunningOnIOS12OrLater())
+    EARL_GREY_TEST_DISABLED(@"Disabled on iOS 11.");
+
 // TODO(crbug.com/714329): Re-enable this test on devices.
 #if !TARGET_IPHONE_SIMULATOR
   EARL_GREY_TEST_DISABLED(@"Test disabled on device.");

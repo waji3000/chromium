@@ -5,6 +5,9 @@
 #import "ios/chrome/browser/ui/omnibox/popup/shortcuts/shortcuts_view_controller.h"
 
 #include "base/logging.h"
+#include "base/mac/foundation_util.h"
+#include "base/metrics/user_metrics.h"
+#include "base/metrics/user_metrics_action.h"
 #import "ios/chrome/browser/ui/ntp_tile_views/ntp_most_visited_tile_view.h"
 #import "ios/chrome/browser/ui/ntp_tile_views/ntp_shortcut_tile_view.h"
 #import "ios/chrome/browser/ui/ntp_tile_views/ntp_tile_constants.h"
@@ -13,6 +16,7 @@
 #import "ios/chrome/browser/ui/omnibox/popup/shortcuts/shortcuts_view_controller_delegate.h"
 #import "ios/chrome/common/favicon/favicon_view.h"
 #import "ios/chrome/common/ui_util/constraints_ui_util.h"
+#include "url/gurl.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -26,7 +30,6 @@ const CGFloat kTopInset = 10;
 
 const NSInteger kMostVisitedSection = 0;
 const NSInteger kCollectionShortcutSection = 1;
-
 }  // namespace
 
 @interface ShortcutsViewController ()<UICollectionViewDelegate,
@@ -34,8 +37,15 @@ const NSInteger kCollectionShortcutSection = 1;
 
 @property(nonatomic, strong) UICollectionViewFlowLayout* layout;
 @property(nonatomic, strong) UICollectionView* collectionView;
+// Latest most visited items. Updated directly from the consumer calls.
 @property(nonatomic, strong)
-    NSArray<ShortcutsMostVisitedItem*>* mostVisitedItems;
+    NSArray<ShortcutsMostVisitedItem*>* latestMostVisitedItems;
+// Currently displayed most visited items. Will be set to nil when the view
+// disappears, and set to |latestMostVisitedItems| when the view appears. This
+// prevents the updates when the user sees the tiles.
+@property(nonatomic, strong)
+    NSArray<ShortcutsMostVisitedItem*>* displayedMostVisitedItems;
+@property(nonatomic, assign) NSInteger readingListBadgeValue;
 
 @end
 
@@ -60,6 +70,10 @@ const NSInteger kCollectionShortcutSection = 1;
                         2;
   self.layout.sectionInset =
       UIEdgeInsetsMake(kTopInset, widthInsets, 0, widthInsets);
+  // Promote the latest most visited items to the displayed ones and reload the
+  // collection view data.
+  self.displayedMostVisitedItems = self.latestMostVisitedItems;
+  [self.collectionView reloadData];
 }
 
 #pragma mark - properties
@@ -99,26 +113,47 @@ const NSInteger kCollectionShortcutSection = 1;
 
 - (void)mostVisitedShortcutsAvailable:
     (NSArray<ShortcutsMostVisitedItem*>*)items {
-  self.mostVisitedItems = items;
-  if (!self.viewLoaded) {
-    return;
+  self.latestMostVisitedItems = items;
+
+  // Normally, the most visited tiles should not change when the user sees them.
+  // However, in case there were no items, and now they're available, it is
+  // better to show something, even if this means reloading the view.
+  if (self.displayedMostVisitedItems.count == 0 && self.viewLoaded) {
+    self.displayedMostVisitedItems = self.latestMostVisitedItems;
+    [self.collectionView reloadData];
   }
-  [self.collectionView reloadData];
 }
 
-- (void)faviconChangedForItem:(ShortcutsMostVisitedItem*)item {
+- (void)faviconChangedForURL:(const GURL&)URL {
   if (!self.viewLoaded) {
     return;
   }
-  NSUInteger i = [self.mostVisitedItems indexOfObject:item];
-  if (i == NSNotFound) {
-    return;
+
+  for (ShortcutsMostVisitedItem* item in self.displayedMostVisitedItems) {
+    if (item.URL == URL) {
+      NSUInteger i = [self.displayedMostVisitedItems indexOfObject:item];
+      NSIndexPath* indexPath =
+          [NSIndexPath indexPathForItem:i inSection:kMostVisitedSection];
+      MostVisitedShortcutCell* cell =
+          base::mac::ObjCCastStrict<MostVisitedShortcutCell>(
+              [self.collectionView cellForItemAtIndexPath:indexPath]);
+      [self configureMostVisitedCell:cell
+                            withItem:self.displayedMostVisitedItems[i]];
+    }
   }
-  [self.collectionView
-      reloadItemsAtIndexPaths:@[ [NSIndexPath indexPathWithIndex:i] ]];
 }
 
 - (void)readingListBadgeUpdatedWithCount:(NSInteger)count {
+  self.readingListBadgeValue = count;
+  if (!self.viewLoaded) {
+    return;
+  }
+
+  NSIndexPath* readingListShortcutIndexPath =
+      [NSIndexPath indexPathForItem:NTPCollectionShortcutTypeReadingList
+                          inSection:kCollectionShortcutSection];
+  [self.collectionView
+      reloadItemsAtIndexPaths:@[ readingListShortcutIndexPath ]];
 }
 
 #pragma mark - UICollectionViewDataSource
@@ -130,6 +165,9 @@ const NSInteger kCollectionShortcutSection = 1;
 
 - (NSInteger)collectionView:(UICollectionView*)collectionView
      numberOfItemsInSection:(NSInteger)section {
+  if (section == kMostVisitedSection) {
+    return MIN(kNumberOfItemsPerRow, self.displayedMostVisitedItems.count);
+  };
   return kNumberOfItemsPerRow;
 }
 
@@ -142,8 +180,10 @@ const NSInteger kCollectionShortcutSection = 1;
         dequeueReusableCellWithReuseIdentifier:
             NSStringFromClass([MostVisitedShortcutCell class])
                                   forIndexPath:indexPath];
-    ShortcutsMostVisitedItem* item = self.mostVisitedItems[indexPath.item];
+    ShortcutsMostVisitedItem* item =
+        self.displayedMostVisitedItems[indexPath.item];
     [self configureMostVisitedCell:cell withItem:item];
+    cell.accessibilityTraits = UIAccessibilityTraitButton;
     return cell;
   }
 
@@ -156,6 +196,7 @@ const NSInteger kCollectionShortcutSection = 1;
                                   "NTPCollectionShortcutType are supported";
     NTPCollectionShortcutType type = (NTPCollectionShortcutType)indexPath.item;
     [self configureCollectionShortcutCell:cell withCollection:type];
+    cell.accessibilityTraits = UIAccessibilityTraitButton;
     return cell;
   }
 
@@ -166,12 +207,25 @@ const NSInteger kCollectionShortcutSection = 1;
                         withItem:(ShortcutsMostVisitedItem*)item {
   [cell.tile.faviconView configureWithAttributes:item.attributes];
   cell.tile.titleLabel.text = item.title;
+  cell.accessibilityLabel = cell.tile.titleLabel.text;
 }
 
 - (void)configureCollectionShortcutCell:(CollectionShortcutCell*)cell
                          withCollection:(NTPCollectionShortcutType)type {
   cell.tile.titleLabel.text = TitleForCollectionShortcutType(type);
   cell.tile.iconView.image = ImageForCollectionShortcutType(type);
+  cell.accessibilityLabel = cell.tile.titleLabel.text;
+
+  if (type == NTPCollectionShortcutTypeReadingList) {
+    if (self.readingListBadgeValue > 0) {
+      cell.tile.countLabel.text = [@(self.readingListBadgeValue) stringValue];
+      cell.tile.countContainer.hidden = NO;
+      cell.accessibilityLabel = AccessibilityLabelForReadingListCellWithCount(
+          self.readingListBadgeValue);
+    } else {
+      cell.tile.countLabel.text = nil;
+    }
+  }
 }
 
 #pragma mark - UICollectionViewDelegate
@@ -179,9 +233,12 @@ const NSInteger kCollectionShortcutSection = 1;
 - (void)collectionView:(UICollectionView*)collectionView
     didSelectItemAtIndexPath:(NSIndexPath*)indexPath {
   if (indexPath.section == kMostVisitedSection) {
-    ShortcutsMostVisitedItem* item = self.mostVisitedItems[indexPath.item];
+    ShortcutsMostVisitedItem* item =
+        self.displayedMostVisitedItems[indexPath.item];
     DCHECK(item);
     [self.commandHandler openMostVisitedItem:item];
+    base::RecordAction(
+        base::UserMetricsAction("MobileOmniboxShortcutsOpenMostVisitedItem"));
   }
 
   if (indexPath.section == kCollectionShortcutSection) {
@@ -189,15 +246,23 @@ const NSInteger kCollectionShortcutSection = 1;
     switch (type) {
       case NTPCollectionShortcutTypeBookmark:
         [self.commandHandler openBookmarks];
+        base::RecordAction(
+            base::UserMetricsAction("MobileOmniboxShortcutsOpenBookmarks"));
         break;
       case NTPCollectionShortcutTypeRecentTabs:
         [self.commandHandler openRecentTabs];
+        base::RecordAction(
+            base::UserMetricsAction("MobileOmniboxShortcutsOpenRecentTabs"));
         break;
       case NTPCollectionShortcutTypeReadingList:
         [self.commandHandler openReadingList];
+        base::RecordAction(
+            base::UserMetricsAction("MobileOmniboxShortcutsOpenReadingList"));
         break;
       case NTPCollectionShortcutTypeHistory:
         [self.commandHandler openHistory];
+        base::RecordAction(
+            base::UserMetricsAction("MobileOmniboxShortcutsOpenHistory"));
         break;
     }
   }

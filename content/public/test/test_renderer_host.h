@@ -39,6 +39,7 @@ class NetworkChangeNotifier;
 }
 
 namespace ui {
+class InputDeviceManager;
 class ScopedOleInitializer;
 }
 
@@ -180,6 +181,9 @@ class RenderViewHostTestEnabler {
 #if defined(OS_ANDROID)
   std::unique_ptr<display::Screen> screen_;
 #endif
+#if defined(USE_AURA)
+  std::unique_ptr<ui::InputDeviceManager> input_device_client_;
+#endif
   std::unique_ptr<base::test::ScopedTaskEnvironment> task_environment_;
   std::unique_ptr<MockRenderProcessHostFactory> rph_factory_;
   std::unique_ptr<TestRenderViewHostFactory> rvh_factory_;
@@ -259,6 +263,8 @@ class RenderViewHostTestHarness : public testing::Test {
   // useful for off-the-record contexts, which are usually owned by the original
   // context.
   virtual BrowserContext* GetBrowserContext();
+
+  TestBrowserThreadBundle* thread_bundle() { return thread_bundle_.get(); }
 
 #if defined(USE_AURA)
   aura::Window* root_window() { return aura_test_helper_->root_window(); }

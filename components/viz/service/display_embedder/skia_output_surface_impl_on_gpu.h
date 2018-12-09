@@ -5,6 +5,10 @@
 #ifndef COMPONENTS_VIZ_SERVICE_DISPLAY_EMBEDDER_SKIA_OUTPUT_SURFACE_IMPL_ON_GPU_H_
 #define COMPONENTS_VIZ_SERVICE_DISPLAY_EMBEDDER_SKIA_OUTPUT_SURFACE_IMPL_ON_GPU_H_
 
+#include <memory>
+#include <utility>
+#include <vector>
+
 #include "base/containers/circular_deque.h"
 #include "base/macros.h"
 #include "base/threading/thread_checker.h"
@@ -19,6 +23,7 @@
 #include "gpu/ipc/in_process_command_buffer.h"
 #include "gpu/ipc/service/image_transport_surface_delegate.h"
 #include "third_party/skia/include/core/SkSurface.h"
+#include "ui/latency/latency_tracker.h"
 
 class SkDeferredDisplayList;
 
@@ -78,6 +83,7 @@ class SkiaOutputSurfaceImplOnGpu : public gpu::ImageTransportSurfaceDelegate {
                base::WaitableEvent* event);
   void FinishPaintCurrentFrame(
       std::unique_ptr<SkDeferredDisplayList> ddl,
+      std::unique_ptr<SkDeferredDisplayList> overdraw_ddl,
       uint64_t sync_fence_release);
   void SwapBuffers(OutputSurfaceFrame frame);
   void FinishPaintRenderPass(
@@ -134,7 +140,7 @@ class SkiaOutputSurfaceImplOnGpu : public gpu::ImageTransportSurfaceDelegate {
   bool MakeCurrent();
 
   GrContext* gr_context() { return context_state_->gr_context; }
-  gl::GLContext* gl_context() { return context_state_->context.get(); }
+  gl::GLContext* gl_context() { return context_state_->context(); }
 
   const gpu::CommandBufferId command_buffer_id_;
   GpuServiceImpl* const gpu_service_;
@@ -152,6 +158,7 @@ class SkiaOutputSurfaceImplOnGpu : public gpu::ImageTransportSurfaceDelegate {
   OutputSurface::Capabilities capabilities_;
   std::unique_ptr<gpu::SharedImageRepresentationFactory>
       shared_image_representation_factory_;
+  scoped_refptr<gpu::gles2::FeatureInfo> feature_info_;
 
 #if BUILDFLAG(ENABLE_VULKAN)
   std::unique_ptr<gpu::VulkanSurface> vulkan_surface_;
@@ -169,6 +176,8 @@ class SkiaOutputSurfaceImplOnGpu : public gpu::ImageTransportSurfaceDelegate {
   base::circular_deque<std::pair<uint64_t, gfx::Size>>
       pending_swap_completed_params_;
   uint64_t swap_id_ = 0;
+
+  ui::LatencyTracker latency_tracker_;
 
   THREAD_CHECKER(thread_checker_);
 

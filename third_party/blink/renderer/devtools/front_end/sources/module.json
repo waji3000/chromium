@@ -222,7 +222,7 @@
             "type": "action",
             "actionId": "debugger.evaluate-selection",
             "className": "Sources.SourcesPanel.DebuggingActionDelegate",
-            "title": "Evaluate in console",
+            "title": "Evaluate selected text in console",
             "contextTypes": [
                 "Sources.UISourceCodeFrame"
             ],
@@ -693,24 +693,46 @@
             "type": "action",
             "category": "Sources",
             "actionId": "sources.create-snippet",
-            "className": "Sources.SnippetsNavigatorView.CreatingActionDelegate",
+            "className": "Sources.ActionDelegate",
             "title": "Create new snippet"
         },
         {
             "type": "action",
             "category": "Sources",
             "actionId": "sources.add-folder-to-workspace",
-            "className": "Sources.SnippetsNavigatorView.CreatingActionDelegate",
-            "title": "Add folder to workspace"
+            "className": "Sources.ActionDelegate",
+            "iconClass": "largeicon-add",
+            "title": "Add folder to workspace",
+            "condition": "!sources.hide_add_folder"
+        },
+        {
+            "type": "@UI.ToolbarItem.Provider",
+            "actionId": "sources.add-folder-to-workspace",
+            "location": "files-navigator-toolbar",
+            "showLabel": true,
+            "condition": "!sources.hide_add_folder"
         },
         {
             "type": "@UI.ViewLocationResolver",
             "name": "navigator-view",
+            "category": "Sources",
             "className": "Sources.SourcesPanel"
         },
         {
             "type": "@UI.ViewLocationResolver",
-            "name": "sources-sidebar",
+            "name": "sources.sidebar-top",
+            "category": "Sources",
+            "className": "Sources.SourcesPanel"
+        },
+        {
+            "type": "@UI.ViewLocationResolver",
+            "name": "sources.sidebar-bottom",
+            "category": "Sources",
+            "className": "Sources.SourcesPanel"
+        },
+        {
+            "type": "@UI.ViewLocationResolver",
+            "name": "sources.sidebar-tabs",
             "category": "Sources",
             "className": "Sources.SourcesPanel"
         },
@@ -719,7 +741,8 @@
             "id": "sources.threads",
             "title": "Threads",
             "persistence": "permanent",
-            "className": "Sources.ThreadsSidebarPane"
+            "className": "Sources.ThreadsSidebarPane",
+            "condition": "!sources.hide_thread_sidebar"
         },
         {
             "type": "view",
@@ -834,6 +857,7 @@
     ],
     "scripts": [
         "AddSourceMapURLDialog.js",
+        "BreakpointEditDialog.js",
         "CallStackSidebarPane.js",
         "DebuggerPausedMessage.js",
         "SimpleHistoryManager.js",
@@ -867,6 +891,7 @@
         "ScriptOriginPlugin.js"
     ],
     "resources": [
+        "breakpointEditDialog.css",
         "callStackSidebarPane.css",
         "debuggerPausedMessage.css",
         "javaScriptBreakpointsSidebarPane.css",

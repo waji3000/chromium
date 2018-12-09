@@ -38,7 +38,7 @@ TaskWorklet* TaskWorklet::From(LocalDOMWindow& window) {
   TaskWorklet* task_worklet =
       Supplement<LocalDOMWindow>::From<TaskWorklet>(window);
   if (!task_worklet) {
-    task_worklet = new TaskWorklet(window.document());
+    task_worklet = MakeGarbageCollected<TaskWorklet>(window.document());
     Supplement<LocalDOMWindow>::ProvideTo(window, task_worklet);
   }
   return task_worklet;
@@ -55,17 +55,15 @@ Task* TaskWorklet::postTask(ScriptState* script_state,
   // TODO(japhet): Here and below: it's unclear what task type should be used,
   // and whether the API should allow it to be configured. Using kIdleTask as a
   // placeholder for now.
-  ThreadPoolTask* thread_pool_task = new ThreadPoolTask(
-      this, script_state, function, arguments, TaskType::kIdleTask);
-  return new Task(thread_pool_task);
+  return MakeGarbageCollected<Task>(this, script_state, function, arguments,
+                                    TaskType::kIdleTask);
 }
 
 Task* TaskWorklet::postTask(ScriptState* script_state,
                             const String& function_name,
                             const Vector<ScriptValue>& arguments) {
-  ThreadPoolTask* thread_pool_task = new ThreadPoolTask(
-      this, script_state, function_name, arguments, TaskType::kIdleTask);
-  return new Task(thread_pool_task);
+  return MakeGarbageCollected<Task>(this, script_state, function_name,
+                                    arguments, TaskType::kIdleTask);
 }
 
 ThreadPoolThread* TaskWorklet::GetLeastBusyThread() {
@@ -104,7 +102,7 @@ bool TaskWorklet::NeedsToCreateGlobalScope() {
 WorkletGlobalScopeProxy* TaskWorklet::CreateGlobalScope() {
   DCHECK_LT(GetNumberOfGlobalScopes(), kMaxTaskWorkletThreads);
   TaskWorkletMessagingProxy* proxy =
-      new TaskWorkletMessagingProxy(GetExecutionContext());
+      MakeGarbageCollected<TaskWorkletMessagingProxy>(GetExecutionContext());
   proxy->Initialize(WorkerClients::Create(), ModuleResponsesMap(),
                     WorkerBackingThreadStartupData::CreateDefault());
   return proxy;

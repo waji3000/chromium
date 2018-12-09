@@ -360,6 +360,8 @@ class GPU_GLES2_EXPORT GLES2DecoderPassthroughImpl : public GLES2Decoder {
   void SetCopyTextureResourceManagerForTest(
       CopyTextureCHROMIUMResourceManager* copy_texture_resource_manager)
       override;
+  void SetCopyTexImageBlitterForTest(
+      CopyTexImageResourceManager* copy_tex_image_blit) override;
 
   void OnAbstractTextureDestroyed(PassthroughAbstractTextureImpl*,
                                   scoped_refptr<TexturePassthrough>);
@@ -397,7 +399,7 @@ class GPU_GLES2_EXPORT GLES2DecoderPassthroughImpl : public GLES2Decoder {
     }
 
     // Copy into the destination
-    DCHECK(*length < bufsize);
+    DCHECK(*length <= bufsize);
     std::copy(scratch_params, scratch_params + *length, params);
 
     return error::kNoError;
@@ -833,8 +835,6 @@ class GPU_GLES2_EXPORT GLES2DecoderPassthroughImpl : public GLES2Decoder {
 
   // Cache of scratch memory
   std::vector<uint8_t> scratch_memory_;
-
-  std::unique_ptr<DCLayerSharedState> dc_layer_shared_state_;
 
   // After a second fence is inserted, both the GpuChannelMessageQueue and
   // CommandExecutor are descheduled. Once the first fence has completed, both

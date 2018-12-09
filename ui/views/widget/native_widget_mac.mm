@@ -109,6 +109,15 @@ void NativeWidgetMac::GetWindowFrameTitlebarHeight(
   *titlebar_height = 0;
 }
 
+bool NativeWidgetMac::ExecuteCommand(
+    int32_t command,
+    WindowOpenDisposition window_open_disposition,
+    bool is_before_first_responder) {
+  // This is supported only by subclasses in chrome/browser/ui.
+  NOTIMPLEMENTED();
+  return false;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // NativeWidgetMac, internal::NativeWidgetPrivate implementation:
 
@@ -142,6 +151,7 @@ void NativeWidgetMac::InitNativeWidget(const Widget::InitParams& params) {
   }
   bridge_host_->SetParent(parent_host);
   bridge_host_->InitWindow(params);
+  OnWindowInitialized();
 
   // Only set always-on-top here if it is true since setting it may affect how
   // the window is treated by Expose.
@@ -568,6 +578,7 @@ Widget::MoveLoopResult NativeWidgetMac::RunMoveLoop(
   if (!bridge_impl())
     return Widget::MOVE_LOOP_CANCELED;
 
+  ReleaseCapture();
   return bridge_impl()->RunMoveLoop(drag_offset) ? Widget::MOVE_LOOP_SUCCESSFUL
                                                  : Widget::MOVE_LOOP_CANCELED;
 }

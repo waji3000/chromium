@@ -11,6 +11,7 @@
 
 #include "base/big_endian.h"
 #include "base/logging.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/sys_byteorder.h"
@@ -18,9 +19,9 @@
 #include "net/base/io_buffer.h"
 #include "net/base/ip_address.h"
 #include "net/base/net_errors.h"
-#include "net/dns/dns_protocol.h"
 #include "net/dns/dns_query.h"
 #include "net/dns/dns_util.h"
+#include "net/dns/public/dns_protocol.h"
 #include "net/dns/record_rdata.h"
 
 namespace net {
@@ -211,6 +212,8 @@ bool DnsRecordParser::ReadRecord(DnsResourceRecord* out) {
       reader.ReadU16(&rdlen) &&
       reader.ReadPiece(&out->rdata, rdlen)) {
     cur_ = reader.ptr();
+    UMA_HISTOGRAM_COUNTS_10000("Net.DNS.RecordParser.DomainNameLength",
+                               out->name.length());
     return true;
   }
   return false;

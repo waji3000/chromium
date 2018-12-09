@@ -38,8 +38,8 @@ constexpr char kCrostiniAppLaunchHistogram[] = "Crostini.AppLaunch";
 constexpr char kCrostiniAppNamePrefix[] = "_crostini_";
 constexpr int64_t kDelayBeforeSpinnerMs = 400;
 
-// If true then override IsCrostiniUIAllowedForProfile and related methods to
-// turn on Crostini.
+// If true then override IsCrostiniUIAllowedForProfile and related methods
+// to turn on Crostini.
 bool g_crostini_ui_allowed_for_testing = false;
 
 // These values are persisted to logs. Entries should not be renumbered and
@@ -207,15 +207,7 @@ class IconLoadWaiter : public CrostiniAppIcon::Observer {
   base::OnceCallback<void(const std::vector<gfx::ImageSkia>&)> callback_;
 };
 
-}  // namespace
-
-namespace crostini {
-
-void SetCrostiniUIAllowedForTesting(bool enabled) {
-  g_crostini_ui_allowed_for_testing = enabled;
-}
-
-bool IsCrostiniAllowedForProfile(Profile* profile) {
+bool IsCrostiniAllowedForProfileImpl(Profile* profile) {
   if (g_crostini_ui_allowed_for_testing) {
     return true;
   }
@@ -225,25 +217,39 @@ bool IsCrostiniAllowedForProfile(Profile* profile) {
       chromeos::ProfileHelper::IsLockScreenAppProfile(profile)) {
     return false;
   }
-  if (!profile->GetPrefs()->GetBoolean(
-          crostini::prefs::kUserCrostiniAllowedByPolicy)) {
-    return false;
-  }
-  const user_manager::User* user =
-      chromeos::ProfileHelper::Get()->GetUserByProfile(profile);
-  if (!user->IsAffiliated() && !IsUnaffiliatedCrostiniAllowedByPolicy()) {
-    return false;
-  }
   if (!crostini::CrostiniManager::IsDevKvmPresent()) {
     // Hardware is physically incapable, no matter what the user wants.
     return false;
   }
   return virtual_machines::AreVirtualMachinesAllowedByVersionAndChannel() &&
-         virtual_machines::AreVirtualMachinesAllowedByPolicy() &&
          base::FeatureList::IsEnabled(features::kCrostini);
 }
 
-bool IsCrostiniUIAllowedForProfile(Profile* profile) {
+}  // namespace
+
+namespace crostini {
+
+void SetCrostiniUIAllowedForTesting(bool enabled) {
+  g_crostini_ui_allowed_for_testing = enabled;
+}
+
+bool IsCrostiniAllowedForProfile(Profile* profile) {
+  const user_manager::User* user =
+      chromeos::ProfileHelper::Get()->GetUserByProfile(profile);
+  if (!user->IsAffiliated() && !IsUnaffiliatedCrostiniAllowedByPolicy()) {
+    return false;
+  }
+  if (!profile->GetPrefs()->GetBoolean(
+          crostini::prefs::kUserCrostiniAllowedByPolicy)) {
+    return false;
+  }
+  if (!virtual_machines::AreVirtualMachinesAllowedByPolicy()) {
+    return false;
+  }
+  return IsCrostiniAllowedForProfileImpl(profile);
+}
+
+bool IsCrostiniUIAllowedForProfile(Profile* profile, bool check_policy) {
   if (g_crostini_ui_allowed_for_testing) {
     return true;
   }
@@ -251,8 +257,13 @@ bool IsCrostiniUIAllowedForProfile(Profile* profile) {
     return false;
   }
 
-  return IsCrostiniAllowedForProfile(profile) &&
-         base::FeatureList::IsEnabled(features::kExperimentalCrostiniUI);
+  if (!base::FeatureList::IsEnabled(features::kExperimentalCrostiniUI)) {
+    return false;
+  }
+  if (check_policy) {
+    return IsCrostiniAllowedForProfile(profile);
+  }
+  return IsCrostiniAllowedForProfileImpl(profile);
 }
 
 bool IsCrostiniEnabled(Profile* profile) {
@@ -315,8 +326,9 @@ void LaunchCrostiniApp(Profile* profile,
     DCHECK(files.empty());
     RecordAppLaunchHistogram(CrostiniAppLaunchAppType::kTerminal);
 
+    // At this point, we know that Crostini UI is allowed.
     if (!crostini_manager->IsCrosTerminaInstalled() ||
-        !IsCrostiniEnabled(profile)) {
+        !profile->GetPrefs()->GetBoolean(crostini::prefs::kCrostiniEnabled)) {
       ShowCrostiniInstallerView(profile, CrostiniUISurface::kAppList);
       return;
     }

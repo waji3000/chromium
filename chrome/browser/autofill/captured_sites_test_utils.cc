@@ -557,6 +557,10 @@ bool TestRecipeReplayer::ReplayRecordedActions(
                    type, "validateNoSavePasswordPrompt") == 0) {
       if (!ExecuteValidateNoSavePasswordPromptAction(*action))
         return false;
+    } else if (base::CompareCaseInsensitiveASCII(
+                   type, "validatePasswordSaveFallback") == 0) {
+      if (!ExecuteValidateSaveFallbackAction(*action))
+        return false;
     } else if (base::CompareCaseInsensitiveASCII(type, "waitFor") == 0) {
       if (!ExecuteWaitForStateAction(*action))
         return false;
@@ -627,11 +631,16 @@ bool TestRecipeReplayer::ExecuteAutofillAction(
   if (!GetTargetHTMLElementXpathFromAction(action, &xpath))
     return false;
 
+  int visibility_enum_val;
+  if (!GetTargetHTMLElementVisibilityEnumFromAction(action,
+                                                    &visibility_enum_val))
+    return false;
+
   content::RenderFrameHost* frame;
   if (!GetTargetFrameFromAction(action, &frame))
     return false;
 
-  if (!WaitForElementToBeReady(frame, xpath))
+  if (!WaitForElementToBeReady(frame, xpath, visibility_enum_val))
     return false;
 
   VLOG(1) << "Invoking Chrome Autofill on `" << xpath << "`.";
@@ -663,11 +672,16 @@ bool TestRecipeReplayer::ExecuteClickAction(
   if (!GetTargetHTMLElementXpathFromAction(action, &xpath))
     return false;
 
+  int visibility_enum_val;
+  if (!GetTargetHTMLElementVisibilityEnumFromAction(action,
+                                                    &visibility_enum_val))
+    return false;
+
   content::RenderFrameHost* frame;
   if (!GetTargetFrameFromAction(action, &frame))
     return false;
 
-  if (!WaitForElementToBeReady(frame, xpath))
+  if (!WaitForElementToBeReady(frame, xpath, visibility_enum_val))
     return false;
 
   VLOG(1) << "Left mouse clicking `" << xpath << "`.";
@@ -687,11 +701,16 @@ bool TestRecipeReplayer::ExecuteHoverAction(
   if (!GetTargetHTMLElementXpathFromAction(action, &xpath))
     return false;
 
+  int visibility_enum_val;
+  if (!GetTargetHTMLElementVisibilityEnumFromAction(action,
+                                                    &visibility_enum_val))
+    return false;
+
   content::RenderFrameHost* frame;
   if (!GetTargetFrameFromAction(action, &frame))
     return false;
 
-  if (!WaitForElementToBeReady(frame, xpath))
+  if (!WaitForElementToBeReady(frame, xpath, visibility_enum_val))
     return false;
 
   VLOG(1) << "Hovering over `" << xpath << "`.";
@@ -718,11 +737,16 @@ bool TestRecipeReplayer::ExecutePressEnterAction(
   if (!GetTargetHTMLElementXpathFromAction(action, &xpath))
     return false;
 
+  int visibility_enum_val;
+  if (!GetTargetHTMLElementVisibilityEnumFromAction(action,
+                                                    &visibility_enum_val))
+    return false;
+
   content::RenderFrameHost* frame;
   if (!GetTargetFrameFromAction(action, &frame))
     return false;
 
-  if (!WaitForElementToBeReady(frame, xpath))
+  if (!WaitForElementToBeReady(frame, xpath, visibility_enum_val))
     return false;
 
   VLOG(1) << "Press 'Enter' on `" << xpath << "`.";
@@ -830,11 +854,16 @@ bool TestRecipeReplayer::ExecuteSelectDropdownAction(
   if (!GetTargetHTMLElementXpathFromAction(action, &xpath))
     return false;
 
+  int visibility_enum_val;
+  if (!GetTargetHTMLElementVisibilityEnumFromAction(action,
+                                                    &visibility_enum_val))
+    return false;
+
   content::RenderFrameHost* frame;
   if (!GetTargetFrameFromAction(action, &frame))
     return false;
 
-  if (!WaitForElementToBeReady(frame, xpath))
+  if (!WaitForElementToBeReady(frame, xpath, visibility_enum_val))
     return false;
 
   VLOG(1) << "Select option '" << index << "' from `" << xpath << "`.";
@@ -872,11 +901,16 @@ bool TestRecipeReplayer::ExecuteTypeAction(
   if (!GetTargetHTMLElementXpathFromAction(action, &xpath))
     return false;
 
+  int visibility_enum_val;
+  if (!GetTargetHTMLElementVisibilityEnumFromAction(action,
+                                                    &visibility_enum_val))
+    return false;
+
   content::RenderFrameHost* frame;
   if (!GetTargetFrameFromAction(action, &frame))
     return false;
 
-  if (!WaitForElementToBeReady(frame, xpath))
+  if (!WaitForElementToBeReady(frame, xpath, visibility_enum_val))
     return false;
 
   VLOG(1) << "Typing '" << value << "' inside `" << xpath << "`.";
@@ -900,11 +934,16 @@ bool TestRecipeReplayer::ExecuteTypePasswordAction(
   if (!GetTargetHTMLElementXpathFromAction(action, &xpath))
     return false;
 
+  int visibility_enum_val;
+  if (!GetTargetHTMLElementVisibilityEnumFromAction(action,
+                                                    &visibility_enum_val))
+    return false;
+
   content::RenderFrameHost* frame;
   if (!GetTargetFrameFromAction(action, &frame))
     return false;
 
-  if (!WaitForElementToBeReady(frame, xpath))
+  if (!WaitForElementToBeReady(frame, xpath, visibility_enum_val))
     return false;
 
   const base::Value* value_container = action.FindKey("value");
@@ -971,11 +1010,16 @@ bool TestRecipeReplayer::ExecuteValidateFieldValueAction(
   if (!GetTargetHTMLElementXpathFromAction(action, &xpath))
     return false;
 
+  int visibility_enum_val;
+  if (!GetTargetHTMLElementVisibilityEnumFromAction(action,
+                                                    &visibility_enum_val))
+    return false;
+
   content::RenderFrameHost* frame;
   if (!GetTargetFrameFromAction(action, &frame))
     return false;
 
-  if (!WaitForElementToBeReady(frame, xpath))
+  if (!WaitForElementToBeReady(frame, xpath, visibility_enum_val))
     return false;
 
   const base::Value* autofill_prediction_container =
@@ -1020,6 +1064,13 @@ bool TestRecipeReplayer::ExecuteValidateNoSavePasswordPromptAction(
     const base::DictionaryValue& action) {
   VLOG(1) << "Verify that the page hasn't shown a save password prompt.";
   EXPECT_FALSE(feature_action_executor()->HasChromeShownSavePasswordPrompt());
+  return true;
+}
+
+bool TestRecipeReplayer::ExecuteValidateSaveFallbackAction(
+    const base::DictionaryValue& action) {
+  VLOG(1) << "Verify that Chrome shows the save fallback icon in the omnibox.";
+  EXPECT_TRUE(feature_action_executor()->WaitForSaveFallback());
   return true;
 }
 
@@ -1076,6 +1127,27 @@ bool TestRecipeReplayer::GetTargetHTMLElementXpathFromAction(
   }
 
   *xpath = xpath_container->GetString();
+  return true;
+}
+
+bool TestRecipeReplayer::GetTargetHTMLElementVisibilityEnumFromAction(
+    const base::DictionaryValue& action,
+    int* visibility_enum_val) {
+  const base::Value* visibility_container = action.FindKey("visibility");
+  if (!visibility_container) {
+    // By default, set the visibility to (visible | enabled | on_top), as
+    // defined in
+    // chrome/test/data/web_page_replay_go_helper_scripts/automation_helper.js
+    *visibility_enum_val = 7;
+    return true;
+  }
+
+  if (base::Value::Type::INTEGER != visibility_container->type()) {
+    ADD_FAILURE() << "visibility property is not an integer!";
+    return false;
+  }
+
+  *visibility_enum_val = visibility_container->GetInt();
   return true;
 }
 
@@ -1160,11 +1232,12 @@ bool TestRecipeReplayer::GetTargetFrameFromAction(
 
 bool TestRecipeReplayer::WaitForElementToBeReady(
     content::RenderFrameHost* frame,
-    const std::string& xpath) {
+    const std::string& xpath,
+    const int visibility_enum_val) {
   std::vector<std::string> state_assertions;
   state_assertions.push_back(base::StringPrintf(
-      "return automation_helper.isElementWithXpathReady(`%s`);",
-      xpath.c_str()));
+      "return automation_helper.isElementWithXpathReady(`%s`, %d);",
+      xpath.c_str(), visibility_enum_val));
   return WaitForStateChange(frame, state_assertions, default_action_timeout);
 }
 
@@ -1296,9 +1369,13 @@ bool TestRecipeReplayer::PlaceFocusOnElement(content::RenderFrameHost* frame,
   if (focused) {
     return true;
   } else {
-    ADD_FAILURE() << "Failed to place focus on the element: " << element_xpath
-                  << "!";
-    return false;
+    // Failing focusing on an element through script, use the less preferred
+    // method of left mouse clicking the element.
+    int x, y;
+    if (!GetCenterCoordinateOfTargetElement(frame, element_xpath, x, y))
+      return false;
+
+    return SimulateLeftMouseClickAt(frame, gfx::Point(x, y));
   }
 }
 
@@ -1489,6 +1566,16 @@ bool TestRecipeReplayer::SetupSavedAutofillProfile(
     }
   }
 
+  // Skip this step if autofill profile is empty.
+  // Only Autofill Captured Sites test recipes will have non-empty autofill
+  // profiles. Recipes for other captured sites tests will have empty autofill
+  // profiles. This block prevents these other tests from failing because
+  // the test feature action executor does not know how to setup the autofill
+  // profile.
+  if (profile_entries_list.size() == 0) {
+    return true;
+  }
+
   return feature_action_executor()->SetupAutofillProfile();
 }
 
@@ -1585,6 +1672,12 @@ bool TestRecipeReplayChromeFeatureActionExecutor::SavePassword() {
 bool TestRecipeReplayChromeFeatureActionExecutor::UpdatePassword() {
   ADD_FAILURE() << "TestRecipeReplayChromeFeatureActionExecutor"
                    "::UpdatePassword is not implemented!";
+  return false;
+}
+
+bool TestRecipeReplayChromeFeatureActionExecutor::WaitForSaveFallback() {
+  ADD_FAILURE() << "TestRecipeReplayChromeFeatureActionExecutor"
+                   "::WaitForSaveFallback is not implemented!";
   return false;
 }
 

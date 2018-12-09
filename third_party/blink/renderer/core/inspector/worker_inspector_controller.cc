@@ -45,7 +45,6 @@
 #include "third_party/blink/renderer/core/workers/worker_backing_thread.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
 #include "third_party/blink/renderer/core/workers/worker_thread.h"
-#include "third_party/blink/renderer/platform/layout_test_support.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/web_thread_supporting_gc.h"
 
@@ -58,7 +57,7 @@ WorkerInspectorController* WorkerInspectorController::Create(
     std::unique_ptr<WorkerDevToolsParams> devtools_params) {
   WorkerThreadDebugger* debugger =
       WorkerThreadDebugger::From(thread->GetIsolate());
-  return debugger ? new WorkerInspectorController(
+  return debugger ? MakeGarbageCollected<WorkerInspectorController>(
                         thread, debugger, std::move(inspector_task_runner),
                         std::move(devtools_params))
                   : nullptr;
@@ -72,8 +71,9 @@ WorkerInspectorController::WorkerInspectorController(
     : debugger_(debugger),
       thread_(thread),
       inspected_frames_(nullptr),
-      probe_sink_(new CoreProbeSink()) {
-  probe_sink_->addInspectorTraceEvents(new InspectorTraceEvents());
+      probe_sink_(MakeGarbageCollected<CoreProbeSink>()) {
+  probe_sink_->addInspectorTraceEvents(
+      MakeGarbageCollected<InspectorTraceEvents>());
   if (auto* scope = DynamicTo<WorkerGlobalScope>(thread->GlobalScope())) {
     worker_devtools_token_ = devtools_params->devtools_worker_token;
     parent_devtools_token_ = scope->GetParentDevToolsToken();
@@ -84,20 +84,21 @@ WorkerInspectorController::WorkerInspectorController(
       Platform::Current()->GetIOTaskRunner();
   if (!parent_devtools_token_.is_empty() && io_task_runner) {
     // There may be no io task runner in unit tests.
-    agent_ = new DevToolsAgent(this, inspected_frames_.Get(), probe_sink_.Get(),
-                               std::move(inspector_task_runner),
-                               std::move(io_task_runner));
+    wait_for_debugger_ = devtools_params->wait_for_debugger;
+    agent_ = MakeGarbageCollected<DevToolsAgent>(
+        this, inspected_frames_.Get(), probe_sink_.Get(),
+        std::move(inspector_task_runner), std::move(io_task_runner));
     agent_->BindRequest(std::move(devtools_params->agent_host_ptr_info),
                         std::move(devtools_params->agent_request),
                         thread->GetTaskRunner(TaskType::kInternalInspector));
   }
-  TraceEvent::AddEnabledStateObserver(this);
+  trace_event::AddEnabledStateObserver(this);
   EmitTraceEvent();
 }
 
 WorkerInspectorController::~WorkerInspectorController() {
   DCHECK(!thread_);
-  TraceEvent::RemoveEnabledStateObserver(this);
+  trace_event::RemoveEnabledStateObserver(this);
 }
 
 void WorkerInspectorController::AttachSession(DevToolsSession* session,
@@ -106,13 +107,13 @@ void WorkerInspectorController::AttachSession(DevToolsSession* session,
     thread_->GetWorkerBackingThread().BackingThread().AddTaskObserver(this);
   session->ConnectToV8(debugger_->GetV8Inspector(),
                        debugger_->ContextGroupId(thread_));
-  session->Append(new InspectorLogAgent(thread_->GetConsoleMessageStorage(),
-                                        nullptr, session->V8Session()));
+  session->Append(MakeGarbageCollected<InspectorLogAgent>(
+      thread_->GetConsoleMessageStorage(), nullptr, session->V8Session()));
   if (auto* scope = DynamicTo<WorkerGlobalScope>(thread_->GlobalScope())) {
-    DCHECK(scope->EnsureFetcher());
-    session->Append(new InspectorNetworkAgent(inspected_frames_.Get(), scope,
-                                              session->V8Session()));
-    session->Append(new InspectorEmulationAgent(nullptr));
+    scope->EnsureFetcher();
+    session->Append(MakeGarbageCollected<InspectorNetworkAgent>(
+        inspected_frames_.Get(), scope, session->V8Session()));
+    session->Append(MakeGarbageCollected<InspectorEmulationAgent>(nullptr));
   }
   ++session_count_;
 }
@@ -146,6 +147,13 @@ void WorkerInspectorController::FlushProtocolNotifications() {
     agent_->FlushProtocolNotifications();
 }
 
+void WorkerInspectorController::WaitForDebuggerIfNeeded() {
+  if (!wait_for_debugger_)
+    return;
+  wait_for_debugger_ = false;
+  debugger_->PauseWorkerOnStart(thread_);
+}
+
 void WorkerInspectorController::WillProcessTask(
     const base::PendingTask& pending_task) {}
 
@@ -166,7 +174,7 @@ void WorkerInspectorController::EmitTraceEvent() {
   TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"),
                        "TracingSessionIdForWorker", TRACE_EVENT_SCOPE_THREAD,
                        "data",
-                       InspectorTracingSessionIdForWorkerEvent::Data(
+                       inspector_tracing_session_id_for_worker_event::Data(
                            worker_devtools_token_, parent_devtools_token_, url_,
                            worker_thread_id_));
 }

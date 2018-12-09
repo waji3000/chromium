@@ -71,16 +71,17 @@ class ProfileSyncServiceAndroid : public syncer::SyncServiceObserver {
   base::android::ScopedJavaLocalRef<jintArray> GetActiveDataTypes(
       JNIEnv* env,
       const base::android::JavaParamRef<jobject>& obj);
+  base::android::ScopedJavaLocalRef<jintArray> GetChosenDataTypes(
+      JNIEnv* env,
+      const base::android::JavaParamRef<jobject>& obj);
   base::android::ScopedJavaLocalRef<jintArray> GetPreferredDataTypes(
       JNIEnv* env,
       const base::android::JavaParamRef<jobject>& obj);
-  void SetPreferredDataTypes(
+  void SetChosenDataTypes(
       JNIEnv* env,
       const base::android::JavaParamRef<jobject>& obj,
       jboolean sync_everything,
       const base::android::JavaParamRef<jintArray>& model_type_selection);
-  jboolean IsCryptographerReady(JNIEnv* env,
-                                const base::android::JavaParamRef<jobject>&);
   jboolean IsEncryptEverythingAllowed(
       JNIEnv* env,
       const base::android::JavaParamRef<jobject>& obj);
@@ -93,9 +94,6 @@ class ProfileSyncServiceAndroid : public syncer::SyncServiceObserver {
       JNIEnv* env,
       const base::android::JavaParamRef<jobject>& obj);
   jboolean IsUsingSecondaryPassphrase(
-      JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& obj);
-  base::android::ScopedJavaLocalRef<jbyteArray> GetCustomPassphraseKey(
       JNIEnv* env,
       const base::android::JavaParamRef<jobject>& obj);
   jint GetPassphraseType(JNIEnv* env,

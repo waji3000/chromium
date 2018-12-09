@@ -490,7 +490,7 @@ static inline void SetAttributes(Element* element,
   element->ParserSetAttributes(attribute_vector);
 }
 
-static void SwitchEncoding(xmlParserCtxtPtr ctxt, bool is8_bit) {
+static void SwitchEncoding(xmlParserCtxtPtr ctxt, bool is_8bit) {
   // Make sure we don't call xmlSwitchEncoding in an error state.
   if ((ctxt->errNo != XML_ERR_OK) && (ctxt->disableSAX == 1))
     return;
@@ -499,7 +499,7 @@ static void SwitchEncoding(xmlParserCtxtPtr ctxt, bool is8_bit) {
   // resetting the encoding to UTF-16 before every chunk. Otherwise libxml
   // will detect <?xml version="1.0" encoding="<encoding name>"?> blocks and
   // switch encodings, causing the parse to fail.
-  if (is8_bit) {
+  if (is_8bit) {
     xmlSwitchEncoding(ctxt, XML_CHAR_ENCODING_8859_1);
     return;
   }
@@ -512,9 +512,9 @@ static void SwitchEncoding(xmlParserCtxtPtr ctxt, bool is8_bit) {
 }
 
 static void ParseChunk(xmlParserCtxtPtr ctxt, const String& chunk) {
-  bool is8_bit = chunk.Is8Bit();
-  SwitchEncoding(ctxt, is8_bit);
-  if (is8_bit)
+  bool is_8bit = chunk.Is8Bit();
+  SwitchEncoding(ctxt, is_8bit);
+  if (is_8bit)
     xmlParseChunk(ctxt, reinterpret_cast<const char*>(chunk.Characters8()),
                   sizeof(LChar) * chunk.length(), 0);
   else
@@ -610,7 +610,7 @@ static void* OpenFunc(const char* uri) {
         RawResource::FetchSynchronously(params, document->Fetcher());
     if (!resource->ErrorOccurred()) {
       data = resource->ResourceBuffer();
-      final_url = resource->GetResponse().Url();
+      final_url = resource->GetResponse().CurrentRequestUrl();
     }
   }
 
@@ -1349,11 +1349,11 @@ static size_t ConvertUTF16EntityToUTF8(const UChar* utf16_entity,
                                        char* target,
                                        size_t target_size) {
   const char* original_target = target;
-  WTF::Unicode::ConversionResult conversion_result =
-      WTF::Unicode::ConvertUTF16ToUTF8(&utf16_entity,
+  WTF::unicode::ConversionResult conversion_result =
+      WTF::unicode::ConvertUTF16ToUTF8(&utf16_entity,
                                        utf16_entity + number_of_code_units,
                                        &target, target + target_size);
-  if (conversion_result != WTF::Unicode::kConversionOK)
+  if (conversion_result != WTF::unicode::kConversionOK)
     return 0;
 
   DCHECK_GT(target, original_target);

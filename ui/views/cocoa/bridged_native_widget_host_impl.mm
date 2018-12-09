@@ -8,10 +8,10 @@
 
 #include "base/mac/foundation_util.h"
 #include "ui/accelerated_widget_mac/window_resize_helper_mac.h"
+#include "ui/base/cocoa/remote_accessibility_api.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ime/input_method_factory.h"
-#include "ui/base/models/dialog_model.h"
 #include "ui/compositor/recyclable_compositor_mac.h"
 #include "ui/display/screen.h"
 #include "ui/gfx/geometry/dip_util.h"
@@ -89,6 +89,7 @@ BridgedNativeWidgetHostImpl::BridgedNativeWidgetHostImpl(NativeWidgetMac* owner)
     : widget_id_(++g_last_bridged_native_widget_id),
       native_widget_mac_(owner),
       root_view_id_(ui::NSViewIds::GetNewId()),
+      accessibility_focus_overrider_(this),
       host_mojo_binding_(this) {
   DCHECK(GetIdToWidgetHostImplMap().find(widget_id_) ==
          GetIdToWidgetHostImplMap().end());
@@ -122,6 +123,20 @@ BridgedNativeWidgetHostImpl::~BridgedNativeWidgetHostImpl() {
 
 NativeWidgetMacNSWindow* BridgedNativeWidgetHostImpl::GetLocalNSWindow() const {
   return local_window_.get();
+}
+
+gfx::NativeViewAccessible
+BridgedNativeWidgetHostImpl::GetNativeViewAccessibleForNSView() const {
+  if (bridge_impl_)
+    return bridge_impl_->ns_view();
+  return remote_view_accessible_.get();
+}
+
+gfx::NativeViewAccessible
+BridgedNativeWidgetHostImpl::GetNativeViewAccessibleForNSWindow() const {
+  if (bridge_impl_)
+    return bridge_impl_->ns_window();
+  return remote_window_accessible_.get();
 }
 
 views_bridge_mac::mojom::BridgedNativeWidget*
@@ -457,7 +472,7 @@ NSView* BridgedNativeWidgetHostImpl::GetGlobalCaptureView() {
 ////////////////////////////////////////////////////////////////////////////////
 // BridgedNativeWidgetHostImpl, views_bridge_mac::BridgedNativeWidgetHostHelper:
 
-NSView* BridgedNativeWidgetHostImpl::GetNativeViewAccessible() {
+id BridgedNativeWidgetHostImpl::GetNativeViewAccessible() {
   return root_view_ ? root_view_->GetNativeViewAccessible() : nil;
 }
 
@@ -582,6 +597,7 @@ void BridgedNativeWidgetHostImpl::SetKeyboardAccessible(bool enabled) {
 
 void BridgedNativeWidgetHostImpl::OnIsFirstResponderChanged(
     bool is_first_responder) {
+  accessibility_focus_overrider_.SetViewIsFirstResponder(is_first_responder);
   if (is_first_responder) {
     root_view_->GetWidget()->GetFocusManager()->RestoreFocusedView();
   } else {
@@ -772,6 +788,7 @@ void BridgedNativeWidgetHostImpl::OnWindowKeyStatusChanged(
     bool is_key,
     bool is_content_first_responder,
     bool full_keyboard_access_enabled) {
+  accessibility_focus_overrider_.SetWindowIsKey(is_key);
   is_window_key_ = is_key;
   Widget* widget = native_widget_mac_->GetWidget();
   if (!widget->OnNativeWidgetActivationChanged(is_key))
@@ -813,21 +830,21 @@ bool BridgedNativeWidgetHostImpl::GetDialogButtonInfo(
     bool* is_button_enabled,
     bool* is_button_default) {
   *button_exists = false;
-  ui::DialogModel* model =
+  views::DialogDelegate* dialog =
       root_view_->GetWidget()->widget_delegate()->AsDialogDelegate();
-  if (!model || !(model->GetDialogButtons() & button))
+  if (!dialog || !(dialog->GetDialogButtons() & button))
     return true;
   *button_exists = true;
-  *button_label = model->GetDialogButtonLabel(button);
-  *is_button_enabled = model->IsDialogButtonEnabled(button);
-  *is_button_default = button == model->GetDefaultDialogButton();
+  *button_label = dialog->GetDialogButtonLabel(button);
+  *is_button_enabled = dialog->IsDialogButtonEnabled(button);
+  *is_button_default = button == dialog->GetDefaultDialogButton();
   return true;
 }
 
 bool BridgedNativeWidgetHostImpl::GetDoDialogButtonsExist(bool* buttons_exist) {
-  ui::DialogModel* model =
+  views::DialogDelegate* dialog =
       root_view_->GetWidget()->widget_delegate()->AsDialogDelegate();
-  *buttons_exist = model && model->GetDialogButtons();
+  *buttons_exist = dialog && dialog->GetDialogButtons();
   return true;
 }
 
@@ -873,6 +890,39 @@ bool BridgedNativeWidgetHostImpl::GetWindowFrameTitlebarHeight(
 
 void BridgedNativeWidgetHostImpl::OnFocusWindowToolbar() {
   native_widget_mac_->OnFocusWindowToolbar();
+}
+
+bool BridgedNativeWidgetHostImpl::ValidateUserInterfaceItem(
+    int32_t command,
+    views_bridge_mac::mojom::ValidateUserInterfaceItemResultPtr* out_result) {
+  *out_result = views_bridge_mac::mojom::ValidateUserInterfaceItemResult::New();
+  native_widget_mac_->ValidateUserInterfaceItem(command, out_result->get());
+  return true;
+}
+
+bool BridgedNativeWidgetHostImpl::ExecuteCommand(
+    int32_t command,
+    WindowOpenDisposition window_open_disposition,
+    bool is_before_first_responder,
+    bool* was_executed) {
+  *was_executed = native_widget_mac_->ExecuteCommand(
+      command, window_open_disposition, is_before_first_responder);
+  return true;
+}
+
+bool BridgedNativeWidgetHostImpl::HandleAccelerator(
+    const ui::Accelerator& accelerator,
+    bool require_priority_handler,
+    bool* was_handled) {
+  *was_handled = false;
+  if (Widget* widget = native_widget_mac_->GetWidget()) {
+    if (require_priority_handler &&
+        !widget->GetFocusManager()->HasPriorityHandler(accelerator)) {
+      return true;
+    }
+    *was_handled = widget->GetFocusManager()->ProcessAccelerator(accelerator);
+  }
+  return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -986,10 +1036,55 @@ void BridgedNativeWidgetHostImpl::GetWindowFrameTitlebarHeight(
   std::move(callback).Run(override_titlebar_height, titlebar_height);
 }
 
+void BridgedNativeWidgetHostImpl::GetAccessibilityTokens(
+    const std::vector<uint8_t>& window_token,
+    const std::vector<uint8_t>& view_token,
+    GetAccessibilityTokensCallback callback) {
+  remote_window_accessible_ =
+      ui::RemoteAccessibility::GetRemoteElementFromToken(window_token);
+  remote_view_accessible_ =
+      ui::RemoteAccessibility::GetRemoteElementFromToken(view_token);
+  [remote_view_accessible_ setWindowUIElement:remote_window_accessible_.get()];
+  [remote_view_accessible_
+      setTopLevelUIElement:remote_window_accessible_.get()];
+
+  id element_id = GetNativeViewAccessible();
+  std::move(callback).Run(
+      getpid(), ui::RemoteAccessibility::GetTokenForLocalElement(element_id));
+}
+
+void BridgedNativeWidgetHostImpl::ValidateUserInterfaceItem(
+    int32_t command,
+    ValidateUserInterfaceItemCallback callback) {
+  views_bridge_mac::mojom::ValidateUserInterfaceItemResultPtr result;
+  ValidateUserInterfaceItem(command, &result);
+  std::move(callback).Run(std::move(result));
+}
+
+void BridgedNativeWidgetHostImpl::ExecuteCommand(
+    int32_t command,
+    WindowOpenDisposition window_open_disposition,
+    bool is_before_first_responder,
+    ExecuteCommandCallback callback) {
+  bool was_executed = false;
+  ExecuteCommand(command, window_open_disposition, is_before_first_responder,
+                 &was_executed);
+  std::move(callback).Run(was_executed);
+}
+
+void BridgedNativeWidgetHostImpl::HandleAccelerator(
+    const ui::Accelerator& accelerator,
+    bool require_priority_handler,
+    HandleAcceleratorCallback callback) {
+  bool was_handled = false;
+  HandleAccelerator(accelerator, require_priority_handler, &was_handled);
+  std::move(callback).Run(was_handled);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // BridgedNativeWidgetHostImpl, DialogObserver:
 
-void BridgedNativeWidgetHostImpl::OnDialogModelChanged() {
+void BridgedNativeWidgetHostImpl::OnDialogChanged() {
   // Note it's only necessary to clear the TouchBar. If the OS needs it again,
   // a new one will be created.
   bridge()->ClearTouchBar();
@@ -1030,6 +1125,13 @@ ui::EventDispatchDetails BridgedNativeWidgetHostImpl::DispatchKeyEventPostIME(
     native_widget_mac_->GetWidget()->OnKeyEvent(key);
   CallDispatchKeyEventPostIMEAck(key, std::move(ack_callback));
   return ui::EventDispatchDetails();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// BridgedNativeWidgetHostImpl, AccessibilityFocusOverrider::Client:
+
+id BridgedNativeWidgetHostImpl::GetAccessibilityFocusedUIElement() {
+  return [GetNativeViewAccessible() accessibilityFocusedUIElement];
 }
 
 ////////////////////////////////////////////////////////////////////////////////

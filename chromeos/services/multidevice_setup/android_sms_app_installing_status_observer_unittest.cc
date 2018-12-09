@@ -6,11 +6,11 @@
 
 #include <string>
 
+#include "chromeos/components/multidevice/remote_device_test_util.h"
 #include "chromeos/services/multidevice_setup/fake_feature_state_manager.h"
 #include "chromeos/services/multidevice_setup/fake_host_status_provider.h"
 #include "chromeos/services/multidevice_setup/public/cpp/fake_android_sms_app_helper_delegate.h"
 #include "chromeos/services/multidevice_setup/public/mojom/multidevice_setup.mojom.h"
-#include "components/cryptauth/remote_device_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace chromeos {
@@ -52,7 +52,7 @@ class MultiDeviceSetupAndroidSmsAppInstallingStatusObserverTest
 
   void SetHostWithStatus(
       mojom::HostStatus host_status,
-      const base::Optional<cryptauth::RemoteDeviceRef>& host_device) {
+      const base::Optional<multidevice::RemoteDeviceRef>& host_device) {
     fake_host_status_provider_->SetHostWithStatus(host_status, host_device);
   }
 
@@ -60,8 +60,8 @@ class MultiDeviceSetupAndroidSmsAppInstallingStatusObserverTest
     return fake_android_sms_app_helper_delegate_;
   }
 
-  cryptauth::RemoteDeviceRef GetFakePhone() {
-    return cryptauth::RemoteDeviceRefBuilder()
+  multidevice::RemoteDeviceRef GetFakePhone() {
+    return multidevice::RemoteDeviceRefBuilder()
         .SetPublicKey(kFakePhoneKey)
         .SetName(kFakePhoneName)
         .Build();
@@ -86,8 +86,6 @@ class MultiDeviceSetupAndroidSmsAppInstallingStatusObserverTest
 
 TEST_F(MultiDeviceSetupAndroidSmsAppInstallingStatusObserverTest,
        InstallsAfterHostPending) {
-  SetMessagesFeatureState(mojom::FeatureState::kUnavailableNoVerifiedHost);
-  fake_app_helper_delegate()->Reset();
   EXPECT_FALSE(fake_app_helper_delegate()->HasInstalledApp());
 
   SetHostWithStatus(mojom::HostStatus::kEligibleHostExistsButNoHostSet,
@@ -161,10 +159,30 @@ TEST_F(MultiDeviceSetupAndroidSmsAppInstallingStatusObserverTest,
 }
 
 TEST_F(MultiDeviceSetupAndroidSmsAppInstallingStatusObserverTest,
-       InstallsEvenIfFeatureIsDisabledByUser) {
+       CleansUpPwaInstallationWhenDisabled) {
+  SetMessagesFeatureState(mojom::FeatureState::kNotSupportedByChromebook);
   EXPECT_FALSE(fake_app_helper_delegate()->HasInstalledApp());
+  SetMessagesFeatureState(mojom::FeatureState::kEnabledByUser);
+  EXPECT_TRUE(fake_app_helper_delegate()->HasInstalledApp());
+  EXPECT_TRUE(fake_app_helper_delegate()->IsDefaultToPersistCookieSet());
+
   SetMessagesFeatureState(mojom::FeatureState::kDisabledByUser);
   EXPECT_TRUE(fake_app_helper_delegate()->HasInstalledApp());
+  EXPECT_FALSE(fake_app_helper_delegate()->IsDefaultToPersistCookieSet());
+}
+
+TEST_F(MultiDeviceSetupAndroidSmsAppInstallingStatusObserverTest,
+       DoesNotInstallWhenFeatureIsDisabledByUser) {
+  EXPECT_FALSE(fake_app_helper_delegate()->HasInstalledApp());
+  SetMessagesFeatureState(mojom::FeatureState::kDisabledByUser);
+  EXPECT_FALSE(fake_app_helper_delegate()->HasInstalledApp());
+}
+
+TEST_F(MultiDeviceSetupAndroidSmsAppInstallingStatusObserverTest,
+       DoesNotInstallWhenSuiteIsDisabledByUser) {
+  EXPECT_FALSE(fake_app_helper_delegate()->HasInstalledApp());
+  SetMessagesFeatureState(mojom::FeatureState::kUnavailableSuiteDisabled);
+  EXPECT_FALSE(fake_app_helper_delegate()->HasInstalledApp());
 }
 
 TEST_F(MultiDeviceSetupAndroidSmsAppInstallingStatusObserverTest,

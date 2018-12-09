@@ -13,7 +13,6 @@
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
-#include "services/service_manager/public/cpp/service_test.h"
 #include "services/ws/common/util.h"
 #include "services/ws/ids.h"
 #include "services/ws/public/mojom/constants.mojom.h"
@@ -162,6 +161,8 @@ class TestWindowTreeClient2 : public TestWindowTreeClient {
     binding_.Bind(std::move(request));
   }
 
+  ClientSpecificId client_id() const { return client_id_; }
+
   // Runs a nested MessageLoop until |count| changes (calls to
   // WindowTreeClient functions) have been received.
   void WaitForChangeCount(size_t count) {
@@ -277,6 +278,7 @@ class TestWindowTreeClient2 : public TestWindowTreeClient {
   };
 
   // TestWindowTreeClient:
+  void OnClientId(ClientSpecificId id) override { client_id_ = id; }
   void OnChangeAdded() override {
     if (wait_state_.get() &&
         tracker_.changes()->size() >= wait_state_->change_count) {
@@ -438,6 +440,7 @@ class TestWindowTreeClient2 : public TestWindowTreeClient {
   uint32_t waiting_change_id_;
   bool on_change_completed_result_;
   std::unique_ptr<base::RunLoop> change_completed_run_loop_;
+  ClientSpecificId client_id_ = 0u;
 
   DISALLOW_COPY_AND_ASSIGN(TestWindowTreeClient2);
 };
@@ -634,6 +637,10 @@ class WindowTreeClientTest : public WindowServerServiceTestBase {
 
   DISALLOW_COPY_AND_ASSIGN(WindowTreeClientTest);
 };
+
+TEST_F(WindowTreeClientTest, GotClientId) {
+  EXPECT_NE(0u, wt_client1_->client_id());
+}
 
 // Verifies two clients get different ids.
 TEST_F(WindowTreeClientTest, TwoClientsGetDifferentClientIds) {
@@ -1074,11 +1081,11 @@ TEST_F(WindowTreeClientTest, DeleteRootWithChildren) {
   ASSERT_TRUE(wt_client2()->AddWindow(window_2_1, window_2_2));
 }
 
-// Verifies DeleteWindow isn't allowed from a separate client.
-TEST_F(WindowTreeClientTest, DeleteWindowFromAnotherClientDisallowed) {
+TEST_F(WindowTreeClientTest, DeleteUnknownWindowSucceeds) {
   ASSERT_NO_FATAL_FAILURE(EstablishSecondClient(true));
-  // This id is unknown, so deletion should fail.
-  EXPECT_FALSE(wt_client2()->DeleteWindow(BuildWindowId(client_id_1(), 2)));
+  // Even though the window is unknown, deletion succeeds to avoid races with
+  // the client (both sides deleting a window at the same time).
+  EXPECT_TRUE(wt_client2()->DeleteWindow(BuildWindowId(client_id_1(), 2)));
 }
 
 // Verifies if a window was deleted and then reused that other clients are
@@ -1215,7 +1222,9 @@ TEST_F(WindowTreeClientTest, DISABLED_SetWindowBounds) {
   wt_client2_->set_track_root_bounds_changes(true);
 
   viz::ParentLocalSurfaceIdAllocator allocator;
-  viz::LocalSurfaceId local_surface_id = allocator.GetCurrentLocalSurfaceId();
+  allocator.GenerateId();
+  viz::LocalSurfaceId local_surface_id =
+      allocator.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   wt1()->SetWindowBounds(10, window_1_1, gfx::Rect(0, 0, 100, 100),
                          local_surface_id);
   ASSERT_TRUE(wt_client1()->WaitForChangeCompleted(10));

@@ -13,6 +13,7 @@
 
 #include "base/macros.h"
 #include "base/memory/aligned_memory.h"
+#include "base/memory/ptr_util.h"
 #include "base/numerics/safe_math.h"
 #include "base/process/process_handle.h"
 #include "build/build_config.h"
@@ -57,6 +58,8 @@ const size_t kMaxUnusedReadBufferCapacity = 4096;
 // Linux: The platform imposes a limit of 253 handles per sendmsg().
 // Fuchsia: The zx_channel_write() API supports up to 64 handles.
 const size_t kMaxAttachedHandles = 64;
+
+Channel::Message::Message() = default;
 
 Channel::Message::Message(size_t payload_size, size_t max_handles)
     : Message(payload_size, payload_size, max_handles) {}
@@ -162,6 +165,19 @@ Channel::Message::~Message() {
 }
 
 // static
+Channel::MessagePtr Channel::Message::CreateRawForFuzzing(
+    base::span<const unsigned char> data) {
+  auto message = base::WrapUnique(new Message);
+  message->size_ = data.size();
+  if (data.size()) {
+    message->data_ = static_cast<char*>(
+        base::AlignedAlloc(data.size(), kChannelMessageAlignment));
+    std::copy(data.begin(), data.end(), message->data_);
+  }
+  return message;
+}
+
+// static
 Channel::MessagePtr Channel::Message::Deserialize(
     const void* data,
     size_t data_num_bytes,
@@ -177,8 +193,10 @@ Channel::MessagePtr Channel::Message::Deserialize(
     return nullptr;
   }
 
+  // If a message isn't explicitly identified as type NORMAL_LEGACY, it is
+  // expected to have a full-size header.
   const Header* header = nullptr;
-  if (legacy_header->message_type == MessageType::NORMAL)
+  if (legacy_header->message_type != MessageType::NORMAL_LEGACY)
     header = reinterpret_cast<const Header*>(data);
 
   uint32_t extra_header_size = 0;

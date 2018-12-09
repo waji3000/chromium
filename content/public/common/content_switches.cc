@@ -267,14 +267,17 @@ const char kDisableSmoothScrolling[]        = "disable-smooth-scrolling";
 // Disables the use of a 3D software rasterizer.
 const char kDisableSoftwareRasterizer[]     = "disable-software-rasterizer";
 
-// Disables the Web Speech API.
+// Disables the Web Speech API (both speech recognition and synthesis).
 const char kDisableSpeechAPI[]              = "disable-speech-api";
 
+// Disables the speech synthesis part of Web Speech API.
+const char kDisableSpeechSynthesisAPI[]     = "disable-speech-synthesis-api";
+
 // Disables adding the test certs in the network process.
-const char kDisableTestCerts[] = "disable-test-root-certs";
+const char kDisableTestCerts[]              = "disable-test-root-certs";
 
 // Disable multithreaded GPU compositing of web content.
-const char kDisableThreadedCompositing[]     = "disable-threaded-compositing";
+const char kDisableThreadedCompositing[]    = "disable-threaded-compositing";
 
 // Disable multithreaded, compositor scrolling of web content.
 const char kDisableThreadedScrolling[]      = "disable-threaded-scrolling";
@@ -328,10 +331,6 @@ const char kEnablePreferCompositingToLCDText[] =
 // Applied before kDisableBlinkFeatures, and after other flags that change these
 // features.
 const char kEnableBlinkFeatures[]           = "enable-blink-features";
-
-// This is now an alias of "--enable-blink-features=BlinkGenPropertyTrees".
-// TODO(pdr): This flag is redundant and should be removed.
-const char kEnableBlinkGenPropertyTrees[] = "enable-blink-gen-property-trees";
 
 // Enables Web Platform features that are in development.
 const char kEnableExperimentalWebPlatformFeatures[] =
@@ -395,11 +394,6 @@ const char kEnableServiceBinaryLauncher[] = "enable-service-binary-launcher";
 
 // Enables the Skia benchmarking extension
 const char kEnableSkiaBenchmarking[]        = "enable-skia-benchmarking";
-
-// Enables slimming paint phase 2: https://www.chromium.org/blink/slimming-paint
-// This is now an alias of "--enable-blink-features=SlimmingPaintV2".
-// TODO(pdr): This flag is redundant should be removed.
-const char kEnableSlimmingPaintV2[]         = "enable-slimming-paint-v2";
 
 // On platforms that support it, enables smooth scroll animation.
 const char kEnableSmoothScrolling[]         = "enable-smooth-scrolling";
@@ -578,6 +572,17 @@ const char kLogFile[] = "log-file";
 // portrait mode (i.e. Android) so the page should be rescaled to fit.
 const char kMainFrameResizesAreOrientationChanges[] =
     "main-frame-resizes-are-orientation-changes";
+
+// Specifies the maximum disk cache size for the ApplicationCache. The default
+// value is 250MB.
+// TODO(crbug.com/895825): Remove this flag in Feb 2019.
+const char kMaxAppCacheDiskCacheSizeMb[] = "max-appcache-disk-cache-size-mb";
+
+// Specifies the maximum cache size per an origin for the ApplicationCache.
+// The default value is 5MB.
+// TODO(crbug.com/895825): Remove this flag in Feb 2019.
+const char kMaxAppCacheOriginCacheSizeMb[] =
+    "max-appcache-origin-cache-size-mb";
 
 // Sets the maximium decoded image size limitation.
 const char kMaxDecodedImageSizeMb[] = "max-decoded-image-size-mb";
@@ -767,8 +772,23 @@ const char kSingleProcess[]                 = "single-process";
 // process consolidation, not isolation). You probably want this one.
 const char kSitePerProcess[]                = "site-per-process";
 
-// Disables enabling site isolation (i.e., --site-per-process) via field trial.
-const char kDisableSiteIsolationTrials[] = "disable-site-isolation-trials";
+// Disables site isolation.
+//
+// Note that the opt-in (to site-per-process, isolate-origins, etc.) via
+// enterprise policy and/or cmdline takes precedence over the
+// kDisableSiteIsolation switch (i.e. the opt-in takes effect despite potential
+// presence of kDisableSiteIsolation switch).
+//
+// Note that for historic reasons the name of the switch misleadingly mentions
+// "trials", but the switch also disables the default site isolation that ships
+// on desktop since M67.  The name of the switch is preserved for
+// backcompatibility of chrome://flags.
+const char kDisableSiteIsolation[] = "disable-site-isolation-trials";
+
+// Just like kDisableSiteIsolation, but doesn't show the "stability and security
+// will suffer" butter bar warning.
+const char kDisableSiteIsolationForPolicy[] =
+    "disable-site-isolation-for-policy";
 
 // Specifies if the browser should start in fullscreen mode, like if the user
 // had pressed F11 right after startup.

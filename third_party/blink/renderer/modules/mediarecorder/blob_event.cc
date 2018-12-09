@@ -12,18 +12,18 @@ namespace blink {
 // static
 BlobEvent* BlobEvent::Create(const AtomicString& type,
                              const BlobEventInit* initializer) {
-  return new BlobEvent(type, initializer);
+  return MakeGarbageCollected<BlobEvent>(type, initializer);
 }
 
 // static
 BlobEvent* BlobEvent::Create(const AtomicString& type,
                              Blob* blob,
                              double timecode) {
-  return new BlobEvent(type, blob, timecode);
+  return MakeGarbageCollected<BlobEvent>(type, blob, timecode);
 }
 
 const AtomicString& BlobEvent::InterfaceName() const {
-  return EventNames::BlobEvent;
+  return event_interface_names::kBlobEvent;
 }
 
 void BlobEvent::Trace(blink::Visitor* visitor) {

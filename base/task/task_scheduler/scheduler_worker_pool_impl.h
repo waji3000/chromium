@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/base_export.h"
+#include "base/compiler_specific.h"
 #include "base/containers/stack.h"
 #include "base/logging.h"
 #include "base/macros.h"
@@ -95,7 +96,8 @@ class BASE_EXPORT SchedulerWorkerPoolImpl : public SchedulerWorkerPool {
 
   // SchedulerWorkerPool:
   void JoinForTesting() override;
-  void ReEnqueueSequence(scoped_refptr<Sequence> sequence) override;
+  void ReEnqueueSequence(SequenceAndTransaction sequence_and_transaction,
+                         bool is_changing_pools) override;
 
   const HistogramBase* num_tasks_before_detach_histogram() const {
     return num_tasks_before_detach_histogram_;
@@ -147,7 +149,17 @@ class BASE_EXPORT SchedulerWorkerPoolImpl : public SchedulerWorkerPool {
   // Records number of worker.
   void RecordNumWorkersHistogram() const;
 
+  // Updates the position of the Sequence in |sequence_and_transaction| in
+  // |shared_priority_queue| based on the Sequence's current traits.
+  void UpdateSortKey(SequenceAndTransaction sequence_and_transaction);
+
+  // Removes |sequence| from |shared_priority_queue_|. Returns true if
+  // successful, or false if |sequence| is not currently in
+  // |shared_priority_queue_|, such as when a worker is running a task from it.
+  bool RemoveSequence(scoped_refptr<Sequence> sequence);
+
  private:
+  class SchedulerWorkerStarter;
   class SchedulerWorkerDelegateImpl;
 
   // Friend tests so that they can access |kBlockedWorkersPollPeriod| and
@@ -155,33 +167,36 @@ class BASE_EXPORT SchedulerWorkerPoolImpl : public SchedulerWorkerPool {
   friend class TaskSchedulerWorkerPoolBlockingTest;
   friend class TaskSchedulerWorkerPoolMayBlockTest;
 
-  // The period between calls to AdjustMaxTasks() when the pool is at capacity.
-  // This value was set unscientifically based on intuition and may be adjusted
-  // in the future.
-  static constexpr TimeDelta kBlockedWorkersPollPeriod =
-      TimeDelta::FromMilliseconds(50);
-
   // SchedulerWorkerPool:
   void OnCanScheduleSequence(scoped_refptr<Sequence> sequence) override;
+  void OnCanScheduleSequence(
+      SequenceAndTransaction sequence_and_transaction) override;
 
-  // Pushes |sequence| to |shared_priority_queue_|.
-  void PushSequenceToPriorityQueue(scoped_refptr<Sequence> sequence);
+  // Pushes the Sequence in |sequence_and_transaction| to
+  // |shared_priority_queue_|.
+  void PushSequenceToPriorityQueue(
+      SequenceAndTransaction sequence_and_transaction);
 
   // Waits until at least |n| workers are idle. |lock_| must be held to call
   // this function.
   void WaitForWorkersIdleLockRequiredForTesting(size_t n);
 
   // Wakes up the last worker from this worker pool to go idle, if any.
+  // Otherwise, creates and starts a worker, if permitted, and wakes it up.
   void WakeUpOneWorker();
 
-  // Performs the same action as WakeUpOneWorker() except asserts |lock_| is
-  // acquired rather than acquires it and returns true if worker wakeups are
-  // permitted.
-  bool WakeUpOneWorkerLockRequired();
+  // Performs the same action as WakeUpOneWorker(), except:
+  // - Asserts |lock_| is acquired rather than acquires it.
+  // - Instead of starting a worker it creates, returns it and expects that the
+  //   caller will start it once |lock_| is released.
+  scoped_refptr<SchedulerWorker> WakeUpOneWorkerLockRequired()
+      WARN_UNUSED_RESULT;
 
-  // Adds a worker, if needed, to maintain one idle worker, |max_tasks_|
-  // permitting.
-  void MaintainAtLeastOneIdleWorkerLockRequired();
+  // Creates a worker, if needed, to maintain one idle worker, |max_tasks_|
+  // permitting. Expects the caller to start the returned worker once |lock_| is
+  // released.
+  scoped_refptr<SchedulerWorker> MaintainAtLeastOneIdleWorkerLockRequired()
+      WARN_UNUSED_RESULT;
 
   // Adds |worker| to |idle_workers_stack_|.
   void AddToIdleWorkersStackLockRequired(SchedulerWorker* worker);
@@ -192,10 +207,11 @@ class BASE_EXPORT SchedulerWorkerPoolImpl : public SchedulerWorkerPool {
   // Returns true if worker cleanup is permitted.
   bool CanWorkerCleanupForTestingLockRequired();
 
-  // Tries to add a new SchedulerWorker to the pool. Returns the new
-  // SchedulerWorker on success, nullptr otherwise. Cannot be called before
-  // Start(). Must be called under the protection of |lock_|.
-  SchedulerWorker* CreateRegisterAndStartSchedulerWorkerLockRequired();
+  // Creates a worker, adds it to the pool and returns it. Expects the caller to
+  // start the returned worker. Cannot be called before Start(). Must be called
+  // under the protection of |lock_|.
+  scoped_refptr<SchedulerWorker> CreateAndRegisterWorkerLockRequired()
+      WARN_UNUSED_RESULT;
 
   // Returns the number of workers in the pool that should not run tasks due to
   // the pool being over capacity.
@@ -211,8 +227,11 @@ class BASE_EXPORT SchedulerWorkerPoolImpl : public SchedulerWorkerPool {
   TimeDelta MayBlockThreshold() const;
 
   // Starts calling AdjustMaxTasks() periodically on
-  // |service_thread_task_runner_| if not already requested.
-  void ScheduleAdjustMaxTasksIfNeeded();
+  // |service_thread_task_runner_|.
+  void ScheduleAdjustMaxTasks();
+
+  // Returns true if ScheduleAdjustMaxTasks() must be called.
+  bool MustScheduleAdjustMaxTasksLockRequired();
 
   // Calls AdjustMaxTasks() and schedules it again as necessary. May only be
   // called from the service thread.
@@ -323,9 +342,12 @@ class BASE_EXPORT SchedulerWorkerPoolImpl : public SchedulerWorkerPool {
   // incremented.
   std::unique_ptr<ConditionVariable> num_workers_cleaned_up_for_testing_cv_;
 
-  // Used for testing and makes MayBlockThreshold() return the maximum
-  // TimeDelta.
-  AtomicFlag maximum_blocked_threshold_for_testing_;
+  // Threshold after which the max tasks is increased to compensate for a
+  // worker that is within a MAY_BLOCK ScopedBlockingCall.
+  TimeDelta may_block_threshold_;
+
+  // The period between calls to AdjustMaxTasks() when the pool is at capacity.
+  TimeDelta blocked_workers_poll_period_;
 
 #if DCHECK_IS_ON()
   // Set at the start of JoinForTesting().

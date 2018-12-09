@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/macros.h"
+#include "net/third_party/quic/core/legacy_quic_stream_id_manager.h"
 #include "net/third_party/quic/core/quic_connection.h"
 #include "net/third_party/quic/core/quic_control_frame_manager.h"
 #include "net/third_party/quic/core/quic_crypto_stream.h"
@@ -20,6 +21,7 @@
 #include "net/third_party/quic/core/quic_packets.h"
 #include "net/third_party/quic/core/quic_stream.h"
 #include "net/third_party/quic/core/quic_stream_frame_data_producer.h"
+#include "net/third_party/quic/core/quic_stream_id_manager.h"
 #include "net/third_party/quic/core/quic_write_blocked_list.h"
 #include "net/third_party/quic/core/session_notifier_interface.h"
 #include "net/third_party/quic/platform/api/quic_containers.h"
@@ -32,6 +34,7 @@ namespace quic {
 class QuicCryptoStream;
 class QuicFlowController;
 class QuicStream;
+class QuicStreamIdManager;
 
 namespace test {
 class QuicSessionPeer;
@@ -108,9 +111,6 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   void OnCanWrite() override;
   void OnCongestionWindowChange(QuicTime /*now*/) override {}
   void OnConnectionMigration(AddressChangeType type) override {}
-  // Deletes streams that are safe to be deleted now that it's safe to do so (no
-  // other operations are being done on the streams at this time).
-  void PostProcessAfterData() override;
   // Adds a connection level WINDOW_UPDATE frame.
   void OnAckNeedsRetransmittableFrame() override;
   void SendPing() override;
@@ -120,6 +120,9 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   void OnPathDegrading() override;
   bool AllowSelfAddressChange() const override;
   void OnForwardProgressConfirmed() override;
+  bool OnMaxStreamIdFrame(const QuicMaxStreamIdFrame& frame) override;
+  bool OnStreamIdBlockedFrame(const QuicStreamIdBlockedFrame& frame) override;
+  bool OnStopSendingFrame(const QuicStopSendingFrame& frame) override;
 
   // QuicStreamFrameDataProducer
   WriteStreamDataResult WriteStreamData(QuicStreamId id,
@@ -157,10 +160,16 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   // includes the message status and message ID (valid if the write succeeds).
   // SendMessage flushes a message packet even it is not full. If the
   // application wants to bundle other data in the same packet, please consider
-  // adding a packet flusher around the SendMessage and/or WritevData calls. If
-  // a packet flusher is added, ensure the |message|'s buffer is not modified or
-  // deleted before exiting the flusher's scope. OnMessageAcked and
-  // OnMessageLost are called when a particular message gets acked or lost.
+  // adding a packet flusher around the SendMessage and/or WritevData calls.
+  //
+  // OnMessageAcked and OnMessageLost are called when a particular message gets
+  // acked or lost.
+  //
+  // Note that SendMessage will fail with status = MESSAGE_STATUS_BLOCKED
+  // if connection is congestion control blocked or underlying socket is write
+  // blocked. In this case the caller can retry sending message again when
+  // connection becomes available, for example after getting OnCanWrite()
+  // callback.
   MessageResult SendMessage(QuicStringPiece message);
 
   // Called when message with |message_id| gets acked.
@@ -186,6 +195,15 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
 
   // Sends a WINDOW_UPDATE frame.
   virtual void SendWindowUpdate(QuicStreamId id, QuicStreamOffset byte_offset);
+
+  // Create and transmit a STOP_SENDING frame
+  virtual void SendStopSending(uint16_t code, QuicStreamId stream_id);
+
+  // Send a MAX_STREAM_ID frame.
+  void SendMaxStreamId(QuicStreamId max_allowed_incoming_id);
+
+  // Send a STREAM_ID_BLOCKED frame.
+  void SendStreamIdBlocked(QuicStreamId max_allowed_outgoing_id);
 
   // Removes the stream associated with 'stream_id' from the active stream map.
   virtual void CloseStream(QuicStreamId stream_id);
@@ -268,10 +286,6 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   // reserved headers and crypto streams.
   size_t GetNumOpenOutgoingStreams() const;
 
-  // Returns the number of "available" streams, the stream ids less than
-  // largest_peer_created_stream_id_ that have not yet been opened.
-  size_t GetNumAvailableStreams() const;
-
   // Add the stream to the session's write-blocked list because it is blocked by
   // connection-level flow control but not by its own stream-level flow control.
   // The stream will be given a chance to write when a connection-level
@@ -311,13 +325,7 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   // Returns true if any stream is flow controller blocked.
   bool IsStreamFlowControlBlocked();
 
-  size_t max_open_incoming_streams() const {
-    return max_open_incoming_streams_;
-  }
-
-  size_t max_open_outgoing_streams() const {
-    return max_open_outgoing_streams_;
-  }
+  size_t max_open_incoming_streams() const;
 
   size_t MaxAvailableStreams() const;
 
@@ -341,10 +349,24 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
 
   bool session_decides_what_to_write() const;
 
-  bool deprecate_post_process_after_data() const;
-
   const ParsedQuicVersionVector& supported_versions() const {
     return supported_versions_;
+  }
+
+  // Called when new outgoing streams are available to be opened. This occurs
+  // when an extant, open, stream is moved to draining or closed. The default
+  // implementation does nothing.
+  virtual void OnCanCreateNewOutgoingStream();
+
+  QuicStreamId next_outgoing_stream_id() const;
+
+  // Return true if given stream is peer initiated.
+  bool IsIncomingStream(QuicStreamId id) const;
+
+  size_t GetNumLocallyClosedOutgoingStreamsHighestOffset() const;
+
+  size_t num_locally_closed_incoming_streams_highest_offset() const {
+    return num_locally_closed_incoming_streams_highest_offset_;
   }
 
  protected:
@@ -376,7 +398,11 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   // underlying counter.
   QuicStreamId GetNextOutgoingStreamId();
 
-  // Indicates whether the next outgoing stream ID can be allocated or not.
+  // Indicates whether the next outgoing stream ID can be allocated or not. The
+  // test for version-99/IETF QUIC is whether it will exceed the
+  // maximum-stream-id or not. For non-version-99 (Google) QUIC it checks
+  // whether the next stream would exceed the limit on the number of open
+  // streams.
   bool CanOpenNextOutgoingStream();
 
   // Returns existing stream with id = |stream_id|. If no such stream exists,
@@ -398,9 +424,6 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   virtual void OnFinalByteOffsetReceived(QuicStreamId id,
                                          QuicStreamOffset final_byte_offset);
 
-  // Return true if given stream is peer initiated.
-  bool IsIncomingStream(QuicStreamId id) const;
-
   // Register (|id|, |stream|) with the static stream map. Override previous
   // registrations with the same id.
   void RegisterStaticStream(QuicStreamId id, QuicStream* stream);
@@ -415,13 +438,9 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
 
   const ZombieStreamMap& zombie_streams() const { return zombie_streams_; }
 
-  void set_max_open_incoming_streams(size_t max_open_incoming_streams);
-  void set_max_open_outgoing_streams(size_t max_open_outgoing_streams);
-
   void set_largest_peer_created_stream_id(
-      QuicStreamId largest_peer_created_stream_id) {
-    largest_peer_created_stream_id_ = largest_peer_created_stream_id;
-  }
+      QuicStreamId largest_peer_created_stream_id);
+
   void set_error(QuicErrorCode error) { error_ = error; }
   QuicWriteBlockedList* write_blocked_streams() {
     return &write_blocked_streams_;
@@ -431,18 +450,8 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
 
   size_t GetNumDrainingOutgoingStreams() const;
 
-  size_t num_locally_closed_incoming_streams_highest_offset() const {
-    return num_locally_closed_incoming_streams_highest_offset_;
-  }
-
-  size_t GetNumLocallyClosedOutgoingStreamsHighestOffset() const;
-
   // Returns true if the stream is still active.
   bool IsOpenStream(QuicStreamId id);
-
-  QuicStreamId next_outgoing_stream_id() const {
-    return next_outgoing_stream_id_;
-  }
 
   // Close connection when receive a frame for a locally-created nonexistant
   // stream.
@@ -467,6 +476,10 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
 
   QuicControlFrameManager& control_frame_manager() {
     return control_frame_manager_;
+  }
+
+  const LegacyQuicStreamIdManager& stream_id_manager() const {
+    return stream_id_manager_;
   }
 
  private:
@@ -525,12 +538,6 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
 
   QuicConfig config_;
 
-  // The maximum number of outgoing streams this connection can open.
-  size_t max_open_outgoing_streams_;
-
-  // The maximum number of incoming streams this connection will allow.
-  size_t max_open_incoming_streams_;
-
   // Static streams, such as crypto and header streams. Owned by child classes
   // that create these streams.
   StaticStreamMap static_stream_map_;
@@ -538,19 +545,19 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   // Map from StreamId to pointers to streams. Owns the streams.
   DynamicStreamMap dynamic_stream_map_;
 
-  // The ID to use for the next outgoing stream.
-  QuicStreamId next_outgoing_stream_id_;
-
-  // Set of stream ids that are less than the largest stream id that has been
-  // received, but are nonetheless available to be created.
-  QuicUnorderedSet<QuicStreamId> available_streams_;
-
   // Set of stream ids that are "draining" -- a FIN has been sent and received,
   // but the stream object still exists because not all the received data has
   // been consumed.
   QuicUnorderedSet<QuicStreamId> draining_streams_;
 
-  QuicStreamId largest_peer_created_stream_id_;
+  // TODO(fayang): Add a UberStreamIdManager which contains a
+  // LegacyQuicStreamIdManager and two QuicStreamIdManager (for unidirectional
+  // and bidirectional streams, respectively).
+  // Manages stream IDs for Google QUIC.
+  LegacyQuicStreamIdManager stream_id_manager_;
+
+  // Manages stream IDs for version99/IETF QUIC
+  QuicStreamIdManager v99_streamid_manager_;
 
   // A counter for peer initiated streams which are in the dynamic_stream_map_.
   size_t num_dynamic_incoming_streams_;

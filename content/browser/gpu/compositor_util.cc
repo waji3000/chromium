@@ -18,7 +18,7 @@
 #include "base/numerics/ranges.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "build/build_config.h"
 #include "cc/base/switches.h"
 #include "components/viz/common/features.h"
@@ -35,6 +35,7 @@
 #include "gpu/config/gpu_switches.h"
 #include "gpu/ipc/host/gpu_memory_buffer_support.h"
 #include "media/media_buildflags.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/gl/gl_switches.h"
 
 namespace content {
@@ -78,6 +79,8 @@ gpu::GpuFeatureStatus SafeGetFeatureStatus(
 gpu::GpuFeatureStatus GetGpuCompositingStatus(
     const gpu::GpuFeatureInfo& gpu_feature_info,
     GpuFeatureInfoType type) {
+  if (features::IsMultiProcessMash())
+    return gpu::kGpuFeatureStatusEnabled;
   gpu::GpuFeatureStatus status = SafeGetFeatureStatus(
       gpu_feature_info, gpu::GPU_FEATURE_TYPE_GPU_COMPOSITING);
 #if defined(USE_AURA) || defined(OS_MACOSX)

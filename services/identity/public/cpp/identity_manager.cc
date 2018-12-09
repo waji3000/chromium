@@ -54,7 +54,8 @@ IdentityManager::IdentityManager(
       token_service_(token_service),
       account_tracker_service_(account_tracker_service),
       gaia_cookie_manager_service_(gaia_cookie_manager_service),
-      primary_account_mutator_(std::move(primary_account_mutator)) {
+      primary_account_mutator_(std::move(primary_account_mutator)),
+      accounts_mutator_(token_service_) {
   signin_manager_->AddObserver(this);
   token_service_->AddDiagnosticsObserver(this);
   token_service_->AddObserver(this);
@@ -80,32 +81,6 @@ bool IdentityManager::HasPrimaryAccount() const {
   return signin_manager_->IsAuthenticated();
 }
 
-#if !defined(OS_CHROMEOS)
-void IdentityManager::ClearPrimaryAccount(
-    ClearAccountTokensAction token_action,
-    signin_metrics::ProfileSignout signout_source_metric,
-    signin_metrics::SignoutDelete signout_delete_metric) {
-  SigninManager* signin_manager =
-      SigninManager::FromSigninManagerBase(signin_manager_);
-
-  switch (token_action) {
-    case IdentityManager::ClearAccountTokensAction::kDefault:
-      signin_manager->SignOut(signout_source_metric, signout_delete_metric);
-      break;
-    case IdentityManager::ClearAccountTokensAction::kKeepAll:
-      signin_manager->SignOutAndKeepAllAccounts(signout_source_metric,
-                                                signout_delete_metric);
-      break;
-    case IdentityManager::ClearAccountTokensAction::kRemoveAll:
-      signin_manager->SignOutAndRemoveAllAccounts(signout_source_metric,
-                                                  signout_delete_metric);
-      break;
-  }
-
-  // NOTE: IdentityManager::Observers are notified in GoogleSignedOut().
-}
-#endif  // defined(OS_CHROMEOS)
-
 std::vector<AccountInfo> IdentityManager::GetAccountsWithRefreshTokens() const {
   std::vector<std::string> account_ids_with_tokens =
       token_service_->GetAccounts();
@@ -120,13 +95,12 @@ std::vector<AccountInfo> IdentityManager::GetAccountsWithRefreshTokens() const {
   return accounts;
 }
 
-std::vector<AccountInfo> IdentityManager::GetAccountsInCookieJar(
-    const std::string& source) const {
+std::vector<AccountInfo> IdentityManager::GetAccountsInCookieJar() const {
   // TODO(859882): Change this implementation to interact asynchronously with
   // GaiaCookieManagerService as detailed in
   // https://docs.google.com/document/d/1hcrJ44facCSHtMGBmPusvcoP-fAR300Hi-UFez8ffYQ/edit?pli=1#heading=h.w97eil1cygs2.
   std::vector<gaia::ListedAccount> listed_accounts;
-  gaia_cookie_manager_service_->ListAccounts(&listed_accounts, nullptr, source);
+  gaia_cookie_manager_service_->ListAccounts(&listed_accounts, nullptr);
 
   return ListedAccountsToAccountInfos(listed_accounts);
 }
@@ -192,6 +166,10 @@ PrimaryAccountMutator* IdentityManager::GetPrimaryAccountMutator() {
   return primary_account_mutator_.get();
 }
 
+AccountsMutator* IdentityManager::GetAccountsMutator() {
+  return &accounts_mutator_;
+}
+
 void IdentityManager::AddObserver(Observer* observer) {
   observer_list_.AddObserver(observer);
 }
@@ -206,6 +184,18 @@ void IdentityManager::AddDiagnosticsObserver(DiagnosticsObserver* observer) {
 
 void IdentityManager::RemoveDiagnosticsObserver(DiagnosticsObserver* observer) {
   diagnostics_observer_list_.RemoveObserver(observer);
+}
+
+SigninManagerBase* IdentityManager::GetSigninManager() {
+  return signin_manager_;
+}
+
+ProfileOAuth2TokenService* IdentityManager::GetTokenService() {
+  return token_service_;
+}
+
+AccountTrackerService* IdentityManager::GetAccountTrackerService() {
+  return account_tracker_service_;
 }
 
 void IdentityManager::SetPrimaryAccountSynchronouslyForTests(
@@ -223,14 +213,16 @@ void IdentityManager::SetPrimaryAccountSynchronously(
   signin_manager_->SetAuthenticatedAccountInfo(gaia_id, email_address);
 
   if (!refresh_token.empty()) {
-    token_service_->UpdateCredentials(GetPrimaryAccountId(), refresh_token);
+    // Note: Source for the operation is |Unknown| as the method
+    // |SetPrimaryAccountSynchronously| is only used for testing.
+    token_service_->UpdateCredentials(
+        GetPrimaryAccountId(), refresh_token,
+        signin_metrics::SourceForRefreshTokenOperation::kUnknown);
   }
 }
 
-// Populates and returns an AccountInfo object corresponding to |account_id|,
-// which must be an account with a refresh token.
 AccountInfo IdentityManager::GetAccountInfoForAccountWithRefreshToken(
-    std::string account_id) const {
+    const std::string& account_id) const {
   DCHECK(HasAccountWithRefreshToken(account_id));
 
   AccountInfo account_info =
@@ -261,6 +253,14 @@ void IdentityManager::GoogleSigninSucceeded(const AccountInfo& account_info) {
   }
 }
 
+void IdentityManager::GoogleSigninSucceededWithPassword(
+    const AccountInfo& account_info,
+    const std::string& password) {
+  for (auto& observer : observer_list_) {
+    observer.OnPrimaryAccountSetWithPassword(account_info, password);
+  }
+}
+
 void IdentityManager::GoogleSignedOut(const AccountInfo& account_info) {
   DCHECK(!HasPrimaryAccount());
   for (auto& observer : observer_list_) {
@@ -277,20 +277,8 @@ void IdentityManager::OnRefreshTokenAvailable(const std::string& account_id) {
   AccountInfo account_info =
       GetAccountInfoForAccountWithRefreshToken(account_id);
 
-  // Compute the validity of the new refresh token: PO2TS sets an account's
-  // refresh token to be invalid (error CREDENTIALS_REJECTED_BY_CLIENT) if the
-  // user signs out of that account on the web.
-  // TODO(blundell): Hide this logic inside PO2TS.
-  bool is_valid = true;
-  GoogleServiceAuthError token_error = token_service_->GetAuthError(account_id);
-  if (token_error == GoogleServiceAuthError::FromInvalidGaiaCredentialsReason(
-                         GoogleServiceAuthError::InvalidGaiaCredentialsReason::
-                             CREDENTIALS_REJECTED_BY_CLIENT)) {
-    is_valid = false;
-  }
-
   for (auto& observer : observer_list_) {
-    observer.OnRefreshTokenUpdatedForAccount(account_info, is_valid);
+    observer.OnRefreshTokenUpdatedForAccount(account_info);
   }
 }
 

@@ -74,7 +74,8 @@ void LocalWindowProxy::Trace(blink::Visitor* visitor) {
 void LocalWindowProxy::DisposeContext(Lifecycle next_status,
                                       FrameReuseStatus frame_reuse_status) {
   DCHECK(next_status == Lifecycle::kGlobalObjectIsDetached ||
-         next_status == Lifecycle::kFrameIsDetached);
+         next_status == Lifecycle::kFrameIsDetached ||
+         next_status == Lifecycle::kForciblyPurgeV8Memory);
 
   if (lifecycle_ != Lifecycle::kContextIsInitialized)
     return;
@@ -86,8 +87,8 @@ void LocalWindowProxy::DisposeContext(Lifecycle next_status,
   // it returns.
   GetFrame()->Client()->WillReleaseScriptContext(context, world_->GetWorldId());
   MainThreadDebugger::Instance()->ContextWillBeDestroyed(script_state_);
-
-  if (next_status == Lifecycle::kGlobalObjectIsDetached) {
+  if (next_status == Lifecycle::kGlobalObjectIsDetached ||
+      next_status == Lifecycle::kForciblyPurgeV8Memory) {
     // Clean up state on the global proxy, which will be reused.
     if (!global_proxy_.IsEmpty()) {
       CHECK(global_proxy_ == context->Global());
@@ -224,7 +225,7 @@ void LocalWindowProxy::CreateContext() {
     // in some cases, e.g. loading XML files.
     if (context.IsEmpty()) {
       v8::Local<v8::ObjectTemplate> global_template =
-          V8Window::domTemplate(isolate, World())->InstanceTemplate();
+          V8Window::DomTemplate(isolate, World())->InstanceTemplate();
       CHECK(!global_template.IsEmpty());
       context = v8::Context::New(isolate, &extension_configuration,
                                  global_template, global_proxy);
@@ -268,7 +269,7 @@ void LocalWindowProxy::InstallConditionalFeatures() {
   wrapper_type_info->InstallConditionalFeatures(
       context, World(), global_proxy, unused_prototype_object,
       unused_interface_object,
-      wrapper_type_info->domTemplate(GetIsolate(), World()));
+      wrapper_type_info->DomTemplate(GetIsolate(), World()));
 
   if (World().IsMainWorld()) {
     // For the main world, install any remaining conditional bindings (i.e.

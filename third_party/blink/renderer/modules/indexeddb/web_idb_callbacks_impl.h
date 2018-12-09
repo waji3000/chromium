@@ -31,18 +31,18 @@
 
 #include <memory>
 
-#include "third_party/blink/public/platform/modules/indexeddb/web_idb_callbacks.h"
+#include "third_party/blink/renderer/modules/indexeddb/web_idb_callbacks.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
 
 namespace blink {
 
+class IDBKey;
 class IDBRequest;
 class WebIDBCursor;
 class WebIDBDatabase;
 class WebIDBDatabaseError;
-class WebIDBKey;
-struct WebIDBMetadata;
+struct IDBDatabaseMetadata;
 struct WebIDBNameAndVersion;
 class WebIDBValue;
 
@@ -59,21 +59,23 @@ class WebIDBCallbacksImpl final : public WebIDBCallbacks {
   void OnSuccess(const WebVector<WebIDBNameAndVersion>&) override;
   void OnSuccess(const WebVector<WebString>&) override;
   void OnSuccess(WebIDBCursor*,
-                 WebIDBKey,
-                 WebIDBKey primary_key,
+                 std::unique_ptr<IDBKey>,
+                 std::unique_ptr<IDBKey> primary_key,
                  WebIDBValue) override;
-  void OnSuccess(WebIDBDatabase*, const WebIDBMetadata&) override;
-  void OnSuccess(WebIDBKey) override;
+  void OnSuccess(WebIDBDatabase*, const IDBDatabaseMetadata&) override;
+  void OnSuccess(std::unique_ptr<IDBKey>) override;
   void OnSuccess(WebIDBValue) override;
   void OnSuccess(WebVector<WebIDBValue>) override;
   void OnSuccess(long long) override;
   void OnSuccess() override;
-  void OnSuccess(WebIDBKey, WebIDBKey primary_key, WebIDBValue) override;
+  void OnSuccess(std::unique_ptr<IDBKey>,
+                 std::unique_ptr<IDBKey> primary_key,
+                 WebIDBValue) override;
   void OnBlocked(long long old_version) override;
   void OnUpgradeNeeded(long long old_version,
                        WebIDBDatabase*,
-                       const WebIDBMetadata&,
-                       unsigned short data_loss,
+                       const IDBDatabaseMetadata&,
+                       mojom::IDBDataLoss data_loss,
                        WebString data_loss_message) override;
   void Detach() override;
 

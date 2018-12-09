@@ -51,7 +51,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   void SetNextCommitWaitsForActivation() override;
   bool RequestedAnimatePending() override;
   void NotifyInputThrottledUntilCommit() override {}
-  void SetDeferCommits(bool defer_commits) override;
+  void SetDeferMainFrameUpdate(bool defer_main_frame_update) override;
   bool CommitRequested() const override;
   void Start() override;
   void Stop() override;
@@ -75,6 +75,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   bool WillBeginImplFrame(const viz::BeginFrameArgs& args) override;
   void DidFinishImplFrame() override;
   void DidNotProduceFrame(const viz::BeginFrameAck& ack) override;
+  void WillNotReceiveBeginFrame() override;
   void ScheduledActionSendBeginMainFrame(
       const viz::BeginFrameArgs& args) override;
   DrawResult ScheduledActionDrawIfPossible() override;
@@ -173,7 +174,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   bool inside_impl_frame_;
 #endif
   bool inside_draw_;
-  bool defer_commits_;
+  bool defer_main_frame_update_;
   bool animate_requested_;
   bool commit_requested_;
   bool inside_synchronous_composite_;

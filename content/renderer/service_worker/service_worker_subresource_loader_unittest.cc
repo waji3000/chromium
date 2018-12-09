@@ -122,7 +122,8 @@ class FakeNetworkURLLoaderFactory final
   DISALLOW_COPY_AND_ASSIGN(FakeNetworkURLLoaderFactory);
 };
 
-class FakeControllerServiceWorker : public mojom::ControllerServiceWorker {
+class FakeControllerServiceWorker
+    : public blink::mojom::ControllerServiceWorker {
  public:
   FakeControllerServiceWorker() = default;
   ~FakeControllerServiceWorker() override = default;
@@ -239,7 +240,7 @@ class FakeControllerServiceWorker : public mojom::ControllerServiceWorker {
     }
   }
 
-  // mojom::ControllerServiceWorker:
+  // blink::mojom::ControllerServiceWorker:
   void DispatchFetchEvent(
       blink::mojom::DispatchFetchEventParamsPtr params,
       blink::mojom::ServiceWorkerFetchResponseCallbackPtr response_callback,
@@ -259,27 +260,24 @@ class FakeControllerServiceWorker : public mojom::ControllerServiceWorker {
         response_callback->OnResponse(OkResponse(nullptr /* blob_body */),
                                       std::move(timing));
         std::move(callback).Run(
-            blink::mojom::ServiceWorkerEventStatus::COMPLETED,
-            base::TimeTicks());
+            blink::mojom::ServiceWorkerEventStatus::COMPLETED);
         break;
       case ResponseMode::kAbort:
-        std::move(callback).Run(blink::mojom::ServiceWorkerEventStatus::ABORTED,
-                                base::TimeTicks());
+        std::move(callback).Run(
+            blink::mojom::ServiceWorkerEventStatus::ABORTED);
         break;
       case ResponseMode::kStream:
         response_callback->OnResponseStream(OkResponse(nullptr /* blob_body */),
                                             std::move(stream_handle_),
                                             std::move(timing));
         std::move(callback).Run(
-            blink::mojom::ServiceWorkerEventStatus::COMPLETED,
-            base::TimeTicks());
+            blink::mojom::ServiceWorkerEventStatus::COMPLETED);
         break;
       case ResponseMode::kBlob:
         response_callback->OnResponse(OkResponse(std::move(blob_body_)),
                                       std::move(timing));
         std::move(callback).Run(
-            blink::mojom::ServiceWorkerEventStatus::COMPLETED,
-            base::TimeTicks());
+            blink::mojom::ServiceWorkerEventStatus::COMPLETED);
         break;
 
       case ResponseMode::kBlobRange: {
@@ -312,29 +310,25 @@ class FakeControllerServiceWorker : public mojom::ControllerServiceWorker {
                                                 blob_range_body_.size()));
         response_callback->OnResponse(std::move(response), std::move(timing));
         std::move(callback).Run(
-            blink::mojom::ServiceWorkerEventStatus::COMPLETED,
-            base::TimeTicks::Now());
+            blink::mojom::ServiceWorkerEventStatus::COMPLETED);
         break;
       }
 
       case ResponseMode::kFallbackResponse:
         response_callback->OnFallback(std::move(timing));
         std::move(callback).Run(
-            blink::mojom::ServiceWorkerEventStatus::COMPLETED,
-            base::TimeTicks::Now());
+            blink::mojom::ServiceWorkerEventStatus::COMPLETED);
         break;
       case ResponseMode::kErrorResponse:
         response_callback->OnResponse(ErrorResponse(), std::move(timing));
         std::move(callback).Run(
-            blink::mojom::ServiceWorkerEventStatus::REJECTED,
-            base::TimeTicks::Now());
+            blink::mojom::ServiceWorkerEventStatus::REJECTED);
         break;
       case ResponseMode::kRedirectResponse: {
         response_callback->OnResponse(
             RedirectResponse(redirect_location_header_), std::move(timing));
         std::move(callback).Run(
-            blink::mojom::ServiceWorkerEventStatus::COMPLETED,
-            base::TimeTicks());
+            blink::mojom::ServiceWorkerEventStatus::COMPLETED);
         break;
       }
     }
@@ -342,7 +336,7 @@ class FakeControllerServiceWorker : public mojom::ControllerServiceWorker {
       std::move(fetch_event_callback_).Run();
   }
 
-  void Clone(mojom::ControllerServiceWorkerRequest request) override {
+  void Clone(blink::mojom::ControllerServiceWorkerRequest request) override {
     bindings_.AddBinding(this, std::move(request));
   }
 
@@ -375,7 +369,7 @@ class FakeControllerServiceWorker : public mojom::ControllerServiceWorker {
   int fetch_event_count_ = 0;
   network::ResourceRequest fetch_event_request_;
   base::OnceClosure fetch_event_callback_;
-  mojo::BindingSet<mojom::ControllerServiceWorker> bindings_;
+  mojo::BindingSet<blink::mojom::ControllerServiceWorker> bindings_;
 
   // For ResponseMode::kStream.
   blink::mojom::ServiceWorkerStreamHandlePtr stream_handle_;
@@ -427,7 +421,7 @@ class FakeServiceWorkerContainerHost
     NOTIMPLEMENTED();
   }
   void EnsureControllerServiceWorker(
-      mojom::ControllerServiceWorkerRequest request,
+      blink::mojom::ControllerServiceWorkerRequest request,
       mojom::ControllerServiceWorkerPurpose purpose) override {
     get_controller_service_worker_count_++;
     if (!fake_controller_)
@@ -582,7 +576,7 @@ class ServiceWorkerSubresourceLoaderTest : public ::testing::Test {
     // TODO(falken): It'd be nicer to also check the request body was sent to
     // network but it requires more complicated network mocking and it was hard
     // getting EmbeddedTestServer working with these tests (probably
-    // CORSFallbackResponse is too heavy). We also have Web Platform Tests that
+    // CorsFallbackResponse is too heavy). We also have Web Platform Tests that
     // cover this case in fetch-event.https.html.
   }
 
@@ -644,7 +638,7 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, Basic) {
       "ServiceWorker.LoadTiming.Subresource.ForwardServiceWorkerToWorkerReady",
       1);
   histogram_tester.ExpectTotalCount(
-      "ServiceWorker.LoadTiming.Subresource.ResponseReceivedToCompleted", 1);
+      "ServiceWorker.LoadTiming.Subresource.ResponseReceivedToCompleted2", 1);
 }
 
 TEST_F(ServiceWorkerSubresourceLoaderTest, Abort) {
@@ -672,7 +666,7 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, Abort) {
       "ServiceWorker.LoadTiming.Subresource.ForwardServiceWorkerToWorkerReady",
       0);
   histogram_tester.ExpectTotalCount(
-      "ServiceWorker.LoadTiming.Subresource.ResponseReceivedToCompleted", 0);
+      "ServiceWorker.LoadTiming.Subresource.ResponseReceivedToCompleted2", 0);
 }
 
 TEST_F(ServiceWorkerSubresourceLoaderTest, DropController) {
@@ -773,7 +767,7 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, NoController) {
       "ServiceWorker.LoadTiming.Subresource.ForwardServiceWorkerToWorkerReady",
       0);
   histogram_tester.ExpectTotalCount(
-      "ServiceWorker.LoadTiming.Subresource.ResponseReceivedToCompleted", 0);
+      "ServiceWorker.LoadTiming.Subresource.ResponseReceivedToCompleted2", 0);
 }
 
 TEST_F(ServiceWorkerSubresourceLoaderTest, DropController_RestartFetchEvent) {
@@ -836,7 +830,7 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, DropController_RestartFetchEvent) {
       "ServiceWorker.LoadTiming.Subresource.ForwardServiceWorkerToWorkerReady",
       1);
   histogram_tester.ExpectTotalCount(
-      "ServiceWorker.LoadTiming.Subresource.ResponseReceivedToCompleted", 1);
+      "ServiceWorker.LoadTiming.Subresource.ResponseReceivedToCompleted2", 1);
 }
 
 TEST_F(ServiceWorkerSubresourceLoaderTest, DropController_TooManyRestart) {
@@ -870,7 +864,7 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, DropController_TooManyRestart) {
       "ServiceWorker.LoadTiming.Subresource.ForwardServiceWorkerToWorkerReady",
       0);
   histogram_tester.ExpectTotalCount(
-      "ServiceWorker.LoadTiming.Subresource.ResponseReceivedToCompleted", 0);
+      "ServiceWorker.LoadTiming.Subresource.ResponseReceivedToCompleted2", 0);
 }
 
 TEST_F(ServiceWorkerSubresourceLoaderTest, StreamResponse) {
@@ -924,7 +918,7 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, StreamResponse) {
       "ServiceWorker.LoadTiming.Subresource.ForwardServiceWorkerToWorkerReady",
       1);
   histogram_tester.ExpectTotalCount(
-      "ServiceWorker.LoadTiming.Subresource.ResponseReceivedToCompleted", 1);
+      "ServiceWorker.LoadTiming.Subresource.ResponseReceivedToCompleted2", 1);
 }
 
 TEST_F(ServiceWorkerSubresourceLoaderTest, StreamResponse_Abort) {
@@ -978,7 +972,7 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, StreamResponse_Abort) {
       "ServiceWorker.LoadTiming.Subresource.ForwardServiceWorkerToWorkerReady",
       0);
   histogram_tester.ExpectTotalCount(
-      "ServiceWorker.LoadTiming.Subresource.ResponseReceivedToCompleted", 0);
+      "ServiceWorker.LoadTiming.Subresource.ResponseReceivedToCompleted2", 0);
 }
 
 TEST_F(ServiceWorkerSubresourceLoaderTest, BlobResponse) {
@@ -1029,7 +1023,7 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, BlobResponse) {
       "ServiceWorker.LoadTiming.Subresource.ForwardServiceWorkerToWorkerReady",
       1);
   histogram_tester.ExpectTotalCount(
-      "ServiceWorker.LoadTiming.Subresource.ResponseReceivedToCompleted", 1);
+      "ServiceWorker.LoadTiming.Subresource.ResponseReceivedToCompleted2", 1);
 }
 
 TEST_F(ServiceWorkerSubresourceLoaderTest, BlobResponseWithoutMetadata) {
@@ -1072,7 +1066,7 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, BlobResponseWithoutMetadata) {
       "ServiceWorker.LoadTiming.Subresource.ForwardServiceWorkerToWorkerReady",
       1);
   histogram_tester.ExpectTotalCount(
-      "ServiceWorker.LoadTiming.Subresource.ResponseReceivedToCompleted", 1);
+      "ServiceWorker.LoadTiming.Subresource.ResponseReceivedToCompleted2", 1);
 }
 
 // Test when the service worker responds with network fallback.
@@ -1132,7 +1126,7 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, ErrorResponse) {
       "ServiceWorker.LoadTiming.Subresource.ForwardServiceWorkerToWorkerReady",
       0);
   histogram_tester.ExpectTotalCount(
-      "ServiceWorker.LoadTiming.Subresource.ResponseReceivedToCompleted", 0);
+      "ServiceWorker.LoadTiming.Subresource.ResponseReceivedToCompleted2", 0);
 }
 
 TEST_F(ServiceWorkerSubresourceLoaderTest, RedirectResponse) {
@@ -1162,7 +1156,7 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, RedirectResponse) {
 
   // Redirect once more.
   fake_controller_.RespondWithRedirect("https://other.example.com/baz.png");
-  loader->FollowRedirect(base::nullopt, base::nullopt);
+  loader->FollowRedirect(base::nullopt, base::nullopt, base::nullopt);
   client->RunUntilRedirectReceived();
 
   EXPECT_EQ(net::OK, client->completion_status().error_code);
@@ -1181,7 +1175,7 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, RedirectResponse) {
   mojo::DataPipe data_pipe;
   fake_controller_.RespondWithStream(mojo::MakeRequest(&stream_callback),
                                      std::move(data_pipe.consumer_handle));
-  loader->FollowRedirect(base::nullopt, base::nullopt);
+  loader->FollowRedirect(base::nullopt, base::nullopt, base::nullopt);
   client->RunUntilResponseReceived();
 
   const network::ResourceResponseHead& info = client->response_head();
@@ -1251,7 +1245,7 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, TooManyRedirects) {
     redirect_location = std::string("https://www.example.com/redirect_") +
                         base::IntToString(count);
     fake_controller_.RespondWithRedirect(redirect_location);
-    loader->FollowRedirect(base::nullopt, base::nullopt);
+    loader->FollowRedirect(base::nullopt, base::nullopt, base::nullopt);
   }
   client->RunUntilComplete();
 
@@ -1267,7 +1261,7 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, TooManyRedirects) {
 }
 
 // Test when the service worker responds with network fallback to CORS request.
-TEST_F(ServiceWorkerSubresourceLoaderTest, CORSFallbackResponse) {
+TEST_F(ServiceWorkerSubresourceLoaderTest, CorsFallbackResponse) {
   fake_controller_.RespondWithFallback();
 
   network::mojom::URLLoaderFactoryPtr factory =
@@ -1281,31 +1275,31 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, CORSFallbackResponse) {
   const TestCase kTests[] = {
       {network::mojom::FetchRequestMode::kSameOrigin,
        base::Optional<url::Origin>(), false},
-      {network::mojom::FetchRequestMode::kNoCORS, base::Optional<url::Origin>(),
+      {network::mojom::FetchRequestMode::kNoCors, base::Optional<url::Origin>(),
        false},
-      {network::mojom::FetchRequestMode::kCORS, base::Optional<url::Origin>(),
+      {network::mojom::FetchRequestMode::kCors, base::Optional<url::Origin>(),
        true},
-      {network::mojom::FetchRequestMode::kCORSWithForcedPreflight,
+      {network::mojom::FetchRequestMode::kCorsWithForcedPreflight,
        base::Optional<url::Origin>(), true},
       {network::mojom::FetchRequestMode::kNavigate,
        base::Optional<url::Origin>(), false},
       {network::mojom::FetchRequestMode::kSameOrigin,
        url::Origin::Create(GURL("https://www.example.com/")), false},
-      {network::mojom::FetchRequestMode::kNoCORS,
+      {network::mojom::FetchRequestMode::kNoCors,
        url::Origin::Create(GURL("https://www.example.com/")), false},
-      {network::mojom::FetchRequestMode::kCORS,
+      {network::mojom::FetchRequestMode::kCors,
        url::Origin::Create(GURL("https://www.example.com/")), false},
-      {network::mojom::FetchRequestMode::kCORSWithForcedPreflight,
+      {network::mojom::FetchRequestMode::kCorsWithForcedPreflight,
        url::Origin::Create(GURL("https://www.example.com/")), false},
       {network::mojom::FetchRequestMode::kNavigate,
        url::Origin::Create(GURL("https://other.example.com/")), false},
       {network::mojom::FetchRequestMode::kSameOrigin,
        url::Origin::Create(GURL("https://other.example.com/")), false},
-      {network::mojom::FetchRequestMode::kNoCORS,
+      {network::mojom::FetchRequestMode::kNoCors,
        url::Origin::Create(GURL("https://other.example.com/")), false},
-      {network::mojom::FetchRequestMode::kCORS,
+      {network::mojom::FetchRequestMode::kCors,
        url::Origin::Create(GURL("https://other.example.com/")), true},
-      {network::mojom::FetchRequestMode::kCORSWithForcedPreflight,
+      {network::mojom::FetchRequestMode::kCorsWithForcedPreflight,
        url::Origin::Create(GURL("https://other.example.com/")), true},
       {network::mojom::FetchRequestMode::kNavigate,
        url::Origin::Create(GURL("https://other.example.com/")), false}};

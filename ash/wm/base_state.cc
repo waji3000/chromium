@@ -41,7 +41,6 @@ void BaseState::OnWMEvent(WindowState* window_state, const WMEvent* event) {
 
   if (event->IsBoundsEvent()) {
     HandleBoundsEvents(window_state, event);
-    window_state->UpdatePipRoundedCorners();
     return;
   }
   DCHECK(event->IsTransitionEvent());
@@ -158,7 +157,7 @@ void BaseState::UpdateMinimizedState(
     // app, but minimized.
     ::wm::SetWindowVisibilityAnimationType(
         window, previous_state_type == mojom::WindowStateType::PIP
-                    ? WINDOW_VISIBILITY_ANIMATION_TYPE_SLIDE_OUT
+                    ? WINDOW_VISIBILITY_ANIMATION_TYPE_FADE_IN_SLIDE_OUT
                     : WINDOW_VISIBILITY_ANIMATION_TYPE_MINIMIZE);
 
     window->Hide();

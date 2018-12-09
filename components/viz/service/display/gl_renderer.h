@@ -206,9 +206,18 @@ class VIZ_SERVICE_EXPORT GLRenderer : public DirectRenderer {
   static bool ShouldApplyBackgroundFilters(
       const RenderPassDrawQuad* quad,
       const cc::FilterOperations* backdrop_filters);
+  // Applies the backdrop filters to the backdrop that has been painted to this
+  // point, and returns it as an SkImage. Any opacity and/or "regular"
+  // (non-backdrop) filters will also be applied directly to the backdrop-
+  // filtered image at this point, so that the final result is as if the
+  // filtered backdrop image was painted as the starting point for this new
+  // stacking context, which would then be painted into its parent with opacity
+  // and filters applied. This is an approximation, but it should be close
+  // enough.
   sk_sp<SkImage> ApplyBackgroundFilters(
       const RenderPassDrawQuad* quad,
-      const cc::FilterOperations& backdrop_filters,
+      const cc::FilterOperations* backdrop_filters,
+      const cc::FilterOperations* regular_filters,
       uint32_t background_texture,
       const gfx::Rect& rect,
       const gfx::Rect& unclipped_rect,
@@ -294,8 +303,7 @@ class VIZ_SERVICE_EXPORT GLRenderer : public DirectRenderer {
       int width,
       int height,
       const gfx::ColorSpace& color_space);
-  void ReduceAvailableOverlayTextures(
-      const std::vector<std::unique_ptr<OverlayTexture>>& most_recent);
+  void ReduceAvailableOverlayTextures();
 
   // Schedules the |ca_layer_overlay|, which is guaranteed to have a non-null
   // |rpdq| parameter. Returns ownership of a GL texture that contains the

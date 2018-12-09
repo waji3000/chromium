@@ -112,6 +112,11 @@
   // Not implemented.
 }
 
+- (void)autofillControllerDidInsertFormElements:
+    (CWVAutofillController*)autofillController {
+  // Not implemented.
+}
+
 - (void)autofillController:(CWVAutofillController*)autofillController
     decidePolicyForLocalStorageOfCreditCard:(CWVCreditCard*)creditCard
                             decisionHandler:

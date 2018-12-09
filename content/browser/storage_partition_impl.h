@@ -28,8 +28,8 @@
 #include "content/browser/payments/payment_app_context_impl.h"
 #include "content/browser/push_messaging/push_messaging_context.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
-#include "content/browser/shared_worker/shared_worker_service_impl.h"
 #include "content/browser/url_loader_factory_getter.h"
+#include "content/browser/worker_host/shared_worker_service_impl.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/storage_partition.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
@@ -157,6 +157,9 @@ class CONTENT_EXPORT StoragePartitionImpl
   void OnCanSendReportingReports(
       const std::vector<url::Origin>& origins,
       OnCanSendReportingReportsCallback callback) override;
+  void OnCanSendDomainReliabilityUpload(
+      const GURL& origin,
+      OnCanSendDomainReliabilityUploadCallback callback) override;
 
   scoped_refptr<URLLoaderFactoryGetter> url_loader_factory_getter() {
     return url_loader_factory_getter_;

@@ -141,6 +141,8 @@ static_library("devtools") {
       "device/usb/android_usb_device.h",
       "device/usb/android_usb_socket.cc",
       "device/usb/android_usb_socket.h",
+      "device/usb/usb_device_manager_helper.cc",
+      "device/usb/usb_device_manager_helper.h",
       "device/usb/usb_device_provider.cc",
       "device/usb/usb_device_provider.h",
       "devtools_auto_opener.cc",
@@ -149,6 +151,7 @@ static_library("devtools") {
       "devtools_browser_context_manager.h",
       "devtools_contents_resizing_strategy.cc",
       "devtools_contents_resizing_strategy.h",
+      "devtools_dock_tile.h",
       "devtools_embedder_message_dispatcher.cc",
       "devtools_embedder_message_dispatcher.h",
       "devtools_eye_dropper.cc",
@@ -185,7 +188,11 @@ static_library("devtools") {
       ]
     }
   }
-
+  if (is_mac) {
+    sources += [ "devtools_dock_tile_mac.mm" ]
+  } else {
+    sources += [ "devtools_dock_tile.cc" ]
+  }
   if (!is_android) {
     deps += [ ":protocol_generated_sources" ]
     sources += [

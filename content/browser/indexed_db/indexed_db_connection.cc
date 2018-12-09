@@ -105,7 +105,7 @@ void IndexedDBConnection::RemoveObservers(
 IndexedDBTransaction* IndexedDBConnection::CreateTransaction(
     int64_t id,
     const std::set<int64_t>& scope,
-    blink::WebIDBTransactionMode mode,
+    blink::mojom::IDBTransactionMode mode,
     IndexedDBBackingStore::Transaction* backing_store_transaction) {
   CHECK_EQ(GetTransaction(id), nullptr) << "Duplicate transaction id." << id;
   std::unique_ptr<IndexedDBTransaction> transaction =
@@ -152,14 +152,6 @@ IndexedDBConnection::AddTransactionForTesting(
 
 void IndexedDBConnection::RemoveTransaction(int64_t id) {
   transactions_.erase(id);
-}
-
-int64_t IndexedDBConnection::NewObserverTransactionId() {
-  // When we overflow to 0, reset the ID to 1 (id of 0 is reserved for upgrade
-  // transactions).
-  if (next_observer_transaction_id_ == 0)
-    next_observer_transaction_id_ = 1;
-  return static_cast<int64_t>(next_observer_transaction_id_++) << 32;
 }
 
 }  // namespace content

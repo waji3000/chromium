@@ -347,8 +347,33 @@ function FileManagerUI(providersModel, element, launchParam) {
    */
   this.actionsSubmenu = new ActionsSubmenu(this.fileContextMenu);
 
+  /**
+   * @type {!FilesToast}
+   * @const
+   */
+  this.toast =
+      /** @type {!FilesToast} */ (document.querySelector('files-toast'));
+
+  /**
+   * A hidden div that can be used to announce text to screen reader/ChromeVox.
+   * @private {!HTMLElement}
+   */
+  this.a11yMessage_ = queryRequiredElement('#a11y-msg', this.element);
+
+
+  if (window.IN_TEST) {
+    /**
+     * Stores all a11y announces to be checked in tests.
+     * @public {Array<string>}
+     */
+    this.a11yAnnounces = [];
+  }
+
   // Initialize attributes.
   this.element.setAttribute('type', this.dialogType_);
+  if (launchParam.allowedPaths !== AllowedPaths.ANY_PATH_OR_URL) {
+    this.element.setAttribute('block-hosted-docs', '');
+  }
 
   // Hack: make menuitems focusable. Since the menuitems in the Files app is not
   // button so it doesn't have a tabfocus in nature. It prevents Chromevox from
@@ -631,4 +656,18 @@ FileManagerUI.prototype.showConfirmationDialog = function(isMove, messages) {
           resolve(false);
         });
   });
+};
+
+/**
+ * Send a text to screen reader/Chromevox without displaying the text in the UI.
+ * @param {string} text Text to be announced by screen reader, which should be
+ * already translated.
+ */
+FileManagerUI.prototype.speakA11yMessage = function(text) {
+  // Screen reader only reads if the content changes, so clear the content
+  // first.
+  this.a11yMessage_.textContent = '';
+  this.a11yMessage_.textContent = text;
+  if (window.IN_TEST)
+    this.a11yAnnounces.push(text);
 };

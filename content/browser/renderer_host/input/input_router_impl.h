@@ -89,7 +89,7 @@ class CONTENT_EXPORT InputRouterImpl : public InputRouter,
   void ForceSetTouchActionAuto() override;
 
   // InputHandlerHost impl
-  void CancelTouchTimeout() override;
+  void SetTouchActionFromMain(cc::TouchAction touch_action) override;
   void SetWhiteListedTouchAction(cc::TouchAction touch_action,
                                  uint32_t unique_touch_event_id,
                                  InputEventAckState state) override;
@@ -111,6 +111,7 @@ class CONTENT_EXPORT InputRouterImpl : public InputRouter,
   void ForceResetTouchActionForTest();
 
  private:
+  friend class InputRouterImplTest;
   friend class InputRouterImplTestBase;
   friend class MockRenderWidgetHost;
   friend class RenderWidgetHostSitePerProcessTest;
@@ -129,6 +130,7 @@ class CONTENT_EXPORT InputRouterImpl : public InputRouter,
                        InputEventAckSource ack_source,
                        InputEventAckState ack_result) override;
   void OnFilteringTouchEvent(const blink::WebTouchEvent& touch_event) override;
+  void FlushDeferredGestureQueue() override;
 
   // GestureEventFilterClient
   void SendGestureEventImmediately(
@@ -211,6 +213,12 @@ class CONTENT_EXPORT InputRouterImpl : public InputRouter,
   // non-zero touch timeout configuration.
   void UpdateTouchAckTimeoutEnabled();
 
+  void SendGestureEventWithoutQueueing(
+      GestureEventWithLatencyInfo& gesture_event,
+      const FilterGestureEventResult& existing_result);
+  void ProcessDeferredGestureEventQueue();
+  void OnSetWhiteListedTouchAction(cc::TouchAction touch_action);
+
   InputRouterImplClient* client_;
   InputDispositionHandler* disposition_handler_;
   int frame_tree_node_id_;
@@ -233,6 +241,8 @@ class CONTENT_EXPORT InputRouterImpl : public InputRouter,
   InputEventStreamValidator output_stream_validator_;
 
   float device_scale_factor_;
+
+  bool compositor_touch_action_enabled_;
 
   // Last touch position relative to screen. Used to compute movementX/Y.
   base::flat_map<int, gfx::Point> global_touch_position_;

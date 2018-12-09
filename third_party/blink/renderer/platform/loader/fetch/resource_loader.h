@@ -68,6 +68,12 @@ class PLATFORM_EXPORT ResourceLoader final
                                 ResourceLoadScheduler*,
                                 Resource*,
                                 uint32_t inflight_keepalive_bytes = 0);
+
+  // Assumes ResourceFetcher and Resource are non-null.
+  ResourceLoader(ResourceFetcher*,
+                 ResourceLoadScheduler*,
+                 Resource*,
+                 uint32_t inflight_keepalive_bytes);
   ~ResourceLoader() override;
   void Trace(blink::Visitor*) override;
 
@@ -103,13 +109,15 @@ class PLATFORM_EXPORT ResourceLoader final
   // A failed load is indicated by 1 DidFail(), which can occur at any time
   // before DidFinishLoading(), including synchronous inside one of the other
   // callbacks via ResourceLoader::cancel()
-  bool WillFollowRedirect(const WebURL& new_url,
-                          const WebURL& new_site_for_cookies,
-                          const WebString& new_referrer,
-                          network::mojom::ReferrerPolicy new_referrer_policy,
-                          const WebString& new_method,
-                          const WebURLResponse& passed_redirect_response,
-                          bool& report_raw_headers) override;
+  bool WillFollowRedirect(
+      const WebURL& new_url,
+      const WebURL& new_site_for_cookies,
+      const base::Optional<WebSecurityOrigin>& new_top_frame_origin,
+      const WebString& new_referrer,
+      network::mojom::ReferrerPolicy new_referrer_policy,
+      const WebString& new_method,
+      const WebURLResponse& passed_redirect_response,
+      bool& report_raw_headers) override;
   void DidSendData(unsigned long long bytes_sent,
                    unsigned long long total_bytes_to_be_sent) override;
   void DidReceiveResponse(const WebURLResponse&) override;
@@ -149,12 +157,6 @@ class PLATFORM_EXPORT ResourceLoader final
   friend class SubresourceIntegrityTest;
   class CodeCacheRequest;
 
-  // Assumes ResourceFetcher and Resource are non-null.
-  ResourceLoader(ResourceFetcher*,
-                 ResourceLoadScheduler*,
-                 Resource*,
-                 uint32_t inflight_keepalive_bytes);
-
   bool ShouldFetchCodeCache();
   void StartWith(const ResourceRequest&);
 
@@ -178,13 +180,13 @@ class PLATFORM_EXPORT ResourceLoader final
   void OnProgress(uint64_t delta) override;
   void FinishedCreatingBlob(const scoped_refptr<BlobDataHandle>&);
 
-  bool GetCORSFlag() const { return resource_->Options().cors_flag; }
+  bool GetCorsFlag() const { return resource_->Options().cors_flag; }
 
   base::Optional<ResourceRequestBlockedReason> CheckResponseNosniff(
       mojom::RequestContextType,
       const ResourceResponse&) const;
 
-  bool ShouldCheckCORSInResourceLoader() const;
+  bool ShouldCheckCorsInResourceLoader() const;
 
   std::unique_ptr<WebURLLoader> loader_;
   ResourceLoadScheduler::ClientId scheduler_client_id_;

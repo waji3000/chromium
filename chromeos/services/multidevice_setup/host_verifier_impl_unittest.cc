@@ -9,10 +9,12 @@
 #include "base/macros.h"
 #include "base/test/simple_test_clock.h"
 #include "base/timer/mock_timer.h"
+#include "chromeos/components/multidevice/remote_device_test_util.h"
+#include "chromeos/components/multidevice/software_feature.h"
+#include "chromeos/components/multidevice/software_feature_state.h"
 #include "chromeos/services/device_sync/public/cpp/fake_device_sync_client.h"
 #include "chromeos/services/multidevice_setup/fake_host_backend_delegate.h"
 #include "chromeos/services/multidevice_setup/fake_host_verifier.h"
-#include "components/cryptauth/remote_device_test_util.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -24,10 +26,10 @@ namespace {
 
 const int64_t kTestTimeMs = 1500000000000;
 
-constexpr const cryptauth::SoftwareFeature kPotentialHostSoftwareFeatures[] = {
-    cryptauth::SoftwareFeature::EASY_UNLOCK_HOST,
-    cryptauth::SoftwareFeature::MAGIC_TETHER_HOST,
-    cryptauth::SoftwareFeature::SMS_CONNECT_HOST};
+constexpr const multidevice::SoftwareFeature kPotentialHostSoftwareFeatures[] =
+    {multidevice::SoftwareFeature::kSmartLockHost,
+     multidevice::SoftwareFeature::kInstantTetheringHost,
+     multidevice::SoftwareFeature::kMessagesForWebHost};
 
 const char kRetryTimestampPrefName[] =
     "multidevice_setup.current_retry_timestamp_ms";
@@ -44,7 +46,7 @@ enum class HostState { kHostNotSet, kHostSetButNotVerified, kHostVerified };
 class MultiDeviceSetupHostVerifierImplTest : public testing::Test {
  protected:
   MultiDeviceSetupHostVerifierImplTest()
-      : test_device_(cryptauth::CreateRemoteDeviceRefForTest()) {}
+      : test_device_(multidevice::CreateRemoteDeviceRefForTest()) {}
   ~MultiDeviceSetupHostVerifierImplTest() override = default;
 
   // testing::Test:
@@ -91,8 +93,8 @@ class MultiDeviceSetupHostVerifierImplTest : public testing::Test {
     for (const auto& feature : kPotentialHostSoftwareFeatures) {
       GetMutableRemoteDevice(test_device_)->software_features[feature] =
           host_state == HostState::kHostVerified
-              ? cryptauth::SoftwareFeatureState::kEnabled
-              : cryptauth::SoftwareFeatureState::kSupported;
+              ? multidevice::SoftwareFeatureState::kEnabled
+              : multidevice::SoftwareFeatureState::kSupported;
     }
 
     if (host_state == HostState::kHostNotSet)
@@ -122,8 +124,8 @@ class MultiDeviceSetupHostVerifierImplTest : public testing::Test {
   void VerifyFindEligibleDevicesCalled() {
     fake_device_sync_client_->InvokePendingFindEligibleDevicesCallback(
         device_sync::mojom::NetworkRequestResult::kSuccess,
-        cryptauth::RemoteDeviceRefList() /* eligible_devices */,
-        cryptauth::RemoteDeviceRefList() /* ineligible_devices */);
+        multidevice::RemoteDeviceRefList() /* eligible_devices */,
+        multidevice::RemoteDeviceRefList() /* ineligible_devices */);
   }
 
   void SimulateTimePassing(const base::TimeDelta& delta,
@@ -139,7 +141,7 @@ class MultiDeviceSetupHostVerifierImplTest : public testing::Test {
   }
 
  private:
-  cryptauth::RemoteDeviceRef test_device_;
+  multidevice::RemoteDeviceRef test_device_;
 
   std::unique_ptr<FakeHostVerifierObserver> fake_observer_;
   std::unique_ptr<FakeHostBackendDelegate> fake_host_backend_delegate_;

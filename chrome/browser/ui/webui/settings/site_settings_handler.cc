@@ -38,6 +38,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
+#include "components/content_settings/core/browser/website_settings_registry.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "components/content_settings/core/common/content_settings_utils.h"
 #include "components/crx_file/id_util.h"
@@ -47,6 +48,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/common/origin_util.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/url_constants.h"
 #include "extensions/browser/extension_registry.h"
@@ -64,6 +66,10 @@
 namespace settings {
 
 namespace {
+
+// Keys of the dictionary returned by HandleIsPatternValidForType.
+constexpr char kIsValidKey[] = "isValid";
+constexpr char kReasonKey[] = "reason";
 
 constexpr char kEffectiveTopLevelDomainPlus1Name[] = "etldPlus1";
 constexpr char kOriginList[] = "origins";
@@ -182,6 +188,40 @@ void ConvertSiteGroupMapToListValue(
   }
 }
 
+bool IsPatternValidForType(const std::string& pattern_string,
+                           const std::string& type,
+                           Profile* profile,
+                           std::string* out_error) {
+  ContentSettingsType content_type =
+      site_settings::ContentSettingsTypeFromGroupName(type);
+
+  ContentSettingsPattern pattern =
+      ContentSettingsPattern::FromString(pattern_string);
+
+  HostContentSettingsMap* map =
+      HostContentSettingsMapFactory::GetForProfile(profile);
+
+  // Don't allow an input of '*', even though it's a valid pattern. This
+  // changes the default setting.
+  if (!pattern.IsValid() || pattern == ContentSettingsPattern::Wildcard()) {
+    *out_error = l10n_util::GetStringUTF8(IDS_SETTINGS_NOT_VALID_WEB_ADDRESS);
+    return false;
+  }
+
+  // Check if a setting can be set for this url and setting type, and if not,
+  // return false with a string saying why.
+  GURL url(pattern_string);
+  if (url.is_valid() && map->IsRestrictedToSecureOrigins(content_type) &&
+      !content::IsOriginSecure(url)) {
+    *out_error = l10n_util::GetStringUTF8(
+        IDS_SETTINGS_NOT_VALID_WEB_ADDRESS_FOR_CONTENT_TYPE);
+    return false;
+  }
+
+  // The pattern is valid.
+  return true;
+}
+
 }  // namespace
 
 SiteSettingsHandler::SiteSettingsHandler(Profile* profile)
@@ -232,6 +272,10 @@ void SiteSettingsHandler::RegisterMessages() {
       base::BindRepeating(&SiteSettingsHandler::HandleGetExceptionList,
                           base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
+      "getChooserExceptionList",
+      base::BindRepeating(&SiteSettingsHandler::HandleGetChooserExceptionList,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
       "getOriginPermissions",
       base::BindRepeating(&SiteSettingsHandler::HandleGetOriginPermissions,
                           base::Unretained(this)));
@@ -254,12 +298,17 @@ void SiteSettingsHandler::RegisterMessages() {
           &SiteSettingsHandler::HandleSetCategoryPermissionForPattern,
           base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
+      "resetChooserExceptionForSite",
+      base::BindRepeating(
+          &SiteSettingsHandler::HandleResetChooserExceptionForSite,
+          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
       "isOriginValid",
       base::BindRepeating(&SiteSettingsHandler::HandleIsOriginValid,
                           base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
-      "isPatternValid",
-      base::BindRepeating(&SiteSettingsHandler::HandleIsPatternValid,
+      "isPatternValidForType",
+      base::BindRepeating(&SiteSettingsHandler::HandleIsPatternValidForType,
                           base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "updateIncognitoStatus",
@@ -742,6 +791,26 @@ void SiteSettingsHandler::HandleGetExceptionList(const base::ListValue* args) {
   ResolveJavascriptCallback(*callback_id, *exceptions.get());
 }
 
+void SiteSettingsHandler::HandleGetChooserExceptionList(
+    const base::ListValue* args) {
+  AllowJavascript();
+
+  CHECK_EQ(2U, args->GetSize());
+  const base::Value* callback_id;
+  CHECK(args->Get(0, &callback_id));
+  std::string type;
+  CHECK(args->GetString(1, &type));
+  const site_settings::ChooserTypeNameEntry* chooser_type =
+      site_settings::ChooserTypeFromGroupName(type);
+  CHECK(chooser_type);
+
+  std::unique_ptr<base::ListValue> exceptions =
+      site_settings::GetChooserExceptionListFromProfile(profile_,
+                                                        /*incognito=*/false,
+                                                        *chooser_type);
+  ResolveJavascriptCallback(*callback_id, *exceptions.get());
+}
+
 void SiteSettingsHandler::HandleGetOriginPermissions(
     const base::ListValue* args) {
   AllowJavascript();
@@ -989,6 +1058,36 @@ void SiteSettingsHandler::HandleSetCategoryPermissionForPattern(
   WebSiteSettingsUmaUtil::LogPermissionChange(content_type, setting);
 }
 
+void SiteSettingsHandler::HandleResetChooserExceptionForSite(
+    const base::ListValue* args) {
+  CHECK_EQ(4U, args->GetSize());
+
+  std::string chooser_type_str;
+  CHECK(args->GetString(0, &chooser_type_str));
+  const site_settings::ChooserTypeNameEntry* chooser_type =
+      site_settings::ChooserTypeFromGroupName(chooser_type_str);
+  CHECK(chooser_type);
+
+  std::string origin_str;
+  CHECK(args->GetString(1, &origin_str));
+  GURL requesting_origin(origin_str);
+  CHECK(requesting_origin.is_valid());
+
+  // An empty embedding origin means that the user exception object was granted
+  // for any embedding origin.
+  std::string embedding_origin_str;
+  CHECK(args->GetString(2, &embedding_origin_str));
+  GURL embedding_origin(embedding_origin_str);
+  CHECK(embedding_origin.is_valid() || embedding_origin.is_empty());
+
+  const base::DictionaryValue* object = nullptr;
+  CHECK(args->GetDictionary(3, &object));
+
+  ChooserContextBase* chooser_context = chooser_type->get_context(profile_);
+  chooser_context->RevokeObjectPermission(requesting_origin, embedding_origin,
+                                          *object);
+}
+
 void SiteSettingsHandler::HandleIsOriginValid(const base::ListValue* args) {
   AllowJavascript();
   CHECK_EQ(2U, args->GetSize());
@@ -1001,25 +1100,25 @@ void SiteSettingsHandler::HandleIsOriginValid(const base::ListValue* args) {
                             base::Value(GURL(origin_string).is_valid()));
 }
 
-void SiteSettingsHandler::HandleIsPatternValid(
+void SiteSettingsHandler::HandleIsPatternValidForType(
     const base::ListValue* args) {
   AllowJavascript();
-  CHECK_EQ(2U, args->GetSize());
+  CHECK_EQ(3U, args->GetSize());
   const base::Value* callback_id;
   CHECK(args->Get(0, &callback_id));
   std::string pattern_string;
   CHECK(args->GetString(1, &pattern_string));
+  std::string type;
+  CHECK(args->GetString(2, &type));
 
-  ContentSettingsPattern pattern =
-      ContentSettingsPattern::FromString(pattern_string);
-  bool valid = pattern.IsValid();
+  std::string reason = "";
+  bool is_valid =
+      IsPatternValidForType(pattern_string, type, profile_, &reason);
 
-  // If the input is just '*' don't allow it, even though it's a valid pattern.
-  // This changes the default setting.
-  if (pattern == ContentSettingsPattern::Wildcard())
-    valid = false;
-
-  ResolveJavascriptCallback(*callback_id, base::Value(valid));
+  base::Value return_value(base::Value::Type::DICTIONARY);
+  return_value.SetKey(kIsValidKey, base::Value(is_valid));
+  return_value.SetKey(kReasonKey, base::Value(std::move(reason)));
+  ResolveJavascriptCallback(*callback_id, return_value);
 }
 
 void SiteSettingsHandler::HandleUpdateIncognitoStatus(

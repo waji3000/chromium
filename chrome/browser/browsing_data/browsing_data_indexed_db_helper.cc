@@ -15,10 +15,12 @@
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/indexed_db_context.h"
+#include "content/public/browser/storage_usage_info.h"
+#include "url/origin.h"
 
 using content::BrowserThread;
 using content::IndexedDBContext;
-using content::IndexedDBInfo;
+using content::StorageUsageInfo;
 
 BrowsingDataIndexedDBHelper::BrowsingDataIndexedDBHelper(
     IndexedDBContext* indexed_db_context)
@@ -52,9 +54,10 @@ void BrowsingDataIndexedDBHelper::FetchIndexedDBInfoInIndexedDBThread(
     const FetchCallback& callback) {
   DCHECK(indexed_db_context_->TaskRunner()->RunsTasksInCurrentSequence());
   DCHECK(!callback.is_null());
-  std::vector<IndexedDBInfo> origins = indexed_db_context_->GetAllOriginsInfo();
-  std::list<content::IndexedDBInfo> result;
-  for (const IndexedDBInfo& origin : origins) {
+  std::vector<StorageUsageInfo> origins =
+      indexed_db_context_->GetAllOriginsInfo();
+  std::list<content::StorageUsageInfo> result;
+  for (const StorageUsageInfo& origin : origins) {
     if (!BrowsingDataHelper::HasWebScheme(origin.origin))
       continue;  // Non-websafe state is not considered browsing data.
     result.push_back(origin);
@@ -66,7 +69,7 @@ void BrowsingDataIndexedDBHelper::FetchIndexedDBInfoInIndexedDBThread(
 void BrowsingDataIndexedDBHelper::DeleteIndexedDBInIndexedDBThread(
     const GURL& origin) {
   DCHECK(indexed_db_context_->TaskRunner()->RunsTasksInCurrentSequence());
-  indexed_db_context_->DeleteForOrigin(origin);
+  indexed_db_context_->DeleteForOrigin(url::Origin::Create(origin));
 }
 
 CannedBrowsingDataIndexedDBHelper::PendingIndexedDBInfo::PendingIndexedDBInfo(
@@ -118,11 +121,9 @@ void CannedBrowsingDataIndexedDBHelper::StartFetching(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!callback.is_null());
 
-  std::list<IndexedDBInfo> result;
-  for (const PendingIndexedDBInfo& pending_info : pending_indexed_db_info_) {
-    IndexedDBInfo info(pending_info.origin, 0, base::Time(), 0);
-    result.push_back(info);
-  }
+  std::list<StorageUsageInfo> result;
+  for (const PendingIndexedDBInfo& pending_info : pending_indexed_db_info_)
+    result.emplace_back(pending_info.origin, 0, base::Time());
 
   base::PostTaskWithTraits(FROM_HERE, {BrowserThread::UI},
                            base::BindOnce(callback, result));

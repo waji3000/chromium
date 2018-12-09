@@ -37,16 +37,15 @@
 #include "ash/app_list/views/suggestion_chip_view.h"
 #include "ash/app_list/views/suggestions_container_view.h"
 #include "ash/app_list/views/test/apps_grid_view_test_api.h"
-#include "ash/public/cpp/app_list/answer_card_contents_registry.h"
 #include "ash/public/cpp/app_list/app_list_config.h"
 #include "ash/public/cpp/app_list/app_list_constants.h"
-#include "ash/public/cpp/app_list/app_list_features.h"
 #include "base/macros.h"
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/icu_test_util.h"
 #include "base/test/scoped_feature_list.h"
+#include "services/content/public/cpp/test/fake_navigable_contents.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/chromeos/search_box/search_box_constants.h"
@@ -94,18 +93,8 @@ class TestStartPageSearchResult : public TestSearchResult {
   DISALLOW_COPY_AND_ASSIGN(TestStartPageSearchResult);
 };
 
-struct TestParams {
-  bool is_rtl_enabled;
-  bool is_new_style_launcher_enabled;
-};
-
-const TestParams kAppListViewTestParams[] = {
-    {false /* is_rtl_enabled */, false /* is_new_style_launcher_enabled */},
-    {false, true},
-};
-
 class AppListViewTest : public views::ViewsTestBase,
-                        public testing::WithParamInterface<TestParams> {
+                        public testing::WithParamInterface<bool> {
  public:
   AppListViewTest() = default;
   ~AppListViewTest() override = default;
@@ -114,18 +103,9 @@ class AppListViewTest : public views::ViewsTestBase,
     AppListView::SetShortAnimationForTesting(true);
     if (testing::UnitTest::GetInstance()->current_test_info()->value_param()) {
       // Setup right to left environment if necessary.
-      is_rtl_ = GetParam().is_rtl_enabled;
+      is_rtl_ = GetParam();
       if (is_rtl_)
         base::i18n::SetICUDefaultLocale("he");
-
-      is_new_style_launcher_enabled_ = GetParam().is_new_style_launcher_enabled;
-    }
-    if (is_new_style_launcher_enabled_) {
-      scoped_feature_list_.InitAndEnableFeature(
-          app_list_features::kEnableNewStyleLauncher);
-    } else {
-      scoped_feature_list_.InitAndDisableFeature(
-          app_list_features::kEnableNewStyleLauncher);
     }
     views::ViewsTestBase::SetUp();
   }
@@ -231,30 +211,12 @@ class AppListViewTest : public views::ViewsTestBase,
   keyboard::KeyboardController keyboard_controller_;
 
   bool is_rtl_ = false;
-  bool is_new_style_launcher_enabled_ = false;
-
-  base::test::ScopedFeatureList scoped_feature_list_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListViewTest);
 };
 
-// Instantiate the parameters which is used to toggle RTL and new style launcher
-// flag in the parameterized tests.
-INSTANTIATE_TEST_CASE_P(,
-                        AppListViewTest,
-                        testing::ValuesIn(kAppListViewTestParams));
-
-const TestParams kAppListViewFocusTestParams[] = {
-    {false /* is_rtl_enabled */, false /* is_new_style_launcher_enabled */},
-    {false, true},
-    {true, false},
-    {true, true},
-};
-
-// TODO(weidongg/766807) Remove all old focus tests after the flag is enabled
-// by default.
 class AppListViewFocusTest : public views::ViewsTestBase,
-                             public testing::WithParamInterface<TestParams> {
+                             public testing::WithParamInterface<bool> {
  public:
   AppListViewFocusTest() = default;
   ~AppListViewFocusTest() override = default;
@@ -263,45 +225,27 @@ class AppListViewFocusTest : public views::ViewsTestBase,
   void SetUp() override {
     if (testing::UnitTest::GetInstance()->current_test_info()->value_param()) {
       // Setup right to left environment if necessary.
-      is_rtl_ = GetParam().is_rtl_enabled;
+      is_rtl_ = GetParam();
       if (is_rtl_)
         base::i18n::SetICUDefaultLocale("he");
-
-      is_new_style_launcher_enabled_ = GetParam().is_new_style_launcher_enabled;
-    }
-    if (is_new_style_launcher_enabled_) {
-      scoped_feature_list_.InitAndEnableFeature(
-          app_list_features::kEnableNewStyleLauncher);
-    } else {
-      scoped_feature_list_.InitAndDisableFeature(
-          app_list_features::kEnableNewStyleLauncher);
     }
 
     views::ViewsTestBase::SetUp();
-    answer_card_contents_registry_ =
-        std::make_unique<AnswerCardContentsRegistry>();
-    fake_answer_card_view_ = std::make_unique<views::View>();
-    fake_answer_card_view_->set_owned_by_client();
-    fake_answer_card_token_ = answer_card_contents_registry_->Register(
-        fake_answer_card_view_.get(), /*contents_native_view=*/nullptr);
 
     // Initialize app list view.
+    fake_card_contents_.set_default_response_headers(
+        SearchResultAnswerCardView::CreateAnswerCardResponseHeadersForTest(
+            "weather", "Unimportant Title"));
     delegate_ = std::make_unique<AppListTestViewDelegate>();
     view_ = new AppListView(delegate_.get());
     AppListView::InitParams params;
     params.parent = GetContext();
     view_->Initialize(params);
     test_api_.reset(new AppsGridViewTestApi(apps_grid_view()));
-    if (is_new_style_launcher_enabled_) {
-      suggestions_container_ = contents_view()
-                                   ->GetAppsContainerView()
-                                   ->suggestion_chip_container_view_for_test();
-      expand_arrow_view_ = contents_view()->expand_arrow_view();
-    } else {
-      suggestions_container_ =
-          apps_grid_view()->suggestions_container_for_test();
-      expand_arrow_view_ = apps_grid_view()->expand_arrow_view_for_test();
-    }
+    suggestions_container_ = contents_view()
+                                 ->GetAppsContainerView()
+                                 ->suggestion_chip_container_view_for_test();
+    expand_arrow_view_ = contents_view()->expand_arrow_view();
 
     // Add suggestion apps, a folder with apps and other app list items.
     const int kSuggestionAppNum = 3;
@@ -325,6 +269,10 @@ class AppListViewFocusTest : public views::ViewsTestBase,
     // Disable animation timer.
     view_->GetWidget()->GetLayer()->GetAnimator()->set_disable_timer_for_test(
         true);
+
+    // The Update above will elicit a navigation. Wait for it.
+    delegate_->fake_navigable_contents_factory()
+        .WaitForAndBindNextContentsRequest(&fake_card_contents_);
   }
 
   void TearDown() override {
@@ -379,8 +327,10 @@ class AppListViewFocusTest : public views::ViewsTestBase,
             std::make_unique<TestSearchResult>();
         result->set_display_type(data.first);
         result->set_display_score(display_score);
-        if (data.first == ash::SearchResultDisplayType::kCard)
-          result->set_answer_card_contents_token(fake_answer_card_token_);
+        if (data.first == ash::SearchResultDisplayType::kCard) {
+          const GURL kFakeCardUrl = GURL("https://www.google.com/coac?q=fake");
+          result->set_query_url(kFakeCardUrl);
+        }
         results->Add(std::move(result));
       }
     }
@@ -515,8 +465,8 @@ class AppListViewFocusTest : public views::ViewsTestBase,
               focused_view());
 
     // Clean up
-    textfield->SetText(base::UTF8ToUTF16(""));
     textfield->RequestFocus();
+    textfield->SetText(base::UTF8ToUTF16(""));
   }
 
   AppListView* app_list_view() { return view_; }
@@ -547,20 +497,12 @@ class AppListViewFocusTest : public views::ViewsTestBase,
 
   std::vector<views::View*> GetAllSuggestions() {
     std::vector<views::View*> suggestions;
-    if (is_new_style_launcher_enabled_) {
-      for (int i = 0; i < suggestions_container()->child_count(); ++i) {
-        SearchResultSuggestionChipView* view =
-            static_cast<SearchResultSuggestionChipView*>(
-                suggestions_container()->child_at(i));
-        if (view->visible())
-          suggestions.emplace_back(view->suggestion_chip_view());
-      }
-      return suggestions;
-    }
-
-    for (auto* v :
-         apps_grid_view()->suggestions_container_for_test()->tile_views()) {
-      suggestions.emplace_back(v);
+    for (int i = 0; i < suggestions_container()->child_count(); ++i) {
+      SearchResultSuggestionChipView* view =
+          static_cast<SearchResultSuggestionChipView*>(
+              suggestions_container()->child_at(i));
+      if (view->visible())
+        suggestions.emplace_back(view->suggestion_chip_view());
     }
     return suggestions;
   }
@@ -579,7 +521,6 @@ class AppListViewFocusTest : public views::ViewsTestBase,
 
  protected:
   bool is_rtl_ = false;
-  bool is_new_style_launcher_enabled_ = false;
 
  private:
   AppListView* view_ = nullptr;  // Owned by native widget.
@@ -592,56 +533,13 @@ class AppListViewFocusTest : public views::ViewsTestBase,
   // Restores the locale to default when destructor is called.
   base::test::ScopedRestoreICUDefaultLocale restore_locale_;
 
-  std::unique_ptr<AnswerCardContentsRegistry> answer_card_contents_registry_;
-  std::unique_ptr<views::View> fake_answer_card_view_;
-  base::UnguessableToken fake_answer_card_token_;
-
   // Used by AppListFolderView::UpdatePreferredBounds.
   keyboard::KeyboardController keyboard_controller_;
 
+  // A fake NavigableContents implementation to back card navigation requests.
+  content::FakeNavigableContents fake_card_contents_;
+
   DISALLOW_COPY_AND_ASSIGN(AppListViewFocusTest);
-};
-
-// Instantiate the parameters which is used to toggle RTL and new style launcher
-// flag in the parameterized tests.
-INSTANTIATE_TEST_CASE_P(,
-                        AppListViewFocusTest,
-                        testing::ValuesIn(kAppListViewFocusTestParams));
-
-// Test behaviors in tablet mode when homcher launcher feature is enabled.
-class AppListViewHomeLauncherTest : public AppListViewTest {
- public:
-  AppListViewHomeLauncherTest() = default;
-  ~AppListViewHomeLauncherTest() override = default;
-
-  void SetUp() override {
-    scoped_feature_list_.InitAndEnableFeature(
-        app_list_features::kEnableHomeLauncher);
-    AppListViewTest::SetUp();
-  }
-
- private:
-  base::test::ScopedFeatureList scoped_feature_list_;
-
-  DISALLOW_COPY_AND_ASSIGN(AppListViewHomeLauncherTest);
-};
-
-// Test behaviors in tablet mode when homcher launcher feature is not enabled.
-class AppListViewNonHomeLauncherTest : public AppListViewTest {
- public:
-  AppListViewNonHomeLauncherTest() = default;
-  ~AppListViewNonHomeLauncherTest() override = default;
-
-  void SetUp() override {
-    scoped_feature_list_.InitAndDisableFeature(
-        app_list_features::kEnableHomeLauncher);
-    AppListViewTest::SetUp();
-  }
-
- private:
-  base::test::ScopedFeatureList scoped_feature_list_;
-
-  DISALLOW_COPY_AND_ASSIGN(AppListViewNonHomeLauncherTest);
 };
 
 }  // namespace
@@ -854,11 +752,7 @@ TEST_P(AppListViewFocusTest, VerticalFocusTraversalInFullscreenAllAppsState) {
     backward_view_list.push_back(view_model->view_at(i));
   // Up key will always move focus to the last suggestion chip from first row
   // apps.
-  const int index =
-      is_new_style_launcher_enabled_
-          ? suggestions.size() - 1
-          : std::min((view_model->view_size() - 1) % apps_grid_view()->cols(),
-                     static_cast<int>(suggestions.size()) - 1);
+  const int index = suggestions.size() - 1;
   backward_view_list.push_back(suggestions[index]);
   backward_view_list.push_back(search_box_view()->search_box());
 
@@ -927,8 +821,9 @@ TEST_F(AppListViewFocusTest, VerticalFocusTraversalInFirstPageOfFolder) {
   const views::ViewModelT<AppListItemView>* view_model =
       app_list_folder_view()->items_grid_view()->view_model();
   for (size_t i = 0; i < kMaxFolderItemsPerPage;
-       i += app_list_folder_view()->items_grid_view()->cols())
+       i += app_list_folder_view()->items_grid_view()->cols()) {
     forward_view_list.push_back(view_model->view_at(i));
+  }
   forward_view_list.push_back(
       app_list_folder_view()->folder_header_view()->GetFolderNameViewForTest());
   forward_view_list.push_back(search_box_view()->search_box());
@@ -1338,32 +1233,6 @@ TEST_P(AppListViewFocusTest, HittingLeftRightWhenFocusOnTextfield) {
   TestLeftAndRightKeyOnTextfield(search_box_view()->search_box(), true);
 }
 
-TEST_F(AppListViewFocusTest, ItemFocusedWhenContextMenuOpened) {
-  Show();
-
-  // Initial focus is on the search box.
-  EXPECT_TRUE(search_box_view()->search_box()->HasFocus());
-
-  // Right click on the first suggestion app to trigger context menu.
-  const std::vector<views::View*> suggestions = GetAllSuggestions();
-  ASSERT_GE(suggestions.size(), 2u);
-  views::View* first_suggestion_app = suggestions[0];
-  ui::MouseEvent press_event(ui::ET_MOUSE_PRESSED, gfx::Point(), gfx::Point(),
-                             ui::EventTimeForNow(), ui::EF_RIGHT_MOUSE_BUTTON,
-                             ui::EF_RIGHT_MOUSE_BUTTON);
-  first_suggestion_app->OnMouseEvent(&press_event);
-
-  // Focus is moved to the first suggestion app.
-  EXPECT_TRUE(first_suggestion_app->HasFocus());
-
-  // Right click on the second suggestion app to trigger context menu.
-  views::View* second_suggestion_app = suggestions[1];
-  second_suggestion_app->OnMouseEvent(&press_event);
-
-  // Focus is moved to the second suggestion app.
-  EXPECT_TRUE(second_suggestion_app->HasFocus());
-}
-
 // Tests that the focus is reset onto the search box and the folder exits after
 // hitting enter on folder name.
 TEST_P(AppListViewFocusTest, FocusResetAfterHittingEnterOnFolderName) {
@@ -1430,7 +1299,7 @@ TEST_F(AppListViewTest, MouseWheelScrollTransitionsToFullscreen) {
   delegate_->GetTestModel()->PopulateApps(kInitialItems);
   Show();
 
-  view_->HandleScroll(-30, ui::ET_MOUSEWHEEL);
+  view_->HandleScroll(gfx::Vector2d(0, -30), ui::ET_MOUSEWHEEL);
   EXPECT_EQ(AppListViewState::FULLSCREEN_ALL_APPS, view_->app_list_state());
 }
 
@@ -1439,7 +1308,7 @@ TEST_F(AppListViewTest, GestureScrollTransitionsToFullscreen) {
   delegate_->GetTestModel()->PopulateApps(kInitialItems);
   Show();
 
-  view_->HandleScroll(-30, ui::ET_SCROLL);
+  view_->HandleScroll(gfx::Vector2d(0, -30), ui::ET_SCROLL);
   EXPECT_EQ(AppListViewState::FULLSCREEN_ALL_APPS, view_->app_list_state());
 }
 
@@ -1626,39 +1495,6 @@ TEST_F(AppListViewTest, LeaveTabletModeClosed) {
   search_box->SetText(base::string16());
   search_box->InsertText(base::UTF8ToUTF16("something"));
   view_->OnTabletModeChanged(false);
-
-  ASSERT_EQ(AppListViewState::CLOSED, view_->app_list_state());
-}
-
-// Tests that escape works after leaving tablet mode from search.
-TEST_F(AppListViewNonHomeLauncherTest, LeaveTabletModeEscapeKeyToFullscreen) {
-  // Put into fullscreen using tablet mode.
-  Initialize(0, true, false);
-  views::Textfield* search_box =
-      view_->app_list_main_view()->search_box_view()->search_box();
-
-  Show();
-  search_box->SetText(base::string16());
-  search_box->InsertText(base::UTF8ToUTF16("nothing"));
-  view_->OnTabletModeChanged(false);
-  view_->AcceleratorPressed(ui::Accelerator(ui::VKEY_ESCAPE, ui::EF_NONE));
-
-  ASSERT_EQ(AppListViewState::FULLSCREEN_ALL_APPS, view_->app_list_state());
-}
-
-// Tests that escape twice closes after leaving tablet mode from search.
-TEST_F(AppListViewNonHomeLauncherTest, LeaveTabletModeEscapeKeyTwiceToClosed) {
-  // Put into fullscreen using tablet mode.
-  Initialize(0, true, false);
-  views::Textfield* search_box =
-      view_->app_list_main_view()->search_box_view()->search_box();
-
-  Show();
-  search_box->SetText(base::string16());
-  search_box->InsertText(base::UTF8ToUTF16("nothing"));
-  view_->OnTabletModeChanged(false);
-  view_->AcceleratorPressed(ui::Accelerator(ui::VKEY_ESCAPE, ui::EF_NONE));
-  view_->AcceleratorPressed(ui::Accelerator(ui::VKEY_ESCAPE, ui::EF_NONE));
 
   ASSERT_EQ(AppListViewState::CLOSED, view_->app_list_state());
 }
@@ -2072,34 +1908,8 @@ TEST_F(AppListViewTest, DontShowContextMenuBetweenAppsInClamshellMode) {
   EXPECT_TRUE(view_->GetWidget()->IsVisible());
 }
 
-// Tests that pressing escape when in tablet mode closes the app list.
-TEST_F(AppListViewNonHomeLauncherTest, EscapeKeyTabletModeFullscreenToClosed) {
-  // Put into fullscreen by using tablet mode.
-  Initialize(0, true, false);
-
-  Show();
-  view_->AcceleratorPressed(ui::Accelerator(ui::VKEY_ESCAPE, ui::EF_NONE));
-
-  ASSERT_EQ(AppListViewState::CLOSED, view_->app_list_state());
-}
-
-// Tests that leaving tablet mode when in tablet search causes no change.
-TEST_F(AppListViewNonHomeLauncherTest, LeaveTabletModeNoChange) {
-  // Put into fullscreen using tablet mode.
-  Initialize(0, true, false);
-  views::Textfield* search_box =
-      view_->app_list_main_view()->search_box_view()->search_box();
-
-  Show();
-  search_box->SetText(base::string16());
-  search_box->InsertText(base::UTF8ToUTF16("something"));
-  view_->OnTabletModeChanged(false);
-
-  ASSERT_EQ(AppListViewState::FULLSCREEN_SEARCH, view_->app_list_state());
-}
-
 // Tests the back action in home launcher.
-TEST_F(AppListViewHomeLauncherTest, BackAction) {
+TEST_F(AppListViewTest, BackAction) {
   // Put into fullscreen using tablet mode.
   Initialize(0, true, false);
 

@@ -10,6 +10,7 @@
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
 #include "third_party/blink/renderer/modules/media_controls/elements/media_control_elements_helper.h"
 #include "third_party/blink/renderer/modules/media_controls/media_controls_impl.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 
 namespace blink {
 
@@ -63,7 +64,10 @@ class MediaControlPanelElement::TransitionEventListener final
   }
 
  private:
-  void handleEvent(ExecutionContext* context, Event* event) override {
+  void Invoke(ExecutionContext* context, Event* event) override {
+    if (event->target() != element_)
+      return;
+
     if (event->type() == event_type_names::kTransitionend) {
       callback_.Run();
       return;
@@ -151,10 +155,11 @@ bool MediaControlPanelElement::EventListenerIsAttachedForTest() const {
 void MediaControlPanelElement::EnsureTransitionEventListener() {
   // Create the event listener if it doesn't exist.
   if (!event_listener_) {
-    event_listener_ = new MediaControlPanelElement::TransitionEventListener(
-        this,
-        WTF::BindRepeating(&MediaControlPanelElement::HandleTransitionEndEvent,
-                           WrapWeakPersistent(this)));
+    event_listener_ =
+        MakeGarbageCollected<MediaControlPanelElement::TransitionEventListener>(
+            this, WTF::BindRepeating(
+                      &MediaControlPanelElement::HandleTransitionEndEvent,
+                      WrapWeakPersistent(this)));
   }
 
   // Attach the event listener if we are not attached.

@@ -117,7 +117,7 @@ class CookieStoreWorkerTestHelper : public EmbeddedWorkerTestHelper {
       const GURL& script_url,
       bool pause_after_download,
       mojom::ServiceWorkerRequest service_worker_request,
-      mojom::ControllerServiceWorkerRequest controller_request,
+      blink::mojom::ControllerServiceWorkerRequest controller_request,
       mojom::EmbeddedWorkerInstanceHostAssociatedPtrInfo instance_host,
       mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info,
       blink::mojom::ServiceWorkerInstalledScriptsInfoPtr installed_scripts_info)
@@ -166,8 +166,7 @@ class CookieStoreWorkerTestHelper : public EmbeddedWorkerTestHelper {
       mojom::ServiceWorker::DispatchCookieChangeEventCallback callback)
       override {
     changes_.emplace_back(cookie, cause);
-    std::move(callback).Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED,
-                            base::TimeTicks::Now());
+    std::move(callback).Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED);
   }
 
  private:

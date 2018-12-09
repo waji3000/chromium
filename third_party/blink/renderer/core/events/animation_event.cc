@@ -25,7 +25,7 @@
 
 #include "third_party/blink/renderer/core/events/animation_event.h"
 
-#include "third_party/blink/renderer/core/event_names.h"
+#include "third_party/blink/renderer/core/event_interface_names.h"
 
 namespace blink {
 
@@ -62,7 +62,7 @@ const String& AnimationEvent::pseudoElement() const {
 }
 
 const AtomicString& AnimationEvent::InterfaceName() const {
-  return EventNames::AnimationEvent;
+  return event_interface_names::kAnimationEvent;
 }
 
 void AnimationEvent::Trace(blink::Visitor* visitor) {

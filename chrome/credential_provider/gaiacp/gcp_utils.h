@@ -26,6 +26,7 @@
 namespace base {
 
 class CommandLine;
+class FilePath;
 
 }  // namespace base
 
@@ -51,6 +52,16 @@ enum UiExitCodes {
 
   // The email does not match the required pattern.
   kUiecEMailMissmatch,
+};
+
+// A bitfield indicating which standard handles are to be created.
+using StdHandlesToCreate = uint32_t;
+
+enum : uint32_t {
+  kStdOutput = 1 << 0,
+  kStdInput = 1 << 1,
+  kStdError = 1 << 2,
+  kAllStdHandles = kStdOutput | kStdInput | kStdError
 };
 
 // Filled in by InitializeStdHandles to return the parent side of stdin/stdout/
@@ -95,8 +106,7 @@ class ScopedStartupInfo {
 HRESULT WaitForProcess(base::win::ScopedHandle::Handle process_handle,
                        const StdParentHandles& parent_handles,
                        DWORD* exit_code,
-                       char* stdout_buffer,
-                       char* stderr_buffer,
+                       char* output_buffer,
                        int buffer_size);
 
 // Creates a restricted, batch or interactive login token for the given user.
@@ -137,12 +147,31 @@ enum class CommDirection {
   kBidirectional,
 };
 HRESULT InitializeStdHandles(CommDirection direction,
+                             StdHandlesToCreate to_create,
                              ScopedStartupInfo* startupinfo,
                              StdParentHandles* parent_handles);
 
+// Fills |path_to_dll| with the short path to the dll referenced by
+// |dll_handle|. The short path is needed to correctly call rundll32.exe in
+// cases where there might be quotes or spaces in the path.
+HRESULT GetPathToDllFromHandle(HINSTANCE dll_handle,
+                               base::FilePath* path_to_dll);
+
+// This function gets a correctly formatted entry point argument to pass to
+// rundll32.exe for a dll referenced by the handle |dll_handle| and an entry
+// point function with the name |entrypoint|. |entrypoint_arg| will be filled
+// with the argument value.
+HRESULT GetEntryPointArgumentForRunDll(HINSTANCE dll_handle,
+                                       const wchar_t* entrypoint,
+                                       base::string16* entrypoint_arg);
+
 // This function is used to build the command line for rundll32 to call an
-// exported entrypoint from the DLL given by |hDll|.
-HRESULT GetCommandLineForEntrypoint(HINSTANCE hDll,
+// exported entrypoint from the DLL given by |dll_handle|.
+// Returns S_FALSE if a command line can successfully be built but if the
+// path to the "dll" actually points to a non ".dll" file. This allows
+// detection of calls to this function via a unit test which will be
+// running under an ".exe" module.
+HRESULT GetCommandLineForEntrypoint(HINSTANCE dll_handle,
                                     const wchar_t* entrypoint,
                                     base::CommandLine* command_line);
 
@@ -163,8 +192,8 @@ base::string16 GetDictString(const std::unique_ptr<base::DictionaryValue>& dict,
 std::string GetDictStringUTF8(const base::DictionaryValue* dict,
                               const char* name);
 std::string GetDictStringUTF8(
-  const std::unique_ptr<base::DictionaryValue>& dict,
-  const char* name);
+    const std::unique_ptr<base::DictionaryValue>& dict,
+    const char* name);
 
 class OSUserManager;
 

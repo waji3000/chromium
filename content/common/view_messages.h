@@ -163,11 +163,6 @@ IPC_MESSAGE_ROUTED2(ViewMsg_SetWebUIProperty,
 // to prevent target URLs spamming the browser.
 IPC_MESSAGE_ROUTED0(ViewMsg_UpdateTargetURL_ACK)
 
-// Provides the results of directory enumeration.
-IPC_MESSAGE_ROUTED2(ViewMsg_EnumerateDirectoryResponse,
-                    int /* request_id */,
-                    std::vector<base::FilePath> /* files_in_directory */)
-
 // Instructs the renderer to close the current page, including running the
 // onunload event handler.
 //
@@ -221,6 +216,12 @@ IPC_MESSAGE_ROUTED2(ViewMsg_PpapiBrokerChannelCreated,
 IPC_MESSAGE_ROUTED1(ViewMsg_PpapiBrokerPermissionResult,
                     bool /* result */)
 #endif
+
+// Sent to the main-frame's view to request performing a page scale animation
+// based on the point/rect provided.
+IPC_MESSAGE_ROUTED2(ViewMsg_AnimateDoubleTapZoom,
+                    gfx::Point /* tap point */,
+                    gfx::Rect /* rect_to_zoom */)
 
 // -----------------------------------------------------------------------------
 // Messages sent from the renderer to the browser.
@@ -288,14 +289,6 @@ IPC_MESSAGE_ROUTED3(ViewHostMsg_RequestPpapiBrokerPermission,
                     base::FilePath /* plugin_path */)
 #endif  // BUILDFLAG(ENABLE_PLUGINS)
 
-// Asks the browser to enumerate a directory.  This is equivalent to running
-// the file chooser in directory-enumeration mode and having the user select
-// the given directory.  The result is returned in a
-// ViewMsg_EnumerateDirectoryResponse message.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_EnumerateDirectory,
-                    int /* request_id */,
-                    base::FilePath /* file_path */)
-
 // When the renderer needs the browser to transfer focus cross-process on its
 // behalf in the focus hierarchy. This may focus an element in the browser ui or
 // a cross-process frame, as appropriate.
@@ -325,13 +318,6 @@ IPC_MESSAGE_CONTROL1(ViewHostMsg_UserMetricsRecordAction,
 // Notifies the browser of an event occurring in the media pipeline.
 IPC_MESSAGE_CONTROL1(ViewHostMsg_MediaLogEvents,
                      std::vector<media::MediaLogEvent> /* events */)
-
-// Sent once a paint happens after the first non empty layout. In other words,
-// after the frame widget has painted something.
-IPC_MESSAGE_ROUTED0(ViewHostMsg_DidFirstVisuallyNonEmptyPaint)
-
-// Sent once the RenderWidgetCompositor issues a draw command.
-IPC_MESSAGE_ROUTED0(ViewHostMsg_DidCommitAndDrawCompositorFrame)
 
 // Adding a new message? Stick to the sort order above: first platform
 // independent ViewMsg, then ifdefs for platform specific ViewMsg, then platform

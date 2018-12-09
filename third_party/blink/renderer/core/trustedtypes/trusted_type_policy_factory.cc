@@ -24,8 +24,7 @@ TrustedTypePolicy* TrustedTypePolicyFactory::createPolicy(
     const TrustedTypePolicyOptions* policy_options,
     bool exposed,
     ExceptionState& exception_state) {
-  if (!GetFrame()
-           ->GetDocument()
+  if (!GetExecutionContext()
            ->GetContentSecurityPolicy()
            ->AllowTrustedTypePolicy(policy_name)) {
     exception_state.ThrowTypeError("Policy " + policy_name + " disallowed.");
@@ -34,8 +33,13 @@ TrustedTypePolicy* TrustedTypePolicyFactory::createPolicy(
   // TODO(orsibatiz): After policy naming rules are estabilished, check for the
   // policy_name to be according to them.
   if (policy_map_.Contains(policy_name)) {
-    exception_state.ThrowTypeError("Policy with name" + policy_name +
+    exception_state.ThrowTypeError("Policy with name " + policy_name +
                                    " already exists.");
+    return nullptr;
+  }
+  if (policy_name == "default" && !exposed) {
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                      "The default policy must be exposed.");
     return nullptr;
   }
   TrustedTypePolicy* policy = TrustedTypePolicy::Create(
@@ -54,8 +58,8 @@ TrustedTypePolicy* TrustedTypePolicyFactory::getExposedPolicy(
   return nullptr;
 }
 
-TrustedTypePolicyFactory::TrustedTypePolicyFactory(LocalFrame* frame)
-    : DOMWindowClient(frame) {}
+TrustedTypePolicyFactory::TrustedTypePolicyFactory(ExecutionContext* context)
+    : ContextClient(context) {}
 
 Vector<String> TrustedTypePolicyFactory::getPolicyNames() const {
   Vector<String> policyNames;
@@ -83,7 +87,7 @@ bool TrustedTypePolicyFactory::isHTML(ScriptState* script_state,
   const WrapperTypeInfo* wrapper_type_info =
       GetWrapperTypeInfoFromScriptValue(script_state, script_value);
   return wrapper_type_info &&
-         wrapper_type_info->Equals(&V8TrustedHTML::wrapperTypeInfo);
+         wrapper_type_info->Equals(V8TrustedHTML::GetWrapperTypeInfo());
 }
 
 bool TrustedTypePolicyFactory::isScript(ScriptState* script_state,
@@ -91,7 +95,7 @@ bool TrustedTypePolicyFactory::isScript(ScriptState* script_state,
   const WrapperTypeInfo* wrapper_type_info =
       GetWrapperTypeInfoFromScriptValue(script_state, script_value);
   return wrapper_type_info &&
-         wrapper_type_info->Equals(&V8TrustedScript::wrapperTypeInfo);
+         wrapper_type_info->Equals(V8TrustedScript::GetWrapperTypeInfo());
 }
 
 bool TrustedTypePolicyFactory::isScriptURL(ScriptState* script_state,
@@ -99,7 +103,7 @@ bool TrustedTypePolicyFactory::isScriptURL(ScriptState* script_state,
   const WrapperTypeInfo* wrapper_type_info =
       GetWrapperTypeInfoFromScriptValue(script_state, script_value);
   return wrapper_type_info &&
-         wrapper_type_info->Equals(&V8TrustedScriptURL::wrapperTypeInfo);
+         wrapper_type_info->Equals(V8TrustedScriptURL::GetWrapperTypeInfo());
 }
 
 bool TrustedTypePolicyFactory::isURL(ScriptState* script_state,
@@ -107,12 +111,12 @@ bool TrustedTypePolicyFactory::isURL(ScriptState* script_state,
   const WrapperTypeInfo* wrapper_type_info =
       GetWrapperTypeInfoFromScriptValue(script_state, script_value);
   return wrapper_type_info &&
-         wrapper_type_info->Equals(&V8TrustedURL::wrapperTypeInfo);
+         wrapper_type_info->Equals(V8TrustedURL::GetWrapperTypeInfo());
 }
 
 void TrustedTypePolicyFactory::Trace(blink::Visitor* visitor) {
   ScriptWrappable::Trace(visitor);
-  DOMWindowClient::Trace(visitor);
+  ContextClient::Trace(visitor);
   visitor->Trace(policy_map_);
 }
 

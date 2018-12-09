@@ -8,7 +8,7 @@
 #import <Foundation/Foundation.h>
 
 #import "ios/chrome/browser/ui/commands/activity_service_commands.h"
-#import "ios/chrome/browser/ui/commands/external_search_commands.h"
+#import "ios/chrome/browser/ui/commands/browser_coordinator_commands.h"
 #import "ios/chrome/browser/ui/commands/page_info_commands.h"
 #import "ios/chrome/browser/ui/commands/popup_menu_commands.h"
 #import "ios/chrome/browser/ui/commands/qr_scanner_commands.h"
@@ -20,9 +20,11 @@ class GURL;
 
 // Protocol for commands that will generally be handled by the "current tab",
 // which in practice is the BrowserViewController instance displaying the tab.
+// TODO(crbug.com/906662) : Extract BrowserCoordinatorCommands from
+// BrowserCommands.
 @protocol BrowserCommands<NSObject,
                           ActivityServiceCommands,
-                          ExternalSearchCommands,
+                          BrowserCoordinatorCommands,
                           PageInfoCommands,
                           PopupMenuCommands,
                           QRScannerCommands,
@@ -46,23 +48,14 @@ class GURL;
 // Bookmarks the current page.
 - (void)bookmarkPage;
 
-// Prints the currently active tab.
-- (void)printTab;
-
 // Adds a page to the reading list using data in |command|.
 - (void)addToReadingList:(ReadingListAddCommand*)command;
-
-// Shows the Reading List UI.
-- (void)showReadingList;
 
 // Preloads voice search on the current BVC.
 - (void)preloadVoiceSearch;
 
 // Closes all tabs.
 - (void)closeAllTabs;
-
-// Closes all incognito tabs.
-- (void)closeAllIncognitoTabs;
 
 #if !defined(NDEBUG)
 // Shows the source of the current page.
@@ -91,9 +84,6 @@ class GURL;
 // Shows the bookmarks manager.
 - (void)showBookmarksManager;
 
-// Shows recent tabs.
-- (void)showRecentTabs;
-
 // Requests the "desktop" version of the current page in the active tab.
 - (void)requestDesktopSite;
 
@@ -107,15 +97,9 @@ class GURL;
 // Prepares the browser to display a popup menu.
 - (void)prepareForPopupMenuPresentation:(PopupMenuCommandType)type;
 
-// Shows the consent bump if it is required.
-- (void)showConsentBumpIfNeeded;
-
 // Animates the NTP fakebox to the focused position and focuses the real
 // omnibox.
 - (void)focusFakebox;
-
-// Unfocus omnibox then switch to the first tab displaying |URL|.
-- (void)unfocusOmniboxAndSwitchToTabWithURL:(const GURL&)URL;
 
 @end
 

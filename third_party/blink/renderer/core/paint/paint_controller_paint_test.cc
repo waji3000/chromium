@@ -9,6 +9,7 @@
 #include "third_party/blink/renderer/core/layout/layout_text.h"
 #include "third_party/blink/renderer/core/layout/line/inline_text_box.h"
 #include "third_party/blink/renderer/core/page/focus_controller.h"
+#include "third_party/blink/renderer/core/paint/ng/ng_paint_fragment.h"
 #include "third_party/blink/renderer/core/paint/object_paint_properties.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_painter.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
@@ -21,8 +22,8 @@ namespace blink {
 
 INSTANTIATE_PAINT_TEST_CASE_P(PaintControllerPaintTest);
 
-using PaintControllerPaintTestForSPv2 = PaintControllerPaintTest;
-INSTANTIATE_SPV2_TEST_CASE_P(PaintControllerPaintTestForSPv2);
+using PaintControllerPaintTestForCAP = PaintControllerPaintTest;
+INSTANTIATE_CAP_TEST_CASE_P(PaintControllerPaintTestForCAP);
 
 TEST_P(PaintControllerPaintTest, FullDocumentPaintingWithCaret) {
   SetBodyInnerHTML(
@@ -38,7 +39,7 @@ TEST_P(PaintControllerPaintTest, FullDocumentPaintingWithCaret) {
                           IsSameId(&text_inline_box, kForegroundType)));
 
   div.focus();
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   EXPECT_THAT(
       RootPaintController().GetDisplayItemList(),
@@ -57,7 +58,10 @@ TEST_P(PaintControllerPaintTest, InlineRelayout) {
   LayoutBlock& div_block =
       *ToLayoutBlock(GetDocument().body()->firstChild()->GetLayoutObject());
   LayoutText& text = *ToLayoutText(div_block.FirstChild());
-  InlineTextBox& first_text_box = *text.FirstTextBox();
+  DisplayItemClient& first_text_box =
+      text.FirstInlineFragment()
+          ? (DisplayItemClient&)*text.FirstInlineFragment()
+          : (DisplayItemClient&)*text.FirstTextBox();
 
   EXPECT_THAT(RootPaintController().GetDisplayItemList(),
               ElementsAre(IsSameId(&ViewScrollingBackgroundClient(),
@@ -65,12 +69,20 @@ TEST_P(PaintControllerPaintTest, InlineRelayout) {
                           IsSameId(&first_text_box, kForegroundType)));
 
   div.setAttribute(html_names::kStyleAttr, "width: 10px; height: 200px");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   LayoutText& new_text = *ToLayoutText(div_block.FirstChild());
-  InlineTextBox& new_first_text_box = *new_text.FirstTextBox();
-  InlineTextBox& second_text_box =
-      *new_text.FirstTextBox()->NextForSameLayoutObject();
+  DisplayItemClient& new_first_text_box =
+      new_text.FirstInlineFragment()
+          ? (DisplayItemClient&)*new_text.FirstInlineFragment()
+          : (DisplayItemClient&)*text.FirstTextBox();
+  DisplayItemClient& second_text_box =
+      new_text.FirstInlineFragment()
+          ? (DisplayItemClient&)*NGPaintFragment::
+                TraverseNextForSameLayoutObject::Next(
+                    new_text.FirstInlineFragment())
+          : (DisplayItemClient&)*new_text.FirstTextBox()
+                ->NextForSameLayoutObject();
 
   EXPECT_THAT(RootPaintController().GetDisplayItemList(),
               ElementsAre(IsSameId(&ViewScrollingBackgroundClient(),
@@ -122,7 +134,7 @@ TEST_P(PaintControllerPaintTest, CompositingNoFold) {
                           IsSameId(&sub_div, kBackgroundType)));
 }
 
-TEST_P(PaintControllerPaintTestForSPv2, FrameScrollingContents) {
+TEST_P(PaintControllerPaintTestForCAP, FrameScrollingContents) {
   SetBodyInnerHTML(R"HTML(
     <style>
       ::-webkit-scrollbar { display: none }
@@ -136,29 +148,32 @@ TEST_P(PaintControllerPaintTestForSPv2, FrameScrollingContents) {
     <div id='div4' style='top: 9000px; left: 9000px'></div>
   )HTML");
 
-  auto& div1 = *GetLayoutObjectByElementId("div1");
+  const auto& div1 = *GetLayoutObjectByElementId("div1");
+  const auto& div2 = *GetLayoutObjectByElementId("div2");
+  const auto& div3 = *GetLayoutObjectByElementId("div3");
+  const auto& div4 = *GetLayoutObjectByElementId("div4");
 
-  // TODO(crbug.com/792577): Cull rect for frame scrolling contents is too
-  // small?
-  EXPECT_THAT(RootPaintController().GetDisplayItemList(),
-              ElementsAre(IsSameId(&GetLayoutView(), kScrollHitTestType),
-                          IsSameId(&ViewScrollingBackgroundClient(),
-                                   kDocumentBackgroundType),
-                          IsSameId(&div1, kBackgroundType)));
+  EXPECT_THAT(
+      RootPaintController().GetDisplayItemList(),
+      ElementsAre(
+          IsSameId(&GetLayoutView(), kScrollHitTestType),
+          IsSameId(&ViewScrollingBackgroundClient(), kDocumentBackgroundType),
+          IsSameId(&div1, kBackgroundType), IsSameId(&div2, kBackgroundType)));
 
   GetDocument().View()->LayoutViewport()->SetScrollOffset(
       ScrollOffset(5000, 5000), kProgrammaticScroll);
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
-  // TODO(crbug.com/792577): Cull rect for frame scrolling contents is too
-  // small?
-  EXPECT_THAT(RootPaintController().GetDisplayItemList(),
-              ElementsAre(IsSameId(&GetLayoutView(), kScrollHitTestType),
-                          IsSameId(&ViewScrollingBackgroundClient(),
-                                   kDocumentBackgroundType)));
+  EXPECT_THAT(
+      RootPaintController().GetDisplayItemList(),
+      ElementsAre(
+          IsSameId(&GetLayoutView(), kScrollHitTestType),
+          IsSameId(&ViewScrollingBackgroundClient(), kDocumentBackgroundType),
+          IsSameId(&div2, kBackgroundType), IsSameId(&div3, kBackgroundType),
+          IsSameId(&div4, kBackgroundType)));
 }
 
-TEST_P(PaintControllerPaintTestForSPv2, BlockScrollingNonLayeredContents) {
+TEST_P(PaintControllerPaintTestForCAP, BlockScrollingNonLayeredContents) {
   SetBodyInnerHTML(R"HTML(
     <style>
       ::-webkit-scrollbar { display: none }
@@ -191,7 +206,7 @@ TEST_P(PaintControllerPaintTestForSPv2, BlockScrollingNonLayeredContents) {
 
   container.GetScrollableArea()->SetScrollOffset(ScrollOffset(5000, 5000),
                                                  kProgrammaticScroll);
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   // Cull rect after scroll: (1000,1000 8100x8100)
   EXPECT_THAT(
@@ -203,7 +218,7 @@ TEST_P(PaintControllerPaintTestForSPv2, BlockScrollingNonLayeredContents) {
           IsSameId(&div4, kBackgroundType)));
 }
 
-TEST_P(PaintControllerPaintTestForSPv2, ScrollHitTestOrder) {
+TEST_P(PaintControllerPaintTestForCAP, ScrollHitTestOrder) {
   SetBodyInnerHTML(R"HTML(
     <style>
       ::-webkit-scrollbar { display: none }
@@ -238,7 +253,7 @@ TEST_P(PaintControllerPaintTestForSPv2, ScrollHitTestOrder) {
           IsSameId(&child, kBackgroundType)));
 }
 
-TEST_P(PaintControllerPaintTestForSPv2, NonStackingScrollHitTestOrder) {
+TEST_P(PaintControllerPaintTestForCAP, NonStackingScrollHitTestOrder) {
   SetBodyInnerHTML(R"HTML(
     <style>
       ::-webkit-scrollbar { display: none }
@@ -284,7 +299,7 @@ TEST_P(PaintControllerPaintTestForSPv2, NonStackingScrollHitTestOrder) {
           IsSameId(&pos_z_child, kBackgroundType)));
 }
 
-TEST_P(PaintControllerPaintTestForSPv2, StackingScrollHitTestOrder) {
+TEST_P(PaintControllerPaintTestForCAP, StackingScrollHitTestOrder) {
   SetBodyInnerHTML(R"HTML(
     <style>
       ::-webkit-scrollbar { display: none }
@@ -328,7 +343,7 @@ TEST_P(PaintControllerPaintTestForSPv2, StackingScrollHitTestOrder) {
           IsSameId(&pos_z_child, kBackgroundType)));
 }
 
-TEST_P(PaintControllerPaintTestForSPv2,
+TEST_P(PaintControllerPaintTestForCAP,
        NonStackingScrollHitTestOrderWithoutBackground) {
   SetBodyInnerHTML(R"HTML(
     <style>

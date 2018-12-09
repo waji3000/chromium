@@ -10,6 +10,7 @@
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/events/message_event.h"
+#include "third_party/blink/renderer/core/fileapi/file_error.h"
 #include "third_party/blink/renderer/core/fileapi/file_reader_loader.h"
 #include "third_party/blink/renderer/core/fileapi/file_reader_loader_client.h"
 #include "third_party/blink/renderer/core/frame/deprecation.h"
@@ -25,6 +26,7 @@
 #include "third_party/blink/renderer/modules/presentation/presentation_receiver.h"
 #include "third_party/blink/renderer/modules/presentation/presentation_request.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 
 namespace blink {
@@ -136,7 +138,7 @@ class PresentationConnection::BlobLoader final
     presentation_connection_->DidFinishLoadingBlob(
         loader_->ArrayBufferResult());
   }
-  void DidFail(file_error::ErrorCode error_code) override {
+  void DidFail(FileErrorCode error_code) override {
     presentation_connection_->DidFailLoadingBlob(error_code);
   }
 
@@ -233,7 +235,7 @@ ControllerPresentationConnection* ControllerPresentationConnection::Take(
   DCHECK(controller);
   DCHECK(request);
 
-  auto* connection = new ControllerPresentationConnection(
+  auto* connection = MakeGarbageCollected<ControllerPresentationConnection>(
       *controller->GetFrame(), controller, presentation_info.id,
       presentation_info.url);
   controller->RegisterConnection(connection);
@@ -302,9 +304,9 @@ ReceiverPresentationConnection* ReceiverPresentationConnection::Take(
   DCHECK(receiver);
 
   ReceiverPresentationConnection* connection =
-      new ReceiverPresentationConnection(*receiver->GetFrame(), receiver,
-                                         presentation_info.id,
-                                         presentation_info.url);
+      MakeGarbageCollected<ReceiverPresentationConnection>(
+          *receiver->GetFrame(), receiver, presentation_info.id,
+          presentation_info.url);
   connection->Init(std::move(controller_connection),
                    std::move(receiver_connection_request));
 
@@ -419,7 +421,7 @@ void PresentationConnection::send(const String& message,
   if (!CanSendMessage(exception_state))
     return;
 
-  messages_.push_back(new Message(message));
+  messages_.push_back(MakeGarbageCollected<Message>(message));
   HandleMessageQueue();
 }
 
@@ -430,7 +432,7 @@ void PresentationConnection::send(DOMArrayBuffer* array_buffer,
   if (!CanSendMessage(exception_state))
     return;
 
-  messages_.push_back(new Message(array_buffer));
+  messages_.push_back(MakeGarbageCollected<Message>(array_buffer));
   HandleMessageQueue();
 }
 
@@ -441,7 +443,8 @@ void PresentationConnection::send(
   if (!CanSendMessage(exception_state))
     return;
 
-  messages_.push_back(new Message(array_buffer_view.View()->buffer()));
+  messages_.push_back(
+      MakeGarbageCollected<Message>(array_buffer_view.View()->buffer()));
   HandleMessageQueue();
 }
 
@@ -450,7 +453,7 @@ void PresentationConnection::send(Blob* data, ExceptionState& exception_state) {
   if (!CanSendMessage(exception_state))
     return;
 
-  messages_.push_back(new Message(data->GetBlobDataHandle()));
+  messages_.push_back(MakeGarbageCollected<Message>(data->GetBlobDataHandle()));
   HandleMessageQueue();
 }
 
@@ -495,7 +498,8 @@ void PresentationConnection::HandleMessageQueue() {
         break;
       case kMessageTypeBlob:
         DCHECK(!blob_loader_);
-        blob_loader_ = new BlobLoader(message->blob_data_handle, this);
+        blob_loader_ =
+            MakeGarbageCollected<BlobLoader>(message->blob_data_handle, this);
         break;
     }
   }
@@ -608,8 +612,7 @@ void PresentationConnection::DidFinishLoadingBlob(DOMArrayBuffer* buffer) {
   HandleMessageQueue();
 }
 
-void PresentationConnection::DidFailLoadingBlob(
-    file_error::ErrorCode error_code) {
+void PresentationConnection::DidFailLoadingBlob(FileErrorCode error_code) {
   DCHECK(!messages_.IsEmpty());
   DCHECK_EQ(messages_.front()->type, kMessageTypeBlob);
   // FIXME: generate error message?

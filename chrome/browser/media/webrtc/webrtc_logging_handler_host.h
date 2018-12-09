@@ -141,6 +141,7 @@ class WebRtcLoggingHandlerHost : public content::BrowserMessageFilter {
   // This function must be called on the UI thread.
   void StartEventLogging(const std::string& peer_connection_id,
                          size_t max_log_size_bytes,
+                         int output_period_ms,
                          size_t web_app_id,
                          const StartEventLoggingCallback& callback);
 
@@ -187,6 +188,7 @@ class WebRtcLoggingHandlerHost : public content::BrowserMessageFilter {
                            const base::FilePath& directory);
 
   void UploadStoredLogOnFileThread(const std::string& log_id,
+                                   int web_app_id,
                                    const UploadDoneCallback& callback);
 
   // A helper for TriggerUpload to do the real work.
@@ -249,6 +251,11 @@ class WebRtcLoggingHandlerHost : public content::BrowserMessageFilter {
   // A pointer to the log uploader that's shared for all browser contexts.
   // Ownership lies with the browser process.
   WebRtcLogUploader* const log_uploader_;
+
+  // Web app id used for statistics. Created as the hash of the value of a
+  // "client" meta data key, if exists. 0 means undefined, and is the hash of
+  // the empty string. Must only be accessed on the IO thread.
+  int web_app_id_ = 0;
 
   DISALLOW_COPY_AND_ASSIGN(WebRtcLoggingHandlerHost);
 };

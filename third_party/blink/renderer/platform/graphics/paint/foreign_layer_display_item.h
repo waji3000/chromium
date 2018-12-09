@@ -17,20 +17,14 @@ class GraphicsContext;
 // A client supplies a layer which can be unwrapped and inserted into the full
 // layer tree.
 //
-// Before SPv2, this content is not painted, but is instead inserted into the
+// Before CAP, this content is not painted, but is instead inserted into the
 // GraphicsLayer tree.
 class PLATFORM_EXPORT ForeignLayerDisplayItem final : public DisplayItem {
  public:
-  ForeignLayerDisplayItem(const DisplayItemClient&,
-                          Type,
-                          scoped_refptr<cc::Layer>,
-                          const FloatPoint& location,
-                          const IntSize& bounds);
+  ForeignLayerDisplayItem(Type, scoped_refptr<cc::Layer>);
   ~ForeignLayerDisplayItem() override;
 
-  cc::Layer* GetLayer() const { return layer_.get(); }
-  const FloatPoint& Location() const { return location_; }
-  const IntSize& Bounds() const { return bounds_; }
+  cc::Layer* GetLayer() const;
 
   // DisplayItem
   void Replay(GraphicsContext&) const override;
@@ -41,21 +35,13 @@ class PLATFORM_EXPORT ForeignLayerDisplayItem final : public DisplayItem {
 #if DCHECK_IS_ON()
   void PropertiesAsJSON(JSONObject&) const override;
 #endif
-
- private:
-  scoped_refptr<cc::Layer> layer_;
-  FloatPoint location_;
-  IntSize bounds_;
 };
 
 // Records a foreign layer into a GraphicsContext.
 // Use this where you would use a recorder class.
 PLATFORM_EXPORT void RecordForeignLayer(GraphicsContext&,
-                                        const DisplayItemClient&,
                                         DisplayItem::Type,
-                                        scoped_refptr<cc::Layer>,
-                                        const FloatPoint& location,
-                                        const IntSize& bounds);
+                                        scoped_refptr<cc::Layer>);
 
 }  // namespace blink
 

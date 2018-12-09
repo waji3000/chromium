@@ -12,6 +12,7 @@
 #include "base/callback.h"
 #include "base/callback_helpers.h"
 #include "base/location.h"
+#include "base/logging.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "chromecast/base/bind_to_task_runner.h"
@@ -21,7 +22,6 @@
 #include "chromecast/media/audio/mixer_service/mixer_service.pb.h"
 #include "chromecast/media/audio/mixer_service/mixer_service_connection.h"
 #include "chromecast/media/cma/backend/cma_backend_factory.h"
-#include "chromecast/media/cma/base/cma_logging.h"
 #include "chromecast/public/cast_media_shlib.h"
 #include "chromecast/public/media/decoder_config.h"
 #include "chromecast/public/media/media_pipeline_device_params.h"
@@ -490,19 +490,21 @@ CastAudioOutputStream::CastAudioOutputStream(
     CastAudioManager* audio_manager,
     service_manager::Connector* connector,
     const ::media::AudioParameters& audio_params,
+    const std::string& group_id,
     MixerServiceConnectionFactory* mixer_service_connection_factory)
     : volume_(1.0),
       audio_thread_state_(kClosed),
       audio_manager_(audio_manager),
       connector_(connector),
       audio_params_(audio_params),
+      group_id_(group_id),
       mixer_service_connection_factory_(mixer_service_connection_factory),
       audio_weak_factory_(this) {
   DCHECK(audio_manager_);
   DCHECK(connector_);
-  VLOG(1) << "CastAudioOutputStream " << this << " created with "
-          << audio_params_.AsHumanReadableString();
   DETACH_FROM_THREAD(audio_thread_checker_);
+  VLOG(1) << __func__ << " " << this << " created from group_id=" << group_id
+          << " with audio_params=" << audio_params_.AsHumanReadableString();
 }
 
 CastAudioOutputStream::~CastAudioOutputStream() {
@@ -528,8 +530,10 @@ bool CastAudioOutputStream::Open() {
   DCHECK_GE(audio_params_.channels(), 1);
   DCHECK_LE(audio_params_.channels(), 2);
 
-  // TODO(awolter, b/111669896): Populate this with the correct session id.
-  const std::string application_session_id = "";
+  const std::string application_session_id =
+      audio_manager_->GetSessionId(group_id_);
+  VLOG(1) << this << ": " << __func__
+          << ", session_id=" << application_session_id;
 
   // Connect to the Multiroom interface and fetch the current info.
   connector_->BindInterface(chromecast::mojom::kChromecastServiceName,
@@ -656,10 +660,10 @@ void CastAudioOutputStream::OnGetMultiroomInfo(
     chromecast::mojom::MultiroomInfoPtr multiroom_info) {
   DCHECK_CALLED_ON_VALID_THREAD(audio_thread_checker_);
   DCHECK(multiroom_info);
-  CMALOG(kLogControl) << __FUNCTION__ << ": " << this
-                      << " session_id=" << application_session_id
-                      << ", multiroom=" << multiroom_info->multiroom
-                      << ", audio_channel=" << multiroom_info->audio_channel;
+  LOG(INFO) << __FUNCTION__ << ": " << this
+            << " session_id=" << application_session_id
+            << ", multiroom=" << multiroom_info->multiroom
+            << ", audio_channel=" << multiroom_info->audio_channel;
 
   // Close the MultiroomManager message pipe so that a connection error does
   // not trigger a second call to this function.

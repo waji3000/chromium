@@ -4,14 +4,27 @@
 
 #include "services/service_manager/public/cpp/service.h"
 
-#include "base/logging.h"
-#include "services/service_manager/public/cpp/service_context.h"
+#include "base/bind.h"
+#include "base/run_loop.h"
 
 namespace service_manager {
 
 Service::Service() = default;
 
 Service::~Service() = default;
+
+// static
+void Service::RunAsyncUntilTermination(std::unique_ptr<Service> service,
+                                       base::OnceClosure callback) {
+  auto* raw_service = service.get();
+  raw_service->set_termination_closure(base::BindOnce(
+      [](std::unique_ptr<Service> service, base::OnceClosure callback) {
+        service.reset();
+        if (callback)
+          std::move(callback).Run();
+      },
+      std::move(service), std::move(callback)));
+}
 
 void Service::OnStart() {}
 
@@ -27,19 +40,15 @@ bool Service::OnServiceManagerConnectionLost() {
   return true;
 }
 
+void Service::RunUntilTermination() {
+  base::RunLoop loop;
+  set_termination_closure(loop.QuitClosure());
+  loop.Run();
+}
+
 void Service::Terminate() {
   if (termination_closure_)
     std::move(termination_closure_).Run();
-}
-
-ServiceContext* Service::context() const {
-  DCHECK(service_context_)
-      << "Service::context() may only be called after the Service constructor.";
-  return service_context_;
-}
-
-void Service::SetContext(ServiceContext* context) {
-  service_context_ = context;
 }
 
 }  // namespace service_manager

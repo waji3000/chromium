@@ -212,22 +212,23 @@ void LocationBarView::Init() {
     AddChildView(image_view);
   }
 
-  std::vector<PageActionIconType> page_action_icon_types;
+  PageActionIconContainerView::Params params;
+  params.types_enabled.push_back(PageActionIconType::kManagePasswords);
   // |browser_| may be null when LocationBarView is used for non-Browser windows
   // such as PresentationReceiverWindowView, which do not support page actions.
   if (browser_) {
-    page_action_icon_types = {PageActionIconType::kFind,
-                              PageActionIconType::kZoom};
+    params.types_enabled.push_back(PageActionIconType::kFind);
+    params.types_enabled.push_back(PageActionIconType::kZoom);
   }
-  page_action_icon_container_view_ = new PageActionIconContainerView(
-      page_action_icon_types, GetLayoutConstant(LOCATION_BAR_ICON_SIZE), 0,
-      browser_, this, delegate_);
+  params.icon_size = GetLayoutConstant(LOCATION_BAR_ICON_SIZE);
+  params.icon_color = icon_color;
+  params.between_icon_spacing = 0;
+  params.browser = browser_;
+  params.command_updater = command_updater();
+  params.page_action_icon_delegate = this;
+  params.location_bar_delegate = delegate_;
+  page_action_icon_container_view_ = new PageActionIconContainerView(params);
   AddChildView(page_action_icon_container_view_);
-  page_action_icon_container_view_->SetIconColor(icon_color);
-
-  manage_passwords_icon_view_ =
-      new ManagePasswordsIconViews(command_updater(), this);
-  page_action_icons_.push_back(manage_passwords_icon_view_);
 
   if (browser_) {
     save_credit_card_icon_view_ = new autofill::SaveCardIconView(
@@ -238,7 +239,7 @@ void LocationBarView::Init() {
   page_action_icons_.push_back(translate_icon_view_);
   if (browser_) {
     local_card_migration_icon_view_ = new autofill::LocalCardMigrationIconView(
-        command_updater(), browser_, this);
+        command_updater(), browser_, this, font_list);
     page_action_icons_.push_back(local_card_migration_icon_view_);
   }
 
@@ -268,8 +269,6 @@ void LocationBarView::Init() {
   // Initialize the location entry. We do this to avoid a black flash which is
   // visible when the location entry has just been initialized.
   Update(nullptr);
-
-  size_animation_.Reset(1);
 
   hover_animation_.SetSlideDuration(200);
 }
@@ -377,8 +376,6 @@ gfx::Size LocationBarView::CalculatePreferredSize() const {
   if (!IsInitialized())
     return min_size;
 
-  min_size.set_height(min_size.height() * size_animation_.GetCurrentValue());
-
   // Compute width of omnibox-leading content.
   int leading_width = 0;
   if (ShouldShowKeywordBubble()) {
@@ -393,7 +390,6 @@ gfx::Size LocationBarView::CalculatePreferredSize() const {
   // Compute width of omnibox-trailing content.
   int trailing_width =
       IncrementalMinimumWidth(translate_icon_view_) +
-      IncrementalMinimumWidth(manage_passwords_icon_view_) +
       IncrementalMinimumWidth(page_action_icon_container_view_);
   if (star_view_)
     trailing_width += IncrementalMinimumWidth(star_view_);
@@ -425,35 +421,34 @@ void LocationBarView::Layout() {
 
   const int edge_padding = GetLayoutConstant(LOCATION_BAR_ELEMENT_PADDING);
   int leading_edit_item_padding = edge_padding;
-  if (OmniboxFieldTrial::IsJogTextfieldOnPopupEnabled()) {
-    // With jog enabled, the text should be indented only if these are all true:
-    //  - The popup is open.
-    //  - The location icon view does *not* have a label.
-    //  - The selected keyword view is *not* shown.
-    //
-    // In most cases, we only care that the popup is open, in which case we
-    // indent to align with the text in the popup. But there's two edge cases:
-    //  - If there is text in the location icon view (which can happen with zero
-    //    suggest, which continues to show security or EV cert text at the same
-    //    time as the popup is open), the text in the omnibox can't align with
-    //    the text of the suggestions, so the indent just moves the text for no
-    //    apparent reason.
-    //  - If there is a selected keyword label (i.e. "Search Google") shown, we
-    //    already indent this label to align with the suggestions text, so
-    //    further indenting the textfield just moves the text for no apparent
-    //    reason.
-    //
-    // TODO(jdonnelly): The better solution may be to remove the location icon
-    // text when zero suggest triggers.
-    const bool should_indent = GetOmniboxPopupView()->IsOpen() &&
-                               !location_icon_view_->ShouldShowLabel() &&
-                               !ShouldShowKeywordBubble();
 
-    // We have an odd indent value because this is what matches the odd text
-    // indent value in OmniboxMatchCellView.
-    constexpr int kTextJogIndentDp = 11;
-    leading_edit_item_padding = should_indent ? kTextJogIndentDp : 0;
-  }
+  // The text should be indented only if these are all true:
+  //  - The popup is open.
+  //  - The location icon view does *not* have a label.
+  //  - The selected keyword view is *not* shown.
+  //
+  // In most cases, we only care that the popup is open, in which case we
+  // indent to align with the text in the popup. But there's two edge cases:
+  //  - If there is text in the location icon view (which can happen with zero
+  //    suggest, which continues to show security or EV cert text at the same
+  //    time as the popup is open), the text in the omnibox can't align with
+  //    the text of the suggestions, so the indent just moves the text for no
+  //    apparent reason.
+  //  - If there is a selected keyword label (i.e. "Search Google") shown, we
+  //    already indent this label to align with the suggestions text, so
+  //    further indenting the textfield just moves the text for no apparent
+  //    reason.
+  //
+  // TODO(jdonnelly): The better solution may be to remove the location icon
+  // text when zero suggest triggers.
+  const bool should_indent = GetOmniboxPopupView()->IsOpen() &&
+                             !location_icon_view_->ShouldShowLabel() &&
+                             !ShouldShowKeywordBubble();
+
+  // We have an odd indent value because this is what matches the odd text
+  // indent value in OmniboxMatchCellView.
+  constexpr int kTextJogIndentDp = 11;
+  leading_edit_item_padding = should_indent ? kTextJogIndentDp : 0;
 
   // We always subtract the left padding of the OmniboxView itself to allow for
   // an extended I-beam click target without affecting actual layout.
@@ -523,7 +518,6 @@ void LocationBarView::Layout() {
     add_trailing_decoration(save_credit_card_icon_view_);
   if (local_card_migration_icon_view_)
     add_trailing_decoration(local_card_migration_icon_view_);
-  add_trailing_decoration(manage_passwords_icon_view_);
   for (ContentSettingViews::const_reverse_iterator i(
            content_setting_views_.rbegin());
        i != content_setting_views_.rend(); ++i) {
@@ -595,8 +589,9 @@ void LocationBarView::OnNativeThemeChanged(const ui::NativeTheme* theme) {
   if (!IsInitialized())
     return;
 
+  tint_ = GetTint();
   RefreshBackground();
-  location_icon_view_->Update();
+  location_icon_view_->Update(/*suppress_animations=*/false);
   RefreshClearAllButtonIcon();
   SchedulePaint();
 }
@@ -610,7 +605,7 @@ void LocationBarView::Update(const WebContents* contents) {
   RefreshContentSettingViews();
 
   RefreshPageActionIconViews();
-  location_icon_view_->Update();
+  location_icon_view_->Update(/*suppress_animations=*/contents);
 
   if (star_view_) {
     // TODO(calamity): Refactor Update to use PageActionIconView::Refresh.
@@ -928,13 +923,6 @@ void LocationBarView::UpdateContentSettingsIcons() {
   }
 }
 
-void LocationBarView::UpdateManagePasswordsIconAndBubble() {
-  if (manage_passwords_icon_view_->Update()) {
-    Layout();
-    SchedulePaint();
-  }
-}
-
 void LocationBarView::UpdateSaveCreditCardIcon() {
   if (save_credit_card_icon_view_->Update()) {
     Layout();
@@ -956,21 +944,6 @@ void LocationBarView::UpdateBookmarkStarVisibility() {
                            !GetLocationBarModel()->input_in_progress() &&
                            edit_bookmarks_enabled_.GetValue() &&
                            !IsBookmarkStarHiddenByExtension());
-  }
-}
-
-void LocationBarView::UpdateLocationBarVisibility(bool visible, bool animate) {
-  if (!animate) {
-    size_animation_.Reset(visible ? 1 : 0);
-    SetVisible(visible);
-    return;
-  }
-
-  if (visible) {
-    SetVisible(true);
-    size_animation_.Show();
-  } else {
-    size_animation_.Hide();
   }
 }
 
@@ -1086,35 +1059,25 @@ bool LocationBarView::CanStartDragForView(View* sender,
 ////////////////////////////////////////////////////////////////////////////////
 // LocationBarView, private gfx::AnimationDelegate implementation:
 void LocationBarView::AnimationProgressed(const gfx::Animation* animation) {
-  if (animation == &size_animation_) {
-    GetWidget()->non_client_view()->Layout();
-  } else if (animation == &hover_animation_) {
-    RefreshBackground();
-  } else {
-    NOTREACHED();
-  }
+  DCHECK_EQ(animation, &hover_animation_);
+  RefreshBackground();
 }
 
 void LocationBarView::AnimationEnded(const gfx::Animation* animation) {
-  if (animation == &size_animation_) {
-    AnimationProgressed(animation);
-    if (animation->GetCurrentValue() == 0)
-      SetVisible(false);
-  } else if (animation == &hover_animation_) {
-    AnimationProgressed(animation);
-  }
+  DCHECK_EQ(animation, &hover_animation_);
+  AnimationProgressed(animation);
 }
 
 void LocationBarView::AnimationCanceled(const gfx::Animation* animation) {
-  if (animation == &hover_animation_)
-    AnimationProgressed(animation);
+  DCHECK_EQ(animation, &hover_animation_);
+  AnimationProgressed(animation);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // LocationBarView, private OmniboxEditController implementation:
 
 void LocationBarView::OnChanged() {
-  location_icon_view_->Update();
+  location_icon_view_->Update(/*suppress_animations=*/false);
   clear_all_button_->SetVisible(GetLocationBarModel()->input_in_progress() &&
                                 !omnibox_view_->text().empty() &&
                                 IsVirtualKeyboardVisible(GetWidget()));
@@ -1125,14 +1088,16 @@ void LocationBarView::OnChanged() {
 void LocationBarView::OnPopupVisibilityChanged() {
   RefreshBackground();
 
+  // The location icon may change when the popup visibility changes.
+  location_icon_view_->Update(/*suppress_animations=*/false);
+
   // The focus ring may be hidden or shown when the popup visibility changes.
   if (focus_ring_)
     focus_ring_->SchedulePaint();
 
-  if (OmniboxFieldTrial::IsJogTextfieldOnPopupEnabled()) {
-    Layout();
-    SchedulePaint();
-  }
+  // We indent the textfield when the popup is open to align to suggestions.
+  Layout();
+  SchedulePaint();
 }
 
 const LocationBarModel* LocationBarView::GetLocationBarModel() const {
@@ -1188,7 +1153,7 @@ void LocationBarView::OnTouchUiChanged() {
     view->SetFontList(font_list);
   if (save_credit_card_icon_view_)
     save_credit_card_icon_view_->SetFontList(font_list);
-  location_icon_view_->Update();
+  location_icon_view_->Update(/*suppress_animations=*/false);
   Layout();
   SchedulePaint();
 }
@@ -1222,20 +1187,7 @@ void LocationBarView::OnLocationIconDragged(const ui::MouseEvent& event) {
 
 SkColor LocationBarView::GetSecurityChipColor(
     security_state::SecurityLevel security_level) const {
-  // Only used in ChromeOS.
-  if (security_level == security_state::SECURE_WITH_POLICY_INSTALLED_CERT)
-    return GetColor(OmniboxPart::LOCATION_BAR_TEXT_DIMMED);
-
-  OmniboxPartState state = OmniboxPartState::CHIP_DEFAULT;
-  if (security_level == security_state::EV_SECURE ||
-      security_level == security_state::SECURE) {
-    state = OmniboxPartState::CHIP_SECURE;
-  } else if (security_level == security_state::DANGEROUS) {
-    state = OmniboxPartState::CHIP_DANGEROUS;
-  }
-
-  return GetOmniboxColor(OmniboxPart::LOCATION_BAR_SECURITY_CHIP, tint(),
-                         state);
+  return GetOmniboxSecurityChipColor(tint(), security_level);
 }
 
 bool LocationBarView::ShowPageInfoDialog() {
@@ -1260,14 +1212,6 @@ bool LocationBarView::ShowPageInfoDialog() {
           contents, entry->GetVirtualURL(), security_info);
   bubble->SetHighlightedButton(location_icon_view());
   bubble->GetWidget()->Show();
-
-  // When the user opens the page info bubble, we also expose the full URL,
-  // temporarily disabling Steady State Elisions and Query in Omnibox.
-  // We are currently gating this behavior on the Query in Omnibox flag, since
-  // it's still under active experimentation.
-  if (base::FeatureList::IsEnabled(omnibox::kQueryInOmnibox))
-    omnibox_view()->model()->Unelide(true /* exit_query_in_omnibox */);
-
   return true;
 }
 

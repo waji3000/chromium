@@ -118,6 +118,10 @@
       status: "experimental",
     },
     {
+      name: "BackgroundFetchAccessActiveFetches",
+      status: "experimental",
+    },
+    {
       name: "BackgroundFetchUploads",
       status: "experimental",
     },
@@ -127,10 +131,11 @@
     },
     {
       name: "Badging",
-      status: "test",
+      status: "experimental",
     },
     {
       name: "BlinkGenPropertyTrees",
+      status: "experimental",
     },
     {
       name: "BlinkRuntimeCallStats",
@@ -205,6 +210,9 @@
       name: "ClientPlaceholdersForServerLoFi",
     },
     {
+      name: "CompositeAfterPaint",
+    },
+    {
       name: "CompositedSelectionUpdate",
     },
     {
@@ -222,6 +230,10 @@
     },
     {
       name: "ConstructableStylesheets",
+      status: "experimental",
+    },
+    {
+      name: "ContactsManager",
       status: "experimental",
     },
     {
@@ -250,12 +262,11 @@
       status: "experimental",
     },
     {
-      name: "CSSEnvironmentVariables",
-      status: "stable",
-    },
-    {
       name: "CSSFocusVisible",
       status: "experimental",
+    },
+    {
+      name: "CSSFontFeatureValues"
     },
     {
       name: "CSSFontSizeAdjust",
@@ -293,10 +304,6 @@
       status: "experimental",
     },
     {
-      name: "CSSMatches",
-      status: "experimental",
-    },
-    {
       name: "CSSOffsetPathRay",
       status: "experimental",
     },
@@ -309,16 +316,16 @@
       status: "experimental",
     },
     {
-      name: "CSSOMSmoothScroll",
-      status: "stable",
-    },
-    {
       name: "CSSPaintAPIArguments",
       status: "experimental",
       depends_on: ["CSSVariables2"],
     },
     {
       name: "CSSPartPseudoElement",
+      status: "experimental",
+    },
+    {
+      name: "CSSPseudoIs",
       status: "experimental",
     },
     {
@@ -358,6 +365,7 @@
     // without native Custom Elements v0 support.
     {
       name: "CustomElementsV0",
+      origin_trial_feature_name: "WebComponentsV0",
       status: "stable",
     },
     {
@@ -370,10 +378,6 @@
     {
       name: "DecodeToYUV",
       status: "experimental",
-    },
-    {
-      name: "DeprecationReporting",
-      status: "stable",
     },
     {
       name: "DesktopCaptureDisableLocalEchoControl",
@@ -392,10 +396,6 @@
       name: "DisplayLocking",
     },
     {
-      name: "DisplayNoneIFrameCreatesNoLayoutObject",
-      status: "stable",
-    },
-    {
       name: "DocumentCookie",
     },
     {
@@ -409,13 +409,14 @@
       name: "EditingNG",
     },
     {
+      // http://crbug.com/905922
+      name: "ElementInternals",
+      implied_by: ["FormAssociatedCustomElements"],
+    },
+    {
       // https://crbug.com/879270
       name: "ElementTiming",
       status: "test",
-    },
-    {
-      name: "EncodingStreams",
-      status: "stable",
     },
     {
       name: "EncryptedMediaEncryptionSchemeQuery",
@@ -480,15 +481,20 @@
       name: "ExtraWebGLVideoTextureMetadata",
     },
     {
+      name: "FastFlatTreeTraversal",
+    },
+    {
       name: "FastMobileScrolling",
     },
     {
       name: "FeaturePolicyJavaScriptInterface",
+      implied_by: ["ExperimentalProductivityFeatures"],
       origin_trial_feature_name: "FeaturePolicyJSAPI",
       status: "experimental"
     },
     {
       name: "FeaturePolicyReporting",
+      implied_by: ["ExperimentalProductivityFeatures"],
       status: "experimental"
     },
     {
@@ -497,6 +503,12 @@
     {
       name: "FileSystem",
       status: "stable",
+    },
+    // FirstContentfulPaintPlusPlus enables the Largest Text Paint metric, Last
+    // Text Paint metric, Largest Image Paint metric and Last Image Paint
+    // metric. See also: http://bit.ly/fcp_plus_plus
+    {
+      name: "FirstContentfulPaintPlusPlus",
     },
     {
       name: "FontCacheScaling",
@@ -513,6 +525,10 @@
     },
     {
       name: "ForceTallerSelectPopup",
+    },
+    {
+      name: "FormAssociatedCustomElements",
+      status: "experimental",
     },
     {
       name: "FormDataEvent",
@@ -557,7 +573,7 @@
     },
     {
       name: "GetDisplayMedia",
-      status: "experimental",
+      status: "stable",
     },
     {
       name: "HeapCompaction",
@@ -573,10 +589,11 @@
     {
       name: "HeapUnifiedGarbageCollection",
     },
-    // Only exposed when a translation engine is available
-    // and experimental features are enabled.
     {
       name: "HrefTranslate",
+      depends_on: ["TranslateService"],
+      origin_trial_feature_name: "HrefTranslate",
+      status: "experimental",
     },
     // https://crbug.com/766694 for testing disabling the feature.
     {
@@ -589,16 +606,16 @@
       status: "stable",
     },
     {
-      name: "IDBGetDatabases",
-      status: "experimental",
-    },
-    {
       name: "IDBObserver",
       status: "experimental",
     },
     {
-      name: "IdleTimeColdModeSpellChecking",
-      status: "stable",
+      name: "IDBTransactionCommit",
+      status: "experimental",
+    },
+    {
+      name: "IgnoreCrossOriginWindowWhenNamedAccessOnWindow",
+      status: "experimental",
     },
     {
       name: "ImageOrientation",
@@ -626,10 +643,6 @@
       name: "IntersectionObserverV2",
     },
     {
-      name: "InterventionReporting",
-      status: "stable",
-    },
-    {
       name: "InvisibleDOM",
       status: "experimental",
     },
@@ -641,12 +654,17 @@
       // Tracks "jank" from layout objects changing their visual location
       // between animation frames (see crbug.com/581518).
       name: "JankTracking",
-      implied_by: ["LayoutJankAPI"],
+      implied_by: ["LayoutJankAPI", "JankTrackingSweepLine"],
       status: "experimental",
     },
     {
-      name: "KeyboardMap",
-      status: "stable",
+      // Modifies JankTracking to use O(n log n) sweep line algorithm for
+      // computing the area of the jank region.
+      name: "JankTrackingSweepLine",
+    },
+    {
+      name: "KeyboardFocusableScrollers",
+      status: "experimental",
     },
     {
       name: "LangAttributeAwareFormControlUI",
@@ -711,12 +729,11 @@
       status:"experimental",
     },
     {
-      name: "MediaCapabilities",
-      origin_trial_feature_name: "MediaCapabilities",
-      status: "stable",
+      name: "MediaCapabilitiesEncodingInfo",
+      status: "experimental",
     },
     {
-      name: "MediaCapabilitiesEncodingInfo",
+      name: "MediaCapabilitiesEncryptedMedia",
       status: "experimental",
     },
     {
@@ -770,6 +787,9 @@
       name: "MediaStreamTrackContentHint",
       status: "stable",
     },
+    {
+      name: "MergeBlockingNonBlockingPools",
+    },
     // This is enabled by default on Windows only. The only part that's
     // "experimental" is the support on other platforms.
     {
@@ -787,10 +807,6 @@
       status: "experimental",
     },
     {
-      name: "ModulePreload",
-      status: "stable",
-    },
-    {
       name: "ModuleServiceWorker",
       status: "test",
     },
@@ -805,14 +821,13 @@
       status: "test",
     },
     {
+      name: "MovementXYInBlink",
+    },
+    {
       name: "NavigatorContentUtils",
     },
     {
       name: "NavigatorDeviceMemory",
-      status: "stable",
-    },
-    {
-      name: "NestedWorkers",
       status: "stable",
     },
     {
@@ -846,10 +861,6 @@
     {
       name: "NotificationContentImage",
       status: "test",
-    },
-    {
-      name: "NotificationInlineReplies",
-      status: "stable",
     },
     {
       name: "Notifications",
@@ -906,7 +917,7 @@
       implied_by: ["OriginTrialsSampleAPI"],
     },
     {
-      name: "OutOfBlinkCORS",
+      name: "OutOfBlinkCors",
     },
     {
       name: "OverflowIconsForMediaControls",
@@ -916,8 +927,27 @@
       settable_from_internals: true,
     },
     {
+      name: "OverscrollCustomization",
+      settable_from_internals: true,
+    },
+    // This feature refers to the API that delivers notifications to pages on
+    // lifecycle state changes.
+    {
       name: "PageLifecycle",
       status: "stable",
+    },
+    // The following are developer opt-outs and opt-ins for PageLifecycle state
+    // transitions. If neither is specified then heuristics will be applied to
+    // determine whether the page is eligible.
+    {
+      name: "PageLifecycleTransitionsOptIn",
+      origin_trial_feature_name: "PageLifecycleTransitionsOptIn",
+      status: "experimental",
+    },
+    {
+      name: "PageLifecycleTransitionsOptOut",
+      origin_trial_feature_name: "PageLifecycleTransitionsOptOut",
+      status: "experimental",
     },
     {
       name: "PagePopup",
@@ -926,12 +956,7 @@
     // Compute touch action rects in paint instead of ScrollingCoordinator.
     {
       name: "PaintTouchActionRects",
-    },
-    // PaintTracking enables the Largest Text Paint metric, Last Text Paint
-    // metric, Largest Image Paint metric and Last Image Paint metric.
-    // See also: https://docs.google.com/document/d/1DRVd4a2VU8-yyWftgOparZF-sf16daf0vfbsHuz2rws/edit
-    {
-      name: "PaintTracking",
+      status: "stable",
     },
     {
       name: "PaintUnderInvalidationChecking",
@@ -963,10 +988,6 @@
     {
       name: "PaymentRetry",
       status: "experimental",
-    },
-    {
-      name: "PerformanceNavigationTiming2",
-      status: "stable",
     },
     {
       name: "PermissionDelegation",
@@ -1015,10 +1036,6 @@
       status: "stable",
     },
     {
-      name: "PreloadDefaultIsMetadata",
-      status: "stable",
-    },
-    {
       name: "PreloadImageSrcSet",
       status: "experimental",
     },
@@ -1060,21 +1077,28 @@
       status: "stable",
     },
     {
-      name: "ReportingObserver",
-      implied_by: ["DeprecationReporting", "InterventionReporting"],
-      status: "stable",
-    },
-    {
-      name: "RequireCSSExtensionForFile",
-      status: "stable",
-    },
-    {
       name: "ResourceLoadScheduler",
       status: "experimental",
     },
     {
       name: "RestrictAppCacheToSecureContexts",
       status: "stable",
+    },
+    {
+      name: "RestrictLazyFrameLoadingToDataSaver",
+    },
+    {
+      name: "RestrictLazyImageLoadingToDataSaver",
+    },
+    {
+      name: "RtcAudioJitterBufferMaxPackets",
+      origin_trial_feature_name: "RtcAudioJitterBufferMaxPackets",
+      status: "experimental",
+    },
+    // Enables the use of the RTCDtlsTransport object.
+    {
+      name: "RTCDtlsTransport",
+      status: "test",
     },
     // Enables the use of the RTCIceTransport with extensions.
     {
@@ -1109,9 +1133,18 @@
     {
       name: "ScheduledScriptStreaming",
     },
+    // WebSpeech API with both speech recognition and synthesis functionality
+    // is not fully enabled on all platforms.
     {
-      name: "ScriptedSpeech",
+      name: "ScriptedSpeechRecognition",
       status: "stable",
+    },
+    {
+      name: "ScriptedSpeechSynthesis",
+      status: "stable",
+    },
+    {
+      name: "ScriptStreamingOnPreload",
     },
     // Serialize and restore scroll anchors.
     {
@@ -1160,6 +1193,7 @@
     // without native Shadow DOM v0 support
     {
       name: "ShadowDOMV0",
+      origin_trial_feature_name: "WebComponentsV0",
       status: "stable",
     },
     {
@@ -1188,15 +1222,13 @@
       name: "SignedHTTPExchange",
     },
     {
-      name: "SlimmingPaintV2",
-    },
-    {
-      name: "SMIL",
-      status: "stable",
-    },
-    {
       name: "SmoothScrollJSIntervention",
       status: "stable",
+    },
+    // When this is enabled (and Spatial Navigation is enabled), overrides of box shadow and outline
+    // on focused elements will be ignored.
+    {
+      name: "SpatialNavigationForcesOutline",
     },
     // Used as argument in attribute of stable-release functions/interfaces
     // where a runtime-enabled feature name is required for correct IDL syntax.
@@ -1212,6 +1244,10 @@
     {
       name: "StaleWhileRevalidate",
       origin_trial_feature_name: "StaleWhileRevalidate",
+      status: "experimental",
+    },
+    {
+      name: "StorageQuotaDetails",
       status: "experimental",
     },
     {
@@ -1236,12 +1272,6 @@
       origin_trial_feature_name: "ForceTouchEventFeatureDetectionForInspector",
       status: "stable",
     },
-    // This is set conditionally in SetRuntimeFeaturesDefaultsAndUpdateFromArgs
-    // and will eventually go away when the touchpad/wheel scroll latching is
-    // enabled on all platforms (http://crbug.com/526463).
-    {
-      name: "TouchpadAndWheelScrollLatching",
-    },
     // When enabled, tracks the number of times each LayoutBlock
     // goes through layout. For testing purposes only.
     {
@@ -1249,6 +1279,11 @@
     },
     {
       name: "TransferableStreams",
+      status: "experimental",
+    },
+    // This is conditionally set if the platform supports translation.
+    {
+      name: "TranslateService"
     },
     {
       name: "TrustedDOMTypes",
@@ -1268,7 +1303,7 @@
     },
     {
       name: "UserActivationAPI",
-      status: "experimental",
+      status: "stable",
     },
     {
       name: "UserActivationV2",
@@ -1301,8 +1336,13 @@
       status: "experimental",
     },
     {
+      name: "WasmCodeCache",
+      status: "experimental",
+    },
+    {
       name: "WebAnimationsAPI",
       status: "experimental",
+      implied_by: ['AnimationWorklet']
     },
     {
       name: "WebAnimationsSVG",
@@ -1349,10 +1389,6 @@
     {
       name: "WebGPU",
       status: "test",
-    },
-    {
-      name: "WebLocksAPI",
-      status: "stable",
     },
     {
       name: "WebNFC",

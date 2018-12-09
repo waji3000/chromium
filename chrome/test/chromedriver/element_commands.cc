@@ -33,11 +33,10 @@ const int kFlickTouchEventsPerSecond = 30;
 
 namespace {
 
-Status SendKeysToElement(
+Status FocusToElement(
     Session* session,
     WebView* web_view,
-    const std::string& element_id,
-    const base::ListValue* key_list) {
+    const std::string& element_id) {
   bool is_displayed = false;
   bool is_focused = false;
   base::TimeTicks start_time = base::TimeTicks::Now();
@@ -75,7 +74,17 @@ Status SendKeysToElement(
     if (status.IsError())
       return status;
   }
+  return Status(kOk);
+}
 
+Status SendKeysToElement(
+    Session* session,
+    WebView* web_view,
+    const std::string& element_id,
+    const base::ListValue* key_list) {
+  Status status = FocusToElement(session, web_view, element_id);
+  if (status.IsError())
+    return status;
   return SendKeysOnWindow(web_view, key_list, true, &session->sticky_modifiers);
 }
 
@@ -91,7 +100,7 @@ Status ExecuteElementCommand(
   std::string id;
   if (params.GetString("id", &id) || params.GetString("element", &id))
     return command.Run(session, web_view, id, params, value);
-  return Status(kUnknownError, "element identifier must be a string");
+  return Status(kInvalidArgument, "element identifier must be a string");
 }
 
 Status ExecuteFindChildElement(int interval_ms,
@@ -249,13 +258,13 @@ Status ExecuteFlick(Session* session,
 
   int xoffset, yoffset, speed;
   if (!params.GetInteger("xoffset", &xoffset))
-    return Status(kUnknownError, "'xoffset' must be an integer");
+    return Status(kInvalidArgument, "'xoffset' must be an integer");
   if (!params.GetInteger("yoffset", &yoffset))
-    return Status(kUnknownError, "'yoffset' must be an integer");
+    return Status(kInvalidArgument, "'yoffset' must be an integer");
   if (!params.GetInteger("speed", &speed))
-    return Status(kUnknownError, "'speed' must be an integer");
+    return Status(kInvalidArgument, "'speed' must be an integer");
   if (speed < 1)
-    return Status(kUnknownError, "'speed' must be a positive integer");
+    return Status(kInvalidArgument, "'speed' must be a positive integer");
 
   status = web_view->DispatchTouchEvent(
       TouchEvent(kTouchStart, location.x, location.y));
@@ -319,8 +328,17 @@ Status ExecuteSendKeysToElement(Session* session,
                                 const base::DictionaryValue& params,
                                 std::unique_ptr<base::Value>* value) {
   const base::ListValue* key_list;
-  if (!params.GetList("value", &key_list))
-    return Status(kUnknownError, "'value' must be a list");
+  base::ListValue key_list_local;
+  if (session->w3c_compliant) {
+    const base::Value* text;
+    if (!params.Get("text", &text) || !text->is_string())
+      return Status(kInvalidArgument, "'text' must be a string");
+    key_list_local.Set(0, std::make_unique<base::Value>(text->Clone()));
+    key_list = &key_list_local;
+  } else {
+    if (!params.GetList("value", &key_list))
+      return Status(kInvalidArgument, "'value' must be a list");
+  }
 
   bool is_input = false;
   Status status = IsElementAttributeEqualToIgnoreCase(
@@ -333,12 +351,17 @@ Status ExecuteSendKeysToElement(Session* session,
   if (status.IsError())
     return status;
   if (is_input && is_file) {
+    if (session->strict_file_interactability) {
+      status = FocusToElement(session, web_view,element_id);
+      if (status.IsError())
+        return status;
+    }
     // Compress array into a single string.
     base::FilePath::StringType paths_string;
     for (size_t i = 0; i < key_list->GetSize(); ++i) {
       base::FilePath::StringType path_part;
       if (!key_list->GetString(i, &path_part))
-        return Status(kUnknownError, "'value' is invalid");
+        return Status(kInvalidArgument, "'value' is invalid");
       paths_string.append(path_part);
     }
 
@@ -429,7 +452,7 @@ Status ExecuteGetElementProperty(Session* session,
 
   std::string name;
   if (!params.GetString("name", &name))
-    return Status(kUnknownError, "missing 'name'");
+    return Status(kInvalidArgument, "missing 'name'");
   args.AppendString(name);
 
   return web_view->CallFunction(
@@ -474,11 +497,22 @@ Status ExecuteIsElementEnabled(Session* session,
                                std::unique_ptr<base::Value>* value) {
   base::ListValue args;
   args.Append(CreateElement(element_id));
-  return web_view->CallFunction(
+
+  bool is_xml = false;
+  Status status = IsDocumentTypeXml(session, web_view, &is_xml);
+  if (status.IsError())
+    return status;
+
+  if (is_xml) {
+      value->reset(new base::Value(false));
+      return Status(kOk);
+  } else {
+    return web_view->CallFunction(
       session->GetCurrentFrameId(),
       webdriver::atoms::asString(webdriver::atoms::IS_ENABLED),
       args,
       value);
+  }
 }
 
 Status ExecuteIsElementDisplayed(Session* session,
@@ -598,25 +632,34 @@ Status ExecuteGetElementAttribute(Session* session,
                                   std::unique_ptr<base::Value>* value) {
   std::string name;
   if (!params.GetString("name", &name))
-    return Status(kUnknownError, "missing 'name'");
+    return Status(kInvalidArgument, "missing 'name'");
   return GetElementAttribute(session, web_view, element_id, name, value);
 }
 
 Status ExecuteGetElementValueOfCSSProperty(
-    Session* session,
-    WebView* web_view,
-    const std::string& element_id,
-    const base::DictionaryValue& params,
-    std::unique_ptr<base::Value>* value) {
-  std::string property_name;
-  if (!params.GetString("propertyName", &property_name))
-    return Status(kUnknownError, "missing 'propertyName'");
-  std::string property_value;
-  Status status = GetElementEffectiveStyle(
-      session, web_view, element_id, property_name, &property_value);
+                                      Session* session,
+                                      WebView* web_view,
+                                      const std::string& element_id,
+                                      const base::DictionaryValue& params,
+                                      std::unique_ptr<base::Value>* value) {
+  bool is_xml = false;
+  Status status = IsDocumentTypeXml(session, web_view, &is_xml);
   if (status.IsError())
     return status;
-  value->reset(new base::Value(property_value));
+
+  if (is_xml) {
+      value->reset(new base::Value(""));
+  } else {
+    std::string property_name;
+    if (!params.GetString("propertyName", &property_name))
+      return Status(kInvalidArgument, "missing 'propertyName'");
+    std::string property_value;
+    status = GetElementEffectiveStyle(
+        session, web_view, element_id, property_name, &property_value);
+    if (status.IsError())
+      return status;
+    value->reset(new base::Value(property_value));
+  }
   return Status(kOk);
 }
 
@@ -627,7 +670,7 @@ Status ExecuteElementEquals(Session* session,
                             std::unique_ptr<base::Value>* value) {
   std::string other_element_id;
   if (!params.GetString("other", &other_element_id))
-    return Status(kUnknownError, "'other' must be a string");
+    return Status(kInvalidArgument, "'other' must be a string");
   value->reset(new base::Value(element_id == other_element_id));
   return Status(kOk);
 }

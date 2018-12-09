@@ -17,7 +17,7 @@
 #include "base/md5.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/stringprintf.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "base/task/post_task.h"
 #include "base/task_runner_util.h"
 #include "base/timer/timer.h"
@@ -40,6 +40,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
 #include "chromeos/chromeos_features.h"
+#include "chromeos/network/portal_detector/network_portal_detector.h"
 #include "components/drive/chromeos/file_cache.h"
 #include "components/drive/chromeos/file_system.h"
 #include "components/drive/chromeos/file_system_observer.h"
@@ -393,7 +394,8 @@ void UmaEmitFirstLaunch(const base::TimeTicks& time_started) {
 
 // Observes drive disable Preference's change.
 class DriveIntegrationService::PreferenceWatcher
-    : public network::NetworkConnectionTracker::NetworkConnectionObserver {
+    : public network::NetworkConnectionTracker::NetworkConnectionObserver,
+      public chromeos::NetworkPortalDetector::Observer {
  public:
   explicit PreferenceWatcher(PrefService* pref_service)
       : pref_service_(pref_service),
@@ -415,6 +417,7 @@ class DriveIntegrationService::PreferenceWatcher
     if (integration_service_ && integration_service_->drivefs_holder_) {
       content::GetNetworkConnectionTracker()->RemoveNetworkConnectionObserver(
           this);
+      chromeos::network_portal_detector::GetInstance()->RemoveObserver(this);
     }
   }
 
@@ -423,6 +426,14 @@ class DriveIntegrationService::PreferenceWatcher
     if (integration_service_->drivefs_holder_) {
       content::GetNetworkConnectionTracker()->AddNetworkConnectionObserver(
           this);
+
+      // The NetworkPortalDetector instance may not be ready yet, so defer
+      // accessing it.
+      base::SequencedTaskRunnerHandle::Get()->PostTask(
+          FROM_HERE,
+          base::BindOnce(&DriveIntegrationService::PreferenceWatcher::
+                             AddNetworkPortalDetectorObserver,
+                         weak_ptr_factory_.GetWeakPtr()));
     }
   }
 
@@ -436,6 +447,13 @@ class DriveIntegrationService::PreferenceWatcher
     }
   }
 
+  bool is_offline() const {
+    return last_portal_status_ !=
+               chromeos::NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_ONLINE &&
+           last_portal_status_ !=
+               chromeos::NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_UNKNOWN;
+  }
+
  private:
   void OnPreferenceChanged() {
     DCHECK(integration_service_);
@@ -443,30 +461,42 @@ class DriveIntegrationService::PreferenceWatcher
         !pref_service_->GetBoolean(prefs::kDisableDrive));
   }
 
+  void AddNetworkPortalDetectorObserver() {
+    chromeos::network_portal_detector::GetInstance()->AddAndFireObserver(this);
+  }
+
+  // chromeos::NetworkPortalDetector::Observer
+  void OnPortalDetectionCompleted(
+      const chromeos::NetworkState* network,
+      const chromeos::NetworkPortalDetector::CaptivePortalState& state)
+      override {
+    last_portal_status_ = state.status;
+
+    if (integration_service_->remount_when_online_ &&
+        last_portal_status_ ==
+            chromeos::NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_ONLINE) {
+      integration_service_->remount_when_online_ = false;
+      integration_service_->mount_start_ = {};
+      integration_service_->AddDriveMountPoint();
+    }
+  }
+
   // network::NetworkConnectionTracker::NetworkConnectionObserver
   void OnConnectionChanged(network::mojom::ConnectionType type) override {
-    bool is_offline = type == network::mojom::ConnectionType::CONNECTION_NONE;
-    // Check for a pending remount first. In this case, DriveFS will not be
-    // mounted and thus its interface will be null.
-    if (integration_service_->drivefs_holder_ &&
-        integration_service_->remount_when_online_ && !is_offline) {
-      integration_service_->remount_when_online_ = false;
-      integration_service_->AddDriveMountPoint();
-      return;
-    }
-
     if (!integration_service_->GetDriveFsInterface())
       return;
 
     integration_service_->GetDriveFsInterface()->UpdateNetworkState(
         network::NetworkConnectionTracker::IsConnectionCellular(type) &&
             pref_service_->GetBoolean(prefs::kDisableDriveOverCellular),
-        is_offline);
+        type == network::mojom::ConnectionType::CONNECTION_NONE);
   }
 
   PrefService* pref_service_;
   PrefChangeRegistrar pref_change_registrar_;
   DriveIntegrationService* integration_service_;
+  chromeos::NetworkPortalDetector::CaptivePortalStatus last_portal_status_ =
+      chromeos::NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_UNKNOWN;
 
   base::WeakPtrFactory<PreferenceWatcher> weak_ptr_factory_;
   DISALLOW_COPY_AND_ASSIGN(PreferenceWatcher);
@@ -606,7 +636,6 @@ DriveIntegrationService::DriveIntegrationService(
       cache_root_directory_(!test_cache_root.empty()
                                 ? test_cache_root
                                 : util::GetCacheRootPath(profile)),
-      preference_watcher_(preference_watcher),
       drivefs_holder_(
           base::FeatureList::IsEnabled(chromeos::features::kDriveFs)
               ? std::make_unique<DriveFsHolder>(
@@ -614,6 +643,7 @@ DriveIntegrationService::DriveIntegrationService(
                     this,
                     std::move(test_drivefs_mojo_connection_delegate_factory))
               : nullptr),
+      preference_watcher_(preference_watcher),
       weak_ptr_factory_(this) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(profile && !profile->IsOffTheRecord());
@@ -728,7 +758,7 @@ void DriveIntegrationService::SetEnabled(bool enabled) {
   // want to run the check for the first SetEnabled() called in the constructor,
   // which may be a change from false to false.
   if (!enabled)
-    AvoidDriveAsDownloadDirecotryPreference();
+    AvoidDriveAsDownloadDirectoryPreference();
 
   // Do nothing if not changed.
   if (enabled_ == enabled)
@@ -761,6 +791,7 @@ void DriveIntegrationService::SetEnabled(bool enabled) {
     drivefs_total_failures_count_ = 0;
     drivefs_consecutive_failures_count_ = 0;
     mount_failed_ = false;
+    mount_start_ = {};
   }
 }
 
@@ -978,8 +1009,8 @@ void DriveIntegrationService::MaybeRemountFileSystem(
   RemoveDriveMountPoint();
 
   if (!remount_delay) {
-    if (failed_to_mount &&
-        content::GetNetworkConnectionTracker()->IsOffline()) {
+    if (failed_to_mount && preference_watcher_ &&
+        preference_watcher_->is_offline()) {
       logger_->Log(logging::LOG_WARNING,
                    "DriveFs failed to start, will retry when online.");
       remount_when_online_ = true;
@@ -1107,7 +1138,7 @@ void DriveIntegrationService::InitializeAfterMetadataInitialized(
     LOG(WARNING) << "Failed to initialize: " << FileErrorToString(error);
 
     // Cannot used Drive. Set the download destination preference out of Drive.
-    AvoidDriveAsDownloadDirecotryPreference();
+    AvoidDriveAsDownloadDirectoryPreference();
 
     // Back to NOT_INITIALIZED state. Then, re-running Initialize() should
     // work if the error is recoverable manually (such as out of disk space).
@@ -1164,14 +1195,24 @@ void DriveIntegrationService::InitializeAfterMetadataInitialized(
     AddDriveMountPoint();
 }
 
-void DriveIntegrationService::AvoidDriveAsDownloadDirecotryPreference() {
-  PrefService* pref_service = profile_->GetPrefs();
-  if (util::IsUnderDriveMountPoint(
-          pref_service->GetFilePath(::prefs::kDownloadDefaultDirectory))) {
-    pref_service->SetFilePath(
+void DriveIntegrationService::AvoidDriveAsDownloadDirectoryPreference() {
+  if (DownloadDirectoryPreferenceIsInDrive()) {
+    profile_->GetPrefs()->SetFilePath(
         ::prefs::kDownloadDefaultDirectory,
         file_manager::util::GetDownloadsFolderForProfile(profile_));
   }
+}
+
+bool DriveIntegrationService::DownloadDirectoryPreferenceIsInDrive() {
+  const auto downloads_path =
+      profile_->GetPrefs()->GetFilePath(::prefs::kDownloadDefaultDirectory);
+
+  if (!drivefs_holder_) {
+    return util::IsUnderDriveMountPoint(downloads_path);
+  }
+  const auto* user = chromeos::ProfileHelper::Get()->GetUserByProfile(profile_);
+  return user && user->GetAccountId().HasAccountIdKey() &&
+         GetMountPointPath().IsParent(downloads_path);
 }
 
 void DriveIntegrationService::Observe(

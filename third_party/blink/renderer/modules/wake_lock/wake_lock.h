@@ -16,6 +16,7 @@
 
 namespace blink {
 
+class Document;
 class WakeLockRequest;
 
 class WakeLock final : public EventTargetWithInlineData,
@@ -26,6 +27,9 @@ class WakeLock final : public EventTargetWithInlineData,
   USING_GARBAGE_COLLECTED_MIXIN(WakeLock);
 
  public:
+  enum class LockType { kSystem, kScreen };
+
+  WakeLock(ScriptState*, LockType);
   ~WakeLock() override;
 
   // wake_lock.idl implementation
@@ -61,10 +65,6 @@ class WakeLock final : public EventTargetWithInlineData,
   void CancelRequest();
 
  private:
-  enum class LockType { kSystem, kScreen };
-
-  WakeLock(ScriptState*, LockType);
-
   // Error handler in case of failure to connect to Wake Lock mojo service
   void OnConnectionError();
 
@@ -73,6 +73,9 @@ class WakeLock final : public EventTargetWithInlineData,
 
   // Binds to the Wake Lock mojo service
   void BindToServiceIfNeeded();
+
+  // Returns the document associated with the object. nullptr if there is none.
+  Document* GetDocument();
 
   device::mojom::blink::WakeLockPtr wake_lock_service_;
 

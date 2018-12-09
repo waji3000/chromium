@@ -11,24 +11,23 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "base/test/scoped_task_environment.h"
 #include "build/build_config.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
 #include "components/prefs/testing_pref_service.h"
+#include "components/signin/core/browser/account_consistency_method.h"
 #include "components/signin/core/browser/account_tracker_service.h"
 #include "components/signin/core/browser/device_id_helper.h"
 #include "components/signin/core/browser/fake_account_fetcher_service.h"
 #include "components/signin/core/browser/fake_gaia_cookie_manager_service.h"
 #include "components/signin/core/browser/fake_profile_oauth2_token_service.h"
-#include "components/signin/core/browser/profile_management_switches.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_pref_names.h"
 #include "components/signin/core/browser/test_signin_client.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
-#include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "net/cookies/cookie_monster.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -57,19 +56,16 @@ class TestSigninManagerObserver : public SigninManagerBase::Observer {
     num_failed_signins_++;
   }
 
-  void GoogleSigninSucceeded(const std::string& account_id,
-                             const std::string& username) override {
+  void GoogleSigninSucceeded(const AccountInfo& account_info) override {
     num_successful_signins_++;
   }
 
-  void GoogleSigninSucceededWithPassword(const std::string& account_id,
-                                         const std::string& username,
+  void GoogleSigninSucceededWithPassword(const AccountInfo& account_info,
                                          const std::string& password) override {
     num_successful_signins_with_password_++;
   }
 
-  void GoogleSignedOut(const std::string& account_id,
-                       const std::string& username) override {
+  void GoogleSignedOut(const AccountInfo& account_info) override {
     num_signouts_++;
   }
 };
@@ -82,7 +78,6 @@ class SigninManagerTest : public testing::Test {
       : test_signin_client_(&user_prefs_),
         token_service_(&user_prefs_),
         cookie_manager_service_(&token_service_,
-                                GaiaConstants::kChromeSource,
                                 &test_signin_client_),
         account_consistency_(signin::AccountConsistencyMethod::kDisabled) {
     AccountFetcherService::RegisterPrefs(user_prefs_.registry());
@@ -161,7 +156,7 @@ class SigninManagerTest : public testing::Test {
     manager_->CompletePendingSignin();
   }
 
-  base::MessageLoop loop_;
+  base::test::ScopedTaskEnvironment task_environment_;
   sync_preferences::TestingPrefServiceSyncable user_prefs_;
   TestingPrefServiceSimple local_state_;
   TestSigninClient test_signin_client_;
@@ -198,10 +193,10 @@ TEST_F(SigninManagerTest, SignInWithRefreshTokenCallbackComplete) {
   EXPECT_FALSE(manager_->IsAuthenticated());
 
   // Since the password is empty, must verify the gaia cookies first.
-  SigninManager::OAuthTokenFetchedCallback callback = base::Bind(
-      &SigninManagerTest::CompleteSigninCallback, base::Unretained(this));
-  manager_->StartSignInWithRefreshToken("rt", "gaia_id", "user@gmail.com",
-                                        "password", callback);
+  manager_->StartSignInWithRefreshToken(
+      "rt", "gaia_id", "user@gmail.com", "password",
+      base::BindOnce(&SigninManagerTest::CompleteSigninCallback,
+                     base::Unretained(this)));
 
   ExpectSignInWithRefreshTokenSuccess();
   ASSERT_EQ(1U, oauth_tokens_fetched_.size());

@@ -87,17 +87,17 @@ DocumentMarker::MarkerTypeIndex MarkerTypeToMarkerIndex(
 DocumentMarkerList* CreateListForType(DocumentMarker::MarkerType type) {
   switch (type) {
     case DocumentMarker::kActiveSuggestion:
-      return new ActiveSuggestionMarkerListImpl();
+      return MakeGarbageCollected<ActiveSuggestionMarkerListImpl>();
     case DocumentMarker::kComposition:
-      return new CompositionMarkerListImpl();
+      return MakeGarbageCollected<CompositionMarkerListImpl>();
     case DocumentMarker::kSpelling:
-      return new SpellingMarkerListImpl();
+      return MakeGarbageCollected<SpellingMarkerListImpl>();
     case DocumentMarker::kGrammar:
-      return new GrammarMarkerListImpl();
+      return MakeGarbageCollected<GrammarMarkerListImpl>();
     case DocumentMarker::kSuggestion:
-      return new SuggestionMarkerListImpl();
+      return MakeGarbageCollected<SuggestionMarkerListImpl>();
     case DocumentMarker::kTextMatch:
-      return new TextMatchMarkerListImpl();
+      return MakeGarbageCollected<TextMatchMarkerListImpl>();
   }
 
   NOTREACHED();
@@ -154,14 +154,16 @@ void DocumentMarkerController::Clear() {
 void DocumentMarkerController::AddSpellingMarker(const EphemeralRange& range,
                                                  const String& description) {
   AddMarkerInternal(range, [&description](int start_offset, int end_offset) {
-    return new SpellingMarker(start_offset, end_offset, description);
+    return MakeGarbageCollected<SpellingMarker>(start_offset, end_offset,
+                                                description);
   });
 }
 
 void DocumentMarkerController::AddGrammarMarker(const EphemeralRange& range,
                                                 const String& description) {
   AddMarkerInternal(range, [&description](int start_offset, int end_offset) {
-    return new GrammarMarker(start_offset, end_offset, description);
+    return MakeGarbageCollected<GrammarMarker>(start_offset, end_offset,
+                                               description);
   });
 }
 
@@ -170,7 +172,8 @@ void DocumentMarkerController::AddTextMatchMarker(
     TextMatchMarker::MatchStatus match_status) {
   DCHECK(!document_->NeedsLayoutTreeUpdate());
   AddMarkerInternal(range, [match_status](int start_offset, int end_offset) {
-    return new TextMatchMarker(start_offset, end_offset, match_status);
+    return MakeGarbageCollected<TextMatchMarker>(start_offset, end_offset,
+                                                 match_status);
   });
   // Don't invalidate tickmarks here. TextFinder invalidates tickmarks using a
   // throttling algorithm. crbug.com/6819.
@@ -184,8 +187,8 @@ void DocumentMarkerController::AddCompositionMarker(
   DCHECK(!document_->NeedsLayoutTreeUpdate());
   AddMarkerInternal(range, [underline_color, thickness, background_color](
                                int start_offset, int end_offset) {
-    return new CompositionMarker(start_offset, end_offset, underline_color,
-                                 thickness, background_color);
+    return MakeGarbageCollected<CompositionMarker>(
+        start_offset, end_offset, underline_color, thickness, background_color);
   });
 }
 
@@ -197,8 +200,8 @@ void DocumentMarkerController::AddActiveSuggestionMarker(
   DCHECK(!document_->NeedsLayoutTreeUpdate());
   AddMarkerInternal(range, [underline_color, thickness, background_color](
                                int start_offset, int end_offset) {
-    return new ActiveSuggestionMarker(start_offset, end_offset, underline_color,
-                                      thickness, background_color);
+    return MakeGarbageCollected<ActiveSuggestionMarker>(
+        start_offset, end_offset, underline_color, thickness, background_color);
   });
 }
 
@@ -207,7 +210,8 @@ void DocumentMarkerController::AddSuggestionMarker(
     const SuggestionMarkerProperties& properties) {
   DCHECK(!document_->NeedsLayoutTreeUpdate());
   AddMarkerInternal(range, [&properties](int start_offset, int end_offset) {
-    return new SuggestionMarker(start_offset, end_offset, properties);
+    return MakeGarbageCollected<SuggestionMarker>(start_offset, end_offset,
+                                                  properties);
   });
 }
 
@@ -397,13 +401,11 @@ DocumentMarker* DocumentMarkerController::FirstMarkerAroundPosition(
     return nullptr;
 
   const PositionInFlatTree start_of_word_or_null =
-      StartOfWord(CreateVisiblePosition(position), kPreviousWordIfOnBoundary)
-          .DeepEquivalent();
+      StartOfWordPosition(position, kPreviousWordIfOnBoundary);
   const PositionInFlatTree start =
       start_of_word_or_null.IsNotNull() ? start_of_word_or_null : position;
   const PositionInFlatTree end_of_word_or_null =
-      EndOfWord(CreateVisiblePosition(position), kNextWordIfOnBoundary)
-          .DeepEquivalent();
+      EndOfWordPosition(position, kNextWordIfOnBoundary);
   const PositionInFlatTree end =
       end_of_word_or_null.IsNotNull() ? end_of_word_or_null : position;
 

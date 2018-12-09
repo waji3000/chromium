@@ -51,24 +51,26 @@ bool SchedulerWorkerPool::IsBoundToCurrentThread() const {
 
 void SchedulerWorkerPool::PostTaskWithSequenceNow(
     Task task,
-    scoped_refptr<Sequence> sequence) {
+    SequenceAndTransaction sequence_and_transaction) {
   DCHECK(task.task);
-  DCHECK(sequence);
 
   // Confirm that |task| is ready to run (its delayed run time is either null or
   // in the past).
   DCHECK_LE(task.delayed_run_time, TimeTicks::Now());
 
-  const bool sequence_was_empty = sequence->PushTask(std::move(task));
+  const bool sequence_was_empty =
+      sequence_and_transaction.transaction.PushTask(std::move(task));
   if (sequence_was_empty) {
-    // Try to schedule |sequence| if it was empty before |task| was inserted
-    // into it. Otherwise, one of these must be true:
-    // - |sequence| is already scheduled, or,
-    // - The pool is running a Task from |sequence|. The pool is expected to
-    //   reschedule |sequence| once it's done running the Task.
-    sequence = task_tracker_->WillScheduleSequence(std::move(sequence), this);
-    if (sequence)
-      OnCanScheduleSequence(std::move(sequence));
+    // Try to schedule the Sequence locked by |sequence_transaction| if it was
+    // empty before |task| was inserted into it. Otherwise, one of these must be
+    // true:
+    // - The Sequence is already scheduled, or,
+    // - The pool is running a Task from the Sequence. The pool is expected to
+    //   reschedule the Sequence once it's done running the Task.
+    if (task_tracker_->WillScheduleSequence(
+            sequence_and_transaction.transaction, this)) {
+      OnCanScheduleSequence(std::move(sequence_and_transaction));
+    }
   }
 }
 

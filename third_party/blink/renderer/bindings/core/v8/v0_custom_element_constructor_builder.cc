@@ -30,7 +30,7 @@
 
 #include "third_party/blink/renderer/bindings/core/v8/v0_custom_element_constructor_builder.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/string_or_dictionary.h"
+#include "third_party/blink/renderer/bindings/core/v8/string_or_element_creation_options.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_document.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_html_element.h"
@@ -91,7 +91,7 @@ bool V0CustomElementConstructorBuilder::ValidateOptions(
     prototype_ = v8::Object::New(script_state_->GetIsolate());
     v8::Local<v8::Object> base_prototype =
         script_state_->PerContextData()->PrototypeForType(
-            &V8HTMLElement::wrapperTypeInfo);
+            V8HTMLElement::GetWrapperTypeInfo());
     if (!base_prototype.IsEmpty()) {
       bool set_prototype;
       if (!prototype_->SetPrototype(script_state_->GetContext(), base_prototype)
@@ -103,7 +103,7 @@ bool V0CustomElementConstructorBuilder::ValidateOptions(
   }
 
   AtomicString namespace_uri = html_names::xhtmlNamespaceURI;
-  if (HasValidPrototypeChainFor(&V8SVGElement::wrapperTypeInfo))
+  if (HasValidPrototypeChainFor(V8SVGElement::GetWrapperTypeInfo()))
     namespace_uri = svg_names::kNamespaceURI;
 
   DCHECK(!try_catch.HasCaught());
@@ -384,14 +384,13 @@ static void ConstructCustomElement(
       maybe_type->IsUndefined()) {
     return;
   }
-  TOSTRING_VOID(V8StringResource<>, type, maybe_type);
+  TOSTRING_VOID(V8StringResource<kTreatNullAsNullString>, type, maybe_type);
 
   ExceptionState exception_state(isolate, ExceptionState::kConstructionContext,
                                  "CustomElement");
   V0CustomElementProcessingStack::CallbackDeliveryScope delivery_scope;
   Element* element = document->createElementNS(
-      namespace_uri, tag_name,
-      StringOrDictionary::FromString(maybe_type->IsNull() ? g_null_atom : type),
+      namespace_uri, tag_name, StringOrElementCreationOptions::FromString(type),
       exception_state);
   if (element) {
     UseCounter::Count(document, WebFeature::kV0CustomElementsConstruct);

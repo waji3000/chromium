@@ -4,15 +4,6 @@
 
 import("//build/config/features.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
-import("//build/buildflag_header.gni")
-
-import("buildflags.gni")
-
-# Generate a buildflag header for compile-time checking of Windows WebAuthn API integration.
-buildflag_header("buildflags") {
-  header = "buildflags.h"
-  flags = [ "USE_WIN_WEBAUTHN_API=$use_win_webauthn_api" ]
-}
 
 component("fido") {
   sources = [
@@ -73,6 +64,8 @@ component("fido") {
     "device_response_converter.h",
     "ec_public_key.cc",
     "ec_public_key.h",
+    "features.cc",
+    "features.h",
     "fido_authenticator.h",
     "fido_constants.cc",
     "fido_constants.h",
@@ -149,6 +142,7 @@ component("fido") {
     "//services/service_manager/public/cpp",
     "//services/service_manager/public/mojom",
     "//third_party/boringssl",
+    "//third_party/microsoft_webauthn",
     "//ui/base",
   ]
 
@@ -205,10 +199,12 @@ component("fido") {
     ]
   }
 
-  if (is_win && use_win_webauthn_api) {
+  if (is_win) {
     sources += [
       "win/authenticator.cc",
       "win/authenticator.h",
+      "win/discovery.cc",
+      "win/discovery.h",
       "win/type_conversions.cc",
       "win/type_conversions.h",
       "win/webauthn_api.cc",
@@ -302,6 +298,8 @@ source_set("test_support") {
     "//device/fido",
     "//mojo/public/cpp/bindings",
     "//services/device/public/mojom",
+    "//services/service_manager/public/cpp",
+    "//services/service_manager/public/mojom",
     "//testing/gmock",
     "//testing/gtest",
   ]
@@ -322,6 +320,13 @@ source_set("test_support") {
       "mac/fake_touch_id_context.mm",
       "mac/scoped_touch_id_test_environment.h",
       "mac/scoped_touch_id_test_environment.mm",
+    ]
+  }
+
+  if (is_win) {
+    sources += [
+      "win/fake_webauthn_api.cc",
+      "win/fake_webauthn_api.h",
     ]
   }
 }

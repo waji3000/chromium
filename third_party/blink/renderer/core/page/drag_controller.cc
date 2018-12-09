@@ -150,7 +150,7 @@ DragController::DragController(Page* page)
       did_initiate_drag_(false) {}
 
 DragController* DragController::Create(Page* page) {
-  return new DragController(page);
+  return MakeGarbageCollected<DragController>(page);
 }
 
 static DocumentFragment* DocumentFragmentFromDragData(
@@ -1300,7 +1300,7 @@ void DragController::DoSystemDrag(DragImage* image,
       frame->View()->FrameToViewport(drag_location);
   IntPoint adjusted_event_pos = frame->View()->FrameToViewport(event_pos);
   IntSize offset_size(adjusted_event_pos - adjusted_drag_location);
-  WebPoint offset_point(offset_size.Width(), offset_size.Height());
+  gfx::Point offset_point(offset_size.Width(), offset_size.Height());
   WebDragData drag_data = data_transfer->GetDataObject()->ToWebDragData();
   WebDragOperationsMask drag_operation_mask =
       static_cast<WebDragOperationsMask>(data_transfer->SourceOperation());
@@ -1344,7 +1344,7 @@ bool DragController::IsCopyKeyDown(DragData* drag_data) {
 
 DragState& DragController::GetDragState() {
   if (!drag_state_)
-    drag_state_ = new DragState;
+    drag_state_ = MakeGarbageCollected<DragState>();
   return *drag_state_;
 }
 

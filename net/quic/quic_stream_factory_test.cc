@@ -1666,12 +1666,25 @@ TEST_P(QuicStreamFactoryTest, MaxOpenStream) {
   quic::QuicStreamId stream_id = GetNthClientInitiatedStreamId(0);
   MockQuicData socket_data;
   socket_data.AddWrite(SYNCHRONOUS, ConstructInitialSettingsPacket());
-  socket_data.AddWrite(
-      SYNCHRONOUS, client_maker_.MakeRstPacket(2, true, stream_id,
-                                               quic::QUIC_STREAM_CANCELLED));
-  socket_data.AddRead(ASYNC,
-                      server_maker_.MakeRstPacket(1, false, stream_id,
-                                                  quic::QUIC_STREAM_CANCELLED));
+  if (version_ == quic::QUIC_VERSION_99) {
+    socket_data.AddWrite(SYNCHRONOUS,
+                         client_maker_.MakeStreamIdBlockedPacket(2, true, 102));
+    socket_data.AddWrite(
+        SYNCHRONOUS, client_maker_.MakeRstPacket(3, true, stream_id,
+                                                 quic::QUIC_STREAM_CANCELLED));
+    socket_data.AddRead(
+        ASYNC, server_maker_.MakeRstPacket(1, false, stream_id,
+                                           quic::QUIC_STREAM_CANCELLED));
+    socket_data.AddRead(ASYNC,
+                        server_maker_.MakeMaxStreamIdPacket(4, true, 102 + 2));
+  } else {
+    socket_data.AddWrite(
+        SYNCHRONOUS, client_maker_.MakeRstPacket(2, true, stream_id,
+                                                 quic::QUIC_STREAM_CANCELLED));
+    socket_data.AddRead(
+        ASYNC, server_maker_.MakeRstPacket(1, false, stream_id,
+                                           quic::QUIC_STREAM_CANCELLED));
+  }
   socket_data.AddRead(SYNCHRONOUS, ERR_IO_PENDING);
   socket_data.AddSocketDataToFactory(socket_factory_.get());
 
@@ -1719,6 +1732,7 @@ TEST_P(QuicStreamFactoryTest, MaxOpenStream) {
   streams.front()->Close(false);
   // Trigger exchange of RSTs that in turn allow progress for the last
   // stream.
+  base::RunLoop().RunUntilIdle();
   EXPECT_THAT(callback_.WaitForResult(), IsOk());
 
   EXPECT_TRUE(socket_data.AllReadDataConsumed());
@@ -2691,7 +2705,8 @@ TEST_P(QuicStreamFactoryTest, OnNetworkMadeDefaultNonMigratableStream) {
   socket_data.AddWrite(
       SYNCHRONOUS,
       client_maker_.MakeRstAckAndConnectionClosePacket(
-          3, false, 5, quic::QUIC_STREAM_CANCELLED,
+          3, false, GetNthClientInitiatedStreamId(0),
+          quic::QUIC_STREAM_CANCELLED,
           quic::QuicTime::Delta::FromMilliseconds(0), 1, 1, 1,
           quic::QUIC_CONNECTION_MIGRATION_NO_MIGRATABLE_STREAMS, "net error"));
 
@@ -4374,7 +4389,8 @@ TEST_P(QuicStreamFactoryTest, MigrateSessionEarlyNonMigratableStream) {
   socket_data.AddWrite(
       SYNCHRONOUS,
       client_maker_.MakeRstAckAndConnectionClosePacket(
-          3, false, 5, quic::QUIC_STREAM_CANCELLED,
+          3, false, GetNthClientInitiatedStreamId(0),
+          quic::QUIC_STREAM_CANCELLED,
           quic::QuicTime::Delta::FromMilliseconds(0), 1, 1, 1,
           quic::QUIC_CONNECTION_MIGRATION_NO_MIGRATABLE_STREAMS, "net error"));
   socket_data.AddSocketDataToFactory(socket_factory_.get());
@@ -8400,6 +8416,42 @@ TEST_P(QuicStreamFactoryTest, HostResolverUsesRequestPriority) {
 
   EXPECT_TRUE(socket_data.AllReadDataConsumed());
   EXPECT_TRUE(socket_data.AllWriteDataConsumed());
+}
+
+TEST_P(QuicStreamFactoryTest, HostResolverRequestReprioritizedOnSetPriority) {
+  Initialize();
+  ProofVerifyDetailsChromium verify_details = DefaultProofVerifyDetails();
+  crypto_client_stream_factory_.AddProofVerifyDetails(&verify_details);
+
+  MockQuicData socket_data;
+  socket_data.AddRead(SYNCHRONOUS, ERR_IO_PENDING);
+  socket_data.AddWrite(SYNCHRONOUS, ConstructInitialSettingsPacket());
+  socket_data.AddSocketDataToFactory(socket_factory_.get());
+
+  QuicStreamRequest request(factory_.get());
+  EXPECT_EQ(ERR_IO_PENDING,
+            request.Request(
+                host_port_pair_, version_, privacy_mode_, MAXIMUM_PRIORITY,
+                SocketTag(),
+                /*cert_verify_flags=*/0, url_, net_log_, &net_error_details_,
+                failed_on_default_network_callback_, callback_.callback()));
+
+  EXPECT_EQ(MAXIMUM_PRIORITY, host_resolver_->last_request_priority());
+  EXPECT_EQ(MAXIMUM_PRIORITY, host_resolver_->request_priority(1));
+
+  QuicStreamRequest request2(factory_.get());
+  EXPECT_EQ(ERR_IO_PENDING,
+            request2.Request(
+                host_port_pair_, version_, privacy_mode_, DEFAULT_PRIORITY,
+                SocketTag(),
+                /*cert_verify_flags=*/0, url2_, net_log_, &net_error_details_,
+                failed_on_default_network_callback_, callback_.callback()));
+  EXPECT_EQ(DEFAULT_PRIORITY, host_resolver_->last_request_priority());
+  EXPECT_EQ(DEFAULT_PRIORITY, host_resolver_->request_priority(2));
+
+  request.SetPriority(LOWEST);
+  EXPECT_EQ(LOWEST, host_resolver_->request_priority(1));
+  EXPECT_EQ(DEFAULT_PRIORITY, host_resolver_->request_priority(2));
 }
 
 // Passes |max_time_before_crypto_handshake_seconds| and

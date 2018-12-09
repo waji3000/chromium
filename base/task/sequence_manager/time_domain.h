@@ -21,7 +21,7 @@ namespace sequence_manager {
 class SequenceManager;
 
 namespace internal {
-struct AssociatedThreadId;
+class AssociatedThreadId;
 class SequenceManagerImpl;
 class TaskQueueImpl;
 }  // namespace internal
@@ -59,6 +59,11 @@ class BASE_EXPORT TimeDomain {
   void AsValueInto(trace_event::TracedValue* state) const;
   bool HasPendingHighResolutionTasks() const;
 
+  // This is the signal that virtual time should step forward. If
+  // RunLoop::QuitWhenIdle has been called then |quit_when_idle_requested| will
+  // be true. Returns true if time advanced and there is now a task to run.
+  virtual bool MaybeFastForwardToNextTask(bool quit_when_idle_requested) = 0;
+
  protected:
   TimeDomain();
 
@@ -82,6 +87,7 @@ class BASE_EXPORT TimeDomain {
 
   // For implementation-specific tracing.
   virtual void AsValueIntoInternal(trace_event::TracedValue* state) const;
+
   virtual const char* GetName() const = 0;
 
  private:

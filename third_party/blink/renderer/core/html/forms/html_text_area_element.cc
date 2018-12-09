@@ -34,6 +34,7 @@
 #include "third_party/blink/renderer/core/dom/text.h"
 #include "third_party/blink/renderer/core/editing/frame_selection.h"
 #include "third_party/blink/renderer/core/editing/iterators/text_iterator.h"
+#include "third_party/blink/renderer/core/event_interface_names.h"
 #include "third_party/blink/renderer/core/events/before_text_inserted_event.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
@@ -77,7 +78,8 @@ HTMLTextAreaElement::HTMLTextAreaElement(Document& document)
       is_placeholder_visible_(false) {}
 
 HTMLTextAreaElement* HTMLTextAreaElement::Create(Document& document) {
-  HTMLTextAreaElement* text_area = new HTMLTextAreaElement(document);
+  HTMLTextAreaElement* text_area =
+      MakeGarbageCollected<HTMLTextAreaElement>(document);
   text_area->EnsureUserAgentShadowRoot();
   return text_area;
 }
@@ -158,7 +160,7 @@ void HTMLTextAreaElement::ParseAttribute(
       if (GetLayoutObject()) {
         GetLayoutObject()
             ->SetNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(
-                LayoutInvalidationReason::kAttributeChanged);
+                layout_invalidation_reason::kAttributeChanged);
       }
     }
   } else if (name == kColsAttr) {
@@ -171,7 +173,7 @@ void HTMLTextAreaElement::ParseAttribute(
       if (LayoutObject* layout_object = GetLayoutObject()) {
         layout_object
             ->SetNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(
-                LayoutInvalidationReason::kAttributeChanged);
+                layout_invalidation_reason::kAttributeChanged);
       }
     }
   } else if (name == kWrapAttr) {
@@ -192,7 +194,7 @@ void HTMLTextAreaElement::ParseAttribute(
       if (LayoutObject* layout_object = GetLayoutObject()) {
         layout_object
             ->SetNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(
-                LayoutInvalidationReason::kAttributeChanged);
+                layout_invalidation_reason::kAttributeChanged);
       }
     }
   } else if (name == kAccesskeyAttr) {
@@ -263,9 +265,10 @@ void HTMLTextAreaElement::UpdateFocusAppearanceWithOptions(
 }
 
 void HTMLTextAreaElement::DefaultEventHandler(Event& event) {
-  if (GetLayoutObject() && (event.IsMouseEvent() || event.IsDragEvent() ||
-                            event.HasInterface(EventNames::WheelEvent) ||
-                            event.type() == event_type_names::kBlur)) {
+  if (GetLayoutObject() &&
+      (event.IsMouseEvent() || event.IsDragEvent() ||
+       event.HasInterface(event_interface_names::kWheelEvent) ||
+       event.type() == event_type_names::kBlur)) {
     ForwardEvent(event);
   } else if (GetLayoutObject() && event.IsBeforeTextInsertedEvent()) {
     HandleBeforeTextInsertedEvent(

@@ -21,23 +21,20 @@ class PrefetchStore;
 // considered stale are moved to the "finished" state and have their error code
 // column set to the PrefetchItemErrorCode value that identifies the bucket they
 // were at.
+// It also handles items in the the "zombie" state which are deleted once
+// considered expired after a set amount of time.
 // NOTE: This task is run periodically as reconciliation task and from some
 // event handlers. As such, it must not cause network operations nor cause
 // 'progress' in the pipeline that would trigger other tasks.
 class StaleEntryFinalizerTask : public Task {
  public:
   enum class Result { NO_MORE_WORK, MORE_WORK_NEEDED };
-  using NowGetter = base::RepeatingCallback<base::Time()>;
 
   StaleEntryFinalizerTask(PrefetchDispatcher* prefetch_dispatcher,
                           PrefetchStore* prefetch_store);
   ~StaleEntryFinalizerTask() override;
 
   void Run() override;
-
-  // Allows tests to control the source of current time values used internally
-  // for freshness checks.
-  void SetNowGetterForTesting(NowGetter now_getter);
 
   // Will be set to true upon after an error-free run.
   Result final_status() const { return final_status_; }
@@ -50,9 +47,6 @@ class StaleEntryFinalizerTask : public Task {
 
   // Prefetch store to execute against. Not owned.
   PrefetchStore* prefetch_store_;
-
-  // Defaults to base::Time::Now upon construction.
-  NowGetter now_getter_;
 
   Result final_status_ = Result::NO_MORE_WORK;
 

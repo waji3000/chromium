@@ -12,6 +12,7 @@ import com.google.android.libraries.feed.host.action.ActionApi;
 import org.chromium.chrome.browser.ChromeFeatureList;
 import org.chromium.chrome.browser.feed.FeedLoggingBridge;
 import org.chromium.chrome.browser.feed.FeedOfflineIndicator;
+import org.chromium.chrome.browser.ntp.NewTabPage;
 import org.chromium.chrome.browser.offlinepages.OfflinePageBridge;
 import org.chromium.chrome.browser.suggestions.NavigationRecorder;
 import org.chromium.chrome.browser.suggestions.SuggestionsConfig;
@@ -140,25 +141,39 @@ public class FeedActionHandler implements ActionApi {
     private void openOfflineIfPossible(int disposition, String url) {
         Long maybeOfflineId = mOfflineIndicator.getOfflineIdIfPageIsOfflined(url);
         if (maybeOfflineId == null) {
-            Tab loadingTab = mDelegate.openUrl(disposition, createLoadUrlParams(url));
-            if (loadingTab != null) {
-                // Records how long the user spending on the suggested page.
-                NavigationRecorder.record(loadingTab, visitData -> {
-                    mLoggingBridge.onContentTargetVisited(visitData.duration);
-                });
-            }
+            openAndRecord(disposition, createLoadUrlParams(url), /*isOffline*/ false);
         } else {
             mOfflinePageBridge.getLoadUrlParamsByOfflineId(
                     maybeOfflineId, LaunchLocation.SUGGESTION, (loadUrlParams) -> {
-                        loadUrlParams.setVerbatimHeaders(loadUrlParams.getExtraHeadersString());
-                        Tab loadingTab = mDelegate.openUrl(disposition, loadUrlParams);
-                        if (loadingTab != null) {
-                            // Records how long the user spending on the offline page.
-                            NavigationRecorder.record(loadingTab, visitData -> {
-                                mLoggingBridge.onOfflinePageVisited(visitData.duration);
-                            });
+                        if (loadUrlParams == null) {
+                            // Fall back to opening online if the lookup failed.
+                            openAndRecord(
+                                    disposition, createLoadUrlParams(url), /*isOffline*/ false);
+                        } else {
+                            // Offline headers need to be moved to be read correctly.
+                            loadUrlParams.setVerbatimHeaders(loadUrlParams.getExtraHeadersString());
+                            openAndRecord(disposition, loadUrlParams, /*isOffline*/ true);
                         }
                     });
+        }
+    }
+    /**
+     * Opens the given resource, specified by params, and records how much time the user spends on
+     * the suggested page.
+     *
+     * @param disposition How to open the article.
+     * @param loadUrlParams Parameters specifying the URL to load and other navigation details.
+     * @param isOffline If the page should open in offline mode or not, for metrics reporting.
+     */
+    private void openAndRecord(int disposition, LoadUrlParams loadUrlParams, boolean isOffline) {
+        Tab loadingTab = mDelegate.openUrl(disposition, loadUrlParams);
+        if (loadingTab != null) {
+            // Records how long the user spending on the suggested page, and whether the user got
+            // back to the NTP.
+            NavigationRecorder.record(loadingTab,
+                    visitData
+                    -> mLoggingBridge.onContentTargetVisited(
+                            visitData.duration, isOffline, NewTabPage.isNTPUrl(visitData.endUrl)));
         }
         mSuggestionConsumedObserver.run();
     }

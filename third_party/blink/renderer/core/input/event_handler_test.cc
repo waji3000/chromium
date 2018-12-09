@@ -126,7 +126,7 @@ void EventHandlerTest::SetUp() {
 void EventHandlerTest::SetHtmlInnerHTML(const char* html_content) {
   GetDocument().documentElement()->SetInnerHTMLFromString(
       String::FromUTF8(html_content));
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 }
 
 ShadowRoot* EventHandlerTest::SetShadowContent(const char* shadow_content,
@@ -854,7 +854,7 @@ class EventHandlerTooltipTest : public EventHandlerTest {
   EventHandlerTooltipTest() = default;
 
   void SetUp() override {
-    chrome_client_ = new TooltipCapturingChromeClient();
+    chrome_client_ = MakeGarbageCollected<TooltipCapturingChromeClient>();
     Page::PageClients clients;
     FillWithEmptyClients(clients);
     clients.chrome_client = chrome_client_.Get();
@@ -917,7 +917,8 @@ class UnbufferedInputEventsTrackingChromeClient : public EmptyChromeClient {
 class EventHandlerLatencyTest : public PageTestBase {
  protected:
   void SetUp() override {
-    chrome_client_ = new UnbufferedInputEventsTrackingChromeClient();
+    chrome_client_ =
+        MakeGarbageCollected<UnbufferedInputEventsTrackingChromeClient>();
     Page::PageClients page_clients;
     FillWithEmptyClients(page_clients);
     page_clients.chrome_client = chrome_client_.Get();
@@ -927,7 +928,7 @@ class EventHandlerLatencyTest : public PageTestBase {
   void SetHtmlInnerHTML(const char* html_content) {
     GetDocument().documentElement()->SetInnerHTMLFromString(
         String::FromUTF8(html_content));
-    GetDocument().View()->UpdateAllLifecyclePhases();
+    UpdateAllLifecyclePhasesForTest();
   }
 
   Persistent<UnbufferedInputEventsTrackingChromeClient> chrome_client_;
@@ -985,7 +986,7 @@ class EventHandlerNavigationTest : public EventHandlerTest {
   EventHandlerNavigationTest() = default;
 
   void SetUp() override {
-    frame_client_ = new NavigationCapturingFrameClient();
+    frame_client_ = MakeGarbageCollected<NavigationCapturingFrameClient>();
     Page::PageClients clients;
     FillWithEmptyClients(clients);
     SetupPageWithClients(&clients, frame_client_);
@@ -1084,7 +1085,7 @@ TEST_F(EventHandlerTest, MouseLeaveResetsUnknownState) {
 // Test that leaving an iframe sets the mouse position to unknown on that
 // iframe.
 TEST_F(EventHandlerSimTest, MouseLeaveIFrameResets) {
-  WebView().Resize(WebSize(800, 600));
+  WebView().MainFrameWidget()->Resize(WebSize(800, 600));
 
   SimRequest main_resource("https://example.com/test.html", "text/html");
   SimRequest frame_resource("https://example.com/frame.html", "text/html");
@@ -1151,7 +1152,7 @@ TEST_F(EventHandlerSimTest, MouseLeaveIFrameResets) {
 // Test that mouse down and move a small distance on a draggable element will
 // not change cursor style.
 TEST_F(EventHandlerSimTest, CursorStyleBeforeStartDragging) {
-  WebView().Resize(WebSize(800, 600));
+  WebView().MainFrameWidget()->Resize(WebSize(800, 600));
   SimRequest request("https://example.com/test.html", "text/html");
   LoadURL("https://example.com/test.html");
   request.Complete(R"HTML(
@@ -1193,7 +1194,7 @@ TEST_F(EventHandlerSimTest, CursorStyleBeforeStartDragging) {
 
 // Ensure that tap on element in iframe should apply active state.
 TEST_F(EventHandlerSimTest, TapActiveInFrame) {
-  WebView().Resize(WebSize(800, 600));
+  WebView().MainFrameWidget()->Resize(WebSize(800, 600));
 
   SimRequest main_resource("https://example.com/test.html", "text/html");
   SimRequest frame_resource("https://example.com/iframe.html", "text/html");

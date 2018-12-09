@@ -153,25 +153,6 @@ bool FlingController::FilterGestureEvent(
          FilterGestureEventForFlingBoosting(gesture_event);
 }
 
-void FlingController::OnGestureEventAck(
-    const GestureEventWithLatencyInfo& acked_event,
-    InputEventAckState ack_result) {
-  bool processed = (INPUT_EVENT_ACK_STATE_CONSUMED == ack_result);
-  switch (acked_event.event.GetType()) {
-    case WebInputEvent::kGestureScrollUpdate:
-      if (acked_event.event.data.scroll_update.inertial_phase ==
-              WebGestureEvent::kMomentumPhase &&
-          fling_curve_ && !processed &&
-          current_fling_parameters_.source_device !=
-              blink::kWebGestureDeviceSyntheticAutoscroll) {
-        CancelCurrentFling();
-      }
-      break;
-    default:
-      break;
-  }
-}
-
 void FlingController::ProcessGestureFlingStart(
     const GestureEventWithLatencyInfo& gesture_event) {
   const float vx = gesture_event.event.data.fling_start.velocity_x;
@@ -197,7 +178,7 @@ void FlingController::ProcessGestureFlingStart(
 }
 
 void FlingController::ScheduleFlingProgress() {
-  scheduler_client_->ScheduleFlingProgress();
+  scheduler_client_->ScheduleFlingProgress(weak_ptr_factory_.GetWeakPtr());
 }
 
 void FlingController::ProcessGestureFlingCancel(
@@ -417,7 +398,7 @@ void FlingController::CancelCurrentFling() {
   }
 
   if (had_active_fling) {
-    scheduler_client_->DidStopFlingingOnBrowser();
+    scheduler_client_->DidStopFlingingOnBrowser(weak_ptr_factory_.GetWeakPtr());
     TRACE_EVENT_ASYNC_END0("input", kFlingTraceName, this);
   }
 }
@@ -447,15 +428,6 @@ bool FlingController::UpdateCurrentFlingState(
           gfx::Vector2dF() /*initial_offset*/, false /*on_main_thread*/,
           GetContentClient()->browser()->ShouldUseMobileFlingCurve()));
   return true;
-}
-
-void FlingController::RegisterFlingSchedulerObserver() {
-  scheduler_client_->RegisterFlingSchedulerObserver(
-      weak_ptr_factory_.GetWeakPtr());
-}
-
-void FlingController::UnregisterFlingSchedulerObserver() {
-  scheduler_client_->UnregisterFlingSchedulerObserver();
 }
 
 bool FlingController::FlingCancellationIsDeferred() const {

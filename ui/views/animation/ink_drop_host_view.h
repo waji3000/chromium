@@ -39,8 +39,8 @@ class VIEWS_EXPORT InkDropHostView : public View {
  public:
   // Used in SetInkDropMode() to specify whether the ink drop effect is enabled
   // or not for the view. In case of having an ink drop, it also specifies
-  // whether the default gesture event handler for the ink drop should be
-  // installed or the subclass will handle gesture events itself.
+  // whether the default event handler for the ink drop should be installed or
+  // the subclass will handle ink drop events itself.
   enum class InkDropMode {
     OFF,
     ON,
@@ -129,14 +129,13 @@ class VIEWS_EXPORT InkDropHostView : public View {
   void VisibilityChanged(View* starting_from, bool is_visible) override;
   void OnFocus() override;
   void OnBlur() override;
-  void OnMouseEvent(ui::MouseEvent* event) override;
 
   // Returns an InkDropImpl with default configuration. The base implementation
   // of CreateInkDrop() delegates to this function.
   std::unique_ptr<InkDropImpl> CreateDefaultInkDropImpl();
 
-  // Returns an InkDropImpl configured to work well with a
-  // flood-fill ink drop ripple.
+  // Returns an InkDropImpl configured to work well with a flood-fill ink drop
+  // ripple.
   std::unique_ptr<InkDropImpl> CreateDefaultFloodFillInkDropImpl();
 
   // Returns the default InkDropRipple centered on |center_point|.
@@ -169,17 +168,12 @@ class VIEWS_EXPORT InkDropHostView : public View {
 
   void ResetInkDropMask();
 
-  // Updates the ink drop mask layer size to |new_size|. It does nothing if
-  // |ink_drop_mask_| is null.
-  void UpdateInkDropMaskLayerSize(const gfx::Size& new_size);
-
   // Returns a large ink drop size based on the |small_size| that works well
   // with the SquareInkDropRipple animation durations.
   static gfx::Size CalculateLargeInkDropSize(const gfx::Size& small_size);
 
  private:
-  class InkDropGestureHandler;
-  friend class InkDropGestureHandler;
+  class InkDropEventHandler;
   friend class test::InkDropHostViewTestApi;
 
   // The last user Event to trigger an ink drop ripple animation.
@@ -193,7 +187,7 @@ class VIEWS_EXPORT InkDropHostView : public View {
 
   // Intentionally declared after |ink_drop_| so that it doesn't access a
   // destroyed |ink_drop_| during destruction.
-  std::unique_ptr<InkDropGestureHandler> gesture_handler_;
+  const std::unique_ptr<InkDropEventHandler> ink_drop_event_handler_;
 
   float ink_drop_visible_opacity_ = 0.175f;
 

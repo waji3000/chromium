@@ -5,8 +5,8 @@
 #include "third_party/blink/renderer/modules/background_fetch/background_fetch_registration.h"
 
 #include "base/optional.h"
+#include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-blink.h"
 #include "third_party/blink/public/platform/modules/background_fetch/web_background_fetch_registration.h"
-#include "third_party/blink/public/platform/modules/fetch/fetch_api_request.mojom-blink.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/fetch/request.h"
@@ -19,6 +19,7 @@
 #include "third_party/blink/renderer/modules/manifest/image_resource.h"
 #include "third_party/blink/renderer/modules/service_worker/service_worker_registration.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
+#include "third_party/blink/renderer/platform/heap/heap_allocator.h"
 
 namespace blink {
 
@@ -181,7 +182,8 @@ ScriptPromise BackgroundFetchRegistration::MatchImpl(
     bool match_all) {
   // TODO(crbug.com/875201): Update this check once we support access to active
   // fetches.
-  if (result_ == mojom::BackgroundFetchResult::UNSET) {
+  if (result_ == mojom::BackgroundFetchResult::UNSET &&
+      !RuntimeEnabledFeatures::BackgroundFetchAccessActiveFetchesEnabled()) {
     return ScriptPromise::RejectWithDOMException(
         script_state,
         DOMException::Create(
@@ -202,28 +204,25 @@ ScriptPromise BackgroundFetchRegistration::MatchImpl(
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
   ScriptPromise promise = resolver->Promise();
 
-  // Convert |request| to WebServiceWorkerRequest.
-  base::Optional<WebServiceWorkerRequest> optional_request;
+  // Convert |request| to mojom::blink::FetchAPIRequestPtr.
+  mojom::blink::FetchAPIRequestPtr request_to_match;
   if (request.has_value()) {
-    WebServiceWorkerRequest request_to_match;
     if (request->IsRequest()) {
-      request->GetAsRequest()->PopulateWebServiceWorkerRequest(
-          request_to_match);
+      request_to_match = request->GetAsRequest()->CreateFetchAPIRequest();
     } else {
       Request* new_request = Request::Create(
           script_state, request->GetAsUSVString(), exception_state);
       if (exception_state.HadException())
         return ScriptPromise();
-      new_request->PopulateWebServiceWorkerRequest(request_to_match);
+      request_to_match = new_request->CreateFetchAPIRequest();
     }
-    optional_request = request_to_match;
   }
 
   DCHECK(registration_);
 
   BackgroundFetchBridge::From(registration_)
       ->MatchRequests(
-          developer_id_, unique_id_, optional_request,
+          developer_id_, unique_id_, std::move(request_to_match),
           std::move(cache_query_params), match_all,
           WTF::Bind(&BackgroundFetchRegistration::DidGetMatchingRequests,
                     WrapPersistent(this), WrapPersistent(resolver), match_all));
@@ -234,25 +233,21 @@ void BackgroundFetchRegistration::DidGetMatchingRequests(
     ScriptPromiseResolver* resolver,
     bool return_all,
     Vector<mojom::blink::BackgroundFetchSettledFetchPtr> settled_fetches) {
+  DCHECK(resolver);
+
   ScriptState* script_state = resolver->GetScriptState();
   // Do not remove this, |scope| is needed for calling ToV8()
   ScriptState::Scope scope(script_state);
   HeapVector<Member<BackgroundFetchRecord>> to_return;
   to_return.ReserveInitialCapacity(settled_fetches.size());
-  for (const auto& fetch : settled_fetches) {
-    Request* request = Request::Create(script_state, fetch->request);
 
-    Response* response = fetch->response
-                             ? Response::Create(script_state, *fetch->response)
-                             : nullptr;
+  for (auto& fetch : settled_fetches) {
+    Request* request = Request::Create(script_state, *(fetch->request));
+    auto* record =
+        MakeGarbageCollected<BackgroundFetchRecord>(request, script_state);
 
-    bool aborted =
-        failure_reason_ ==
-            mojom::BackgroundFetchFailureReason::CANCELLED_FROM_UI ||
-        failure_reason_ ==
-            mojom::BackgroundFetchFailureReason::CANCELLED_BY_DEVELOPER;
-
-    to_return.push_back(new BackgroundFetchRecord(request, response, aborted));
+    UpdateRecord(record, fetch->response);
+    to_return.push_back(record);
   }
 
   if (!return_all) {
@@ -261,12 +256,45 @@ void BackgroundFetchRegistration::DidGetMatchingRequests(
       resolver->Resolve();
       return;
     }
+
     DCHECK_EQ(settled_fetches.size(), 1u);
     DCHECK_EQ(to_return.size(), 1u);
     resolver->Resolve(to_return[0]);
     return;
   }
+
   resolver->Resolve(to_return);
+}
+
+void BackgroundFetchRegistration::UpdateRecord(
+    BackgroundFetchRecord* record,
+    mojom::blink::FetchAPIResponsePtr& response) {
+  DCHECK(record);
+
+  if (!record->IsRecordPending())
+    return;
+
+  // Per the spec, resolve with a valid response, if there is one available,
+  // even if the fetch has been aborted.
+  if (!response.is_null()) {
+    record->SetResponseAndUpdateState(response);
+    return;
+  }
+
+  if (IsAborted()) {
+    record->UpdateState(BackgroundFetchRecord::State::kAborted);
+    return;
+  }
+
+  if (result_ != mojom::blink::BackgroundFetchResult::UNSET)
+    record->UpdateState(BackgroundFetchRecord::State::kSettled);
+}
+
+bool BackgroundFetchRegistration::IsAborted() {
+  return failure_reason_ ==
+             mojom::BackgroundFetchFailureReason::CANCELLED_FROM_UI ||
+         failure_reason_ ==
+             mojom::BackgroundFetchFailureReason::CANCELLED_BY_DEVELOPER;
 }
 
 void BackgroundFetchRegistration::DidAbort(

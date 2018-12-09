@@ -94,6 +94,11 @@ class ArcBluetoothBridge
                         device::BluetoothDevice* device,
                         uint16_t mtu) override;
 
+  void DeviceAdvertisementReceived(device::BluetoothAdapter* adapter,
+                                   device::BluetoothDevice* device,
+                                   int16_t rssi,
+                                   const std::vector<uint8_t>& eir) override;
+
   void DeviceRemoved(device::BluetoothAdapter* adapter,
                      device::BluetoothDevice* device) override;
 
@@ -196,15 +201,6 @@ class ArcBluetoothBridge
 
   void GetAdapterProperty(mojom::BluetoothPropertyType type) override;
   void SetAdapterProperty(mojom::BluetoothPropertyPtr property) override;
-
-  void GetRemoteDeviceProperty(mojom::BluetoothAddressPtr remote_addr,
-                               mojom::BluetoothPropertyType type) override;
-  void SetRemoteDeviceProperty(mojom::BluetoothAddressPtr remote_addr,
-                               mojom::BluetoothPropertyPtr property) override;
-  void GetRemoteServiceRecord(mojom::BluetoothAddressPtr remote_addr,
-                              const device::BluetoothUUID& uuid) override;
-
-  void GetRemoteServices(mojom::BluetoothAddressPtr remote_addr) override;
 
   void StartDiscovery() override;
   void CancelDiscovery() override;

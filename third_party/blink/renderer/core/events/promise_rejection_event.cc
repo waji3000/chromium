@@ -4,7 +4,7 @@
 
 #include "third_party/blink/renderer/core/events/promise_rejection_event.h"
 
-#include "third_party/blink/renderer/core/event_names.h"
+#include "third_party/blink/renderer/core/event_interface_names.h"
 #include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
 
 namespace blink {
@@ -52,7 +52,7 @@ ScriptValue PromiseRejectionEvent::reason(ScriptState* script_state) const {
 }
 
 const AtomicString& PromiseRejectionEvent::InterfaceName() const {
-  return EventNames::PromiseRejectionEvent;
+  return event_interface_names::kPromiseRejectionEvent;
 }
 
 bool PromiseRejectionEvent::CanBeDispatchedInWorld(

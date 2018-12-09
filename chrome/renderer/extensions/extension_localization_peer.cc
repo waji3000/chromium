@@ -25,8 +25,8 @@ class StringData final : public content::RequestPeer::ReceivedData {
  public:
   explicit StringData(const std::string& data) : data_(data) {}
 
-  const char* payload() const override { return data_.data(); }
-  int length() const override { return data_.size(); }
+  const char* payload() override { return data_.data(); }
+  int length() override { return data_.size(); }
 
  private:
   const std::string data_;
@@ -113,6 +113,10 @@ void ExtensionLocalizationPeer::OnCompletedRequest(
   if (!data_.empty())
     original_peer_->OnReceivedData(std::make_unique<StringData>(data_));
   original_peer_->OnCompletedRequest(status);
+}
+
+scoped_refptr<base::TaskRunner> ExtensionLocalizationPeer::GetTaskRunner() {
+  return original_peer_->GetTaskRunner();
 }
 
 void ExtensionLocalizationPeer::ReplaceMessages() {

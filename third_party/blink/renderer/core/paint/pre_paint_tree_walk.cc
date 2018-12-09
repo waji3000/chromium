@@ -22,7 +22,7 @@
 #include "third_party/blink/renderer/core/paint/ng/ng_paint_fragment.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/paint/paint_property_tree_printer.h"
-#include "third_party/blink/renderer/core/paint/paint_tracker.h"
+#include "third_party/blink/renderer/core/paint/paint_timing_detector.h"
 #include "third_party/blink/renderer/platform/graphics/paint/geometry_mapper.h"
 
 namespace blink {
@@ -133,8 +133,9 @@ void PrePaintTreeWalk::Walk(LocalFrameView& frame_view) {
 
   if (RuntimeEnabledFeatures::JankTrackingEnabled())
     frame_view.GetJankTracker().NotifyPrePaintFinished();
-  if (RuntimeEnabledFeatures::PaintTrackingEnabled())
-    frame_view.GetPaintTracker().NotifyPrePaintFinished();
+  if (RuntimeEnabledFeatures::FirstContentfulPaintPlusPlusEnabled()) {
+    frame_view.GetPaintTimingDetector().NotifyPrePaintFinished();
+  }
 
   context_storage_.pop_back();
 }
@@ -158,7 +159,7 @@ bool HasBlockingTouchEventHandler(const LocalFrame& frame,
   const auto* blocking = registry.EventHandlerTargets(
       EventHandlerRegistry::kTouchStartOrMoveEventBlocking);
   const auto* blocking_low_latency = registry.EventHandlerTargets(
-      EventHandlerRegistry::kTouchStartOrMoveEventBlocking);
+      EventHandlerRegistry::kTouchStartOrMoveEventBlockingLowLatency);
   return blocking->Contains(&target) || blocking_low_latency->Contains(&target);
 }
 
@@ -226,7 +227,7 @@ void PrePaintTreeWalk::InvalidatePaintForHitTesting(
 void PrePaintTreeWalk::UpdateAuxiliaryObjectProperties(
     const LayoutObject& object,
     PrePaintTreeWalk::PrePaintTreeWalkContext& context) {
-  if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+  if (!RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
     return;
 
   if (!object.HasLayer())
@@ -261,16 +262,13 @@ void PrePaintTreeWalk::InvalidatePaintLayerOptimizationsIfNeeded(
     return;
 
   paint_layer.SetNeedsRepaint();
-  paint_layer.SetPreviousPaintPhaseDescendantOutlinesEmpty(false);
-  paint_layer.SetPreviousPaintPhaseFloatEmpty(false);
-  paint_layer.SetPreviousPaintPhaseDescendantBlockBackgroundsEmpty(false);
 }
 
 bool PrePaintTreeWalk::NeedsTreeBuilderContextUpdate(
     const LocalFrameView& frame_view,
     const PrePaintTreeWalkContext& context) {
   if ((RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled() ||
-       RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) &&
+       RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) &&
       frame_view.GetFrame().IsLocalRoot() &&
       frame_view.GetPage()->GetVisualViewport().NeedsPaintPropertyUpdate())
     return true;
@@ -330,9 +328,8 @@ void PrePaintTreeWalk::WalkInternal(const LayoutObject& object,
     property_tree_builder.emplace(object, *context.tree_builder_context);
     property_changed = property_tree_builder->UpdateForSelf();
 
-    if (property_changed &&
-        !context.tree_builder_context
-             ->supports_composited_raster_invalidation) {
+    if (property_changed && !context.tree_builder_context
+                                 ->supports_composited_raster_invalidation) {
       paint_invalidator_context.subtree_flags |=
           PaintInvalidatorContext::kSubtreeFullInvalidation;
     }
@@ -353,7 +350,7 @@ void PrePaintTreeWalk::WalkInternal(const LayoutObject& object,
     InvalidatePaintLayerOptimizationsIfNeeded(object, context);
 
     if (property_changed) {
-      if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+      if (!RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
         const auto* paint_invalidation_layer =
             paint_invalidator_context.paint_invalidation_container->Layer();
         if (!paint_invalidation_layer->NeedsRepaint()) {
@@ -378,13 +375,20 @@ void PrePaintTreeWalk::WalkInternal(const LayoutObject& object,
         object, paint_invalidator_context.old_visual_rect,
         *paint_invalidator_context.painting_layer);
   }
-  if (RuntimeEnabledFeatures::PaintTrackingEnabled()) {
-    object.GetFrameView()->GetPaintTracker().NotifyObjectPrePaint(
+  if (RuntimeEnabledFeatures::FirstContentfulPaintPlusPlusEnabled()) {
+    object.GetFrameView()->GetPaintTimingDetector().NotifyObjectPrePaint(
         object, *paint_invalidator_context.painting_layer);
   }
 }
 
 void PrePaintTreeWalk::Walk(const LayoutObject& object) {
+  if (object.PrePaintBlockedByDisplayLock())
+    return;
+  // TODO(vmpstr): Technically we should do this after prepaint finishes, but
+  // due to a possible early out this is more convenient. We should change this
+  // to RAII.
+  object.NotifyDisplayLockDidPrePaint();
+
   // We need to be careful not to have a reference to the parent context, since
   // this reference will be to the context_storage_ memory which may be
   // reallocated during this function call.

@@ -4,6 +4,7 @@
      Use of this source code is governed by a BSD-style license that can be
      found in the LICENSE file. -->
 <head>
+  <link rel="stylesheet" href="chrome-search://local-ntp/animations.css"></link>
   <link rel="stylesheet" href="chrome-search://local-ntp/theme.css"></link>
   <link rel="stylesheet" href="chrome-search://local-ntp/local-ntp.css"></link>
   <link rel="stylesheet" href="chrome-search://local-ntp/voice.css"></link>
@@ -12,6 +13,10 @@
       content="{{CONTENT_SECURITY_POLICY}}">
   <script src="chrome-search://local-ntp/config.js"
       {{CONFIG_DATA_INTEGRITY}}></script>
+  <script src="chrome-search://local-ntp/utils.js"
+      {{UTILS_INTEGRITY}}></script>
+  <script src="chrome-search://local-ntp/animations.js"
+      {{ANIMATIONS_INTEGRITY}}></script>
   <script src="chrome-search://local-ntp/custom-backgrounds.js"
       {{LOCAL_NTP_CUSTOM_BG_INTEGRITY}}></script>
   <script src="chrome-search://local-ntp/local-ntp.js"
@@ -35,9 +40,11 @@
       <div id="logo-non-white" title="Google"></div>
       <!-- A doodle, if any: its link and image. -->
       <div id="logo-doodle">
-        <button id="logo-doodle-button">
-          <img id="logo-doodle-image" tabindex="-1"></img>
-        </button>
+        <div id="logo-doodle-container">
+          <button id="logo-doodle-button">
+            <img id="logo-doodle-image" tabindex="-1"></img>
+          </button>
+        </div>
         <iframe id="logo-doodle-iframe" scrolling="no"></iframe>
         <!-- A spinner, visible on dark-themed NTPs, prompting the doodle -->
         <button id="logo-doodle-notifier">
@@ -80,9 +87,7 @@
 
     <div id="error-notice-container">
       <div id="error-notice" class="notice-hide" role="alert">
-        <span id="error-notice-icon-container">
-          <div id="error-notice-icon"></div>
-        </span>
+        <span id="error-notice-icon"></span>
         <span id="error-notice-msg"></span>
         <span id="error-notice-link" class="ripple" tabindex="0" role="button"></span>
       </div>
@@ -115,6 +120,24 @@
       <div id="edit-bg-restore-default" class="bg-option bg-option-disabled" tabindex="0">
         <div class="bg-option-img"></div>
         <div id="edit-bg-restore-default-text" class="bg-option-text"></div>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- TODO(crbug.com/896461): Add a11y to doodle sharing. -->
+  <dialog id="ddlsd">
+    <div id="ddlsd-title"></div>
+    <button id="ddlsd-close" title="Close"></button>
+    <div id="ddlsd-content">
+      <button id="ddlsd-fbb" class="ddlsd-sbtn" title="Facebook"></button>
+      <button id="ddlsd-twb" class="ddlsd-sbtn" title="Twitter"></button>
+      <button id="ddlsd-emb" class="ddlsd-sbtn" title="Email"></button>
+      <hr id="ddlsd-hr">
+      <div id="ddlsd-link">
+        <button id="ddlsd-copy" title="Copy"></button>
+        <span id="ddlsd-text-ctr">
+          <input type="text" id="ddlsd-text" dir="ltr" title="Share Link">
+        </span>
       </div>
     </div>
   </dialog>

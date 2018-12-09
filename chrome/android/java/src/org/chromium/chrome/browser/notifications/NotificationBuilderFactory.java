@@ -4,10 +4,14 @@
 
 package org.chromium.chrome.browser.notifications;
 
-import android.app.NotificationManager;
+import static org.chromium.chrome.browser.ChromeFeatureList.ALLOW_REMOTE_CONTEXT_FOR_NOTIFICATIONS;
+
 import android.content.Context;
+import android.content.pm.PackageManager;
+import android.support.annotation.Nullable;
 
 import org.chromium.base.ContextUtils;
+import org.chromium.chrome.browser.ChromeFeatureList;
 import org.chromium.chrome.browser.notifications.channels.ChannelsInitializer;
 
 /**
@@ -28,10 +32,29 @@ public class NotificationBuilderFactory {
      */
     public static ChromeNotificationBuilder createChromeNotificationBuilder(
             boolean preferCompat, String channelId) {
-        Context context = ContextUtils.getApplicationContext();
+        return createChromeNotificationBuilder(preferCompat, channelId, null);
+    }
 
-        NotificationManagerProxyImpl notificationManagerProxy = new NotificationManagerProxyImpl(
-                (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE));
+    /**
+     * Same as above, with additional parameter:
+     * @param remoteAppPackageName if not null, tries to create a Context from the package name
+     * and passes it to the builder.
+     */
+    public static ChromeNotificationBuilder createChromeNotificationBuilder(
+            boolean preferCompat, String channelId, @Nullable String remoteAppPackageName) {
+        Context context = ContextUtils.getApplicationContext();
+        if (remoteAppPackageName != null) {
+            assert ChromeFeatureList.isEnabled(ALLOW_REMOTE_CONTEXT_FOR_NOTIFICATIONS);
+            try {
+                context = context.createPackageContext(remoteAppPackageName, 0);
+            } catch (PackageManager.NameNotFoundException e) {
+                throw new RuntimeException("Failed to create context for package "
+                        + remoteAppPackageName, e);
+            }
+        }
+
+        NotificationManagerProxyImpl notificationManagerProxy =
+                new NotificationManagerProxyImpl(context);
 
         ChannelsInitializer channelsInitializer =
                 new ChannelsInitializer(notificationManagerProxy, context.getResources());

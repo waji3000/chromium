@@ -7,7 +7,6 @@
 #include <utility>
 
 #include "base/bind_helpers.h"
-#include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/no_destructor.h"
@@ -139,6 +138,15 @@ void VizMainWrapper::CreateGpuService(
   }
 }
 
+#if defined(USE_VIZ_DEVTOOLS)
+void VizMainWrapper::CreateVizDevTools(mojom::VizDevToolsParamsPtr params) {
+  if (viz_main_ptr_)
+    viz_main_ptr_->CreateVizDevTools(std::move(params));
+  else
+    viz_main_associated_ptr_->CreateVizDevTools(std::move(params));
+}
+#endif
+
 void VizMainWrapper::CreateFrameSinkManager(
     mojom::FrameSinkManagerParamsPtr params) {
   if (viz_main_ptr_)
@@ -255,6 +263,12 @@ void GpuHostImpl::ConnectFrameSinkManager(
   params->frame_sink_manager_client = std::move(client);
   viz_main_ptr_->CreateFrameSinkManager(std::move(params));
 }
+
+#if defined(USE_VIZ_DEVTOOLS)
+void GpuHostImpl::ConnectVizDevTools(mojom::VizDevToolsParamsPtr params) {
+  viz_main_ptr_->CreateVizDevTools(std::move(params));
+}
+#endif
 
 void GpuHostImpl::EstablishGpuChannel(int client_id,
                                       uint64_t client_tracing_id,
@@ -488,7 +502,6 @@ void GpuHostImpl::DidInitialize(
     const base::Optional<gpu::GpuFeatureInfo>&
         gpu_feature_info_for_hardware_gpu) {
   UMA_HISTOGRAM_BOOLEAN("GPU.GPUProcessInitialized", true);
-  initialized_ = true;
 
   // Set GPU driver bug workaround flags that are checked on the browser side.
   wake_up_gpu_before_drawing_ =

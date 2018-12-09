@@ -16,6 +16,7 @@
 #include "chrome/browser/browsing_data/browsing_data_history_observer_service.h"
 #include "chrome/browser/browsing_data/chrome_browsing_data_remover_delegate_factory.h"
 #include "chrome/browser/chrome_browser_main.h"
+#include "chrome/browser/chromeos/account_manager/account_manager_migrator.h"
 #include "chrome/browser/consent_auditor/consent_auditor_factory.h"
 #include "chrome/browser/content_settings/cookie_settings_factory.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
@@ -32,6 +33,7 @@
 #include "chrome/browser/google/google_search_domain_mixing_metrics_emitter_factory.h"
 #include "chrome/browser/google/google_url_tracker_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
+#include "chrome/browser/history/top_sites_factory.h"
 #include "chrome/browser/invalidation/deprecated_profile_invalidation_provider_factory.h"
 #include "chrome/browser/language/language_model_manager_factory.h"
 #include "chrome/browser/language/url_language_histogram_factory.h"
@@ -41,7 +43,6 @@
 #include "chrome/browser/media/webrtc/webrtc_event_log_manager_keyed_service_factory.h"
 #include "chrome/browser/media_galleries/media_galleries_preferences_factory.h"
 #include "chrome/browser/metrics/desktop_session_duration/desktop_profile_session_durations_service_factory.h"
-#include "chrome/browser/net/nqe/ui_network_quality_estimator_service_factory.h"
 #include "chrome/browser/notifications/notifier_state_tracker_factory.h"
 #include "chrome/browser/ntp_snippets/content_suggestions_service_factory.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
@@ -66,17 +67,18 @@
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
 #include "chrome/browser/signin/about_signin_internals_factory.h"
+#include "chrome/browser/signin/account_consistency_mode_manager_factory.h"
 #include "chrome/browser/signin/account_fetcher_service_factory.h"
 #include "chrome/browser/signin/account_investigator_factory.h"
 #include "chrome/browser/signin/account_reconcilor_factory.h"
 #include "chrome/browser/signin/account_tracker_service_factory.h"
 #include "chrome/browser/signin/chrome_signin_client_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/signin/signin_profile_attributes_updater_factory.h"
 #include "chrome/browser/sync/model_type_store_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/sync/user_event_service_factory.h"
 #include "chrome/browser/themes/theme_service_factory.h"
-#include "chrome/browser/thumbnails/thumbnail_service_factory.h"
 #include "chrome/browser/translate/translate_ranker_factory.h"
 #include "chrome/browser/ui/app_list/app_list_syncable_service_factory.h"
 #include "chrome/browser/ui/find_bar/find_bar_state_factory.h"
@@ -95,8 +97,10 @@
 #include "printing/buildflags/buildflags.h"
 
 #if defined(OS_ANDROID)
+#include "chrome/browser/android/explore_sites/explore_sites_service_factory.h"
 #include "chrome/browser/android/search_permissions/search_permissions_service.h"
 #else
+#include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
 #include "chrome/browser/resource_coordinator/local_site_characteristics_data_store_factory.h"
 #include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
@@ -126,7 +130,6 @@
 
 #if defined(OS_WIN)
 #include "chrome/browser/profile_resetter/triggered_profile_resetter_factory.h"
-#include "chrome/browser/ui/desktop_ios_promotion/sms_service_factory.h"
 #endif
 
 #if BUILDFLAG(ENABLE_CAPTIVE_PORTAL_DETECTION)
@@ -141,7 +144,6 @@
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "apps/browser_context_keyed_service_factories.h"
-#include "chrome/browser/apps/platform_apps/api/browser_context_keyed_service_factories.h"
 #include "chrome/browser/apps/platform_apps/browser_context_keyed_service_factories.h"
 #include "chrome/browser/extensions/api/networking_private/networking_private_ui_delegate_factory_impl.h"
 #include "chrome/browser/extensions/browser_context_keyed_service_factories.h"
@@ -206,14 +208,19 @@ void ChromeBrowserMainExtraPartsProfiles::
   extensions::ExtensionManagementFactory::GetInstance();
   chrome_extensions::EnsureBrowserContextKeyedServiceFactoriesBuilt();
   chrome_apps::EnsureBrowserContextKeyedServiceFactoriesBuilt();
-  chrome_apps::api::EnsureAPIBrowserContextKeyedServiceFactoriesBuilt();
 #endif
 
 #if BUILDFLAG(ENABLE_APP_LIST)
   app_list::AppListSyncableServiceFactory::GetInstance();
 #endif
 
+#if !defined(OS_ANDROID)
+  if (apps::AppServiceProxyFactory::IsEnabled()) {
+    apps::AppServiceProxyFactory::GetInstance();
+  }
+#endif
   AboutSigninInternalsFactory::GetInstance();
+  AccountConsistencyModeManagerFactory::GetInstance();
   AccountFetcherServiceFactory::GetInstance();
   AccountInvestigatorFactory::GetInstance();
   AccountReconcilorFactory::GetInstance();
@@ -244,11 +251,7 @@ void ChromeBrowserMainExtraPartsProfiles::
   CookieSettingsFactory::GetInstance();
   NotifierStateTrackerFactory::GetInstance();
   data_use_measurement::ChromeDataUseAscriberServiceFactory::GetInstance();
-#if defined(OS_WIN)
-  SMSServiceFactory::GetInstance();
-#endif
   dom_distiller::DomDistillerServiceFactory::GetInstance();
-  domain_reliability::DomainReliabilityServiceFactory::GetInstance();
   DownloadCoreServiceFactory::GetInstance();
   DownloadServiceFactory::GetInstance();
 #if BUILDFLAG(ENABLE_EXTENSIONS)
@@ -257,7 +260,11 @@ void ChromeBrowserMainExtraPartsProfiles::
 #endif
   EnhancedBookmarkKeyServiceFactory::GetInstance();
 #endif
+#if defined(OS_ANDROID)
+  explore_sites::ExploreSitesServiceFactory::GetInstance();
+#endif
 #if defined(OS_CHROMEOS)
+  chromeos::AccountManagerMigratorFactory::GetInstance();
   chromeos::CupsPrintJobManagerFactory::GetInstance();
   chromeos::CupsPrintersManagerFactory::GetInstance();
   chromeos::SyncedPrintersManagerFactory::GetInstance();
@@ -369,6 +376,7 @@ void ChromeBrowserMainExtraPartsProfiles::
 #endif
   ShortcutsBackendFactory::GetInstance();
   SigninManagerFactory::GetInstance();
+  SigninProfileAttributesUpdaterFactory::GetInstance();
 
   if (SiteEngagementService::IsEnabled())
     SiteEngagementServiceFactory::GetInstance();
@@ -377,15 +385,14 @@ void ChromeBrowserMainExtraPartsProfiles::
   SpellcheckServiceFactory::GetInstance();
 #endif
   suggestions::SuggestionsServiceFactory::GetInstance();
-  ThumbnailServiceFactory::GetInstance();
   TabRestoreServiceFactory::GetInstance();
   TemplateURLFetcherFactory::GetInstance();
   TemplateURLServiceFactory::GetInstance();
+  TopSitesFactory::GetInstance();
   translate::TranslateRankerFactory::GetInstance();
 #if defined(OS_WIN)
   TriggeredProfileResetterFactory::GetInstance();
 #endif
-  UINetworkQualityEstimatorServiceFactory::GetInstance();
   UnifiedConsentServiceFactory::GetInstance();
   UrlLanguageHistogramFactory::GetInstance();
 #if !defined(OS_ANDROID)

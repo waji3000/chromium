@@ -970,7 +970,7 @@ static const Mem *columnNullValue(void){
         /* .xDel       = */ (void(*)(void*))0,
 #ifdef SQLITE_DEBUG
         /* .pScopyFrom = */ (Mem*)0,
-        /* .pFiller    = */ (void*)0,
+        /* .mScopyFlags= */ 0,
 #endif
       };
   return &nullMem;
@@ -1701,6 +1701,16 @@ char *sqlite3_expanded_sql(sqlite3_stmt *pStmt){
   return z;
 #endif
 }
+
+#ifdef SQLITE_ENABLE_NORMALIZE
+/*
+** Return the normalized SQL associated with a prepared statement.
+*/
+const char *sqlite3_normalized_sql(sqlite3_stmt *pStmt){
+  Vdbe *p = (Vdbe *)pStmt;
+  return p ? p->zNormSql : 0;
+}
+#endif /* SQLITE_ENABLE_NORMALIZE */
 
 #ifdef SQLITE_ENABLE_PREUPDATE_HOOK
 /*

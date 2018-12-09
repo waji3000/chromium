@@ -98,20 +98,6 @@ static WebVector<WebMediaKeySystemMediaCapability> ConvertCapabilities(
   return result;
 }
 
-static WebMediaKeySystemConfiguration::Requirement ConvertMediaKeysRequirement(
-    const String& requirement) {
-  if (requirement == "required")
-    return WebMediaKeySystemConfiguration::Requirement::kRequired;
-  if (requirement == "optional")
-    return WebMediaKeySystemConfiguration::Requirement::kOptional;
-  if (requirement == "not-allowed")
-    return WebMediaKeySystemConfiguration::Requirement::kNotAllowed;
-
-  // Everything else gets the default value.
-  NOTREACHED();
-  return WebMediaKeySystemConfiguration::Requirement::kOptional;
-}
-
 static WebVector<WebEncryptedMediaSessionType> ConvertSessionTypes(
     const Vector<String>& session_types) {
   WebVector<WebEncryptedMediaSessionType> result(session_types.size());
@@ -189,11 +175,13 @@ MediaKeySystemAccessInitializer::MediaKeySystemAccessInitializer(
 
     DCHECK(config->hasDistinctiveIdentifier());
     web_config.distinctive_identifier =
-        ConvertMediaKeysRequirement(config->distinctiveIdentifier());
+        EncryptedMediaUtils::ConvertToMediaKeysRequirement(
+            config->distinctiveIdentifier());
 
     DCHECK(config->hasPersistentState());
     web_config.persistent_state =
-        ConvertMediaKeysRequirement(config->persistentState());
+        EncryptedMediaUtils::ConvertToMediaKeysRequirement(
+            config->persistentState());
 
     if (config->hasSessionTypes()) {
       web_config.session_types = ConvertSessionTypes(config->sessionTypes());
@@ -230,7 +218,7 @@ void MediaKeySystemAccessInitializer::RequestSucceeded(
     return;
 
   resolver_->Resolve(
-      new MediaKeySystemAccess(key_system_, base::WrapUnique(access)));
+      MakeGarbageCollected<MediaKeySystemAccess>(base::WrapUnique(access)));
   resolver_.Clear();
 }
 
@@ -358,8 +346,8 @@ ScriptPromise NavigatorRequestMediaKeySystemAccess::requestMediaKeySystemAccess(
 
   // 5. Let promise be a new promise.
   MediaKeySystemAccessInitializer* initializer =
-      new MediaKeySystemAccessInitializer(script_state, key_system,
-                                          supported_configurations);
+      MakeGarbageCollected<MediaKeySystemAccessInitializer>(
+          script_state, key_system, supported_configurations);
   ScriptPromise promise = initializer->Promise();
 
   // 6. Asynchronously determine support, and if allowed, create and

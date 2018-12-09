@@ -10,6 +10,7 @@
 #include "ash/public/cpp/shell_window_ids.h"
 #include "ash/public/cpp/window_properties.h"
 #include "ash/resources/vector_icons/vector_icons.h"
+#include "ash/scoped_animation_disabler.h"
 #include "ash/shell.h"
 #include "ash/strings/grit/ash_strings.h"
 #include "ash/wm/overview/overview_animation_type.h"
@@ -137,6 +138,7 @@ std::unique_ptr<views::Widget> CreateBackdropWidget(aura::Window* parent) {
       /*border_thickness=*/0, kBackdropRoundingDp, kBackdropColor,
       /*initial_opacity=*/1.f, parent,
       /*stack_on_top=*/false);
+  widget->GetNativeWindow()->SetName("OverviewBackdrop");
   return widget;
 }
 
@@ -495,10 +497,6 @@ WindowSelectorItem::WindowSelectorItem(aura::Window* window,
       window_grid_(window_grid) {
   CreateWindowLabel(window->GetTitle());
   GetWindow()->AddObserver(this);
-  if (GetWindowDimensionsType() !=
-      ScopedTransformOverviewWindow::GridWindowFillMode::kNormal) {
-    backdrop_widget_ = CreateBackdropWidget(window->parent());
-  }
   GetWindow()->SetProperty(ash::kIsShowingInOverviewKey, true);
 }
 
@@ -564,31 +562,22 @@ void WindowSelectorItem::Shutdown() {
     return;
   }
 
-  // Fade out the item widget. This animation continues past the lifetime
-  // of |this|.
-  const bool slide = window_selector_->enter_exit_overview_type() ==
-                     WindowSelector::EnterExitOverviewType::kWindowsMinimized;
-  FadeOutWidgetAndMaybeSlideOnExit(
-      std::move(item_widget_),
-      slide ? OVERVIEW_ANIMATION_EXIT_TO_HOME_LAUNCHER
-            : OVERVIEW_ANIMATION_EXIT_OVERVIEW_MODE_FADE_OUT,
-      slide);
+  // Close the item widget without animation to reduce the load during exit
+  // animation.
+  ScopedAnimationDisabler(item_widget_->GetNativeWindow());
+  item_widget_.reset();
 }
 
 void WindowSelectorItem::PrepareForOverview() {
   transform_window_.PrepareForOverview();
   RestackItemWidget();
-  UpdateHeaderLayout(HeaderFadeInMode::kEnter, OVERVIEW_ANIMATION_NONE);
 }
 
 void WindowSelectorItem::SlideWindowIn() {
   // |transform_window_|'s |minimized_widget| is non null because this only gets
   // called if we see the home launcher on enter (all windows are minimized).
-  DCHECK(item_widget_);
   DCHECK(transform_window_.minimized_widget());
-  FadeInWidgetAndMaybeSlideOnEnter(item_widget_.get(),
-                                   OVERVIEW_ANIMATION_ENTER_FROM_HOME_LAUNCHER,
-                                   /*slide=*/true);
+  // The |item_widget_| will be shown when animation ends.
   FadeInWidgetAndMaybeSlideOnEnter(transform_window_.minimized_widget(),
                                    OVERVIEW_ANIMATION_ENTER_FROM_HOME_LAUNCHER,
                                    /*slide=*/true);
@@ -620,7 +609,6 @@ void WindowSelectorItem::UpdateYPositionAndOpacity(
 
   for (auto& layer_and_offset : animation_layers_and_offsets) {
     ui::Layer* layer = layer_and_offset.first;
-    layer->GetAnimator()->StopAnimating();
     std::unique_ptr<ui::ScopedLayerAnimationSettings> settings;
     if (!callback.is_null()) {
       settings = std::make_unique<ui::ScopedLayerAnimationSettings>(
@@ -671,9 +659,7 @@ void WindowSelectorItem::SetBounds(const gfx::Rect& target_bounds,
   // If |target_bounds_| is empty, this is the first update. Let
   // UpdateHeaderLayout know, as we do not want |item_widget_| to be animated
   // with the window.
-  HeaderFadeInMode mode = target_bounds_.IsEmpty()
-                              ? HeaderFadeInMode::kFirstUpdate
-                              : HeaderFadeInMode::kUpdate;
+  const bool is_first_update = target_bounds_.IsEmpty();
   target_bounds_ = target_bounds;
 
   gfx::Rect inset_bounds(target_bounds);
@@ -682,16 +668,14 @@ void WindowSelectorItem::SetBounds(const gfx::Rect& target_bounds,
   // Do not animate if entering when the window is minimized, as it will be
   // faded in. We still want to animate if the position is changed after
   // entering.
-  if (wm::GetWindowState(GetWindow())->IsMinimized() &&
-      mode == HeaderFadeInMode::kFirstUpdate) {
+  if (wm::GetWindowState(GetWindow())->IsMinimized() && is_first_update)
     new_animation_type = OVERVIEW_ANIMATION_NONE;
-  }
-
-  SetItemBounds(inset_bounds, new_animation_type);
 
   // SetItemBounds is called before UpdateHeaderLayout so the header can
   // properly use the updated windows bounds.
-  UpdateHeaderLayout(mode, new_animation_type);
+  SetItemBounds(inset_bounds, new_animation_type);
+  UpdateHeaderLayout(is_first_update ? OVERVIEW_ANIMATION_NONE
+                                     : new_animation_type);
 
   // Shadow is normally set after an animation is finished. In the case of no
   // animations, manually set the shadow. Shadow relies on both the window
@@ -793,6 +777,7 @@ WindowSelectorItem::GetWindowDimensionsType() const {
 }
 
 void WindowSelectorItem::UpdateWindowDimensionsType() {
+  // TODO(oshima|sammiequan|xdai): Use EnableBackdropIfNeeded.
   transform_window_.UpdateWindowDimensionsType();
   if (GetWindowDimensionsType() ==
       ScopedTransformOverviewWindow::GridWindowFillMode::kNormal) {
@@ -814,7 +799,10 @@ void WindowSelectorItem::EnableBackdropIfNeeded() {
     DisableBackdrop();
     return;
   }
-
+  if (!backdrop_widget_) {
+    backdrop_widget_ =
+        CreateBackdropWidget(transform_window_.window()->parent());
+  }
   UpdateBackdropBounds();
 }
 
@@ -1055,6 +1043,14 @@ void WindowSelectorItem::UpdateMaskAndShadow(bool show) {
   EnableBackdropIfNeeded();
 }
 
+void WindowSelectorItem::OnStartingAnimationComplete() {
+  DCHECK(item_widget_.get());
+  FadeInWidgetAndMaybeSlideOnEnter(
+      item_widget_.get(), OVERVIEW_ANIMATION_ENTER_OVERVIEW_MODE_FADE_IN,
+      /*slide=*/false);
+  EnableBackdropIfNeeded();
+}
+
 void WindowSelectorItem::SetOpacity(float opacity) {
   item_widget_->SetOpacity(opacity);
   transform_window_.SetOpacity(opacity);
@@ -1180,13 +1176,9 @@ void WindowSelectorItem::CreateWindowLabel(const base::string16& title) {
   item_widget_->Show();
   item_widget_->SetOpacity(0);
   item_widget_->GetLayer()->SetMasksToBounds(false);
-  FadeInWidgetAndMaybeSlideOnEnter(
-      item_widget_.get(), OVERVIEW_ANIMATION_ENTER_OVERVIEW_MODE_FADE_IN,
-      /*slide=*/false);
 }
 
 void WindowSelectorItem::UpdateHeaderLayout(
-    HeaderFadeInMode mode,
     OverviewAnimationType animation_type) {
   gfx::Rect transformed_window_bounds =
       transform_window_.window_selector_bounds().value_or(
@@ -1197,17 +1189,11 @@ void WindowSelectorItem::UpdateHeaderLayout(
   label_rect.set_width(transformed_window_bounds.width());
   // For tabbed windows the initial bounds of the caption are set such that it
   // appears to be "growing" up from the window content area.
-  label_rect.set_y(
-      (mode != HeaderFadeInMode::kEnter || transform_window_.GetTopInset())
-          ? -label_rect.height()
-          : 0);
+  label_rect.set_y(-label_rect.height());
 
   aura::Window* widget_window = item_widget_->GetNativeWindow();
-  // For the first update, place the widget at its destination.
-  ScopedOverviewAnimationSettings animation_settings(
-      mode == HeaderFadeInMode::kFirstUpdate ? OVERVIEW_ANIMATION_NONE
-                                             : animation_type,
-      widget_window);
+  ScopedOverviewAnimationSettings animation_settings(animation_type,
+                                                     widget_window);
 
   // Create a start animation observer if this is an enter overview layout
   // animation.
@@ -1221,10 +1207,8 @@ void WindowSelectorItem::UpdateHeaderLayout(
   // |widget_window| covers both the transformed window and the header
   // as well as the gap between the windows to prevent events from reaching
   // the window including its sizing borders.
-  if (mode != HeaderFadeInMode::kEnter) {
     label_rect.set_height(close_button_->GetPreferredSize().height() +
                           transformed_window_bounds.height());
-  }
   label_rect.Inset(-kWindowSelectorMargin, -kWindowSelectorMargin);
   widget_window->SetBounds(label_rect);
   gfx::Transform label_transform;

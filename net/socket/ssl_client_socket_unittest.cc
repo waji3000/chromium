@@ -59,8 +59,6 @@
 #include "net/socket/stream_socket.h"
 #include "net/socket/tcp_client_socket.h"
 #include "net/socket/tcp_server_socket.h"
-#include "net/ssl/channel_id_service.h"
-#include "net/ssl/default_channel_id_store.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_config_service.h"
 #include "net/ssl/ssl_connection_status_flags.h"
@@ -707,57 +705,6 @@ class DeleteSocketCallback : public TestCompletionCallbackBase {
   DISALLOW_COPY_AND_ASSIGN(DeleteSocketCallback);
 };
 
-// A ChannelIDStore that always returns an error when asked for a
-// channel id.
-class FailingChannelIDStore : public ChannelIDStore {
-  int GetChannelID(const std::string& server_identifier,
-                   std::unique_ptr<crypto::ECPrivateKey>* key_result,
-                   GetChannelIDCallback callback) override {
-    return ERR_UNEXPECTED;
-  }
-  void SetChannelID(std::unique_ptr<ChannelID> channel_id) override {}
-  void DeleteChannelID(const std::string& server_identifier,
-                       base::OnceClosure completion_callback) override {}
-  void DeleteForDomainsCreatedBetween(
-      const base::Callback<bool(const std::string&)>& domain_predicate,
-      base::Time delete_begin,
-      base::Time delete_end,
-      base::OnceClosure completion_callback) override {}
-  void DeleteAll(base::OnceClosure completion_callback) override {}
-  void GetAllChannelIDs(GetChannelIDListCallback callback) override {}
-  int GetChannelIDCount() override { return 0; }
-  void SetForceKeepSessionState() override {}
-  void Flush() override {}
-  bool IsEphemeral() override { return true; }
-};
-
-// A ChannelIDStore that asynchronously returns an error when asked for a
-// channel id.
-class AsyncFailingChannelIDStore : public ChannelIDStore {
-  int GetChannelID(const std::string& server_identifier,
-                   std::unique_ptr<crypto::ECPrivateKey>* key_result,
-                   GetChannelIDCallback callback) override {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::BindOnce(std::move(callback), ERR_UNEXPECTED,
-                                  server_identifier, nullptr));
-    return ERR_IO_PENDING;
-  }
-  void SetChannelID(std::unique_ptr<ChannelID> channel_id) override {}
-  void DeleteChannelID(const std::string& server_identifier,
-                       base::OnceClosure completion_callback) override {}
-  void DeleteForDomainsCreatedBetween(
-      const base::Callback<bool(const std::string&)>& domain_predicate,
-      base::Time delete_begin,
-      base::Time delete_end,
-      base::OnceClosure completion_callback) override {}
-  void DeleteAll(base::OnceClosure completion_callback) override {}
-  void GetAllChannelIDs(GetChannelIDListCallback callback) override {}
-  int GetChannelIDCount() override { return 0; }
-  void SetForceKeepSessionState() override {}
-  void Flush() override {}
-  bool IsEphemeral() override { return true; }
-};
-
 // A mock ExpectCTReporter that remembers the latest violation that was
 // reported and the number of violations reported.
 class MockExpectCTReporter : public TransportSecurityState::ExpectCTReporter {
@@ -1184,32 +1131,6 @@ class SSLClientSocketFalseStartTest : public SSLClientSocketTest {
   }
 };
 
-class SSLClientSocketChannelIDTest : public SSLClientSocketTest {
- protected:
-  SSLClientSocketChannelIDTest() = default;
-
-  void EnableChannelID() {
-    channel_id_service_.reset(
-        new ChannelIDService(new DefaultChannelIDStore(NULL)));
-    context_.channel_id_service = channel_id_service_.get();
-  }
-
-  void EnableFailingChannelID() {
-    channel_id_service_.reset(
-        new ChannelIDService(new FailingChannelIDStore()));
-    context_.channel_id_service = channel_id_service_.get();
-  }
-
-  void EnableAsyncFailingChannelID() {
-    channel_id_service_.reset(
-        new ChannelIDService(new AsyncFailingChannelIDStore()));
-    context_.channel_id_service = channel_id_service_.get();
-  }
-
- private:
-  std::unique_ptr<ChannelIDService> channel_id_service_;
-};
-
 // Provides a response to the 0RTT request indicating whether it was received
 // as early data.
 class ZeroRTTResponse : public test_server::HttpResponse {
@@ -1463,6 +1384,22 @@ TEST_F(SSLClientSocketTest, ConnectBadValidity) {
   int rv;
   ASSERT_TRUE(CreateAndConnectSSLClientSocket(ssl_config, &rv));
   EXPECT_THAT(rv, IsError(ERR_CERT_DATE_INVALID));
+}
+
+// Ignoring the certificate error from an invalid certificate should
+// allow a complete connection.
+TEST_F(SSLClientSocketTest, ConnectBadValidityIgnoreCertErrors) {
+  SpawnedTestServer::SSLOptions ssl_options(
+      SpawnedTestServer::SSLOptions::CERT_BAD_VALIDITY);
+  ASSERT_TRUE(StartTestServer(ssl_options));
+  cert_verifier_->set_default_result(ERR_CERT_DATE_INVALID);
+
+  SSLConfig ssl_config;
+  ssl_config.ignore_certificate_errors = true;
+  int rv;
+  CreateAndConnectSSLClientSocket(ssl_config, &rv);
+  EXPECT_THAT(rv, IsOk());
+  EXPECT_TRUE(sock_->IsConnected());
 }
 
 // Attempt to connect to a page which requests a client certificate. It should
@@ -2444,7 +2381,7 @@ TEST_F(SSLClientSocketTest, VerifyServerChainProperlyOrdered) {
   int rv;
   ASSERT_TRUE(CreateAndConnectSSLClientSocket(SSLConfig(), &rv));
   EXPECT_THAT(rv, IsError(ERR_CERT_INVALID));
-  EXPECT_TRUE(sock_->IsConnected());
+  EXPECT_FALSE(sock_->IsConnected());
 
   // When given option CERT_CHAIN_WRONG_ROOT, SpawnedTestServer will present
   // certs from redundant-server-chain.pem.
@@ -3287,95 +3224,6 @@ TEST_F(SSLClientSocketFalseStartTest, NoSessionResumptionBadFinished) {
   EXPECT_EQ(SSLInfo::HANDSHAKE_FULL, ssl_info.handshake_type);
 }
 
-// Connect to a server using channel id. It should allow the connection.
-TEST_F(SSLClientSocketChannelIDTest, SendChannelID) {
-  SpawnedTestServer::SSLOptions ssl_options;
-
-  ASSERT_TRUE(StartTestServer(ssl_options));
-
-  EnableChannelID();
-  SSLConfig ssl_config;
-  ssl_config.channel_id_enabled = true;
-
-  int rv;
-  ASSERT_TRUE(CreateAndConnectSSLClientSocket(ssl_config, &rv));
-
-  EXPECT_THAT(rv, IsOk());
-  EXPECT_TRUE(sock_->IsConnected());
-  SSLInfo ssl_info;
-  ASSERT_TRUE(sock_->GetSSLInfo(&ssl_info));
-  EXPECT_TRUE(ssl_info.channel_id_sent);
-
-  sock_->Disconnect();
-  EXPECT_FALSE(sock_->IsConnected());
-}
-
-// Connect to a server using Channel ID but failing to look up the Channel
-// ID. It should fail.
-TEST_F(SSLClientSocketChannelIDTest, FailingChannelID) {
-  SpawnedTestServer::SSLOptions ssl_options;
-
-  ASSERT_TRUE(StartTestServer(ssl_options));
-
-  EnableFailingChannelID();
-  SSLConfig ssl_config;
-  ssl_config.channel_id_enabled = true;
-
-  int rv;
-  ASSERT_TRUE(CreateAndConnectSSLClientSocket(ssl_config, &rv));
-
-  // TODO(haavardm@opera.com): Due to differences in threading, Linux returns
-  // ERR_UNEXPECTED while Mac and Windows return ERR_PROTOCOL_ERROR. Accept all
-  // error codes for now.
-  // http://crbug.com/373670
-  EXPECT_NE(OK, rv);
-  EXPECT_FALSE(sock_->IsConnected());
-}
-
-// Connect to a server using Channel ID but asynchronously failing to look up
-// the Channel ID. It should fail.
-TEST_F(SSLClientSocketChannelIDTest, FailingChannelIDAsync) {
-  SpawnedTestServer::SSLOptions ssl_options;
-
-  ASSERT_TRUE(StartTestServer(ssl_options));
-
-  EnableAsyncFailingChannelID();
-  SSLConfig ssl_config;
-  ssl_config.channel_id_enabled = true;
-
-  int rv;
-  ASSERT_TRUE(CreateAndConnectSSLClientSocket(ssl_config, &rv));
-
-  EXPECT_THAT(rv, IsError(ERR_UNEXPECTED));
-  EXPECT_FALSE(sock_->IsConnected());
-}
-
-// Tests that session caches are sharded by whether Channel ID is enabled.
-TEST_F(SSLClientSocketChannelIDTest, ChannelIDShardSessionCache) {
-  SpawnedTestServer::SSLOptions ssl_options;
-  ASSERT_TRUE(StartTestServer(ssl_options));
-
-  EnableChannelID();
-
-  // Connect without Channel ID.
-  SSLConfig ssl_config;
-  ssl_config.channel_id_enabled = false;
-  int rv;
-  ASSERT_TRUE(CreateAndConnectSSLClientSocket(ssl_config, &rv));
-  SSLInfo ssl_info;
-  EXPECT_TRUE(sock_->GetSSLInfo(&ssl_info));
-  EXPECT_EQ(SSLInfo::HANDSHAKE_FULL, ssl_info.handshake_type);
-  EXPECT_FALSE(ssl_info.channel_id_sent);
-
-  // Enable Channel ID and connect again. This needs a full handshake to assert
-  // Channel ID.
-  ssl_config.channel_id_enabled = true;
-  ASSERT_TRUE(CreateAndConnectSSLClientSocket(ssl_config, &rv));
-  EXPECT_TRUE(sock_->GetSSLInfo(&ssl_info));
-  EXPECT_EQ(SSLInfo::HANDSHAKE_FULL, ssl_info.handshake_type);
-  EXPECT_TRUE(ssl_info.channel_id_sent);
-}
-
 // Server preference should win in ALPN.
 TEST_F(SSLClientSocketTest, Alpn) {
   SpawnedTestServer::SSLOptions server_options;
@@ -3589,7 +3437,7 @@ TEST_F(SSLClientSocketTest, PKPEnforced) {
 
   EXPECT_THAT(rv, IsError(ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN));
   EXPECT_TRUE(ssl_info.cert_status & CERT_STATUS_PINNED_KEY_MISSING);
-  EXPECT_TRUE(sock_->IsConnected());
+  EXPECT_FALSE(sock_->IsConnected());
 
   EXPECT_FALSE(ssl_info.pkp_bypassed);
 }
@@ -3634,7 +3482,7 @@ TEST_F(SSLClientSocketTest, CTIsRequired) {
   EXPECT_THAT(rv, IsError(ERR_CERTIFICATE_TRANSPARENCY_REQUIRED));
   EXPECT_TRUE(ssl_info.cert_status &
               CERT_STATUS_CERTIFICATE_TRANSPARENCY_REQUIRED);
-  EXPECT_TRUE(sock_->IsConnected());
+  EXPECT_FALSE(sock_->IsConnected());
 }
 
 // Test that the CT compliance status is recorded in a histogram.
@@ -4000,7 +3848,7 @@ TEST_F(SSLClientSocketTest, CTIsRequiredByExpectCT) {
   EXPECT_THAT(rv, IsError(ERR_CERTIFICATE_TRANSPARENCY_REQUIRED));
   EXPECT_TRUE(ssl_info.cert_status &
               CERT_STATUS_CERTIFICATE_TRANSPARENCY_REQUIRED);
-  EXPECT_TRUE(sock_->IsConnected());
+  EXPECT_FALSE(sock_->IsConnected());
 
   EXPECT_EQ(1u, reporter.num_failures());
   EXPECT_EQ(GURL("https://example-report.test"), reporter.report_uri());
@@ -4019,7 +3867,7 @@ TEST_F(SSLClientSocketTest, CTIsRequiredByExpectCT) {
   EXPECT_THAT(rv, IsError(ERR_CERTIFICATE_TRANSPARENCY_REQUIRED));
   EXPECT_TRUE(ssl_info.cert_status &
               CERT_STATUS_CERTIFICATE_TRANSPARENCY_REQUIRED);
-  EXPECT_TRUE(sock_->IsConnected());
+  EXPECT_FALSE(sock_->IsConnected());
 
   EXPECT_EQ(2u, reporter.num_failures());
   EXPECT_EQ(GURL("https://example-report.test"), reporter.report_uri());
@@ -4103,7 +3951,7 @@ TEST_F(SSLClientSocketTest, PKPMoreImportantThanCT) {
   EXPECT_TRUE(ssl_info.cert_status & CERT_STATUS_PINNED_KEY_MISSING);
   EXPECT_TRUE(ssl_info.cert_status &
               CERT_STATUS_CERTIFICATE_TRANSPARENCY_REQUIRED);
-  EXPECT_TRUE(sock_->IsConnected());
+  EXPECT_FALSE(sock_->IsConnected());
 }
 
 // Test that handshake_failure alerts at the ServerHello are mapped to
@@ -4427,23 +4275,99 @@ TEST_F(SSLClientSocketZeroRTTTest, ZeroRTTConfirmedAfterRead) {
   EXPECT_EQ(SSLInfo::HANDSHAKE_RESUME, ssl_info.handshake_type);
 }
 
-// Wait to read ServerHello until after the client writes application data.
-TEST_F(SSLClientSocketZeroRTTTest, ZeroRTTWaitForEarlyDataSend) {
+// Test that the client sends application data before the ServerHello comes in.
+TEST_F(SSLClientSocketZeroRTTTest, ZeroRTTEarlyDataBeforeServerHello) {
   ASSERT_TRUE(StartServer());
   ASSERT_TRUE(RunInitialConnection());
 
   // 0-RTT Connection
   FakeBlockingStreamSocket* socket = MakeClient(true);
+
+  // Block the ServerHello.
   socket->BlockReadResult();
+
+  // The handshake still completes.
   ASSERT_THAT(Connect(), IsOk());
+
+  // Writes still complete.
   constexpr base::StringPiece kRequest = "GET /zerortt HTTP/1.0\r\n\r\n";
   EXPECT_EQ(static_cast<int>(kRequest.size()), WriteAndWait(kRequest));
-  socket->UnblockReadResult();
 
+  // Release the ServerHello. Now reads complete.
+  socket->UnblockReadResult();
   scoped_refptr<IOBuffer> buf = base::MakeRefCounted<IOBuffer>(4096);
   int size = ReadAndWait(buf.get(), 4096);
   EXPECT_GT(size, 0);
   EXPECT_EQ('1', buf->data()[size - 1]);
+
+  SSLInfo ssl_info;
+  ASSERT_TRUE(GetSSLInfo(&ssl_info));
+  EXPECT_EQ(SSLInfo::HANDSHAKE_RESUME, ssl_info.handshake_type);
+}
+
+// Test that writes wait for the ServerHello once it has reached the early data
+// limit.
+TEST_F(SSLClientSocketZeroRTTTest, ZeroRTTEarlyDataLimit) {
+  ASSERT_TRUE(StartServer());
+  ASSERT_TRUE(RunInitialConnection());
+
+  // 0-RTT Connection
+  FakeBlockingStreamSocket* socket = MakeClient(true);
+
+  // Block the ServerHello.
+  socket->BlockReadResult();
+
+  // The handshake still completes.
+  ASSERT_THAT(Connect(), IsOk());
+
+  // EmbeddedTestServer uses BoringSSL's hard-coded early data limit, which is
+  // below 16k.
+  constexpr size_t kRequestSize = 16 * 1024;
+  std::string request = "GET /zerortt HTTP/1.0\r\n";
+  while (request.size() < kRequestSize) {
+    request += "The-Answer-To-Life-The-Universe-And-Everything: 42\r\n";
+  }
+  request += "\r\n";
+
+  // Writing the large input should not succeed. It is blocked on the
+  // ServerHello.
+  TestCompletionCallback write_callback;
+  auto write_buf = base::MakeRefCounted<StringIOBuffer>(request);
+  int write_rv = ssl_socket()->Write(write_buf.get(), request.size(),
+                                     write_callback.callback(),
+                                     TRAFFIC_ANNOTATION_FOR_TESTS);
+  ASSERT_THAT(write_rv, IsError(ERR_IO_PENDING));
+
+  // The Write should have issued a read for the ServerHello, so
+  // WaitForReadResult has something to wait for.
+  socket->WaitForReadResult();
+  EXPECT_TRUE(socket->pending_read_result());
+
+  // Queue a read. It should be blocked on the ServerHello.
+  TestCompletionCallback read_callback;
+  auto read_buf = base::MakeRefCounted<IOBuffer>(4096);
+  int read_rv =
+      ssl_socket()->Read(read_buf.get(), 4096, read_callback.callback());
+  ASSERT_THAT(read_rv, IsError(ERR_IO_PENDING));
+
+  // Also queue a ConfirmHandshake. It should also be blocked on ServerHello.
+  TestCompletionCallback confirm_callback;
+  int confirm_rv = ssl_socket()->ConfirmHandshake(confirm_callback.callback());
+  ASSERT_THAT(confirm_rv, IsError(ERR_IO_PENDING));
+
+  // Double-check the write was not accidentally blocked on the network.
+  base::RunLoop().RunUntilIdle();
+  EXPECT_FALSE(write_callback.have_result());
+
+  // At this point, the maximum possible number of events are all blocked on the
+  // same thing. Release the ServerHello. All three should complete.
+  socket->UnblockReadResult();
+  EXPECT_EQ(static_cast<int>(request.size()),
+            write_callback.GetResult(write_rv));
+  EXPECT_THAT(confirm_callback.GetResult(confirm_rv), IsOk());
+  int size = read_callback.GetResult(read_rv);
+  ASSERT_GT(size, 0);
+  EXPECT_EQ('1', read_buf->data()[size - 1]);
 
   SSLInfo ssl_info;
   ASSERT_TRUE(GetSSLInfo(&ssl_info));
@@ -4936,6 +4860,64 @@ TEST_F(SSLClientSocketTest, TLS13DowngradeIgnoredAtTLS10) {
   EXPECT_TRUE(sock_->GetSSLInfo(&info));
   EXPECT_EQ(SSL_CONNECTION_VERSION_TLS1,
             SSLConnectionStatusToVersion(info.connection_status));
+}
+
+// Test downgrade enforcement enforces known roots when configured to.
+TEST_F(SSLClientSocketTest, TLS13DowngradeEnforcedKnownKnown) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeatureWithParameters(
+      features::kEnforceTLS13Downgrade, {{"known_roots_only", "true"}});
+
+  SpawnedTestServer::SSLOptions ssl_options;
+  ssl_options.simulate_tls13_downgrade = true;
+  ssl_options.tls_max_version =
+      SpawnedTestServer::SSLOptions::TLS_MAX_VERSION_TLS1_2;
+  ASSERT_TRUE(StartTestServer(ssl_options));
+
+  scoped_refptr<X509Certificate> server_cert =
+      spawned_test_server()->GetCertificate();
+
+  // Certificate is trusted and chains to a public root.
+  CertVerifyResult verify_result;
+  verify_result.is_issued_by_known_root = true;
+  verify_result.verified_cert = server_cert;
+  cert_verifier_->AddResultForCert(server_cert.get(), verify_result, OK);
+
+  SSLConfig config;
+  config.version_max = SSL_PROTOCOL_VERSION_TLS1_3;
+  int rv;
+  ASSERT_TRUE(CreateAndConnectSSLClientSocket(config, &rv));
+  EXPECT_THAT(rv, IsError(ERR_TLS13_DOWNGRADE_DETECTED));
+  EXPECT_FALSE(sock_->IsConnected());
+}
+
+// Test downgrade enforcement ignores unknown roots when configured to.
+TEST_F(SSLClientSocketTest, TLS13DowngradeEnforcedKnownUnknown) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeatureWithParameters(
+      features::kEnforceTLS13Downgrade, {{"known_roots_only", "true"}});
+
+  SpawnedTestServer::SSLOptions ssl_options;
+  ssl_options.simulate_tls13_downgrade = true;
+  ssl_options.tls_max_version =
+      SpawnedTestServer::SSLOptions::TLS_MAX_VERSION_TLS1_2;
+  ASSERT_TRUE(StartTestServer(ssl_options));
+
+  scoped_refptr<X509Certificate> server_cert =
+      spawned_test_server()->GetCertificate();
+
+  // Certificate is trusted and chains to a public root.
+  CertVerifyResult verify_result;
+  verify_result.is_issued_by_known_root = false;
+  verify_result.verified_cert = server_cert;
+  cert_verifier_->AddResultForCert(server_cert.get(), verify_result, OK);
+
+  SSLConfig config;
+  config.version_max = SSL_PROTOCOL_VERSION_TLS1_3;
+  int rv;
+  ASSERT_TRUE(CreateAndConnectSSLClientSocket(config, &rv));
+  EXPECT_THAT(rv, IsOk());
+  EXPECT_TRUE(sock_->IsConnected());
 }
 
 struct TLS13DowngradeMetricsParams {

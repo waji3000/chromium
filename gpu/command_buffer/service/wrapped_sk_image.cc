@@ -30,9 +30,9 @@ namespace {
 class WrappedSkImage : public SharedImageBacking {
  public:
   ~WrappedSkImage() override {
-    DCHECK(context_state_->context_lost ||
-           context_state_->context->IsCurrent(nullptr));
-    if (!context_state_->context_lost)
+    DCHECK(context_state_->context_lost() ||
+           context_state_->context()->IsCurrent(nullptr));
+    if (!context_state_->context_lost())
       context_state_->need_context_state_reset = true;
   }
 
@@ -49,6 +49,8 @@ class WrappedSkImage : public SharedImageBacking {
   bool IsCleared() const override { return cleared_; }
 
   void SetCleared() override { cleared_ = true; }
+
+  void Update() override {}
 
   void OnMemoryDump(const std::string& dump_name,
                     base::trace_event::MemoryAllocatorDump* dump,
@@ -68,9 +70,9 @@ class WrappedSkImage : public SharedImageBacking {
   sk_sp<SkSurface> GetSkSurface(int final_msaa_count,
                                 SkColorType color_type,
                                 const SkSurfaceProps& surface_props) {
-    if (context_state_->context_lost)
+    if (context_state_->context_lost())
       return nullptr;
-    DCHECK(context_state_->context->IsCurrent(context_state_->surface.get()));
+    DCHECK(context_state_->context()->IsCurrent(nullptr));
     GrBackendTexture gr_texture =
         image_->getBackendTexture(/*flushPendingGrContextIO=*/true);
     DCHECK(gr_texture.isValid());
@@ -111,9 +113,9 @@ class WrappedSkImage : public SharedImageBacking {
   }
 
   bool Initialize(const SkImageInfo& info) {
-    if (context_state_->context_lost)
+    if (context_state_->context_lost())
       return false;
-    DCHECK(context_state_->context->IsCurrent(nullptr));
+    DCHECK(context_state_->context()->IsCurrent(nullptr));
 
     context_state_->need_context_state_reset = true;
 
@@ -231,6 +233,19 @@ std::unique_ptr<SharedImageBacking> WrappedSkImageFactory::CreateSharedImage(
   if (!texture->Initialize(info))
     return nullptr;
   return texture;
+}
+
+std::unique_ptr<SharedImageBacking> WrappedSkImageFactory::CreateSharedImage(
+    const Mailbox& mailbox,
+    int client_id,
+    gfx::GpuMemoryBufferHandle handle,
+    gfx::BufferFormat buffer_format,
+    SurfaceHandle surface_handle,
+    const gfx::Size& size,
+    const gfx::ColorSpace& color_space,
+    uint32_t usage) {
+  NOTREACHED();
+  return nullptr;
 }
 
 std::unique_ptr<SharedImageRepresentationSkia> WrappedSkImage::ProduceSkia(

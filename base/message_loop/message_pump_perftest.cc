@@ -10,6 +10,7 @@
 #include "base/format_macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_impl.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/condition_variable.h"
@@ -56,7 +57,10 @@ class ScheduleWorkTest : public testing::Test {
     uint64_t schedule_calls = 0u;
     do {
       for (size_t i = 0; i < kBatchSize; ++i) {
-        target_message_loop()->ScheduleWork();
+        target_message_loop()
+            ->GetMessageLoopBase()
+            ->GetMessagePump()
+            ->ScheduleWork();
         schedule_calls++;
       }
       now = base::TimeTicks::Now();
@@ -79,6 +83,9 @@ class ScheduleWorkTest : public testing::Test {
 
   void ScheduleWork(MessageLoop::Type target_type, int num_scheduling_threads) {
 #if defined(OS_ANDROID)
+    // Test randomly times out on Android (crbug.com/906686).
+    return;
+
     if (target_type == MessageLoop::TYPE_JAVA) {
       java_thread_.reset(new android::JavaHandlerThread("target"));
       java_thread_->Start();
@@ -179,7 +186,7 @@ class ScheduleWorkTest : public testing::Test {
     if (java_thread_)
       return java_thread_->message_loop();
 #endif
-    return target_->message_loop()->ToMessageLoopDeprecated();
+    return target_->message_loop();
   }
 
  private:

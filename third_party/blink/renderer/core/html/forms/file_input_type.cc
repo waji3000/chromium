@@ -48,11 +48,12 @@
 namespace blink {
 
 using blink::WebLocalizedString;
+using mojom::blink::FileChooserParams;
 using namespace html_names;
 
 namespace {
 
-WebVector<WebString> CollectAcceptTypes(const HTMLInputElement& input) {
+Vector<String> CollectAcceptTypes(const HTMLInputElement& input) {
   Vector<String> mime_types = input.AcceptMIMETypes();
   Vector<String> extensions = input.AcceptFileExtensions();
 
@@ -71,7 +72,7 @@ inline FileInputType::FileInputType(HTMLInputElement& element)
       file_list_(FileList::Create()) {}
 
 InputType* FileInputType::Create(HTMLInputElement& element) {
-  return new FileInputType(element);
+  return MakeGarbageCollected<FileInputType>(element);
 }
 
 void FileInputType::Trace(blink::Visitor* visitor) {
@@ -84,16 +85,27 @@ InputTypeView* FileInputType::CreateView() {
   return this;
 }
 
-FileChooserFileInfoList FileInputType::FilesFromFormControlState(
-    const FormControlState& state) {
-  FileChooserFileInfoList files;
-  for (wtf_size_t i = 0; i < state.ValueSize(); i += 2) {
-    if (!state[i + 1].IsEmpty())
-      files.push_back(CreateFileChooserFileInfoNative(state[i], state[i + 1]));
-    else
-      files.push_back(CreateFileChooserFileInfoNative(state[i]));
+template <typename ItemType, typename VectorType>
+VectorType CreateFilesFrom(const FormControlState& state,
+                           ItemType (*factory)(const String&,
+                                               const String&,
+                                               const String&)) {
+  VectorType files;
+  files.ReserveInitialCapacity(state.ValueSize() / 3);
+  for (wtf_size_t i = 0; i < state.ValueSize(); i += 3) {
+    const String& path = state[i];
+    const String& name = state[i + 1];
+    const String& relative_path = state[i + 2];
+    files.push_back(factory(path, name, relative_path));
   }
   return files;
+}
+
+Vector<String> FileInputType::FilesFromFormControlState(
+    const FormControlState& state) {
+  return CreateFilesFrom<String, Vector<String>>(
+      state,
+      [](const String& path, const String&, const String&) { return path; });
 }
 
 const AtomicString& FileInputType::FormControlType() const {
@@ -109,6 +121,7 @@ FormControlState FileInputType::SaveFormControlState() const {
     if (file_list_->item(i)->HasBackingFile()) {
       state.Append(file_list_->item(i)->GetPath());
       state.Append(file_list_->item(i)->name());
+      state.Append(file_list_->item(i)->webkitRelativePath());
     }
     // FIXME: handle Blob-backed File instances, see http://crbug.com/394948
   }
@@ -116,9 +129,20 @@ FormControlState FileInputType::SaveFormControlState() const {
 }
 
 void FileInputType::RestoreFormControlState(const FormControlState& state) {
-  if (state.ValueSize() % 2)
+  if (state.ValueSize() % 3)
     return;
-  FilesChosen(FilesFromFormControlState(state));
+  HeapVector<Member<File>> file_vector =
+      CreateFilesFrom<File*, HeapVector<Member<File>>>(
+          state, [](const String& path, const String& name,
+                    const String& relative_path) {
+            if (relative_path.IsEmpty())
+              return File::CreateForUserProvidedFile(path, name);
+            return File::CreateWithRelativePath(path, relative_path);
+          });
+  FileList* file_list = FileList::Create();
+  for (const auto& file : file_vector)
+    file_list->Append(file);
+  SetFiles(file_list);
 }
 
 void FileInputType::AppendToFormData(FormData& form_data) const {
@@ -154,16 +178,17 @@ void FileInputType::HandleDOMActivateEvent(Event& event) {
     return;
 
   if (ChromeClient* chrome_client = GetChromeClient()) {
-    WebFileChooserParams params;
+    FileChooserParams params;
     HTMLInputElement& input = GetElement();
     Document& document = input.GetDocument();
     bool is_directory = input.FastHasAttribute(kWebkitdirectoryAttr);
     if (is_directory)
-      params.mode = WebFileChooserParams::Mode::kUploadFolder;
+      params.mode = FileChooserParams::Mode::kUploadFolder;
     else if (input.FastHasAttribute(kMultipleAttr))
-      params.mode = WebFileChooserParams::Mode::kOpenMultiple;
+      params.mode = FileChooserParams::Mode::kOpenMultiple;
     else
-      params.mode = WebFileChooserParams::Mode::kOpen;
+      params.mode = FileChooserParams::Mode::kOpen;
+    params.title = g_empty_string;
     params.need_local_path = is_directory;
     params.accept_types = CollectAcceptTypes(input);
     params.selected_files = file_list_->PathsForUserVisibleFiles();
@@ -234,30 +259,30 @@ void FileInputType::SetValue(const String&,
 }
 
 FileList* FileInputType::CreateFileList(const FileChooserFileInfoList& files,
-                                        bool has_webkit_directory_attr) {
+                                        const base::FilePath& base_dir) {
   FileList* file_list(FileList::Create());
   wtf_size_t size = files.size();
 
   // If a directory is being selected, the UI allows a directory to be chosen
-  // and the paths provided here share a root directory somewhere up the tree;
-  // we want to store only the relative paths from that point.
-  if (size && has_webkit_directory_attr) {
-    // Find the common root path.
-    base::FilePath root_path = files[0]->get_native_file()->file_path.DirName();
-    for (wtf_size_t i = 1; i < size; ++i) {
-      while (files[i]->get_native_file()->file_path.value().find(
-                 root_path.value()) != 0)
-        root_path = root_path.DirName();
-    }
-    root_path = root_path.DirName();
+  // and the paths provided here should start with |base_dir|.
+  // We want to store only the relative path starting with the basename of
+  // |base_dir|.
+  if (size && !base_dir.empty()) {
+    base::FilePath root_path = base_dir.DirName();
     int root_length = FilePathToString(root_path).length();
     DCHECK(root_length);
     if (!root_path.EndsWithSeparator())
       root_length += 1;
+    if (base_dir == root_path)
+      root_length = 0;
     for (const auto& file : files) {
       // Normalize backslashes to slashes before exposing the relative path to
       // script.
       String string_path = FilePathToString(file->get_native_file()->file_path);
+      DCHECK(
+          string_path.StartsWithIgnoringASCIICase(FilePathToString(base_dir)))
+          << "A path in a FileChooserFileInfo " << string_path
+          << " should start with " << FilePathToString(base_dir);
       String relative_path =
           string_path.Substring(root_length).Replace('\\', '/');
       file_list->Append(
@@ -359,9 +384,20 @@ void FileInputType::SetFiles(FileList* files) {
   }
 }
 
-void FileInputType::FilesChosen(const FileChooserFileInfoList& files) {
-  SetFiles(CreateFileList(files,
-                          GetElement().FastHasAttribute(kWebkitdirectoryAttr)));
+void FileInputType::FilesChosen(FileChooserFileInfoList files,
+                                const base::FilePath& base_dir) {
+  for (wtf_size_t i = 0; i < files.size();) {
+    // Drop files of which names can not be converted to WTF String. We
+    // can't expose such files via File API.
+    if (files[i]->is_native_file() &&
+        FilePathToString(files[i]->get_native_file()->file_path).IsEmpty()) {
+      files.EraseAt(i);
+      // Do not increment |i|.
+      continue;
+    }
+    ++i;
+  }
+  SetFiles(CreateFileList(files, base_dir));
   if (HasConnectedFileChooser())
     DisconnectFileChooser();
 }
@@ -371,16 +407,13 @@ LocalFrame* FileInputType::FrameOrNull() const {
 }
 
 void FileInputType::SetFilesFromDirectory(const String& path) {
-  if (ChromeClient* chrome_client = GetChromeClient()) {
-    Vector<String> files;
-    files.push_back(path);
-    WebFileChooserParams params;
-    params.mode = WebFileChooserParams::Mode::kUploadFolder;
-    params.selected_files = files;
-    params.accept_types = CollectAcceptTypes(GetElement());
-    params.requestor = GetElement().GetDocument().Url();
-    chrome_client->EnumerateChosenDirectory(NewFileChooser(params));
-  }
+  FileChooserParams params;
+  params.mode = FileChooserParams::Mode::kUploadFolder;
+  params.title = g_empty_string;
+  params.selected_files.push_back(StringToFilePath(path));
+  params.accept_types = CollectAcceptTypes(GetElement());
+  params.requestor = GetElement().GetDocument().Url();
+  NewFileChooser(params)->EnumerateChosenDirectory();
 }
 
 void FileInputType::SetFilesFromPaths(const Vector<String>& paths) {
@@ -398,11 +431,11 @@ void FileInputType::SetFilesFromPaths(const Vector<String>& paths) {
     files.push_back(CreateFileChooserFileInfoNative(path));
 
   if (input.FastHasAttribute(kMultipleAttr)) {
-    FilesChosen(files);
+    FilesChosen(std::move(files), base::FilePath());
   } else {
     FileChooserFileInfoList first_file_only;
     first_file_only.push_back(std::move(files[0]));
-    FilesChosen(first_file_only);
+    FilesChosen(std::move(first_file_only), base::FilePath());
   }
 }
 

@@ -28,7 +28,45 @@ index 43c59653a39b..26652936735c 100644
        }
      },
 
-@@ -791,6 +799,15 @@
+@@ -786,11 +794,53 @@
+       newGrid && this._updateGridMetrics();
+     },
+
++    /**
++     * Finds and returns the focused element (both within self and children's
++     * Shadow DOM).
++     * @return {?HTMLElement}
++     */
++    _getFocusedElement: function() {
++      function doSearch(node, query) {
++        let result = null;
++        let type = node.nodeType;
++        if (type == Node.ELEMENT_NODE || type == Node.DOCUMENT_FRAGMENT_NODE)
++          result = node.querySelector(query);
++        if (result)
++          return result;
++
++        let child = node.firstChild;
++        while (child !== null && result === null) {
++          result = doSearch(child, query);
++          child = child.nextSibling;
++        }
++        if (result)
++          return result;
++
++        const shadowRoot = node.shadowRoot;
++        return shadowRoot ? doSearch(shadowRoot, query) : null;
++      }
++
++      // Find out if any of the items are focused first, and only search
++      // recursively in the item that contains focus, to avoid a slow
++      // search of the entire list.
++      const focusWithin = doSearch(this, ':focus-within');
++      return focusWithin ? doSearch(focusWithin, ':focus') : null;
++    },
++
+     /**
+      * Called when the items have changed. That is, reassignments
       * to `items`, splices or updates to a single item.
       */
      _itemsChanged: function(change) {
@@ -36,7 +74,7 @@ index 43c59653a39b..26652936735c 100644
 +      var lastFocusedIndex, focusedElement;
 +      if (rendering && this.preserveFocus) {
 +        lastFocusedIndex = this._focusedVirtualIndex;
-+        focusedElement = this.querySelector('* /deep/ *:focus');
++        focusedElement = this._getFocusedElement();
 +      }
 +
 +      var preservingFocus = rendering && this.preserveFocus && focusedElement;
@@ -44,7 +82,7 @@ index 43c59653a39b..26652936735c 100644
        if (change.path === 'items') {
          this._virtualStart = 0;
          this._physicalTop = 0;
-@@ -804,7 +821,7 @@
+@@ -804,7 +854,7 @@
          this._physicalItems = this._physicalItems || [];
          this._physicalSizes = this._physicalSizes || [];
          this._physicalStart = 0;
@@ -53,7 +91,7 @@ index 43c59653a39b..26652936735c 100644
            this._resetScrollPosition(0);
          }
          this._removeFocusedItem();
-@@ -826,6 +843,17 @@
+@@ -834,6 +884,17 @@
        } else if (change.path !== 'items.length') {
          this._forwardItemPath(change.path, change.value);
        }
@@ -176,6 +214,7 @@ index 7306c651407e..9c88699a3924 100644
       * @implements {Polymer_ElementMixin}
       * @implements {Polymer_GestureEventListeners}
 -     * @implements {Polymer_DirMixin}
+      * @private
       */
 -    const legacyElementBase = Polymer.DirMixin(Polymer.GestureEventListeners(Polymer.ElementMixin(base)));
 +    const legacyElementBase = Polymer.GestureEventListeners(Polymer.ElementMixin(base));

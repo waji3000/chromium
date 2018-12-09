@@ -44,6 +44,7 @@ class BleDeviceHoverListModel : public HoverListModel,
   const gfx::VectorIcon& GetItemIcon(int item_tag) const override;
   std::vector<int> GetItemTags() const override;
   void OnListItemSelected(int item_tag) override;
+  size_t GetPreferredItemCount() const override;
 
   // AuthenticatorListObserver:
   void OnAuthenticatorAdded(
@@ -55,6 +56,13 @@ class BleDeviceHoverListModel : public HoverListModel,
   // state.
   void OnAuthenticatorPairingModeChanged(
       const AuthenticatorReference& changed_authenticator) override;
+
+  // Invoked when device address(and the corresponding authenticator id) of the
+  // connected BLE authenticator changes due to authenticator's pairing mode
+  // change.
+  void OnAuthenticatorIdChanged(
+      const AuthenticatorReference& changed_authenticator,
+      base::StringPiece previous_id) override;
 
   ObservableAuthenticatorList* const authenticator_list_;
   Delegate* const delegate_;  // Weak, may be nullptr.

@@ -533,6 +533,9 @@ std::string GetDocumentMetadata(FPDF_DOCUMENT doc, const std::string& key) {
 gin::IsolateHolder* g_isolate_holder = nullptr;
 
 void SetUpV8() {
+  const char* recommended = FPDF_GetRecommendedV8Flags();
+  v8::V8::SetFlagsFromString(recommended, strlen(recommended));
+
   gin::IsolateHolder::Initialize(gin::IsolateHolder::kNonStrictMode,
                                  gin::IsolateHolder::kStableV8Extras,
                                  gin::ArrayBufferAllocator::SharedInstance());
@@ -2433,12 +2436,6 @@ base::Optional<PDFEngine::NamedDestination> PDFiumEngine::GetNamedDestination(
       FPDFDest_GetView(dest, &result.num_params, result.params);
   result.view = ConvertViewIntToViewString(view_int);
   return result;
-}
-
-gfx::PointF PDFiumEngine::TransformPagePoint(int page_index,
-                                             const gfx::PointF& page_xy) {
-  DCHECK(PageIndexInBounds(page_index));
-  return pages_[page_index]->TransformPageToScreenXY(page_xy);
 }
 
 int PDFiumEngine::GetMostVisiblePage() {

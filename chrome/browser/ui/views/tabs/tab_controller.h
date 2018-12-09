@@ -42,11 +42,6 @@ class TabController {
   // Returns true if the close button for the given tab is forced to be hidden.
   virtual bool ShouldHideCloseButtonForTab(Tab* tab) const = 0;
 
-  // Returns true if the close button on an inactive tab should be shown on
-  // mouse hover. This is predicated on ShouldHideCloseButtonForInactiveTabs()
-  // returning true.
-  virtual bool ShouldShowCloseButtonOnHover() = 0;
-
   // Returns true if ShouldPaintTab() could return a non-empty clip path.
   virtual bool MaySetClip() = 0;
 
@@ -132,6 +127,10 @@ class TabController {
   // frame.
   virtual bool HasVisibleBackgroundTabShapes() const = 0;
 
+  // Returns whether the tab strip should be painted as if the window frame is
+  // active.
+  virtual bool ShouldPaintAsActiveFrame() const = 0;
+
   // Returns COLOR_TOOLBAR_TOP_SEPARATOR[,_INACTIVE] depending on the activation
   // state of the window.
   virtual SkColor GetToolbarTopSeparatorColor() const = 0;
@@ -139,13 +138,17 @@ class TabController {
   // Returns the color of the separator between the tabs.
   virtual SkColor GetTabSeparatorColor() const = 0;
 
-  // Returns the tab background color based on both the |state| of the tab and
-  // the activation state of the window.
-  virtual SkColor GetTabBackgroundColor(TabState state) const = 0;
+  // Returns the tab background color based on both the |tab_state| and the
+  // |active_state| of the window.
+  virtual SkColor GetTabBackgroundColor(
+      TabState tab_state,
+      BrowserNonClientFrameView::ActiveState active_state =
+          BrowserNonClientFrameView::kUseCurrent) const = 0;
 
-  // Returns the tab foreground color of the the text based on both the |state|
-  // of the tab and the activation state of the window.
-  virtual SkColor GetTabForegroundColor(TabState state) const = 0;
+  // Returns the tab foreground color of the the text based on the |tab_state|,
+  // the activation state of the window, and the current |background_color|.
+  virtual SkColor GetTabForegroundColor(TabState tab_state,
+                                        SkColor background_color) const = 0;
 
   // Returns the resource ID for the image to use as the tab background.
   // |custom_image| is an outparam set to true if either the tab or the frame

@@ -1295,7 +1295,7 @@ void PepperPluginInstanceImpl::ViewChanged(
   unobscured_rect_ = unobscured;
 
   view_data_.rect = PP_FromGfxRect(window);
-  view_data_.clip_rect = PP_FromGfxRect(clip);
+  view_data_.clip_rect = PP_FromGfxRect(new_clip);
   view_data_.device_scale = container_->DeviceScaleFactor();
   view_data_.css_scale =
       container_->PageZoomFactor() * container_->PageScaleFactor();
@@ -2192,7 +2192,7 @@ bool PepperPluginInstanceImpl::IsViewAccelerated() {
     return false;
 
   WebView* view = frame->View();
-  return view && view->IsAcceleratedCompositingActive();
+  return view && view->MainFrameWidget()->IsAcceleratedCompositingActive();
 }
 
 void PepperPluginInstanceImpl::UpdateLayer(bool force_creation) {
@@ -3064,7 +3064,9 @@ blink::WebPluginContainer* PepperPluginInstanceImpl::GetContainer() {
   return container_;
 }
 
-v8::Isolate* PepperPluginInstanceImpl::GetIsolate() const { return isolate_; }
+v8::Isolate* PepperPluginInstanceImpl::GetIsolate() {
+  return isolate_;
+}
 
 ppapi::VarTracker* PepperPluginInstanceImpl::GetVarTracker() {
   return HostGlobals::Get()->GetVarTracker();

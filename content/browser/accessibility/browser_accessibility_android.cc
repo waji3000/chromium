@@ -209,6 +209,10 @@ bool BrowserAccessibilityAndroid::PlatformIsLeaf() const {
   return false;
 }
 
+bool BrowserAccessibilityAndroid::CanFireEvents() const {
+  return true;
+}
+
 bool BrowserAccessibilityAndroid::IsCheckable() const {
   return HasIntAttribute(ax::mojom::IntAttribute::kCheckedState);
 }
@@ -347,6 +351,10 @@ bool BrowserAccessibilityAndroid::IsInterestingOnAndroid() const {
   // The root is not interesting if it doesn't have a title, even
   // though it's focusable.
   if (GetRole() == ax::mojom::Role::kRootWebArea && GetText().empty())
+    return false;
+
+  // Mark as uninteresting if it's hidden, even if it is focusable.
+  if (HasState(ax::mojom::State::kInvisible))
     return false;
 
   // Focusable nodes are always interesting. Note that IsFocusable()
@@ -1056,7 +1064,7 @@ int BrowserAccessibilityAndroid::GetItemIndex() const {
       case ax::mojom::Role::kListItem:
       case ax::mojom::Role::kListBoxOption:
       case ax::mojom::Role::kTreeItem:
-        index = GetIntAttribute(ax::mojom::IntAttribute::kPosInSet) - 1;
+        index = node()->GetPosInSet() - 1;
         break;
       default:
         break;
@@ -1077,7 +1085,7 @@ int BrowserAccessibilityAndroid::GetItemCount() const {
       case ax::mojom::Role::kList:
       case ax::mojom::Role::kListBox:
       case ax::mojom::Role::kDescriptionList:
-        count = PlatformChildCount();
+        count = node()->GetSetSize();
         break;
       default:
         break;
@@ -1377,7 +1385,7 @@ int BrowserAccessibilityAndroid::RowCount() const {
       GetRole() == ax::mojom::Role::kListBox ||
       GetRole() == ax::mojom::Role::kDescriptionList ||
       GetRole() == ax::mojom::Role::kTree) {
-    return PlatformChildCount();
+    return node()->GetSetSize();
   }
 
   return 0;
@@ -1394,7 +1402,7 @@ int BrowserAccessibilityAndroid::RowIndex() const {
   if (GetRole() == ax::mojom::Role::kListItem ||
       GetRole() == ax::mojom::Role::kListBoxOption ||
       GetRole() == ax::mojom::Role::kTreeItem) {
-    return GetIndexInParent();
+    return node()->GetPosInSet() - 1;
   }
 
   return node()->GetTableCellRowIndex();
@@ -1649,6 +1657,37 @@ int BrowserAccessibilityAndroid::CountChildrenWithRole(
       count++;
   }
   return count;
+}
+
+base::string16 BrowserAccessibilityAndroid::GetContentInvalidErrorMessage()
+    const {
+  content::ContentClient* content_client = content::GetContentClient();
+  int message_id = -1;
+
+  switch (GetData().GetInvalidState()) {
+    case ax::mojom::InvalidState::kNone:
+    case ax::mojom::InvalidState::kFalse:
+      // No error message necessary
+      break;
+
+    case ax::mojom::InvalidState::kTrue:
+    case ax::mojom::InvalidState::kOther:
+      message_id = CONTENT_INVALID_TRUE;
+      break;
+
+    case ax::mojom::InvalidState::kSpelling:
+      message_id = CONTENT_INVALID_SPELLING;
+      break;
+
+    case ax::mojom::InvalidState::kGrammar:
+      message_id = CONTENT_INVALID_GRAMMAR;
+      break;
+  }
+
+  if (message_id != -1)
+    return content_client->GetLocalizedString(message_id);
+
+  return base::string16();
 }
 
 }  // namespace content

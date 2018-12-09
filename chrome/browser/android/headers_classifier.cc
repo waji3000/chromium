@@ -11,15 +11,14 @@ using base::android::JavaParamRef;
 namespace chrome {
 namespace android {
 
-jboolean JNI_HeaderClassifier_IsCorsSafelistedHeader(
+jboolean JNI_IntentHeadersRecorder_IsCorsSafelistedHeader(
     JNIEnv* env,
-    const JavaParamRef<jclass>& clazz,
     const JavaParamRef<jstring>& j_header_name,
     const JavaParamRef<jstring>& j_header_value) {
   std::string header_name(ConvertJavaStringToUTF8(env, j_header_name));
   std::string header_value(ConvertJavaStringToUTF8(env, j_header_value));
 
-  return network::cors::IsCORSSafelistedHeader(header_name, header_value);
+  return network::cors::IsCorsSafelistedHeader(header_name, header_value);
 }
 
 }  // namespace android

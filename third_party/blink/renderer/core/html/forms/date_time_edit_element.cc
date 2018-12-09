@@ -467,10 +467,10 @@ void DateTimeEditBuilder::VisitLiteral(const String& text) {
   HTMLDivElement* element = HTMLDivElement::Create(EditElement().GetDocument());
   element->SetShadowPseudoId(text_pseudo_id);
   if (parameters_.locale.IsRTL() && text.length()) {
-    WTF::Unicode::CharDirection dir = WTF::Unicode::Direction(text[0]);
-    if (dir == WTF::Unicode::kSegmentSeparator ||
-        dir == WTF::Unicode::kWhiteSpaceNeutral ||
-        dir == WTF::Unicode::kOtherNeutral)
+    WTF::unicode::CharDirection dir = WTF::unicode::Direction(text[0]);
+    if (dir == WTF::unicode::kSegmentSeparator ||
+        dir == WTF::unicode::kWhiteSpaceNeutral ||
+        dir == WTF::unicode::kOtherNeutral)
       element->AppendChild(Text::Create(EditElement().GetDocument(),
                                         String(&kRightToLeftMarkCharacter, 1)));
   }
@@ -557,7 +557,7 @@ DateTimeEditElement* DateTimeEditElement::Create(
     Document& document,
     EditControlOwner& edit_control_owner) {
   DateTimeEditElement* container =
-      new DateTimeEditElement(document, edit_control_owner);
+      MakeGarbageCollected<DateTimeEditElement>(document, edit_control_owner);
   container->SetShadowPseudoId(AtomicString("-webkit-datetime-edit"));
   container->setAttribute(kIdAttr, shadow_element_names::DateTimeEdit());
   return container;

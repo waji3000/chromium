@@ -1202,13 +1202,13 @@
         Q&amp;A
       </message>
       <message desc="Accessibility role description for subtitle" name="IDS_CHROMEVOX_ROLE_DOC_SUBTITLE">
-        subti
+        Subtitle
       </message>
       <message desc="Accessibility role description for tip" name="IDS_CHROMEVOX_ROLE_DOC_TIP">
-        tip
+        Tip
       </message>
       <message desc="Accessibility role description for table of contents" name="IDS_CHROMEVOX_ROLE_DOC_TOC">
-        toc
+        Table of contents
       </message>
       <message desc="Accessibility role description for graphics document" name="IDS_CHROMEVOX_ROLE_GRAPHICS_DOCUMENT">
         Graphics document
@@ -3091,6 +3091,61 @@ If you're done with the tutorial, use ChromeVox to navigate to the Close button 
       </message>
       <message desc="Describes a gesture to be performed on a touch screen." name="IDS_CHROMEVOX_CLICK_GESTURE">
         Double tap with one finger
+      </message>
+      <message desc="Describes Learn Mode when the mode is initially entered." name="IDS_CHROMEVOX_LEARN_MODE_INTRO">
+        Starting Learn Mode. Press a qwerty key, refreshable braille key, or touch gesture to learn its function. Press control with w or escape to exit.
+      </message>
+      <message desc="Output when leaving Learn Mode." name="IDS_CHROMEVOX_LEARN_MODE_OUTTRO">
+        Stopping Learn Mode.
+      </message>
+      <message desc="Part of the ChromeVox touch tutorial page. Title of the tutorial page for touch support." name="IDS_CHROMEVOX_TUTORIAL_TOUCH_HEADING">
+        Touch
+      </message>
+      <message desc="Part of the ChromeVox touch tutorial page. Introduces this page." name="IDS_CHROMEVOX_TUTORIAL_TOUCH_INTRO">
+        You can use ChromeVox with the touchscreen.
+      </message>
+      <message desc="Part of the ChromeVox touch tutorial page. Describes dragging a finger on the touch screen to get spoken feedback." name="IDS_CHROMEVOX_TUTORIAL_TOUCH_DRAG_ONE_FINGER">
+        Drag one finger to hear what you touch
+      </message>
+      <message desc="Part of the ChromeVox touch tutorial page. Describes swiping left or right with one finger to move item by item." name="IDS_CHROMEVOX_TUTORIAL_TOUCH_SWIPE_LEFT_RIGHT">
+        Swipe left or right to move by item
+      </message>
+
+      <message desc="Part of the ChromeVox touch tutorial page. Describes swiping up or down with one finger to move line by line." name="IDS_CHROMEVOX_TUTORIAL_TOUCH_SWIPE_UP_DOWN">
+        Swipe up or down to move by line
+      </message>
+      <message desc="Part of the ChromeVox touch tutorial page. Describes double tapping with one finger to activate an item." name="IDS_CHROMEVOX_TUTORIAL_TOUCH_DOUBLE_TAP">
+        Double-tap to activate what is focused
+      </message>
+      <message desc="Part of the ChromeVox touch tutorial page. Describes a single tap of four fingers to enter the ChromeVox menus." name="IDS_CHROMEVOX_TUTORIAL_TOUCH_FOUR_FINGER_TAP">
+        Tap with 4 fingers to enter the ChromeVox menus
+      </message>
+      <message desc="Part of the ChromeVox touch tutorial page. Describes a two finger tap to stop speech." name="IDS_CHROMEVOX_TUTORIAL_TOUCH_TWO_FINGER_TAP">
+        Tap with 2 fingers to temporarily stop speech
+      </message>
+      <message desc="Part of the ChromeVox touch tutorial page. Concludes this page." name="IDS_CHROMEVOX_TUTORIAL_TOUCH_LEARN_MORE">
+        Explore more gestures in Learn Mode and the Chromebook Help Center
+      </message>
+      <message desc="Title of the bluetooth braille display section in ChromeVox options." name="IDS_CHROMEVOX_OPTIONS_BLUETOOTH_BRAILLE_DISPLAY_TITLE">
+        Bluetooth Braille Display
+      </message>
+      <message desc="Labels a button which when pressed, connects to a selected braille display." name="IDS_CHROMEVOX_OPTIONS_BLUETOOTH_BRAILLE_DISPLAY_CONNECT">
+        Connect
+      </message>
+      <message desc="Labels a button which when pressed, disconnects from a selected braille display." name="IDS_CHROMEVOX_OPTIONS_BLUETOOTH_BRAILLE_DISPLAY_DISCONNECT">
+        Disconnect
+      </message>
+      <message desc="Labels a button which is disabled and indicates the system is connecting to a braille display." name="IDS_CHROMEVOX_OPTIONS_BLUETOOTH_BRAILLE_DISPLAY_CONNECTING">
+        Connecting
+      </message>
+      <message desc="Labels a button which when pressed, forgets the selected braille display." name="IDS_CHROMEVOX_OPTIONS_BLUETOOTH_BRAILLE_DISPLAY_FORGET">
+        Forget
+      </message>
+      <message desc="Labels a text field which prompts the user for a pincode when pairing a braille display." name="IDS_CHROMEVOX_OPTIONS_BLUETOOTH_BRAILLE_DISPLAY_PINCODE_LABEL">
+        Please enter a pin
+      </message>
+      <message desc="Labels a select control which lists all bluetooth braille displays." name="IDS_CHROMEVOX_OPTIONS_BLUETOOTH_BRAILLE_DISPLAY_SELECT_LABEL">
+        Select a bluetooth braille display
       </message>
     </messages>
   </release>

@@ -42,7 +42,6 @@
 #include "services/network/url_loader.h"
 #include "services/network/url_request_context_owner.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/public/mojom/page/page_visibility_state.mojom.h"
 
 namespace content {
 
@@ -91,10 +90,10 @@ class TestNavigationLoaderInterceptor : public NavigationLoaderInterceptor {
         base::BindOnce(&TestNavigationLoaderInterceptor::DeleteURLLoader,
                        base::Unretained(this)),
         std::move(request), 0 /* options */, resource_request,
-        false /* report_raw_headers */, std::move(client),
-        TRAFFIC_ANNOTATION_FOR_TESTS, &params, 0, /* request_id */
+        std::move(client), TRAFFIC_ANNOTATION_FOR_TESTS, &params,
+        0, /* request_id */
         resource_scheduler_client_, nullptr,
-        nullptr /* network_usage_accumulator */);
+        nullptr /* network_usage_accumulator */, nullptr /* header_client */);
   }
 
   bool MaybeCreateLoaderForResponse(
@@ -161,7 +160,8 @@ class NavigationURLLoaderImplTest : public testing::Test {
       const std::string& headers,
       const std::string& method,
       NavigationURLLoaderDelegate* delegate,
-      bool allow_download = false,
+      NavigationDownloadPolicy download_policy =
+          NavigationDownloadPolicy::kAllow,
       bool is_main_frame = true,
       bool upgrade_if_insecure = false) {
     mojom::BeginNavigationParamsPtr begin_params =
@@ -177,11 +177,12 @@ class NavigationURLLoaderImplTest : public testing::Test {
     CommonNavigationParams common_params;
     common_params.url = url;
     common_params.method = method;
-    common_params.allow_download = allow_download;
+    common_params.download_policy = download_policy;
 
     std::unique_ptr<NavigationRequestInfo> request_info(
         new NavigationRequestInfo(
-            common_params, std::move(begin_params), url, is_main_frame,
+            common_params, std::move(begin_params), url,
+            url::Origin::Create(url), is_main_frame,
             false /* parent_is_main_frame */, false /* are_ancestors_secure */,
             -1 /* frame_tree_node_id */, false /* is_for_guests_only */,
             false /* report_raw_headers */, false /* is_prerenering */,
@@ -260,7 +261,7 @@ class NavigationURLLoaderImplTest : public testing::Test {
         url,
         base::StringPrintf("%s: %s", net::HttpRequestHeaders::kOrigin,
                            url.GetOrigin().spec().c_str()),
-        "GET", &delegate, false /* allow_download */, is_main_frame);
+        "GET", &delegate, NavigationDownloadPolicy::kAllow, is_main_frame);
     delegate.WaitForRequestRedirected();
     loader->FollowRedirect(base::nullopt, base::nullopt);
     delegate.WaitForResponseStarted();
@@ -276,8 +277,8 @@ class NavigationURLLoaderImplTest : public testing::Test {
         url,
         base::StringPrintf("%s: %s", net::HttpRequestHeaders::kOrigin,
                            url.GetOrigin().spec().c_str()),
-        "GET", &delegate, false /* allow_download */, true /*is_main_frame*/,
-        upgrade_if_insecure);
+        "GET", &delegate, NavigationDownloadPolicy::kAllow,
+        true /*is_main_frame*/, upgrade_if_insecure);
     delegate.WaitForRequestRedirected();
     loader->FollowRedirect(base::nullopt, base::nullopt);
     if (expect_request_fail) {
@@ -304,6 +305,38 @@ TEST_F(NavigationURLLoaderImplTest, RequestPriority) {
             NavigateAndReturnRequestPriority(url, true /* is_main_frame */));
   EXPECT_EQ(net::LOWEST,
             NavigateAndReturnRequestPriority(url, false /* is_main_frame */));
+}
+
+TEST_F(NavigationURLLoaderImplTest, TopFrameOriginOfMainFrameNavigation) {
+  ASSERT_TRUE(http_test_server_.Start());
+
+  const GURL url = http_test_server_.GetURL("/foo");
+
+  TestNavigationURLLoaderDelegate delegate;
+  std::unique_ptr<NavigationURLLoader> loader = CreateTestLoader(
+      url,
+      base::StringPrintf("%s: %s", net::HttpRequestHeaders::kOrigin,
+                         url.GetOrigin().spec().c_str()),
+      "GET", &delegate, NavigationDownloadPolicy::kAllow,
+      true /*is_main_frame*/, false /*upgrade_if_insecure*/);
+  delegate.WaitForRequestStarted();
+
+  ASSERT_TRUE(most_recent_resource_request_);
+  EXPECT_EQ(url::Origin::Create(url),
+            *most_recent_resource_request_->top_frame_origin);
+}
+
+TEST_F(NavigationURLLoaderImplTest,
+       TopFrameOriginOfRedirectedMainFrameNavigation) {
+  ASSERT_TRUE(http_test_server_.Start());
+
+  const GURL url = http_test_server_.GetURL("/redirect301-to-echo");
+  const GURL final_url = http_test_server_.GetURL("/echo");
+
+  HTTPRedirectOriginHeaderTest(url, "GET", "GET", url.GetOrigin().spec());
+
+  EXPECT_EQ(url::Origin::Create(final_url),
+            *most_recent_resource_request_->top_frame_origin);
 }
 
 TEST_F(NavigationURLLoaderImplTest, Redirect301Tests) {

@@ -39,13 +39,13 @@ class KEYBOARD_EXPORT ContainerFullWidthBehavior : public ContainerBehavior {
                           const display::Display& current_display) override;
   void SetCanonicalBounds(aura::Window* container,
                           const gfx::Rect& display_bounds) override;
-  ContainerType GetType() const override;
+  mojom::ContainerType GetType() const override;
   bool TextBlurHidesKeyboard() const override;
   void SetOccludedBounds(const gfx::Rect& occluded_bounds_in_window) override;
   gfx::Rect GetOccludedBounds(
       const gfx::Rect& visual_bounds_in_screen) const override;
   bool OccludedBoundsAffectWorkspaceLayout() const override;
-  bool SetDraggableArea(const gfx::Rect& rect) override;
+  void SetDraggableArea(const gfx::Rect& rect) override;
 
  private:
   gfx::Rect occluded_bounds_in_window_;

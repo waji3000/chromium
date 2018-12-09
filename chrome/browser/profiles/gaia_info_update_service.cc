@@ -19,8 +19,8 @@
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/common/pref_names.h"
 #include "components/prefs/pref_service.h"
+#include "components/signin/core/browser/account_consistency_method.h"
 #include "components/signin/core/browser/account_tracker_service.h"
-#include "components/signin/core/browser/profile_management_switches.h"
 #include "components/signin/core/browser/signin_pref_names.h"
 #include "content/public/browser/notification_details.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -170,12 +170,6 @@ void GAIAInfoUpdateService::OnUsernameChanged(const std::string& username) {
     entry->SetGAIAPicture(nullptr);
     // Unset the cached URL.
     profile_->GetPrefs()->ClearPref(prefs::kProfileGAIAInfoPictureURL);
-    if (profile_->GetPrefs()->GetInteger(prefs::kProfileLocalAvatarIndex) !=
-        -1) {
-      // Restore avatar from the local prefs.
-      entry->SetAvatarIconIndex(
-          profile_->GetPrefs()->GetInteger(prefs::kProfileLocalAvatarIndex));
-    }
   } else {
     // Update the new user's GAIA info.
     Update();

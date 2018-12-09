@@ -200,7 +200,7 @@ const Extension* ExtensionAppShimHandler::Delegate::MaybeGetAppExtension(
   return ExtensionAppShimHandler::MaybeGetAppExtension(context, extension_id);
 }
 
-AppShimHandler::Host* ExtensionAppShimHandler::Delegate::CreateHost(
+AppShimHost* ExtensionAppShimHandler::Delegate::CreateHost(
     const std::string& app_id,
     const base::FilePath& profile_path) {
   return new AppShimHost(app_id, profile_path);
@@ -271,33 +271,30 @@ ExtensionAppShimHandler::~ExtensionAppShimHandler() {
   BrowserList::RemoveObserver(this);
 }
 
-AppShimHandler::Host* ExtensionAppShimHandler::FindHost(
-    Profile* profile,
-    const std::string& app_id) {
+AppShimHost* ExtensionAppShimHandler::FindHost(Profile* profile,
+                                               const std::string& app_id) {
   HostMap::iterator it = hosts_.find(make_pair(profile, app_id));
   return it == hosts_.end() ? NULL : it->second;
 }
 
-AppShimHandler::Host* ExtensionAppShimHandler::FindOrCreateHost(
+AppShimHost* ExtensionAppShimHandler::FindOrCreateHost(
     Profile* profile,
     const std::string& app_id) {
-  Host*& host = hosts_[make_pair(profile, app_id)];
+  AppShimHost*& host = hosts_[make_pair(profile, app_id)];
   if (!host)
     host = delegate_->CreateHost(app_id, profile->GetPath());
   return host;
 }
 
-views::BridgeFactoryHost*
-ExtensionAppShimHandler::GetViewsBridgeFactoryHostForBrowser(Browser* browser) {
+AppShimHost* ExtensionAppShimHandler::GetHostForBrowser(Browser* browser) {
   if (!features::HostWindowsInAppShimProcess())
     return nullptr;
 
   const Extension* extension =
       apps::ExtensionAppShimHandler::MaybeGetAppForBrowser(browser);
   if (extension && extension->is_hosted_app()) {
-    Host* host = FindOrCreateHost(
-        Profile::FromBrowserContext(browser->profile()), extension->id());
-    return host->GetViewsBridgeFactoryHost();
+    return FindOrCreateHost(Profile::FromBrowserContext(browser->profile()),
+                            extension->id());
   }
   return nullptr;
 }
@@ -348,7 +345,7 @@ const Extension* ExtensionAppShimHandler::MaybeGetAppForBrowser(
 }
 
 void ExtensionAppShimHandler::QuitAppForWindow(AppWindow* app_window) {
-  Host* host =
+  AppShimHost* host =
       FindHost(Profile::FromBrowserContext(app_window->browser_context()),
                app_window->extension_id());
   if (host) {
@@ -364,7 +361,7 @@ void ExtensionAppShimHandler::QuitAppForWindow(AppWindow* app_window) {
 void ExtensionAppShimHandler::QuitHostedAppForWindow(
     Profile* profile,
     const std::string& app_id) {
-  Host* host = FindHost(Profile::FromBrowserContext(profile), app_id);
+  AppShimHost* host = FindHost(Profile::FromBrowserContext(profile), app_id);
   if (host)
     OnShimQuit(host);
   else
@@ -373,7 +370,7 @@ void ExtensionAppShimHandler::QuitHostedAppForWindow(
 
 void ExtensionAppShimHandler::HideAppForWindow(AppWindow* app_window) {
   Profile* profile = Profile::FromBrowserContext(app_window->browser_context());
-  Host* host = FindHost(profile, app_window->extension_id());
+  AppShimHost* host = FindHost(profile, app_window->extension_id());
   if (host)
     host->OnAppHide();
   else
@@ -382,7 +379,7 @@ void ExtensionAppShimHandler::HideAppForWindow(AppWindow* app_window) {
 
 void ExtensionAppShimHandler::HideHostedApp(Profile* profile,
                                             const std::string& app_id) {
-  Host* host = FindHost(profile, app_id);
+  AppShimHost* host = FindHost(profile, app_id);
   if (host)
     host->OnAppHide();
   else
@@ -392,7 +389,7 @@ void ExtensionAppShimHandler::HideHostedApp(Profile* profile,
 void ExtensionAppShimHandler::FocusAppForWindow(AppWindow* app_window) {
   Profile* profile = Profile::FromBrowserContext(app_window->browser_context());
   const std::string& app_id = app_window->extension_id();
-  Host* host = FindHost(profile, app_id);
+  AppShimHost* host = FindHost(profile, app_id);
   if (host) {
     OnShimFocus(host, APP_SHIM_FOCUS_NORMAL, std::vector<base::FilePath>());
   } else {
@@ -403,7 +400,7 @@ void ExtensionAppShimHandler::FocusAppForWindow(AppWindow* app_window) {
 void ExtensionAppShimHandler::UnhideWithoutActivationForWindow(
     AppWindow* app_window) {
   Profile* profile = Profile::FromBrowserContext(app_window->browser_context());
-  Host* host = FindHost(profile, app_window->extension_id());
+  AppShimHost* host = FindHost(profile, app_window->extension_id());
   if (host)
     host->OnAppUnhideWithoutActivation();
 }
@@ -412,7 +409,7 @@ void ExtensionAppShimHandler::RequestUserAttentionForWindow(
     AppWindow* app_window,
     AppShimAttentionType attention_type) {
   Profile* profile = Profile::FromBrowserContext(app_window->browser_context());
-  Host* host = FindHost(profile, app_window->extension_id());
+  AppShimHost* host = FindHost(profile, app_window->extension_id());
   if (host)
     host->OnAppRequestUserAttention(attention_type);
 }
@@ -481,7 +478,7 @@ ExtensionAppShimHandler* ExtensionAppShimHandler::Get() {
 }
 
 const Extension* ExtensionAppShimHandler::MaybeGetExtensionOrCloseHost(
-    Host* host,
+    AppShimHost* host,
     Profile** profile_out) {
   DCHECK(delegate_->ProfileExistsForPath(host->GetProfilePath()));
   Profile* profile = delegate_->ProfileForPath(host->GetProfilePath());
@@ -515,7 +512,7 @@ void ExtensionAppShimHandler::OnProfileLoaded(
   AppShimLaunchType launch_type = bootstrap->GetLaunchType();
   const std::vector<base::FilePath>& files = bootstrap->GetLaunchFiles();
 
-  Host* host = FindOrCreateHost(profile, app_id);
+  AppShimHost* host = FindOrCreateHost(profile, app_id);
   if (host->HasBootstrapConnected()) {
     // If another app shim process has already connected to this (profile,
     // app_id) pair, then focus the windows for the existing process, and
@@ -572,7 +569,7 @@ void ExtensionAppShimHandler::OnExtensionEnabled(
     // If the profile doesn't exist, it may have been deleted during the enable
     // prompt. In this case, NOTIFICATION_PROFILE_DESTROYED may not be fired
     // until later, so respond to the host now.
-    Host* host = FindHost(profile, app_id);
+    AppShimHost* host = FindHost(profile, app_id);
     if (host)
       host->OnAppLaunchComplete(APP_SHIM_LAUNCH_APP_NOT_FOUND);
     return;
@@ -581,8 +578,7 @@ void ExtensionAppShimHandler::OnExtensionEnabled(
   delegate_->LaunchApp(profile, extension, files);
 }
 
-
-void ExtensionAppShimHandler::OnShimClose(Host* host) {
+void ExtensionAppShimHandler::OnShimClose(AppShimHost* host) {
   // This might be called when shutting down. Don't try to look up the profile
   // since profile_manager might not be around.
   for (HostMap::iterator it = hosts_.begin(); it != hosts_.end(); ) {
@@ -593,7 +589,7 @@ void ExtensionAppShimHandler::OnShimClose(Host* host) {
 }
 
 void ExtensionAppShimHandler::OnShimFocus(
-    Host* host,
+    AppShimHost* host,
     AppShimFocusType focus_type,
     const std::vector<base::FilePath>& files) {
   Profile* profile;
@@ -623,7 +619,7 @@ void ExtensionAppShimHandler::OnShimFocus(
   delegate_->LaunchApp(profile, extension, files);
 }
 
-void ExtensionAppShimHandler::OnShimSetHidden(Host* host, bool hidden) {
+void ExtensionAppShimHandler::OnShimSetHidden(AppShimHost* host, bool hidden) {
   Profile* profile;
   const Extension* extension = MaybeGetExtensionOrCloseHost(host, &profile);
   if (!extension)
@@ -635,7 +631,7 @@ void ExtensionAppShimHandler::OnShimSetHidden(Host* host, bool hidden) {
     SetAppHidden(profile, host->GetAppId(), hidden);
 }
 
-void ExtensionAppShimHandler::OnShimQuit(Host* host) {
+void ExtensionAppShimHandler::OnShimQuit(AppShimHost* host) {
   DCHECK(delegate_->ProfileExistsForPath(host->GetProfilePath()));
   Profile* profile = delegate_->ProfileForPath(host->GetProfilePath());
 
@@ -690,7 +686,7 @@ void ExtensionAppShimHandler::Observe(
         // OnShimClose and invalidate the iterator.
         HostMap::iterator current = it++;
         if (profile->IsSameProfile(current->first.first)) {
-          Host* host = current->second;
+          AppShimHost* host = current->second;
           host->OnAppClosed();
         }
       }
@@ -727,7 +723,7 @@ void ExtensionAppShimHandler::OnAppActivated(content::BrowserContext* context,
     return;
 
   Profile* profile = static_cast<Profile*>(context);
-  Host* host = FindHost(profile, app_id);
+  AppShimHost* host = FindHost(profile, app_id);
   if (host && host->HasBootstrapConnected()) {
     // If there is a connected app shim process, notify it of success and focus
     // the app windows.
@@ -741,7 +737,7 @@ void ExtensionAppShimHandler::OnAppActivated(content::BrowserContext* context,
 
 void ExtensionAppShimHandler::OnAppDeactivated(content::BrowserContext* context,
                                                const std::string& app_id) {
-  Host* host = FindHost(static_cast<Profile*>(context), app_id);
+  AppShimHost* host = FindHost(static_cast<Profile*>(context), app_id);
   if (host)
     host->OnAppClosed();
 

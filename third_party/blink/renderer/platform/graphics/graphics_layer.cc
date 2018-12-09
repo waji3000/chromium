@@ -241,7 +241,12 @@ void GraphicsLayer::RemoveFromParent() {
     SetParent(nullptr);
   }
 
-  CcLayer()->RemoveFromParent();
+  // When using layer lists, cc::Layers are created and removed in
+  // PaintArtifactCompositor.
+  if (!RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled() &&
+      !RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
+    CcLayer()->RemoveFromParent();
+  }
 }
 
 void GraphicsLayer::SetOffsetFromLayoutObject(const IntSize& offset) {
@@ -377,7 +382,11 @@ bool GraphicsLayer::PaintWithoutCommit(
 }
 
 void GraphicsLayer::UpdateChildList() {
-  // TODO(pdr): Do not attach cc::Layers when using layer lists.
+  // When using layer lists, cc::Layers are created in PaintArtifactCompositor.
+  if (RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled() ||
+      RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
+    return;
+  }
 
   cc::Layer* child_host = layer_.get();
   child_host->RemoveAllChildren();
@@ -515,7 +524,10 @@ void GraphicsLayer::SetupContentsLayer(cc::Layer* contents_layer) {
 
   // Insert the content layer first. Video elements require this, because they
   // have shadow content that must display in front of the video.
-  CcLayer()->InsertChild(contents_layer_, 0);
+  if (!RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled() &&
+      !RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
+    CcLayer()->InsertChild(contents_layer_, 0);
+  }
   cc::PictureLayer* border_cc_layer =
       contents_clipping_mask_layer_ ? contents_clipping_mask_layer_->CcLayer()
                                     : nullptr;
@@ -1010,27 +1022,44 @@ sk_sp<PaintRecord> GraphicsLayer::CapturePaintRecord() const {
 
 void GraphicsLayer::SetLayerState(const PropertyTreeState& layer_state,
                                   const IntPoint& layer_offset) {
-  if (!layer_state_) {
+  DCHECK(layer_state.Transform() && layer_state.Clip() && layer_state.Effect());
+
+  if (layer_state_) {
+    layer_state_->state = layer_state;
+    layer_state_->offset = layer_offset;
+  } else {
     layer_state_ =
         std::make_unique<LayerState>(LayerState{layer_state, layer_offset});
-    return;
   }
-  layer_state_->state = layer_state;
-  layer_state_->offset = layer_offset;
 
-  CHECK(layer_state_->state.Transform() && layer_state_->state.Clip() &&
-        layer_state_->state.Effect());
+  if (RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled()) {
+    CcLayer()->SetOffsetToTransformParent(
+        gfx::Vector2dF(layer_offset.X(), layer_offset.Y()));
+
+    if (!contents_layer_state_ && ContentsLayer()) {
+      ContentsLayer()->SetOffsetToTransformParent(
+          gfx::Vector2dF(layer_offset.X(), layer_offset.Y()));
+    }
+  }
 }
 
 void GraphicsLayer::SetContentsLayerState(const PropertyTreeState& layer_state,
                                           const IntPoint& layer_offset) {
-  if (!contents_layer_state_) {
+  DCHECK(layer_state.Transform() && layer_state.Clip() && layer_state.Effect());
+  DCHECK(ContentsLayer());
+
+  if (contents_layer_state_) {
+    contents_layer_state_->state = layer_state;
+    contents_layer_state_->offset = layer_offset;
+  } else {
     contents_layer_state_ =
         std::make_unique<LayerState>(LayerState{layer_state, layer_offset});
-    return;
   }
-  contents_layer_state_->state = layer_state;
-  contents_layer_state_->offset = layer_offset;
+
+  if (RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled()) {
+    ContentsLayer()->SetOffsetToTransformParent(
+        gfx::Vector2dF(layer_offset.X(), layer_offset.Y()));
+  }
 }
 
 scoped_refptr<cc::DisplayItemList> GraphicsLayer::PaintContentsToDisplayList(

@@ -4,7 +4,6 @@
 
 #include "ash/wm/non_client_frame_controller.h"
 
-#include "ash/public/cpp/ash_layout_constants.h"
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/test/ash_test_helper.h"
@@ -29,6 +28,7 @@
 #include "ui/compositor/test/draw_waiter_for_test.h"
 #include "ui/compositor/test/fake_context_factory.h"
 #include "ui/views/widget/widget.h"
+#include "ui/views/window/caption_button_layout_constants.h"
 
 namespace ash {
 
@@ -129,7 +129,9 @@ TEST_F(NonClientFrameControllerMashTest, ContentRegionNotDrawnForClient) {
   ASSERT_TRUE(widget);
 
   const int caption_height =
-      GetAshLayoutSize(AshLayoutSize::kNonBrowserCaption).height();
+      views::GetCaptionButtonLayoutSize(
+          views::CaptionButtonLayoutSize::kNonBrowserCaption)
+          .height();
   const gfx::Size tile_size = cc::LayerTreeSettings().default_tile_size;
   const int tile_width = tile_size.width();
   const int tile_height = tile_size.height();
@@ -142,7 +144,9 @@ TEST_F(NonClientFrameControllerMashTest, ContentRegionNotDrawnForClient) {
   // Give the ui::Compositor a LocalSurfaceId so that it does not defer commit
   // when a draw is scheduled.
   viz::LocalSurfaceId local_surface_id(1, base::UnguessableToken::Create());
-  compositor->SetLocalSurfaceId(local_surface_id, base::TimeTicks());
+  compositor->SetScaleAndSize(
+      1.f, gfx::Size(100, 100),
+      viz::LocalSurfaceIdAllocation(local_surface_id, base::TimeTicks::Now()));
 
   // Without the window visible, there should be a tile for the wallpaper at
   // (tile_x, tile_y) of size |tile_size|.

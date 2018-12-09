@@ -5,13 +5,13 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_PLATFORM_PAINT_WORKLET_INPUT_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_PLATFORM_PAINT_WORKLET_INPUT_H_
 
-#include "cc/trees/layer_tree_painter.h"
+#include "cc/paint/paint_worklet_input.h"
 
 namespace blink {
 
 class PLATFORM_EXPORT PlatformPaintWorkletInput : public cc::PaintWorkletInput {
  public:
-  PlatformPaintWorkletInput(const String& name,
+  PlatformPaintWorkletInput(const std::string& name,
                             const FloatSize& container_size,
                             float effective_zoom)
       : name_(name),
@@ -20,12 +20,17 @@ class PLATFORM_EXPORT PlatformPaintWorkletInput : public cc::PaintWorkletInput {
 
   ~PlatformPaintWorkletInput() override = default;
 
-  const String& Name() const { return name_; }
+  // PaintWorkletInput implementation
+  gfx::SizeF GetSize() const override {
+    return gfx::SizeF(container_size_.Width(), container_size_.Height());
+  }
+
+  const std::string& Name() const { return name_; }
   const FloatSize& ContainerSize() const { return container_size_; }
   float EffectiveZoom() const { return effective_zoom_; }
 
  private:
-  String name_;
+  std::string name_;
   FloatSize container_size_;
   float effective_zoom_;
   // TODO(crbug.com/895579): add a cross thread style map.

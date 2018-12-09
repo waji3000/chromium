@@ -25,11 +25,13 @@
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/traced_value.h"
 #include "cc/trees/layer_tree_frame_sink.h"
+#include "components/exo/shell_surface_util.h"
 #include "components/exo/surface.h"
 #include "components/exo/wm_helper.h"
 #include "services/ws/public/mojom/window_tree_constants.mojom.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/aura/client/aura_constants.h"
+#include "ui/aura/client/capture_client.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_observer.h"
@@ -46,7 +48,6 @@
 #include "ui/gfx/geometry/vector2d_conversions.h"
 #include "ui/gfx/path.h"
 #include "ui/views/widget/widget.h"
-#include "ui/wm/core/capture_controller.h"
 #include "ui/wm/core/coordinate_conversion.h"
 #include "ui/wm/core/shadow_controller.h"
 #include "ui/wm/core/shadow_types.h"
@@ -55,14 +56,6 @@
 
 namespace exo {
 namespace {
-
-DEFINE_LOCAL_UI_CLASS_PROPERTY_KEY(Surface*, kMainSurfaceKey, nullptr)
-
-// Application Id set by the client.
-DEFINE_OWNED_UI_CLASS_PROPERTY_KEY(std::string, kApplicationIdKey, nullptr);
-
-// Application Id set by the client.
-DEFINE_OWNED_UI_CLASS_PROPERTY_KEY(std::string, kStartupIdKey, nullptr);
 
 // The accelerator keys used to close ShellSurfaces.
 const struct {
@@ -248,7 +241,7 @@ class CustomWindowTargeter : public aura::WindowTargeter {
     if (IsInResizeHandle(window, event, local_point))
       return true;
 
-    Surface* surface = ShellSurfaceBase::GetMainSurface(window);
+    Surface* surface = GetShellMainSurface(window);
     if (!surface)
       return false;
 
@@ -373,7 +366,7 @@ ShellSurfaceBase::~ShellSurfaceBase() {
   if (root_surface())
     root_surface()->RemoveSurfaceObserver(this);
   if (has_grab_)
-    wm::CaptureController::Get()->RemoveObserver(this);
+    WMHelper::GetInstance()->GetCaptureClient()->RemoveObserver(this);
 }
 
 void ShellSurfaceBase::Activate() {
@@ -442,24 +435,6 @@ void ShellSurfaceBase::UpdateSystemModal() {
       system_modal_ ? ui::MODAL_TYPE_SYSTEM : ui::MODAL_TYPE_NONE);
 }
 
-// static
-void ShellSurfaceBase::SetApplicationId(aura::Window* window,
-                                        const base::Optional<std::string>& id) {
-  TRACE_EVENT1("exo", "ShellSurfaceBase::SetApplicationId", "application_id",
-               id ? *id : "null");
-
-  if (id)
-    window->SetProperty(kApplicationIdKey, new std::string(*id));
-  else
-    window->ClearProperty(kApplicationIdKey);
-}
-
-// static
-const std::string* ShellSurfaceBase::GetApplicationId(
-    const aura::Window* window) {
-  return window->GetProperty(kApplicationIdKey);
-}
-
 void ShellSurfaceBase::SetApplicationId(const char* application_id) {
   // Store the value in |application_id_| in case the window does not exist yet.
   if (application_id)
@@ -468,24 +443,7 @@ void ShellSurfaceBase::SetApplicationId(const char* application_id) {
     application_id_.reset();
 
   if (widget_ && widget_->GetNativeWindow())
-    SetApplicationId(widget_->GetNativeWindow(), application_id_);
-}
-
-// static
-void ShellSurfaceBase::SetStartupId(aura::Window* window,
-                                    const base::Optional<std::string>& id) {
-  TRACE_EVENT1("exo", "ShellSurfaceBase::SetStartupId", "startup_id",
-               id ? *id : "null");
-
-  if (id)
-    window->SetProperty(kStartupIdKey, new std::string(*id));
-  else
-    window->ClearProperty(kStartupIdKey);
-}
-
-// static
-const std::string* ShellSurfaceBase::GetStartupId(aura::Window* window) {
-  return window->GetProperty(kStartupIdKey);
+    SetShellApplicationId(widget_->GetNativeWindow(), application_id_);
 }
 
 void ShellSurfaceBase::SetStartupId(const char* startup_id) {
@@ -496,7 +454,7 @@ void ShellSurfaceBase::SetStartupId(const char* startup_id) {
     startup_id_.reset();
 
   if (widget_ && widget_->GetNativeWindow())
-    SetStartupId(widget_->GetNativeWindow(), startup_id_);
+    SetShellStartupId(widget_->GetNativeWindow(), startup_id_);
 }
 
 void ShellSurfaceBase::SetChildAxTreeId(ui::AXTreeID child_ax_tree_id) {
@@ -576,51 +534,6 @@ void ShellSurfaceBase::DisableMovement() {
     widget_->set_movement_disabled(true);
 }
 
-// static
-void ShellSurfaceBase::SetMainSurface(aura::Window* window, Surface* surface) {
-  window->SetProperty(kMainSurfaceKey, surface);
-}
-
-// static
-Surface* ShellSurfaceBase::GetMainSurface(const aura::Window* window) {
-  return window->GetProperty(kMainSurfaceKey);
-}
-
-// static
-Surface* ShellSurfaceBase::GetTargetSurfaceForLocatedEvent(
-    ui::LocatedEvent* event) {
-  aura::Window* window = wm::CaptureController::Get()->GetCaptureWindow();
-  gfx::PointF location_in_target = event->location_f();
-
-  if (!window)
-    return Surface::AsSurface(static_cast<aura::Window*>(event->target()));
-
-  Surface* main_surface = ShellSurfaceBase::GetMainSurface(window);
-  // Skip if the event is captured by non exo windwows.
-  if (!main_surface)
-    return nullptr;
-
-  while (true) {
-    aura::Window* focused = window->GetEventHandlerForPoint(
-        gfx::ToFlooredPoint(location_in_target));
-
-    if (focused) {
-      aura::Window::ConvertPointToTarget(window, focused, &location_in_target);
-      return Surface::AsSurface(focused);
-    }
-
-    aura::Window* parent_window = wm::GetTransientParent(window);
-
-    if (!parent_window) {
-      location_in_target = event->location_f();
-      return main_surface;
-    }
-    aura::Window::ConvertPointToTarget(window, parent_window,
-                                       &location_in_target);
-    window = parent_window;
-  }
-}
-
 std::unique_ptr<base::trace_event::TracedValue>
 ShellSurfaceBase::AsTracedValue() const {
   std::unique_ptr<base::trace_event::TracedValue> value(
@@ -628,13 +541,13 @@ ShellSurfaceBase::AsTracedValue() const {
   value->SetString("title", base::UTF16ToUTF8(title_));
   if (GetWidget() && GetWidget()->GetNativeWindow()) {
     const std::string* application_id =
-        GetApplicationId(GetWidget()->GetNativeWindow());
+        GetShellApplicationId(GetWidget()->GetNativeWindow());
 
     if (application_id)
       value->SetString("application_id", *application_id);
 
     const std::string* startup_id =
-        GetStartupId(GetWidget()->GetNativeWindow());
+        GetShellStartupId(GetWidget()->GetNativeWindow());
 
     if (startup_id)
       value->SetString("startup_id", *startup_id);
@@ -740,7 +653,7 @@ void ShellSurfaceBase::OnSurfaceDestroying(Surface* surface) {
   SetRootSurface(nullptr);
 
   if (widget_)
-    SetMainSurface(widget_->GetNativeWindow(), nullptr);
+    SetShellMainSurface(widget_->GetNativeWindow(), nullptr);
 
   // Hide widget before surface is destroyed. This allows hide animations to
   // run using the current surface contents.
@@ -847,7 +760,7 @@ void ShellSurfaceBase::GetWidgetHitTestMask(gfx::Path* mask) const {
 void ShellSurfaceBase::OnCaptureChanged(aura::Window* lost_capture,
                                         aura::Window* gained_capture) {
   if (lost_capture == widget_->GetNativeWindow() && is_popup_) {
-    wm::CaptureController::Get()->RemoveObserver(this);
+    WMHelper::GetInstance()->GetCaptureClient()->RemoveObserver(this);
     if (gained_capture &&
         lost_capture == wm::GetTransientParent(gained_capture)) {
       // Don't close if the capture has been transferred to the child popup.
@@ -894,7 +807,7 @@ void ShellSurfaceBase::GetAccessibleNodeData(ui::AXNodeData* node_data) {
     return;
 
   node_data->AddStringAttribute(ax::mojom::StringAttribute::kChildTreeId,
-                                child_ax_tree_id_);
+                                child_ax_tree_id_.ToString());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -921,7 +834,7 @@ void ShellSurfaceBase::OnWindowActivated(ActivationReason reason,
 
   if (gained_active == widget_->GetNativeWindow() ||
       lost_active == widget_->GetNativeWindow()) {
-    DCHECK(CanActivate());
+    DCHECK(gained_active != widget_->GetNativeWindow() || CanActivate());
     UpdateShadow();
   }
 }
@@ -960,7 +873,8 @@ void ShellSurfaceBase::CreateShellSurfaceWidget(
   params.parent =
       parent_ ? parent_
               : ash::Shell::GetContainer(
-                    ash::Shell::GetRootWindowForNewWindows(), container_);
+                    WMHelper::GetInstance()->GetRootWindowForNewWindows(),
+                    container_);
   params.bounds = gfx::Rect(origin_, gfx::Size());
   bool activatable = activatable_;
   // ShellSurfaces in system modal container are only activatable if input
@@ -983,9 +897,9 @@ void ShellSurfaceBase::CreateShellSurfaceWidget(
   window->SetEventTargetingPolicy(
       ws::mojom::EventTargetingPolicy::TARGET_AND_DESCENDANTS);
   InstallCustomWindowTargeter();
-  SetApplicationId(window, application_id_);
-  SetStartupId(window, startup_id_);
-  SetMainSurface(window, root_surface());
+  SetShellApplicationId(window, application_id_);
+  SetShellStartupId(window, startup_id_);
+  SetShellMainSurface(window, root_surface());
 
   // Start tracking changes to window bounds and window state.
   window->AddObserver(this);
@@ -1158,7 +1072,7 @@ void ShellSurfaceBase::SetParentWindow(aura::Window* parent) {
 
 void ShellSurfaceBase::StartCapture() {
   widget_->set_auto_release_capture(false);
-  wm::CaptureController::Get()->AddObserver(this);
+  WMHelper::GetInstance()->GetCaptureClient()->AddObserver(this);
   // Just capture on the window.
   widget_->SetCapture(nullptr /* view */);
 }

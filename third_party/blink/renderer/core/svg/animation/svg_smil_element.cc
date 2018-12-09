@@ -38,6 +38,7 @@
 #include "third_party/blink/renderer/core/svg/svg_uri_reference.h"
 #include "third_party/blink/renderer/core/xlink_names.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
@@ -47,21 +48,20 @@ namespace blink {
 class RepeatEvent final : public Event {
  public:
   static RepeatEvent* Create(const AtomicString& type, int repeat) {
-    return new RepeatEvent(type, Bubbles::kNo, Cancelable::kNo, repeat);
+    return MakeGarbageCollected<RepeatEvent>(type, Bubbles::kNo,
+                                             Cancelable::kNo, repeat);
   }
 
-  ~RepeatEvent() override = default;
-
-  int Repeat() const { return repeat_; }
-
-  void Trace(blink::Visitor* visitor) override { Event::Trace(visitor); }
-
- protected:
   RepeatEvent(const AtomicString& type,
               Bubbles bubbles,
               Cancelable cancelable,
               int repeat = -1)
       : Event(type, bubbles, cancelable), repeat_(repeat) {}
+  ~RepeatEvent() override = default;
+
+  int Repeat() const { return repeat_; }
+
+  void Trace(blink::Visitor* visitor) override { Event::Trace(visitor); }
 
  private:
   int repeat_;
@@ -79,7 +79,7 @@ class ConditionEventListener final : public EventListener {
  public:
   static ConditionEventListener* Create(SVGSMILElement* animation,
                                         SVGSMILElement::Condition* condition) {
-    return new ConditionEventListener(animation, condition);
+    return MakeGarbageCollected<ConditionEventListener>(animation, condition);
   }
 
   static const ConditionEventListener* Cast(const EventListener* listener) {
@@ -87,6 +87,12 @@ class ConditionEventListener final : public EventListener {
                ? static_cast<const ConditionEventListener*>(listener)
                : nullptr;
   }
+
+  ConditionEventListener(SVGSMILElement* animation,
+                         SVGSMILElement::Condition* condition)
+      : EventListener(kConditionEventListenerType),
+        animation_(animation),
+        condition_(condition) {}
 
   bool operator==(const EventListener& other) const override;
 
@@ -99,13 +105,7 @@ class ConditionEventListener final : public EventListener {
   }
 
  private:
-  ConditionEventListener(SVGSMILElement* animation,
-                         SVGSMILElement::Condition* condition)
-      : EventListener(kConditionEventListenerType),
-        animation_(animation),
-        condition_(condition) {}
-
-  void handleEvent(ExecutionContext*, Event*) override;
+  void Invoke(ExecutionContext*, Event*) override;
 
   Member<SVGSMILElement> animation_;
   Member<SVGSMILElement::Condition> condition_;
@@ -119,7 +119,7 @@ bool ConditionEventListener::operator==(const EventListener& listener) const {
   return false;
 }
 
-void ConditionEventListener::handleEvent(ExecutionContext*, Event* event) {
+void ConditionEventListener::Invoke(ExecutionContext*, Event* event) {
   if (!animation_)
     return;
   if (event->type() == "repeatn" &&

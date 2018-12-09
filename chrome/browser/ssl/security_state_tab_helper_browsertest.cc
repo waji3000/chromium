@@ -213,11 +213,9 @@ class FileChooserDelegate : public content::WebContentsDelegate {
  public:
   // Constructs a WebContentsDelegate that mocks a file dialog.
   // The mocked file dialog will always reply that the user selected |file|.
-  explicit FileChooserDelegate(const base::FilePath& file)
-      : file_(file), file_chosen_(false) {}
-
-  // Whether the file dialog was shown.
-  bool file_chosen() const { return file_chosen_; }
+  explicit FileChooserDelegate(const base::FilePath& file,
+                               base::OnceClosure callback)
+      : file_(file), callback_(std::move(callback)) {}
 
   // Copy of the params passed to RunFileChooser.
   const blink::mojom::FileChooserParams& params() const { return *params_; }
@@ -230,16 +228,16 @@ class FileChooserDelegate : public content::WebContentsDelegate {
     std::vector<blink::mojom::FileChooserFileInfoPtr> files;
     files.push_back(blink::mojom::FileChooserFileInfo::NewNativeFile(
         blink::mojom::NativeFileInfo::New(file_, base::string16())));
-    listener->FileSelected(std::move(files),
+    listener->FileSelected(std::move(files), base::FilePath(),
                            blink::mojom::FileChooserParams::Mode::kOpen);
 
-    file_chosen_ = true;
     params_ = params.Clone();
+    std::move(callback_).Run();
   }
 
  private:
   base::FilePath file_;
-  bool file_chosen_;
+  base::OnceClosure callback_;
   blink::mojom::FileChooserParamsPtr params_;
 
   DISALLOW_COPY_AND_ASSIGN(FileChooserDelegate);
@@ -374,7 +372,10 @@ void CheckSecureConnectionExplanation(
 
   // The description should summarize the settings.
   EXPECT_NE(std::string::npos, explanation.description.find(protocol));
-  EXPECT_NE(std::string::npos, explanation.description.find(key_exchange));
+  if (key_exchange == nullptr)
+    EXPECT_TRUE(is_tls13);
+  else
+    EXPECT_NE(std::string::npos, explanation.description.find(key_exchange));
   EXPECT_NE(std::string::npos,
             explanation.description.find(key_exchange_group));
   EXPECT_NE(std::string::npos, explanation.description.find(cipher));
@@ -414,7 +415,7 @@ void CheckSecurityInfoForSecure(
   EXPECT_EQ(pkp_bypassed, security_info.pkp_bypassed);
   EXPECT_EQ(expect_cert_error,
             net::IsCertStatusError(security_info.cert_status));
-  EXPECT_GT(security_info.security_bits, 0);
+  EXPECT_TRUE(security_info.connection_info_initialized);
   EXPECT_TRUE(!!security_info.certificate);
 }
 
@@ -432,7 +433,7 @@ void CheckSecurityInfoForNonSecure(content::WebContents* contents) {
             security_info.mixed_content_status);
   EXPECT_FALSE(security_info.scheme_is_cryptographic);
   EXPECT_FALSE(net::IsCertStatusError(security_info.cert_status));
-  EXPECT_EQ(-1, security_info.security_bits);
+  EXPECT_FALSE(security_info.connection_info_initialized);
   EXPECT_FALSE(!!security_info.certificate);
 }
 
@@ -637,8 +638,10 @@ IN_PROC_BROWSER_TEST_P(SecurityStateTabHelperTest, HttpPage) {
             security_info.mixed_content_status);
   EXPECT_FALSE(security_info.scheme_is_cryptographic);
   EXPECT_FALSE(net::IsCertStatusError(security_info.cert_status));
+  // TODO(dmcardle): Should determine the expected value for
+  // |security_info.connection_info_initialized|. Follow up with estark.
+  // See crbug.com/780972
   EXPECT_FALSE(!!security_info.certificate);
-  EXPECT_EQ(-1, security_info.security_bits);
   EXPECT_EQ(0, security_info.connection_status);
 }
 
@@ -1649,14 +1652,15 @@ IN_PROC_BROWSER_TEST_P(SecurityStateTabHelperTest,
   EXPECT_TRUE(base::PathService::Get(base::DIR_TEMP, &file_path));
   file_path = file_path.AppendASCII("bar");
 
+  base::RunLoop run_loop;
   // Fill out the form to refer to the test file.
   SecurityStyleTestObserver observer(contents);
   std::unique_ptr<FileChooserDelegate> delegate(
-      new FileChooserDelegate(file_path));
+      new FileChooserDelegate(file_path, run_loop.QuitClosure()));
   contents->SetDelegate(delegate.get());
   EXPECT_TRUE(
       ExecuteScript(contents, "document.getElementById('fileinput').click();"));
-  EXPECT_TRUE(delegate->file_chosen());
+  run_loop.Run();
   observer.WaitForDidChangeVisibleSecurityState();
 
   // Verify that the security state degrades as expected.
@@ -2230,6 +2234,13 @@ IN_PROC_BROWSER_TEST_P(SecurityStateTabHelperIncognitoTest,
 // TODO(estark): add console messages for the |kMarkHttpAsParameterWarning|
 // configuration of |kMarkHttpAsFeature| and update this test accordingly.
 // https://crbug.com/802921
+#if defined(OS_WIN)
+#define MAYBE_ConsoleMessageNotPrintedForAbortedNavigation \
+  DISABLED_ConsoleMessageNotPrintedForAbortedNavigation
+#else
+#define MAYBE_ConsoleMessageNotPrintedForAbortedNavigation \
+  ConsoleMessageNotPrintedForAbortedNavigation
+#endif
 IN_PROC_BROWSER_TEST_P(SecurityStateTabHelperIncognitoTest,
                        ConsoleMessageNotPrintedForAbortedNavigation) {
   base::test::ScopedFeatureList scoped_feature_list;
@@ -2739,14 +2750,14 @@ IN_PROC_BROWSER_TEST_P(SecurityStateTabHelperTest,
   EXPECT_TRUE(base::PathService::Get(base::DIR_TEMP, &file_path));
   file_path = file_path.AppendASCII("bar");
 
+  base::RunLoop run_loop;
   // Fill out the form to refer to the test file.
   std::unique_ptr<FileChooserDelegate> delegate(
-      new FileChooserDelegate(file_path));
+      new FileChooserDelegate(file_path, run_loop.QuitClosure()));
   contents->SetDelegate(delegate.get());
   EXPECT_TRUE(
       ExecuteScript(contents, "document.getElementById('fileinput').click();"));
-  EXPECT_TRUE(delegate->file_chosen());
-
+  run_loop.Run();
   observer.WaitForDidChangeVisibleSecurityState();
 
   // Verify that the security state degrades as expected.

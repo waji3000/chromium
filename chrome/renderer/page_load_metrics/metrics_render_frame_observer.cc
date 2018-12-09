@@ -95,6 +95,7 @@ void MetricsRenderFrameObserver::DidObserveLayoutJank(double jank_fraction) {
 }
 
 void MetricsRenderFrameObserver::DidStartResponse(
+    const GURL& response_url,
     int request_id,
     const network::ResourceResponseHead& response_head,
     content::ResourceType resource_type) {
@@ -104,10 +105,11 @@ void MetricsRenderFrameObserver::DidStartResponse(
     // load starts, and data use of the frame request might be missed in that
     // case. There should be a guarantee that DidStartProvisionalLoad be called
     // before DidStartResponse for the frame request.
-    provisional_frame_resource_data_use_->DidStartResponse(request_id,
-                                                           response_head);
+    provisional_frame_resource_data_use_->DidStartResponse(
+        response_url, request_id, response_head);
   } else if (page_timing_metrics_sender_) {
-    page_timing_metrics_sender_->DidStartResponse(request_id, response_head);
+    page_timing_metrics_sender_->DidStartResponse(response_url, request_id,
+                                                  response_head);
     UpdateResourceMetadata(request_id);
   }
 }
@@ -305,10 +307,6 @@ mojom::PageLoadTimingPtr MetricsRenderFrameObserver::GetTiming() const {
         ClampDelta(perf.FirstLayout(), start);
   if (perf.FirstPaint() > 0.0)
     timing->paint_timing->first_paint = ClampDelta(perf.FirstPaint(), start);
-  if (perf.FirstTextPaint() > 0.0) {
-    timing->paint_timing->first_text_paint =
-        ClampDelta(perf.FirstTextPaint(), start);
-  }
   if (perf.FirstImagePaint() > 0.0) {
     timing->paint_timing->first_image_paint =
         ClampDelta(perf.FirstImagePaint(), start);

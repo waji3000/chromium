@@ -92,14 +92,14 @@ void InstallOriginTrialFeaturesForTesting(
 
   ExecutionContext* execution_context = ExecutionContext::From(script_state);
 
-  if (type == &V8OriginTrialsTest::wrapperTypeInfo) {
-    if (OriginTrials::OriginTrialsSampleAPIEnabled(execution_context)) {
-      V8OriginTrialsTest::installOriginTrialsSampleAPI(
+  if (type == V8OriginTrialsTest::GetWrapperTypeInfo()) {
+    if (origin_trials::OriginTrialsSampleAPIEnabled(execution_context)) {
+      V8OriginTrialsTest::InstallOriginTrialsSampleAPI(
           script_state->GetIsolate(), script_state->World(),
           v8::Local<v8::Object>(), prototype_object, interface_object);
     }
-    if (OriginTrials::OriginTrialsSampleAPIImpliedEnabled(execution_context)) {
-      V8OriginTrialsTest::installOriginTrialsSampleAPIImplied(
+    if (origin_trials::OriginTrialsSampleAPIImpliedEnabled(execution_context)) {
+      V8OriginTrialsTest::InstallOriginTrialsSampleAPIImplied(
           script_state->GetIsolate(), script_state->World(),
           v8::Local<v8::Object>(), prototype_object, interface_object);
     }
@@ -133,23 +133,23 @@ void InstallPendingOriginTrialFeatureForTesting(
                                                               script_state);
   v8::Local<v8::Object> prototype_object;
   v8::Local<v8::Function> interface_object;
-  if (feature == OriginTrials::kOriginTrialsSampleAPITrialName) {
+  if (feature == origin_trials::kOriginTrialsSampleAPITrialName) {
     if (script_state->PerContextData()
             ->GetExistingConstructorAndPrototypeForType(
-                &V8OriginTrialsTest::wrapperTypeInfo, &prototype_object,
+                V8OriginTrialsTest::GetWrapperTypeInfo(), &prototype_object,
                 &interface_object)) {
-      V8OriginTrialsTest::installOriginTrialsSampleAPI(
+      V8OriginTrialsTest::InstallOriginTrialsSampleAPI(
           script_state->GetIsolate(), script_state->World(),
           v8::Local<v8::Object>(), prototype_object, interface_object);
     }
     return;
   }
-  if (feature == OriginTrials::kOriginTrialsSampleAPIImpliedTrialName) {
+  if (feature == origin_trials::kOriginTrialsSampleAPIImpliedTrialName) {
     if (script_state->PerContextData()
             ->GetExistingConstructorAndPrototypeForType(
-                &V8OriginTrialsTest::wrapperTypeInfo, &prototype_object,
+                V8OriginTrialsTest::GetWrapperTypeInfo(), &prototype_object,
                 &interface_object)) {
-      V8OriginTrialsTest::installOriginTrialsSampleAPIImplied(
+      V8OriginTrialsTest::InstallOriginTrialsSampleAPIImplied(
           script_state->GetIsolate(), script_state->World(),
           v8::Local<v8::Object>(), prototype_object, interface_object);
     }

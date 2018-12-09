@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #import "base/mac/foundation_util.h"
+#import "ios/chrome/browser/ui/table_view/cells/table_view_text_button_item.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_text_item.h"
 #import "ios/chrome/browser/ui/table_view/chrome_table_view_controller.h"
 
@@ -69,8 +70,8 @@ int ChromeTableViewControllerTest::NumberOfItemsInSection(int section) {
 
 id ChromeTableViewControllerTest::GetTableViewItem(int section, int item) {
   TableViewModel* model = [controller_ tableViewModel];
-  NSIndexPath* index_path =
-      [NSIndexPath indexPathForItem:item inSection:section];
+  NSIndexPath* index_path = [NSIndexPath indexPathForItem:item
+                                                inSection:section];
   TableViewItem* collection_view_item = [model hasItemAtIndexPath:index_path]
                                             ? [model itemAtIndexPath:index_path]
                                             : nil;
@@ -86,26 +87,43 @@ void ChromeTableViewControllerTest::CheckTitleWithId(int expected_title_id) {
   CheckTitle(l10n_util::GetNSString(expected_title_id));
 }
 
+void ChromeTableViewControllerTest::CheckSectionHeader(NSString* expected_text,
+                                                       int section) {
+  TableViewHeaderFooterItem* header =
+      [[controller_ tableViewModel] headerForSection:section];
+  ASSERT_TRUE([header respondsToSelector:@selector(text)]);
+  EXPECT_NSEQ(expected_text, [(id)header text]);
+}
+
+void ChromeTableViewControllerTest::CheckSectionHeaderWithId(
+    int expected_text_id,
+    int section) {
+  CheckSectionHeader(l10n_util::GetNSString(expected_text_id), section);
+}
+
 void ChromeTableViewControllerTest::CheckSectionFooter(NSString* expected_text,
                                                        int section) {
-  // TODO(crbug.com/894791): Implement this.
-  NOTREACHED();
+  TableViewHeaderFooterItem* footer =
+      [[controller_ tableViewModel] footerForSection:section];
+  ASSERT_TRUE([footer respondsToSelector:@selector(text)]);
+  EXPECT_NSEQ(expected_text, [(id)footer text]);
 }
 
 void ChromeTableViewControllerTest::CheckSectionFooterWithId(
     int expected_text_id,
     int section) {
-  return CheckSectionFooter(l10n_util::GetNSString(expected_text_id), section);
+  CheckSectionFooter(l10n_util::GetNSString(expected_text_id), section);
 }
 
+// TODO(crbug.com/894791): There are some unittests that are using
+// CheckTextCellText to check Item with both "text" and "detailText". Change all
+// of them to CheckTextCellTextAndDetailText when the migration is finished.
 void ChromeTableViewControllerTest::CheckTextCellText(NSString* expected_text,
                                                       int section,
                                                       int item) {
   id cell = GetTableViewItem(section, item);
   ASSERT_TRUE([cell respondsToSelector:@selector(text)]);
-  ASSERT_TRUE([cell respondsToSelector:@selector(detailText)]);
   EXPECT_NSEQ(expected_text, [cell text]);
-  EXPECT_FALSE([cell detailText]);
 }
 
 void ChromeTableViewControllerTest::CheckTextCellTextWithId(
@@ -170,12 +188,29 @@ void ChromeTableViewControllerTest::CheckAccessoryType(
   EXPECT_EQ(accessory_type, [text_item accessoryType]);
 }
 
+void ChromeTableViewControllerTest::CheckTextButtonCellButtonText(
+    NSString* expected_button_text,
+    int section,
+    int item) {
+  id text_button_item = GetTableViewItem(section, item);
+  ASSERT_TRUE([text_button_item respondsToSelector:@selector(buttonText)]);
+  EXPECT_NSEQ(expected_button_text, [text_button_item buttonText]);
+}
+
+void ChromeTableViewControllerTest::CheckTextButtonCellButtonTextWithId(
+    int expected_button_text_id,
+    int section,
+    int item) {
+  CheckTextButtonCellButtonText(l10n_util::GetNSString(expected_button_text_id),
+                                section, item);
+}
+
 void ChromeTableViewControllerTest::DeleteItem(
     int section,
     int item,
     ProceduralBlock completion_block) {
-  NSIndexPath* index_path =
-      [NSIndexPath indexPathForItem:item inSection:section];
+  NSIndexPath* index_path = [NSIndexPath indexPathForItem:item
+                                                inSection:section];
   __weak ChromeTableViewController* weak_controller = controller_;
   void (^batch_updates)() = ^{
     ChromeTableViewController* strong_controller = weak_controller;
@@ -202,26 +237,6 @@ void ChromeTableViewControllerTest::DeleteItem(
       completion_block();
     }
   };
-  if (@available(iOS 11.0, *)) {
-    [[controller_ tableView] performBatchUpdates:batch_updates
-                                      completion:completion];
-  } else {
-    TableViewModel* model = controller_.tableViewModel;
-    NSInteger section_ID =
-        [model sectionIdentifierForSection:index_path.section];
-    NSInteger item_type = [model itemTypeForIndexPath:index_path];
-    NSUInteger index = [model indexInItemTypeForIndexPath:index_path];
-    [model removeItemWithType:item_type
-        fromSectionWithIdentifier:section_ID
-                          atIndex:index];
-
-    // Delete in the table view.
-    [[controller_ tableView]
-        deleteRowsAtIndexPaths:@[ index_path ]
-              withRowAnimation:UITableViewRowAnimationNone];
-
-    if (completion_block) {
-      completion_block();
-    }
-  }
+  [[controller_ tableView] performBatchUpdates:batch_updates
+                                    completion:completion];
 }

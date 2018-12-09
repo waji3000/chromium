@@ -88,6 +88,33 @@ using TimingField = page_load_metrics::PageLoadMetricsTestWaiter::TimingField;
 using WebFeature = blink::mojom::WebFeature;
 using testing::UnorderedElementsAre;
 
+namespace {
+
+constexpr char kCacheablePathPrefix[] = "/cacheable";
+
+std::unique_ptr<net::test_server::HttpResponse> HandleCachableRequestHandler(
+    const net::test_server::HttpRequest& request) {
+  if (!base::StartsWith(request.relative_url, kCacheablePathPrefix,
+                        base::CompareCase::SENSITIVE)) {
+    return nullptr;
+  }
+
+  if (request.headers.find("If-None-Match") != request.headers.end()) {
+    return std::make_unique<net::test_server::RawHttpResponse>(
+        "HTTP/1.1 304 Not Modified", "");
+  }
+
+  auto response = std::make_unique<net::test_server::BasicHttpResponse>();
+  response->set_code(net::HTTP_OK);
+  response->set_content_type("text/html");
+  response->AddCustomHeader("cache-control", "max-age=60");
+  response->AddCustomHeader("etag", "foobar");
+  response->set_content("hi");
+  return std::move(response);
+}
+
+}  // namespace
+
 class PageLoadMetricsBrowserTest : public InProcessBrowserTest {
  public:
   PageLoadMetricsBrowserTest() {
@@ -100,6 +127,8 @@ class PageLoadMetricsBrowserTest : public InProcessBrowserTest {
   void SetUpOnMainThread() override {
     InProcessBrowserTest::SetUpOnMainThread();
     host_resolver()->AddRule("*", "127.0.0.1");
+    embedded_test_server()->RegisterRequestHandler(
+        base::BindRepeating(&HandleCachableRequestHandler));
   }
 
   void PreRunTestOnMainThread() override {
@@ -209,6 +238,8 @@ IN_PROC_BROWSER_TEST_F(PageLoadMetricsBrowserTest, NewPage) {
         kv.second.get(),
         PageLoad::kPaintTiming_NavigationToFirstContentfulPaintName));
     EXPECT_TRUE(test_ukm_recorder_->EntryHasMetric(
+        kv.second.get(), PageLoad::kMainFrameResource_SocketReusedName));
+    EXPECT_TRUE(test_ukm_recorder_->EntryHasMetric(
         kv.second.get(), PageLoad::kMainFrameResource_DNSDelayName));
     EXPECT_TRUE(test_ukm_recorder_->EntryHasMetric(
         kv.second.get(), PageLoad::kMainFrameResource_ConnectDelayName));
@@ -226,6 +257,48 @@ IN_PROC_BROWSER_TEST_F(PageLoadMetricsBrowserTest, NewPage) {
   // Verify that NoPageLoadMetricsRecorded returns false when PageLoad metrics
   // have been recorded.
   EXPECT_FALSE(NoPageLoadMetricsRecorded());
+}
+
+IN_PROC_BROWSER_TEST_F(PageLoadMetricsBrowserTest, CachedPage) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  GURL url = embedded_test_server()->GetURL(kCacheablePathPrefix);
+
+  // Navigate to the |url| to cache the main resource.
+  ui_test_utils::NavigateToURL(browser(), url);
+  NavigateToUntrackedUrl();
+
+  using PageLoad = ukm::builders::PageLoad;
+  auto entries =
+      test_ukm_recorder_->GetMergedEntriesByName(PageLoad::kEntryName);
+  EXPECT_EQ(1u, entries.size());
+  for (const auto& kv : entries) {
+    auto* const uncached_load_entry = kv.second.get();
+    test_ukm_recorder_->ExpectEntrySourceHasUrl(uncached_load_entry, url);
+
+    EXPECT_FALSE(test_ukm_recorder_->EntryHasMetric(uncached_load_entry,
+                                                    PageLoad::kWasCachedName));
+  }
+
+  // Reset the UKM recorder so it would only contain the cached pageload.
+  test_ukm_recorder_ = std::make_unique<ukm::TestAutoSetUkmRecorder>();
+
+  // Second navigation to the |url| should hit cache.
+  ui_test_utils::NavigateToURL(browser(), url);
+
+  // Force navigation to another page, which should force logging of histograms
+  // persisted at the end of the page load lifetime.
+  NavigateToUntrackedUrl();
+
+  entries = test_ukm_recorder_->GetMergedEntriesByName(PageLoad::kEntryName);
+  EXPECT_EQ(1u, entries.size());
+  for (const auto& kv : entries) {
+    auto* const cached_load_entry = kv.second.get();
+    test_ukm_recorder_->ExpectEntrySourceHasUrl(cached_load_entry, url);
+
+    EXPECT_TRUE(test_ukm_recorder_->EntryHasMetric(cached_load_entry,
+                                                   PageLoad::kWasCachedName));
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(PageLoadMetricsBrowserTest, NewPageInNewForegroundTab) {
@@ -1795,7 +1868,7 @@ IN_PROC_BROWSER_TEST_F(PageLoadMetricsBrowserTest,
       browser(), embedded_test_server()->GetURL(
                      "foo.com", "/cross_site_iframe_factory.html?foo"));
   waiter->Wait();
-  int64_t one_frame_page_size = waiter->current_resource_bytes();
+  int64_t one_frame_page_size = waiter->current_network_bytes();
 
   waiter = CreatePageLoadMetricsTestWaiter();
   waiter->AddPageExpectation(TimingField::kLoadEvent);
@@ -1805,8 +1878,45 @@ IN_PROC_BROWSER_TEST_F(PageLoadMetricsBrowserTest,
           "a.com", "/cross_site_iframe_factory.html?a(b,c,d(e,f,g))"));
   // Verify that 7 iframes are fetched, with some amount of tolerance since
   // favicon is fetched only once.
-  waiter->AddMinimumResourceBytesExpectation(7 * (one_frame_page_size - 100));
+  waiter->AddMinimumNetworkBytesExpectation(7 * (one_frame_page_size - 100));
   waiter->Wait();
+}
+
+IN_PROC_BROWSER_TEST_F(PageLoadMetricsBrowserTest,
+                       ChunkedResponse_OverheadDoesNotCountForBodyBytes) {
+  const char kHttpResponseHeader[] =
+      "HTTP/1.1 200 OK\r\n"
+      "Content-Type: text/html; charset=utf-8\r\n"
+      "Transfer-Encoding: chunked\r\n"
+      "\r\n";
+  const int kChunkSize = 5;
+  const int kNumChunks = 5;
+  auto main_response =
+      std::make_unique<net::test_server::ControllableHttpResponse>(
+          embedded_test_server(), "/mock_page.html",
+          true /*relative_url_is_prefix*/);
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  auto waiter = CreatePageLoadMetricsTestWaiter();
+
+  browser()->OpenURL(content::OpenURLParams(
+      embedded_test_server()->GetURL("/mock_page.html"), content::Referrer(),
+      WindowOpenDisposition::CURRENT_TAB, ui::PAGE_TRANSITION_TYPED, false));
+
+  main_response->WaitForRequest();
+  main_response->Send(kHttpResponseHeader);
+  for (int i = 0; i < kNumChunks; i++) {
+    main_response->Send(std::to_string(kChunkSize));
+    main_response->Send("\r\n");
+    main_response->Send(std::string(kChunkSize, '*'));
+    main_response->Send("\r\n");
+  }
+  main_response->Done();
+  waiter->AddMinimumCompleteResourcesExpectation(1);
+  waiter->Wait();
+
+  // Verify that overheads for each chunk are not reported as body bytes.
+  EXPECT_EQ(waiter->current_network_body_bytes(), kChunkSize * kNumChunks);
 }
 
 IN_PROC_BROWSER_TEST_F(PageLoadMetricsBrowserTest, ReceivedCompleteResources) {
@@ -1841,7 +1951,7 @@ IN_PROC_BROWSER_TEST_F(PageLoadMetricsBrowserTest, ReceivedCompleteResources) {
   main_html_response->Send(std::string(1000, ' '));
   main_html_response->Done();
   waiter->AddMinimumCompleteResourcesExpectation(1);
-  waiter->AddMinimumResourceBytesExpectation(1000);
+  waiter->AddMinimumNetworkBytesExpectation(1000);
   waiter->Wait();
 
   script_response->WaitForRequest();
@@ -1853,7 +1963,7 @@ IN_PROC_BROWSER_TEST_F(PageLoadMetricsBrowserTest, ReceivedCompleteResources) {
   script_response->Send(std::string(1000, ' '));
   // Data received but resource not complete
   waiter->AddMinimumCompleteResourcesExpectation(1);
-  waiter->AddMinimumResourceBytesExpectation(2000);
+  waiter->AddMinimumNetworkBytesExpectation(2000);
   waiter->Wait();
   script_response->Done();
   waiter->AddMinimumCompleteResourcesExpectation(2);
@@ -1865,7 +1975,7 @@ IN_PROC_BROWSER_TEST_F(PageLoadMetricsBrowserTest, ReceivedCompleteResources) {
   iframe_response->Send(std::string(2000, ' '));
   iframe_response->Done();
   waiter->AddMinimumCompleteResourcesExpectation(3);
-  waiter->AddMinimumResourceBytesExpectation(4000);
+  waiter->AddMinimumNetworkBytesExpectation(4000);
   waiter->Wait();
 }
 

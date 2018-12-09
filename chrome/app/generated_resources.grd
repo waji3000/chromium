@@ -332,6 +332,9 @@ are declared in tools/grit/grit_rule.gni.
       </message>
       <!-- Search strings are only used in webui, so no mobile. -->
       <if expr="not is_android">
+        <message name="IDS_SEARCH_CLEARED" desc="Message announced to screenreader users when search is cleared.">
+          Search cleared
+        </message>
         <message name="IDS_SEARCH_RESULTS" desc="Message announced to screenreader users when searching completes and results are showing.">
           Search results for '<ph name="SEARCH_TEXT">$1<ex>cookies</ex></ph>'
         </message>
@@ -991,6 +994,9 @@ are declared in tools/grit/grit_rule.gni.
         <message name="IDS_DEV_TOOLS" desc="The text label of the Developer Tools menu item">
           &amp;Developer tools
         </message>
+        <message name="IDS_DEV_TOOLS_ELEMENTS" desc="The text label of the Inspect Elements menu item">
+          &amp;Inspect elements
+        </message>
         <message name="IDS_DEV_TOOLS_CONSOLE" desc="The text label of the JavaScript console menu item">
           &amp;JavaScript console
         </message>
@@ -1026,6 +1032,9 @@ are declared in tools/grit/grit_rule.gni.
         <message name="IDS_DEV_TOOLS_DEVICES" desc="The text label of the Inspect Devices menu item">
           &amp;Inspect Devices
         </message>
+         <message name="IDS_DEV_TOOLS_ELEMENTS" desc="The text label of the Inspect Elements menu item">
+          &amp;Inspect Elements
+        </message>
         <message name="IDS_TASK_MANAGER" desc="In Title Case: The text label of the Task Manager menu item">
           &amp;Task Manager
         </message>
@@ -1059,6 +1068,9 @@ are declared in tools/grit/grit_rule.gni.
       </if>
       <message name="IDS_HELP_MENU" desc="The text label of the Help sub-menu item in the wrench menu">
         H&amp;elp
+      </message>
+      <message name="IDS_MANAGED_BY_ORG" desc="The text label of the 'Managed by' UI in the app menu, for enterprise users">
+        Managed by your organization
       </message>
       <if expr="not use_titlecase">
         <message name="IDS_IMPORT_SETTINGS_MENU_LABEL" desc="In sentence case: The app menu label to import bookmarks and settings.">
@@ -1660,7 +1672,7 @@ are declared in tools/grit/grit_rule.gni.
       </message>
       <message name="IDS_DOWNLOAD_STATUS_PERCENT_COMPLETE_ACCESSIBLE_ALERT"
                desc="The title of a download notification: the current download status is in progress and time remaining is known. This message is for screen reader users.">
-               Downloading, <ph name="PERCENT_REMAINING">$1<ex>33</ex>% remaining</ph>
+               Downloading, <ph name="PERCENT_REMAINING">$1<ex>33</ex></ph>% remaining
       </message>
       <message name="IDS_DOWNLOAD_STATUS_TIME_REMAINING_ACCESSIBLE_ALERT"
                desc="The title of a download notification: the current download status is in progress and time remaining is known. This message is for screen reader users.">
@@ -1672,11 +1684,11 @@ are declared in tools/grit/grit_rule.gni.
       </message>
       <message name="IDS_DOWNLOAD_CANCELLED_ACCESSIBLE_ALERT"
                desc="The title of a download notification: the current download status is cancelled. This message is for screen reader users.">
-               Download cancelled: <ph name="FILE_NAME">$1<ex>somedocument.pdf</ex>.</ph>
+               Download cancelled: <ph name="FILE_NAME">$1<ex>somedocument.pdf</ex></ph>
       </message>
       <message name="IDS_DOWNLOAD_COMPLETE_ACCESSIBLE_ALERT"
                desc="The title of a download notification: the current download status is finished successufully. This message is for screen reader users.">
-               Download complete: <ph name="FILE_NAME">$1<ex>somedocument.pdf</ex>. Press Shift+F6 to cycle to the downloads bar area.</ph>
+               Download complete: <ph name="FILE_NAME">$1<ex>somedocument.pdf</ex>></ph>. Press Shift+F6 to cycle to the downloads bar area.
       </message>
 
       <!-- Download Notification Labels -->
@@ -3247,9 +3259,6 @@ are declared in tools/grit/grit_rule.gni.
       <message name="IDS_CRITICAL_NOTIFICATION_RESTART" desc="Button label a button on the bubble that appears when there is a critical update and Chrome/Chromium must restart to install it. Pressing the buton will cause Chrome/Chromium to restart.">
         Restart now
       </message>
-      <message name="IDS_CRITICAL_NOTIFICATION_DISMISS" desc="Button label a button on the bubble that appears when there is a critical update and Chrome/Chromium must restart to install it. Pressing the buton will prevent Chrome/Chromium from automatically restarting.">
-        Don't restart
-      </message>
 
       <!-- Extension/App disabled notification -->
       <message name="IDS_EXTENSION_DISABLED_ERROR_LABEL" desc="Text displayed when an extension was disabled due to a new upgrade requiring an explicit permission check from the user.">
@@ -3881,6 +3890,9 @@ are declared in tools/grit/grit_rule.gni.
           Has access to this site
         </message>
         <if expr="not use_titlecase">
+          <message name="IDS_EXTENSIONS_CONTEXT_MENU_CANT_ACCESS_PAGE" desc="The label in an extension's context menu indicating the extension cannot access the current page. (sentence case)">
+            Can't read or change site's data
+          </message>
           <message name="IDS_EXTENSIONS_CONTEXT_MENU_PAGE_ACCESS" desc="The label in an extension's context menu for the submenu specifying whether or not the extension can run on the current page (sentence case).">
             This can read and change site data
           </message>
@@ -3922,6 +3934,9 @@ are declared in tools/grit/grit_rule.gni.
           </message>
         </if>
         <if expr="use_titlecase">
+          <message name="IDS_EXTENSIONS_CONTEXT_MENU_CANT_ACCESS_PAGE" desc="The label in an extension's context menu indicating the extension cannot access the current page. (title case)">
+            Can't Read or Change Site's Data
+          </message>
           <message name="IDS_EXTENSIONS_CONTEXT_MENU_PAGE_ACCESS" desc="The label in an extension's context menu for the submenu specifying whether or not the extension can run on the current page (title case).">
             This Can Read and Change Site Data
           </message>
@@ -4403,13 +4418,13 @@ Keep your key file in a safe place. You will need it to create new versions of y
          Show original
       </message>
       <message name="IDS_PREVIEWS_INFOBAR_TIMESTAMP_MINUTES" desc="The desciption stating how old a preview version of a page is in minutes. This is shown on the infobar notifying the user that a preview page has been shown.">
-         Updated <ph name="MINUTES">$1<ex>30</ex></ph>min ago
+         Updated <ph name="MINUTES">$1<ex>30</ex></ph> min ago
       </message>
       <message name="IDS_PREVIEWS_INFOBAR_TIMESTAMP_ONE_HOUR" desc="The desciption stating a preview version of a page is one hour old. This is shown on the infobar notifying the user that a preview page has been shown.">
          Updated 1hr ago
       </message>
       <message name="IDS_PREVIEWS_INFOBAR_TIMESTAMP_HOURS" desc="The desciption stating how old a preview version of a page is in hours. This is shown on the infobar notifying the user that a preview page has been shown.">
-         Updated <ph name="HOURS">$1<ex>4</ex></ph>hrs ago
+         Updated <ph name="HOURS">$1<ex>4</ex></ph> hrs ago
       </message>
       <message name="IDS_PREVIEWS_INFOBAR_TIMESTAMP_UPDATED_NOW" desc="The desciption stating that a preview version of a page was just updated. This is shown on the infobar notifying the user that a preview page has been shown.">
          Updated just now
@@ -4431,9 +4446,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
 
       <!-- HTTPS Server Previews InfoBar -->
       <message name="IDS_LITE_PAGE_PREVIEWS_MESSAGE" desc="The text of the infobar notifying the user that Chrome's Lite mode will now also apply to HTTPS pages.">
-        Lite Mode now makes browsing faster on all pages, including HTTPS.
+        Lite mode now makes browsing faster on all pages, including HTTPS.
       </message>
-      <message name="IDS_LITE_PAGE_PREVIEWS_SETTINGS_LINK" desc="This link opens the Data Saver settings to explain and configure Lite mode settings.">
+      <message name="IDS_LITE_PAGE_PREVIEWS_SETTINGS_LINK" desc="This link opens the Lite mode settings page to explain the feature and configure the settings.">
         Settings
       </message>
 
@@ -5070,6 +5085,9 @@ the Bookmarks menu.">
       </message>
       <message name="IDS_NEWTAB_PROMO_2" desc="Variations option 3. Text shown on promotional UI appearing next to the New Tab button, which encourages users to use it.">
         Open a new tab to browse two sites at once
+      </message>
+      <message name="IDS_REOPEN_TAB_PROMO" desc="Text shown on promotional UI appearing next to the app menu button">
+        Reopen a tab if you accidentally closed it
       </message>
 
       <!-- Browser Hung Plugin Detector -->
@@ -6247,20 +6265,13 @@ the Bookmarks menu.">
         This account is managed by <ph name="DOMAIN">$1<ex>example.com</ex></ph>
       </message>
 
-      <!-- Enterprise force-sign-out dialog-->
-      <message name="IDS_ENTERPRISE_FORCE_SIGNOUT_TITLE" desc="The title of the dialog shown when the user closes a browser and force sign in is enabled and local auth info is not valid.">
-        Sign in certification is not valid, window closing in <ph name="MINUTES">{0,number,00}<ex>5</ex></ph> : <ph name="SECONDS">{1,number,00}<ex>00</ex></ph>
+      <!-- Clear profile dialog-->
+      <message name="IDS_PROFILE_WILL_BE_DELETED_DIALOG_TITLE" desc="The title of the dialog shown when the user is syncing with an enterprise account and when this account is no longer allowed as the primary account.">
+        Profile will be deleted
       </message>
-      <message name="IDS_ENTERPRISE_FORCE_SIGNOUT_CLOSE_CONFIRM" desc="Text of the button to sign in again immediately.">
-        Sign in now
+      <message name="IDS_PROFILE_WILL_BE_DELETED_DIALOG_DESCRIPTION" desc="The description of the dialog shown when the user closes a browser and force sign in is enabled and local auth info is not valid.">
+        Your account <ph name="EMAIL">$1<ex>john.doe@example.com</ex></ph> is no longer allowed as the primary account. Because this account is managed by <ph name="DOMAIN">$2<ex>example.com</ex></ph>, your bookmarks, history, passwords, and other settings will be cleared from this device.
       </message>
-      <message name="IDS_ENTERPRISE_FORCE_SIGNOUT_CLOSE_DELAY" desc="Text of the button to sign in again later">
-        Cancel
-      </message>
-      <message name="IDS_ENTERPRISE_FORCE_SIGNOUT_ADDITIONAL_EXPLANATION" desc="Text of auto close warning">
-        All browser windows will soon be closed automatically without sign in.
-      </message>
-
 
       <!-- Cookies Window -->
       <message name="IDS_COOKIES_REMOVE_LABEL" desc="The label of the 'Remove' button in the Cookies Window">
@@ -6650,36 +6661,6 @@ the Bookmarks menu.">
       <message name="IDS_SYNC_CONFIRMATION_UNITY_TITLE" desc="Title of the sync confirmation dialog in the tab modal signin flow when Unity is enabled">
         Get Google smarts in Chrome
       </message>
-      <message name="IDS_SYNC_CONFIRMATION_UNITY_CONSENT_BUMP_TITLE" desc="Title of the sync consent bump in the tab modal signin flow when Unity is enabled">
-        Get more Google smarts
-      </message>
-      <message name="IDS_SYNC_CONFIRMATION_UNITY_MORE_OPTIONS_BUTTON_LABEL" desc="Label of the sync confirmation button to show more options">
-        More options
-      </message>
-      <message name="IDS_SYNC_CONFIRMATION_UNITY_MORE_OPTIONS_TITLE" desc="Title of the sync confirmation more options dialog">
-        Control sync, personalization, and more
-      </message>
-      <message name="IDS_SYNC_CONFIRMATION_UNITY_MORE_OPTIONS_SUBTITLE" desc="Subitle of the sync confirmation more options dialog">
-        The settings that control sync, personalization, and other Google services in Chrome have changed. This may affect your current settings.
-      </message>
-      <message name="IDS_SYNC_CONFIRMATION_UNITY_OPTIONS_REVIEW_SETTINGS_TITLE" desc="Title of the sync confirmation option to review settings">
-        Review your settings on the next screen
-      </message>
-      <message name="IDS_SYNC_CONFIRMATION_UNITY_OPTIONS_MAKE_NO_CHANGES_TITLE" desc="Title of the sync confirmation option to make no changes">
-        Make no changes
-      </message>
-      <message name="IDS_SYNC_CONFIRMATION_UNITY_OPTIONS_MAKE_NO_CHANGES_SUBTITLE" desc="Subtitle of the sync confirmation option to make no changes">
-        The data you sync to Google and the features you use will not change
-      </message>
-      <message name="IDS_SYNC_CONFIRMATION_UNITY_OPTIONS_USE_DEFAULT_TITLE" desc="Title of the sync confirmation option to use the default settings">
-        Turn on sync, personalization, and other Google services
-      </message>
-      <message name="IDS_SYNC_CONFIRMATION_UNITY_OPTIONS_USE_DEFAULT_SUBTITLE" desc="Subtitle of the sync confirmation option to use the default settings">
-        You can customize this anytime in Chrome Settings
-      </message>
-      <message name="IDS_SYNC_CONFIRMATION_UNITY_OPTIONS_BACK_BUTTON_LABEL" desc="Label of the sync confirmation options button to go to the previous screen">
-        Back
-      </message>
 
       <!-- "Chrome sync" is the Google Cloud Based service used for sync. Thus this string resource is set to "Chrome sync" even for Chromium builds. -->
       <message name="IDS_SYNC_CONFIRMATION_CHROME_SYNC_TITLE" desc="Title of the chrome sync section of the sync confirmation dialog in the tab modal signin flow" formatter_data="android_java">
@@ -6897,7 +6878,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
 
       <!-- Multiple download warning-->
       <message name="IDS_MULTI_DOWNLOAD_WARNING" desc="Warning invoked if multiple downloads are attempted without user interaction.">
-        This site is attempting to download multiple files. Do you want to allow this?
+        <ph name="ORIGIN">$1<ex>https://backgroundfetch.com</ex></ph> wants to download multiple files
       </message>
       <message name="IDS_MULTI_DOWNLOAD_PERMISSION_FRAGMENT" desc="Permission request shown if multiple downloads are attempted without user interaction and there are multiple permissions requested. Follows a prompt: 'This site would like to:'">
         Download multiple files
@@ -7129,7 +7110,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
         </if>
         <if expr="not chromeos">
           <message name="IDS_SYNC_RELOGIN_LINK_LABEL" desc="The text to display on in the hyperlink when the user needs to sign in again to use sync.">
-            Sign in
+            Sign in again
           </message>
         </if>
         <if expr="chromeos">
@@ -7617,6 +7598,9 @@ Please help our engineers fix this problem. Tell us what happened right before y
         </message>
         <message name="IDS_DEV_TOOLS_CONSOLE_MAC" desc="The Mac menu item for the JavaScript console in the developer submenu of the view menu.">
           JavaScript Console
+        </message>
+        <message name="IDS_DEV_TOOLS_ELEMENTS_MAC" desc="The Mac menu item to inspect elements in the developer submenu of the view menu.">
+          Inspect Elements
         </message>
         <message name="IDS_ALLOW_JAVASCRIPT_APPLE_EVENTS_MAC" desc="The Mac menu item to allow JavaScript from Apple Events in the developer submenu of the view menu.">
           Allow JavaScript from Apple Events

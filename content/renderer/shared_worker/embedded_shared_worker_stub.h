@@ -12,15 +12,15 @@
 #include "base/unguessable_token.h"
 #include "content/common/service_worker/service_worker_provider.mojom.h"
 #include "content/common/shared_worker/shared_worker.mojom.h"
-#include "content/common/shared_worker/shared_worker_host.mojom.h"
-#include "content/common/shared_worker/shared_worker_info.mojom.h"
 #include "content/public/common/renderer_preference_watcher.mojom.h"
 #include "content/public/common/renderer_preferences.h"
 #include "ipc/ipc_listener.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "services/service_manager/public/mojom/interface_provider.mojom.h"
-#include "third_party/blink/public/mojom/shared_worker/shared_worker_main_script_load_params.mojom.h"
+#include "third_party/blink/public/mojom/worker/shared_worker_host.mojom.h"
+#include "third_party/blink/public/mojom/worker/shared_worker_info.mojom.h"
+#include "third_party/blink/public/mojom/worker/worker_main_script_load_params.mojom.h"
 #include "third_party/blink/public/platform/web_content_security_policy.h"
 #include "third_party/blink/public/platform/web_content_settings_client.h"
 #include "third_party/blink/public/platform/web_string.h"
@@ -32,7 +32,6 @@
 namespace blink {
 class WebApplicationCacheHost;
 class WebApplicationCacheHostClient;
-class WebNotificationPresenter;
 class WebSharedWorker;
 }
 
@@ -60,7 +59,7 @@ class EmbeddedSharedWorkerStub : public blink::WebSharedWorkerClient,
                                  public mojom::SharedWorker {
  public:
   EmbeddedSharedWorkerStub(
-      mojom::SharedWorkerInfoPtr info,
+      blink::mojom::SharedWorkerInfoPtr info,
       bool pause_on_start,
       const base::UnguessableToken& devtools_worker_token,
       const RendererPreferences& renderer_preferences,
@@ -71,10 +70,10 @@ class EmbeddedSharedWorkerStub : public blink::WebSharedWorkerClient,
       int appcache_host_id,
       network::mojom::URLLoaderFactoryAssociatedPtrInfo
           main_script_loader_factory,
-      blink::mojom::SharedWorkerMainScriptLoadParamsPtr main_script_load_params,
+      blink::mojom::WorkerMainScriptLoadParamsPtr main_script_load_params,
       std::unique_ptr<URLLoaderFactoryBundleInfo> subresource_loader_factories,
-      mojom::ControllerServiceWorkerInfoPtr controller_info,
-      mojom::SharedWorkerHostPtr host,
+      blink::mojom::ControllerServiceWorkerInfoPtr controller_info,
+      blink::mojom::SharedWorkerHostPtr host,
       mojom::SharedWorkerRequest request,
       service_manager::mojom::InterfaceProviderPtr interface_provider);
   ~EmbeddedSharedWorkerStub() override;
@@ -87,12 +86,11 @@ class EmbeddedSharedWorkerStub : public blink::WebSharedWorkerClient,
   void WorkerScriptLoaded() override;
   void WorkerScriptLoadFailed() override;
   void SelectAppCacheID(long long) override;
-  blink::WebNotificationPresenter* NotificationPresenter() override;
   std::unique_ptr<blink::WebApplicationCacheHost> CreateApplicationCacheHost(
       blink::WebApplicationCacheHostClient*) override;
   std::unique_ptr<blink::WebServiceWorkerNetworkProvider>
   CreateServiceWorkerNetworkProvider() override;
-  std::unique_ptr<blink::WebWorkerFetchContext> CreateWorkerFetchContext(
+  scoped_refptr<blink::WebWorkerFetchContext> CreateWorkerFetchContext(
       blink::WebServiceWorkerNetworkProvider*) override;
   void WaitForServiceWorkerControllerInfo(
       blink::WebServiceWorkerNetworkProvider* web_network_provider,
@@ -112,7 +110,7 @@ class EmbeddedSharedWorkerStub : public blink::WebSharedWorkerClient,
       blink::mojom::DevToolsAgentAssociatedRequest request) override;
 
   mojo::Binding<mojom::SharedWorker> binding_;
-  mojom::SharedWorkerHostPtr host_;
+  blink::mojom::SharedWorkerHostPtr host_;
   const std::string name_;
   bool running_ = false;
   GURL url_;
@@ -139,7 +137,7 @@ class EmbeddedSharedWorkerStub : public blink::WebSharedWorkerClient,
   network::mojom::URLLoaderFactoryAssociatedPtrInfo main_script_loader_factory_;
 
   // NetworkService:
-  mojom::ControllerServiceWorkerInfoPtr controller_info_;
+  blink::mojom::ControllerServiceWorkerInfoPtr controller_info_;
 
   // S13nServiceWorker: The factory bundle used for loading subresources for
   // this shared worker.

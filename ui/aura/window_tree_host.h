@@ -202,8 +202,8 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
   // when the size change takes effect.
   virtual void SetBoundsInPixels(
       const gfx::Rect& bounds_in_pixels,
-      const viz::LocalSurfaceId& local_surface_id = viz::LocalSurfaceId(),
-      base::TimeTicks allocation_time = base::TimeTicks()) = 0;
+      const viz::LocalSurfaceIdAllocation& local_surface_id_allocation =
+          viz::LocalSurfaceIdAllocation()) = 0;
   virtual gfx::Rect GetBoundsInPixels() const = 0;
 
   // Sets the OS capture to the root window.
@@ -248,6 +248,10 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
 
   explicit WindowTreeHost(std::unique_ptr<Window> window = nullptr);
 
+  // Set the cached display device scale factor. This should only be called
+  // during subclass initialization, when the value is needed before InitHost().
+  void IntializeDeviceScaleFactor(float device_scale_factor);
+
   void DestroyCompositor();
   void DestroyDispatcher();
 
@@ -271,8 +275,8 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
   void OnHostMovedInPixels(const gfx::Point& new_location_in_pixels);
   void OnHostResizedInPixels(
       const gfx::Size& new_size_in_pixels,
-      const viz::LocalSurfaceId& local_surface_id = viz::LocalSurfaceId(),
-      base::TimeTicks new_allocation_time = base::TimeTicks());
+      const viz::LocalSurfaceIdAllocation& local_surface_id_allocation =
+          viz::LocalSurfaceIdAllocation());
   void OnHostWorkspaceChanged();
   void OnHostDisplayChanged();
   void OnHostCloseRequested();
@@ -352,6 +356,11 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
   std::unique_ptr<ui::Compositor> compositor_;
 
   // The device scale factor is snapshotted in OnHostResizedInPixels.
+  // NOTE: this value is cached rather than looked up from the Display as it is
+  // entirely possible for the Display to be updated *after* |this|. For
+  // example, display changes on Windows first result in the HWND bounds
+  // changing and are then followed by changes to the set of displays
+  //
   // TODO(ccameron): The size and location from OnHostResizedInPixels and
   // OnHostMovedInPixels should be snapshotted here as well.
   float device_scale_factor_ = 1.f;

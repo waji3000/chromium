@@ -6,6 +6,7 @@
 
 #include <iterator>
 #include <limits>
+#include <utility>
 
 #include "base/logging.h"
 #include "base/strings/string16.h"
@@ -18,19 +19,6 @@
 using base::StringPiece;
 using blink::IndexedDBKey;
 using blink::IndexedDBKeyPath;
-using blink::WebIDBKeyType;
-using blink::kWebIDBKeyTypeArray;
-using blink::kWebIDBKeyTypeBinary;
-using blink::kWebIDBKeyTypeDate;
-using blink::kWebIDBKeyTypeInvalid;
-using blink::kWebIDBKeyTypeMin;
-using blink::kWebIDBKeyTypeNull;
-using blink::kWebIDBKeyTypeNumber;
-using blink::kWebIDBKeyTypeString;
-using blink::WebIDBKeyPathType;
-using blink::kWebIDBKeyPathTypeArray;
-using blink::kWebIDBKeyPathTypeNull;
-using blink::kWebIDBKeyPathTypeString;
 
 namespace content {
 
@@ -172,7 +160,7 @@ void EncodeIDBKey(const IndexedDBKey& value, std::string* into) {
   size_t previous_size = into->size();
   DCHECK(value.IsValid());
   switch (value.type()) {
-    case kWebIDBKeyTypeArray: {
+    case blink::mojom::IDBKeyType::Array: {
       EncodeByte(kIndexedDBKeyArrayTypeByte, into);
       size_t length = value.array().size();
       EncodeVarInt(length, into);
@@ -181,29 +169,29 @@ void EncodeIDBKey(const IndexedDBKey& value, std::string* into) {
       DCHECK_GT(into->size(), previous_size);
       return;
     }
-    case kWebIDBKeyTypeBinary:
+    case blink::mojom::IDBKeyType::Binary:
       EncodeByte(kIndexedDBKeyBinaryTypeByte, into);
       EncodeBinary(value.binary(), into);
       DCHECK_GT(into->size(), previous_size);
       return;
-    case kWebIDBKeyTypeString:
+    case blink::mojom::IDBKeyType::String:
       EncodeByte(kIndexedDBKeyStringTypeByte, into);
       EncodeStringWithLength(value.string(), into);
       DCHECK_GT(into->size(), previous_size);
       return;
-    case kWebIDBKeyTypeDate:
+    case blink::mojom::IDBKeyType::Date:
       EncodeByte(kIndexedDBKeyDateTypeByte, into);
       EncodeDouble(value.date(), into);
       DCHECK_EQ(9u, static_cast<size_t>(into->size() - previous_size));
       return;
-    case kWebIDBKeyTypeNumber:
+    case blink::mojom::IDBKeyType::Number:
       EncodeByte(kIndexedDBKeyNumberTypeByte, into);
       EncodeDouble(value.number(), into);
       DCHECK_EQ(9u, static_cast<size_t>(into->size() - previous_size));
       return;
-    case kWebIDBKeyTypeNull:
-    case kWebIDBKeyTypeInvalid:
-    case kWebIDBKeyTypeMin:
+    case blink::mojom::IDBKeyType::Null:
+    case blink::mojom::IDBKeyType::Invalid:
+    case blink::mojom::IDBKeyType::Min:
     default:
       NOTREACHED();
       EncodeByte(kIndexedDBKeyNullTypeByte, into);
@@ -216,11 +204,11 @@ void EncodeIDBKey(const IndexedDBKey& value, std::string* into) {
       static_cast<unsigned char>(a) == static_cast<unsigned char>(b), \
       "Blink enum and coding byte must match.")
 
-COMPILE_ASSERT_MATCHING_VALUES(kWebIDBKeyPathTypeNull,
+COMPILE_ASSERT_MATCHING_VALUES(blink::mojom::IDBKeyPathType::Null,
                                kIndexedDBKeyPathNullTypeByte);
-COMPILE_ASSERT_MATCHING_VALUES(kWebIDBKeyPathTypeString,
+COMPILE_ASSERT_MATCHING_VALUES(blink::mojom::IDBKeyPathType::String,
                                kIndexedDBKeyPathStringTypeByte);
-COMPILE_ASSERT_MATCHING_VALUES(kWebIDBKeyPathTypeArray,
+COMPILE_ASSERT_MATCHING_VALUES(blink::mojom::IDBKeyPathType::Array,
                                kIndexedDBKeyPathArrayTypeByte);
 
 void EncodeIDBKeyPath(const IndexedDBKeyPath& value, std::string* into) {
@@ -231,13 +219,13 @@ void EncodeIDBKeyPath(const IndexedDBKeyPath& value, std::string* into) {
   EncodeByte(kIndexedDBKeyPathTypeCodedByte2, into);
   EncodeByte(static_cast<char>(value.type()), into);
   switch (value.type()) {
-    case kWebIDBKeyPathTypeNull:
+    case blink::mojom::IDBKeyPathType::Null:
       break;
-    case kWebIDBKeyPathTypeString: {
+    case blink::mojom::IDBKeyPathType::String: {
       EncodeStringWithLength(value.string(), into);
       break;
     }
-    case kWebIDBKeyPathTypeArray: {
+    case blink::mojom::IDBKeyPathType::Array: {
       const std::vector<base::string16>& array = value.array();
       size_t count = array.size();
       EncodeVarInt(count, into);
@@ -390,35 +378,37 @@ bool DecodeIDBKey(StringPiece* slice, std::unique_ptr<IndexedDBKey>* value) {
           return false;
         array.push_back(*key);
       }
-      *value = std::make_unique<IndexedDBKey>(array);
+      *value = std::make_unique<IndexedDBKey>(std::move(array));
       return true;
     }
     case kIndexedDBKeyBinaryTypeByte: {
       std::string binary;
       if (!DecodeBinary(slice, &binary))
         return false;
-      *value = std::make_unique<IndexedDBKey>(binary);
+      *value = std::make_unique<IndexedDBKey>(std::move(binary));
       return true;
     }
     case kIndexedDBKeyStringTypeByte: {
       base::string16 s;
       if (!DecodeStringWithLength(slice, &s))
         return false;
-      *value = std::make_unique<IndexedDBKey>(s);
+      *value = std::make_unique<IndexedDBKey>(std::move(s));
       return true;
     }
     case kIndexedDBKeyDateTypeByte: {
       double d;
       if (!DecodeDouble(slice, &d))
         return false;
-      *value = std::make_unique<IndexedDBKey>(d, kWebIDBKeyTypeDate);
+      *value =
+          std::make_unique<IndexedDBKey>(d, blink::mojom::IDBKeyType::Date);
       return true;
     }
     case kIndexedDBKeyNumberTypeByte: {
       double d;
       if (!DecodeDouble(slice, &d))
         return false;
-      *value = std::make_unique<IndexedDBKey>(d, kWebIDBKeyTypeNumber);
+      *value =
+          std::make_unique<IndexedDBKey>(d, blink::mojom::IDBKeyType::Number);
       return true;
     }
   }
@@ -451,15 +441,16 @@ bool DecodeIDBKeyPath(StringPiece* slice, IndexedDBKeyPath* value) {
 
   slice->remove_prefix(2);
   DCHECK(!slice->empty());
-  WebIDBKeyPathType type = static_cast<WebIDBKeyPathType>((*slice)[0]);
+  blink::mojom::IDBKeyPathType type =
+      static_cast<blink::mojom::IDBKeyPathType>((*slice)[0]);
   slice->remove_prefix(1);
 
   switch (type) {
-    case kWebIDBKeyPathTypeNull:
+    case blink::mojom::IDBKeyPathType::Null:
       DCHECK(slice->empty());
       *value = IndexedDBKeyPath();
       return true;
-    case kWebIDBKeyPathTypeString: {
+    case blink::mojom::IDBKeyPathType::String: {
       base::string16 string;
       if (!DecodeStringWithLength(slice, &string))
         return false;
@@ -467,7 +458,7 @@ bool DecodeIDBKeyPath(StringPiece* slice, IndexedDBKeyPath* value) {
       *value = IndexedDBKeyPath(string);
       return true;
     }
-    case kWebIDBKeyPathTypeArray: {
+    case blink::mojom::IDBKeyPathType::Array: {
       std::vector<base::string16> array;
       int64_t count;
       if (!DecodeVarInt(slice, &count))
@@ -566,26 +557,26 @@ bool ExtractEncodedIDBKey(StringPiece* slice, std::string* result) {
   return true;
 }
 
-static WebIDBKeyType KeyTypeByteToKeyType(unsigned char type) {
+static blink::mojom::IDBKeyType KeyTypeByteToKeyType(unsigned char type) {
   switch (type) {
     case kIndexedDBKeyNullTypeByte:
-      return kWebIDBKeyTypeInvalid;
+      return blink::mojom::IDBKeyType::Invalid;
     case kIndexedDBKeyArrayTypeByte:
-      return kWebIDBKeyTypeArray;
+      return blink::mojom::IDBKeyType::Array;
     case kIndexedDBKeyBinaryTypeByte:
-      return kWebIDBKeyTypeBinary;
+      return blink::mojom::IDBKeyType::Binary;
     case kIndexedDBKeyStringTypeByte:
-      return kWebIDBKeyTypeString;
+      return blink::mojom::IDBKeyType::String;
     case kIndexedDBKeyDateTypeByte:
-      return kWebIDBKeyTypeDate;
+      return blink::mojom::IDBKeyType::Date;
     case kIndexedDBKeyNumberTypeByte:
-      return kWebIDBKeyTypeNumber;
+      return blink::mojom::IDBKeyType::Number;
     case kIndexedDBKeyMinKeyTypeByte:
-      return kWebIDBKeyTypeMin;
+      return blink::mojom::IDBKeyType::Min;
   }
 
   NOTREACHED();
-  return kWebIDBKeyTypeInvalid;
+  return blink::mojom::IDBKeyType::Invalid;
 }
 
 int CompareEncodedStringsWithLength(StringPiece* slice1,
@@ -678,7 +669,10 @@ static inline int CompareSizes(size_t a, size_t b) {
   return 0;
 }
 
-static int CompareTypes(WebIDBKeyType a, WebIDBKeyType b) { return b - a; }
+static int CompareTypes(blink::mojom::IDBKeyType a,
+                        blink::mojom::IDBKeyType b) {
+  return static_cast<int32_t>(b) - static_cast<int32_t>(a);
+}
 
 int CompareEncodedIDBKeys(StringPiece* slice_a,
                           StringPiece* slice_b,

@@ -65,7 +65,7 @@ ConvolverHandler::~ConvolverHandler() {
   Uninitialize();
 }
 
-void ConvolverHandler::Process(size_t frames_to_process) {
+void ConvolverHandler::Process(uint32_t frames_to_process) {
   AudioBus* output_bus = Output(0).Bus();
   DCHECK(output_bus);
 
@@ -110,7 +110,7 @@ void ConvolverHandler::SetBuffer(AudioBuffer* buffer,
   }
 
   unsigned number_of_channels = buffer->numberOfChannels();
-  size_t buffer_length = buffer->length();
+  uint32_t buffer_length = buffer->length();
 
   // The current implementation supports only 1-, 2-, or 4-channel impulse
   // responses, with the 4-channel response being interpreted as true-stereo
@@ -202,7 +202,7 @@ unsigned ConvolverHandler::ComputeNumberOfOutputChannels(
   return clampTo(std::max(input_channels, response_channels), 1, 2);
 }
 
-void ConvolverHandler::SetChannelCount(unsigned long channel_count,
+void ConvolverHandler::SetChannelCount(unsigned channel_count,
                                        ExceptionState& exception_state) {
   DCHECK(IsMainThread());
   BaseAudioContext::GraphAutoLocker locker(Context());
@@ -273,7 +273,7 @@ ConvolverNode* ConvolverNode::Create(BaseAudioContext& context,
     return nullptr;
   }
 
-  return new ConvolverNode(context);
+  return MakeGarbageCollected<ConvolverNode>(context);
 }
 
 ConvolverNode* ConvolverNode::Create(BaseAudioContext* context,

@@ -66,6 +66,8 @@
 
 #if BUILDFLAG(ENABLE_MOJO_CDM)
 #include "media/mojo/clients/mojo_cdm_factory.h"  // nogncheck
+#else
+#include "media/cdm/default_cdm_factory.h"
 #endif
 
 #if BUILDFLAG(ENABLE_MOJO_RENDERER)
@@ -137,12 +139,12 @@ namespace content {
 // static
 blink::WebMediaPlayer::SurfaceLayerMode
 MediaFactory::GetVideoSurfaceLayerMode() {
-  // LayoutTests do not support SurfaceLayer by default at the moment.
+  // Web tests do not support SurfaceLayer by default at the moment.
   // See https://crbug.com/838128
   content::RenderThreadImpl* render_thread =
       content::RenderThreadImpl::current();
-  if (render_thread && render_thread->layout_test_mode() &&
-      !render_thread->LayoutTestModeUsesDisplayCompositorPixelDump()) {
+  if (render_thread && render_thread->web_test_mode() &&
+      !render_thread->WebTestModeUsesDisplayCompositorPixelDump()) {
     return blink::WebMediaPlayer::SurfaceLayerMode::kNever;
   }
 
@@ -230,6 +232,10 @@ std::unique_ptr<blink::WebVideoFrameSubmitter> MediaFactory::CreateSubmitter(
             ? render_thread->compositor_task_runner()
             : render_frame_->GetTaskRunner(
                   blink::TaskType::kInternalMediaRealTime);
+
+    // TODO(https://crbug/901513): Remove once kOnDemand is removed.
+    render_thread->SetVideoFrameCompositorTaskRunner(
+        *video_frame_compositor_task_runner);
   }
 
   std::unique_ptr<blink::WebVideoFrameSubmitter> submitter;
@@ -618,6 +624,8 @@ media::CdmFactory* MediaFactory::GetCdmFactory() {
 
 #if BUILDFLAG(ENABLE_MOJO_CDM)
   cdm_factory_.reset(new media::MojoCdmFactory(GetMediaInterfaceFactory()));
+#else
+  cdm_factory_.reset(new media::DefaultCdmFactory());
 #endif  // BUILDFLAG(ENABLE_MOJO_CDM)
 
   return cdm_factory_.get();

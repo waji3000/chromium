@@ -29,6 +29,7 @@
 #include "third_party/blink/public/platform/web_coalesced_input_event.h"
 #include "third_party/blink/renderer/core/dom/events/event_dispatcher.h"
 #include "third_party/blink/renderer/core/dom/events/event_path.h"
+#include "third_party/blink/renderer/core/event_interface_names.h"
 #include "third_party/blink/renderer/core/frame/frame_console.h"
 #include "third_party/blink/renderer/core/frame/intervention.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
@@ -252,7 +253,7 @@ TouchEvent::TouchEvent(const AtomicString& type,
 TouchEvent::~TouchEvent() = default;
 
 const AtomicString& TouchEvent::InterfaceName() const {
-  return EventNames::TouchEvent;
+  return event_interface_names::kTouchEvent;
 }
 
 bool TouchEvent::IsTouchEvent() const {

@@ -90,8 +90,9 @@ OfflineAudioContext* OfflineAudioContext::Create(
   }
 
   OfflineAudioContext* audio_context =
-      new OfflineAudioContext(document, number_of_channels, number_of_frames,
-                              sample_rate, exception_state);
+      MakeGarbageCollected<OfflineAudioContext>(document, number_of_channels,
+                                                number_of_frames, sample_rate,
+                                                exception_state);
   audio_context->PauseIfNeeded();
 
 #if DEBUG_AUDIONODE_REFERENCES
@@ -133,7 +134,7 @@ OfflineAudioContext* OfflineAudioContext::Create(
 
 OfflineAudioContext::OfflineAudioContext(Document* document,
                                          unsigned number_of_channels,
-                                         size_t number_of_frames,
+                                         uint32_t number_of_frames,
                                          float sample_rate,
                                          ExceptionState& exception_state)
     : BaseAudioContext(document, kOfflineContext),
@@ -267,7 +268,8 @@ ScriptPromise OfflineAudioContext::suspendContext(ScriptState* script_state,
 
   // The specified suspend time is in the past; reject the promise.
   if (frame < CurrentSampleFrame()) {
-    size_t current_frame_clamped = std::min(CurrentSampleFrame(), length());
+    size_t current_frame_clamped =
+        std::min(CurrentSampleFrame(), static_cast<size_t>(length()));
     double current_time_clamped =
         std::min(currentTime(), length() / static_cast<double>(sampleRate()));
     resolver->Reject(DOMException::Create(

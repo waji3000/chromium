@@ -117,7 +117,8 @@ class WebFrameSerializerSanitizationTest : public testing::Test {
     String file_path("frameserialization/" + file_name);
     RegisterMockedFileURLLoad(parsed_url, file_path, mime_type);
     frame_test_helpers::LoadFrame(MainFrameImpl(), url.Utf8().data());
-    MainFrameImpl()->GetFrame()->View()->UpdateAllLifecyclePhases();
+    MainFrameImpl()->GetFrame()->View()->UpdateAllLifecyclePhases(
+        DocumentLifecycle::LifecycleUpdateReason::kTest);
   }
 
   String GenerateMHTML(const bool only_body_parts) {
@@ -171,7 +172,8 @@ class WebFrameSerializerSanitizationTest : public testing::Test {
     shadow_root->SetDelegatesFocus(delegates_focus);
     shadow_root->SetInnerHTMLFromString(String::FromUTF8(shadow_content),
                                         ASSERT_NO_EXCEPTION);
-    scope.GetDocument().View()->UpdateAllLifecyclePhases();
+    scope.GetDocument().View()->UpdateAllLifecyclePhases(
+        DocumentLifecycle::LifecycleUpdateReason::kTest);
     return shadow_root;
   }
 
@@ -319,7 +321,7 @@ TEST_F(WebFrameSerializerSanitizationTest, ImageLoadedFromSrcForNormalDPI) {
 }
 
 TEST_F(WebFrameSerializerSanitizationTest, RemovePopupOverlayIfRequested) {
-  WebView()->Resize(WebSize(500, 500));
+  WebView()->MainFrameWidget()->Resize(WebSize(500, 500));
   SetRemovePopupOverlay(true);
   String mhtml = GenerateMHTMLFromHtml("http://www.test.com", "popup.html");
   EXPECT_EQ(WTF::kNotFound, mhtml.Find("class=3D\"overlay"));
@@ -329,7 +331,7 @@ TEST_F(WebFrameSerializerSanitizationTest, RemovePopupOverlayIfRequested) {
 }
 
 TEST_F(WebFrameSerializerSanitizationTest, PopupOverlayNotFound) {
-  WebView()->Resize(WebSize(500, 500));
+  WebView()->MainFrameWidget()->Resize(WebSize(500, 500));
   SetRemovePopupOverlay(true);
   String mhtml =
       GenerateMHTMLFromHtml("http://www.test.com", "text_only_page.html");
@@ -338,7 +340,7 @@ TEST_F(WebFrameSerializerSanitizationTest, PopupOverlayNotFound) {
 }
 
 TEST_F(WebFrameSerializerSanitizationTest, KeepPopupOverlayIfNotRequested) {
-  WebView()->Resize(WebSize(500, 500));
+  WebView()->MainFrameWidget()->Resize(WebSize(500, 500));
   SetRemovePopupOverlay(false);
   String mhtml = GenerateMHTMLFromHtml("http://www.test.com", "popup.html");
   EXPECT_NE(WTF::kNotFound, mhtml.Find("class=3D\"overlay"));

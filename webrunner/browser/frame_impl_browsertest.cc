@@ -101,8 +101,6 @@ IN_PROC_BROWSER_TEST_F(FrameImplTest, NavigateFrame) {
   frame->GetNavigationController(controller.NewRequest());
 
   CheckLoadUrl(url::kAboutBlankURL, url::kAboutBlankURL, controller.get());
-
-  frame.Unbind();
 }
 
 IN_PROC_BROWSER_TEST_F(FrameImplTest, NavigateDataFrame) {
@@ -112,8 +110,6 @@ IN_PROC_BROWSER_TEST_F(FrameImplTest, NavigateDataFrame) {
   frame->GetNavigationController(controller.NewRequest());
 
   CheckLoadUrl(kDataUrl, kDataUrl, controller.get());
-
-  frame.Unbind();
 }
 
 IN_PROC_BROWSER_TEST_F(FrameImplTest, FrameDeletedBeforeContext) {
@@ -145,7 +141,7 @@ IN_PROC_BROWSER_TEST_F(FrameImplTest, ContextDeletedBeforeFrame) {
   EXPECT_TRUE(frame);
 
   base::RunLoop run_loop;
-  frame.set_error_handler([&run_loop]() { run_loop.Quit(); });
+  frame.set_error_handler([&run_loop](zx_status_t status) { run_loop.Quit(); });
   context().Unbind();
   run_loop.Run();
   EXPECT_FALSE(frame);
@@ -416,8 +412,6 @@ IN_PROC_BROWSER_TEST_F(FrameImplTest, ExecuteJavaScriptImmediate) {
                                  Field(&NavigationDetails::url, IsSet()))))
       .WillOnce(InvokeWithoutArgs([&run_loop]() { run_loop.Quit(); }));
   CheckRunWithTimeout(&run_loop);
-
-  frame.Unbind();
 }
 
 IN_PROC_BROWSER_TEST_F(FrameImplTest, ExecuteJavaScriptOnLoad) {
@@ -437,8 +431,6 @@ IN_PROC_BROWSER_TEST_F(FrameImplTest, ExecuteJavaScriptOnLoad) {
   chromium::web::NavigationControllerPtr controller;
   frame->GetNavigationController(controller.NewRequest());
   CheckLoadUrl(url.spec(), "hello", controller.get());
-
-  frame.Unbind();
 }
 
 IN_PROC_BROWSER_TEST_F(FrameImplTest, ExecuteJavascriptOnLoadWrongOrigin) {
@@ -462,8 +454,6 @@ IN_PROC_BROWSER_TEST_F(FrameImplTest, ExecuteJavascriptOnLoadWrongOrigin) {
   // script with a replacement title.
   CheckLoadUrl(url.spec(), "Welcome to Stan the Offline Dino's Homepage",
                controller.get());
-
-  frame.Unbind();
 }
 
 IN_PROC_BROWSER_TEST_F(FrameImplTest, ExecuteJavaScriptOnLoadWildcardOrigin) {
@@ -491,8 +481,6 @@ IN_PROC_BROWSER_TEST_F(FrameImplTest, ExecuteJavaScriptOnLoadWildcardOrigin) {
   // still be picked up by the wildcard.
   GURL alt_url = embedded_test_server()->GetURL("localhost", kDynamicTitlePath);
   CheckLoadUrl(alt_url.spec(), "hello", controller.get());
-
-  frame.Unbind();
 }
 
 // Test that consecutive scripts are executed in order by computing a cumulative
@@ -517,8 +505,6 @@ IN_PROC_BROWSER_TEST_F(FrameImplTest, ExecuteMultipleJavaScriptsOnLoad) {
   chromium::web::NavigationControllerPtr controller;
   frame->GetNavigationController(controller.NewRequest());
   CheckLoadUrl(url.spec(), "hello there", controller.get());
-
-  frame.Unbind();
 }
 
 // Test that we can inject scripts before and after RenderFrame creation.
@@ -550,8 +536,6 @@ IN_PROC_BROWSER_TEST_F(FrameImplTest, ExecuteOnLoadEarlyAndLateRegistrations) {
 
   // Navigate back and see if both scripts are working.
   CheckLoadUrl(url.spec(), "hello there", controller.get());
-
-  frame.Unbind();
 }
 
 IN_PROC_BROWSER_TEST_F(FrameImplTest, ExecuteJavaScriptBadEncoding) {
@@ -577,8 +561,6 @@ IN_PROC_BROWSER_TEST_F(FrameImplTest, ExecuteJavaScriptBadEncoding) {
                              run_loop.Quit();
                            });
   CheckRunWithTimeout(&run_loop);
-
-  frame.Unbind();
 }
 
 // Verifies that a Frame will handle navigation observer disconnection events
@@ -622,7 +604,7 @@ IN_PROC_BROWSER_TEST_F(FrameImplTest, NavigationObserverDisconnected) {
   }
 }
 
-IN_PROC_BROWSER_TEST_F(FrameImplTest, DISABLED_DelayedNavigationEventAck) {
+IN_PROC_BROWSER_TEST_F(FrameImplTest, DelayedNavigationEventAck) {
   chromium::web::FramePtr frame = CreateFrame();
 
   chromium::web::NavigationControllerPtr controller;
@@ -731,6 +713,269 @@ IN_PROC_BROWSER_TEST_F(FrameImplTest, Stop) {
 
   EXPECT_FALSE(
       context_impl()->GetFrameImplForTest(&frame)->web_contents_->IsLoading());
+}
+
+fuchsia::mem::Buffer MemBufferFromString(const std::string& data) {
+  fuchsia::mem::Buffer buffer;
+
+  zx_status_t status =
+      zx::vmo::create(data.size(), ZX_VMO_NON_RESIZABLE, &buffer.vmo);
+  ZX_CHECK(status == ZX_OK, status) << "zx_vmo_create";
+
+  status = buffer.vmo.write(data.data(), 0, data.size());
+  ZX_CHECK(status == ZX_OK, status) << "zx_vmo_write";
+
+  buffer.size = data.size();
+  return buffer;
+}
+
+// Reads a UTF-8 string from |buffer|.
+std::string ReadFromBufferOrDie(const fuchsia::mem::Buffer& buffer) {
+  std::string output;
+  output.resize(buffer.size);
+  zx_status_t status = buffer.vmo.read(&output[0], 0, buffer.size);
+  ZX_CHECK(status == ZX_OK, status) << "zx_vmo_read";
+  return output;
+}
+
+IN_PROC_BROWSER_TEST_F(FrameImplTest, PostMessage) {
+  chromium::web::FramePtr frame = CreateFrame();
+
+  ASSERT_TRUE(embedded_test_server()->Start());
+  GURL post_message_url(
+      embedded_test_server()->GetURL("/window_post_message.html"));
+
+  chromium::web::NavigationControllerPtr controller;
+  frame->GetNavigationController(controller.NewRequest());
+  CheckLoadUrl(post_message_url.spec(), "postmessage", controller.get());
+
+  chromium::web::WebMessage message;
+  message.data = MemBufferFromString(kPage1Path);
+  Promise<bool> post_result;
+  frame->PostMessage(std::move(message), post_message_url.GetOrigin().spec(),
+                     post_result.GetReceiveCallback());
+  base::RunLoop run_loop;
+  EXPECT_CALL(navigation_observer_,
+              MockableOnNavigationStateChanged(
+                  testing::AllOf(Field(&NavigationDetails::title, kPage1Title),
+                                 Field(&NavigationDetails::url, IsSet()))))
+      .WillOnce(InvokeWithoutArgs([&run_loop]() { run_loop.Quit(); }));
+  CheckRunWithTimeout(&run_loop);
+  EXPECT_TRUE(*post_result);
+}
+
+// Send a MessagePort to the content, then perform bidirectional messaging
+// through the port.
+IN_PROC_BROWSER_TEST_F(FrameImplTest, PostMessagePassMessagePort) {
+  chromium::web::FramePtr frame = CreateFrame();
+
+  ASSERT_TRUE(embedded_test_server()->Start());
+  GURL post_message_url(embedded_test_server()->GetURL("/message_port.html"));
+
+  chromium::web::NavigationControllerPtr controller;
+  frame->GetNavigationController(controller.NewRequest());
+  CheckLoadUrl(post_message_url.spec(), "messageport", controller.get());
+
+  chromium::web::MessagePortPtr message_port;
+  chromium::web::WebMessage msg;
+  {
+    msg.outgoing_transfer =
+        std::make_unique<chromium::web::OutgoingTransferable>();
+    msg.outgoing_transfer->set_message_port(message_port.NewRequest());
+    msg.data = MemBufferFromString("hi");
+    Promise<bool> post_result;
+    frame->PostMessage(std::move(msg), post_message_url.GetOrigin().spec(),
+                       post_result.GetReceiveCallback());
+
+    base::RunLoop run_loop;
+    Promise<chromium::web::WebMessage> receiver(run_loop.QuitClosure());
+    message_port->ReceiveMessage(receiver.GetReceiveCallback());
+    CheckRunWithTimeout(&run_loop);
+    EXPECT_EQ("got_port", ReadFromBufferOrDie(receiver->data));
+  }
+
+  {
+    msg.data = MemBufferFromString("ping");
+    Promise<bool> post_result;
+    message_port->PostMessage(std::move(msg), post_result.GetReceiveCallback());
+    base::RunLoop run_loop;
+    Promise<chromium::web::WebMessage> receiver(run_loop.QuitClosure());
+    message_port->ReceiveMessage(receiver.GetReceiveCallback());
+    CheckRunWithTimeout(&run_loop);
+    EXPECT_EQ("ack ping", ReadFromBufferOrDie(receiver->data));
+    EXPECT_TRUE(*post_result);
+  }
+}
+
+// Send a MessagePort to the content, then perform bidirectional messaging
+// over its channel.
+IN_PROC_BROWSER_TEST_F(FrameImplTest, PostMessageMessagePortDisconnected) {
+  chromium::web::FramePtr frame = CreateFrame();
+
+  ASSERT_TRUE(embedded_test_server()->Start());
+  GURL post_message_url(embedded_test_server()->GetURL("/message_port.html"));
+
+  chromium::web::NavigationControllerPtr controller;
+  frame->GetNavigationController(controller.NewRequest());
+  CheckLoadUrl(post_message_url.spec(), "messageport", controller.get());
+
+  chromium::web::MessagePortPtr message_port;
+  chromium::web::WebMessage msg;
+  {
+    msg.outgoing_transfer =
+        std::make_unique<chromium::web::OutgoingTransferable>();
+    msg.outgoing_transfer->set_message_port(message_port.NewRequest());
+    msg.data = MemBufferFromString("hi");
+    Promise<bool> post_result;
+    frame->PostMessage(std::move(msg), post_message_url.GetOrigin().spec(),
+                       post_result.GetReceiveCallback());
+
+    base::RunLoop run_loop;
+    Promise<chromium::web::WebMessage> receiver(run_loop.QuitClosure());
+    message_port->ReceiveMessage(receiver.GetReceiveCallback());
+    CheckRunWithTimeout(&run_loop);
+    EXPECT_EQ("got_port", ReadFromBufferOrDie(receiver->data));
+    EXPECT_TRUE(*post_result);
+  }
+
+  // Navigating off-page should tear down the Mojo channel, thereby causing the
+  // MessagePortImpl to self-destruct and tear down its FIDL channel.
+  {
+    base::RunLoop run_loop;
+    message_port.set_error_handler(
+        [&run_loop](zx_status_t) { run_loop.Quit(); });
+    controller->LoadUrl(url::kAboutBlankURL, nullptr);
+    CheckRunWithTimeout(&run_loop);
+  }
+}
+
+// Send a MessagePort to the content, and through that channel, receive a
+// different MessagePort that was created by the content. Verify the second
+// channel's liveness by sending a ping to it.
+IN_PROC_BROWSER_TEST_F(FrameImplTest, PostMessageUseContentProvidedPort) {
+  chromium::web::FramePtr frame = CreateFrame();
+
+  ASSERT_TRUE(embedded_test_server()->Start());
+  GURL post_message_url(embedded_test_server()->GetURL("/message_port.html"));
+
+  chromium::web::NavigationControllerPtr controller;
+  frame->GetNavigationController(controller.NewRequest());
+  CheckLoadUrl(post_message_url.spec(), "messageport", controller.get());
+
+  chromium::web::MessagePortPtr incoming_message_port;
+  chromium::web::WebMessage msg;
+  {
+    chromium::web::MessagePortPtr message_port;
+    msg.outgoing_transfer =
+        std::make_unique<chromium::web::OutgoingTransferable>();
+    msg.outgoing_transfer->set_message_port(message_port.NewRequest());
+    msg.data = MemBufferFromString("hi");
+    Promise<bool> post_result;
+    frame->PostMessage(std::move(msg), "*", post_result.GetReceiveCallback());
+
+    base::RunLoop run_loop;
+    Promise<chromium::web::WebMessage> receiver(run_loop.QuitClosure());
+    message_port->ReceiveMessage(receiver.GetReceiveCallback());
+    CheckRunWithTimeout(&run_loop);
+    EXPECT_EQ("got_port", ReadFromBufferOrDie(receiver->data));
+    incoming_message_port = receiver->incoming_transfer->message_port().Bind();
+    EXPECT_TRUE(*post_result);
+  }
+
+  // Get the content to send three 'ack ping' messages, which will accumulate in
+  // the MessagePortImpl buffer.
+  for (int i = 0; i < 3; ++i) {
+    base::RunLoop run_loop;
+    Promise<bool> post_result(run_loop.QuitClosure());
+    msg.data = MemBufferFromString("ping");
+    incoming_message_port->PostMessage(std::move(msg),
+                                       post_result.GetReceiveCallback());
+    run_loop.Run();
+    EXPECT_TRUE(*post_result);
+  }
+
+  // Receive another acknowledgement from content on a side channel to ensure
+  // that all the "ack pings" are ready to be consumed.
+  {
+    chromium::web::MessagePortPtr ack_message_port;
+    chromium::web::WebMessage msg;
+    msg.outgoing_transfer =
+        std::make_unique<chromium::web::OutgoingTransferable>();
+    msg.outgoing_transfer->set_message_port(ack_message_port.NewRequest());
+    msg.data = MemBufferFromString("hi");
+
+    // Quit the runloop only after we've received a WebMessage AND a PostMessage
+    // result.
+    Promise<bool> post_result;
+    frame->PostMessage(std::move(msg), "*", post_result.GetReceiveCallback());
+    base::RunLoop run_loop;
+    Promise<chromium::web::WebMessage> receiver(run_loop.QuitClosure());
+    ack_message_port->ReceiveMessage(receiver.GetReceiveCallback());
+    CheckRunWithTimeout(&run_loop);
+    EXPECT_EQ("got_port", ReadFromBufferOrDie(receiver->data));
+    EXPECT_TRUE(*post_result);
+  }
+
+  // Pull the three 'ack ping's from the buffer.
+  for (int i = 0; i < 3; ++i) {
+    base::RunLoop run_loop;
+    Promise<chromium::web::WebMessage> receiver(run_loop.QuitClosure());
+    incoming_message_port->ReceiveMessage(receiver.GetReceiveCallback());
+    CheckRunWithTimeout(&run_loop);
+    EXPECT_EQ("ack ping", ReadFromBufferOrDie(receiver->data));
+  }
+}
+
+IN_PROC_BROWSER_TEST_F(FrameImplTest, PostMessageBadOriginDropped) {
+  chromium::web::FramePtr frame = CreateFrame();
+
+  ASSERT_TRUE(embedded_test_server()->Start());
+  GURL post_message_url(embedded_test_server()->GetURL("/message_port.html"));
+
+  chromium::web::NavigationControllerPtr controller;
+  frame->GetNavigationController(controller.NewRequest());
+  CheckLoadUrl(post_message_url.spec(), "messageport", controller.get());
+
+  chromium::web::MessagePortPtr bad_origin_incoming_message_port;
+  chromium::web::WebMessage msg;
+
+  // PostMessage() to invalid origins should be ignored. We pass in a
+  // MessagePort but nothing should happen to it.
+  chromium::web::MessagePortPtr unused_message_port;
+  msg.outgoing_transfer =
+      std::make_unique<chromium::web::OutgoingTransferable>();
+  msg.outgoing_transfer->set_message_port(unused_message_port.NewRequest());
+  msg.data = MemBufferFromString("bad origin, bad!");
+  Promise<bool> unused_post_result;
+  frame->PostMessage(std::move(msg), "https://example.com",
+                     unused_post_result.GetReceiveCallback());
+  Promise<chromium::web::WebMessage> unused_message_read;
+  bad_origin_incoming_message_port->ReceiveMessage(
+      unused_message_read.GetReceiveCallback());
+
+  // PostMessage() with a valid origin should succeed.
+  // Verify it by looking for an ack message on the MessagePort we passed in.
+  // Since message events are handled in order, observing the result of this
+  // operation will verify whether the previous PostMessage() was received but
+  // discarded.
+  chromium::web::MessagePortPtr incoming_message_port;
+  chromium::web::MessagePortPtr message_port;
+  msg.outgoing_transfer =
+      std::make_unique<chromium::web::OutgoingTransferable>();
+  msg.outgoing_transfer->set_message_port(message_port.NewRequest());
+  msg.data = MemBufferFromString("good origin");
+  Promise<bool> post_result;
+  frame->PostMessage(std::move(msg), "*", post_result.GetReceiveCallback());
+  base::RunLoop run_loop;
+  Promise<chromium::web::WebMessage> receiver(run_loop.QuitClosure());
+  message_port->ReceiveMessage(receiver.GetReceiveCallback());
+  CheckRunWithTimeout(&run_loop);
+  EXPECT_EQ("got_port", ReadFromBufferOrDie(receiver->data));
+  incoming_message_port = receiver->incoming_transfer->message_port().Bind();
+  EXPECT_TRUE(*post_result);
+
+  // Verify that the first PostMessage() call wasn't handled.
+  EXPECT_FALSE(unused_message_read.has_value());
 }
 
 }  // namespace webrunner

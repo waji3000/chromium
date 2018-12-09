@@ -17,8 +17,8 @@
 #include "ash/login/ui/login_data_dispatcher.h"
 #include "ash/login/ui/login_display_style.h"
 #include "ash/login/ui/non_accessible_view.h"
+#include "ash/public/cpp/system_tray_focus_observer.h"
 #include "ash/session/session_observer.h"
-#include "ash/system/system_tray_focus_observer.h"
 #include "base/macros.h"
 #include "base/optional.h"
 #include "base/scoped_observer.h"
@@ -84,6 +84,7 @@ class ASH_EXPORT LockContentsView
     LoginBubble* auth_error_bubble() const;
     LoginBubble* detachable_base_error_bubble() const;
     LoginBubble* warning_banner_bubble() const;
+    LoginBubble* supervised_user_deprecation_bubble() const;
     views::View* system_info() const;
     LoginExpandedPublicAccountView* expanded_view() const;
     views::View* main_view() const;
@@ -175,6 +176,8 @@ class ASH_EXPORT LockContentsView
       const AccountId& account_id,
       const std::string& locale,
       const std::vector<mojom::InputMethodItemPtr>& keyboard_layouts) override;
+  void OnPublicSessionShowFullManagementDisclosureChanged(
+      bool show_full_management_disclosure) override;
   void OnDetachableBasePairingStatusChanged(
       DetachableBasePairingStatus pairing_status) override;
 
@@ -193,7 +196,7 @@ class ASH_EXPORT LockContentsView
   void OnLockStateChanged(bool locked) override;
 
   // keyboard::KeyboardControllerObserver:
-  void OnStateChanged(const keyboard::KeyboardControllerState state) override;
+  void OnKeyboardVisibilityStateChanged(bool is_visible) override;
 
   // chromeos::PowerManagerClient::Observer:
   void SuspendImminent(power_manager::SuspendImminent::Reason reason) override;
@@ -302,7 +305,7 @@ class ASH_EXPORT LockContentsView
   // Returns keyboard controller for the view. Returns nullptr if keyboard is
   // not activated, view has not been added to the widget yet or keyboard is not
   // displayed in this window.
-  keyboard::KeyboardController* GetKeyboardController() const;
+  keyboard::KeyboardController* GetKeyboardControllerForView() const;
 
   // Called when the public account is tapped.
   void OnPublicAccountTapped(bool is_primary);
@@ -328,10 +331,6 @@ class ASH_EXPORT LockContentsView
 
   // Change the visibility of child views based on the |style|.
   void SetDisplayStyle(DisplayStyle style);
-
-  // Set the lock screen note state to |mojom::TrayActionState::kNotAvailable|.
-  // All the subsequent calls of |OnLockScreenNoteStateChanged| will be ignored.
-  void DisableLockScreenNote();
 
   // Register accelerators used in login screen.
   void RegisterAccelerators();
@@ -384,6 +383,9 @@ class ASH_EXPORT LockContentsView
   // Bubble for displaying warning banner message.
   std::unique_ptr<LoginBubble> warning_banner_bubble_;
 
+  // Bubble for displaying supervised user deprecation message.
+  std::unique_ptr<LoginBubble> supervised_user_deprecation_bubble_;
+
   int unlock_attempt_ = 0;
 
   // Whether a lock screen app is currently active (i.e. lock screen note action
@@ -397,9 +399,8 @@ class ASH_EXPORT LockContentsView
   // Expanded view for public account user to select language and keyboard.
   LoginExpandedPublicAccountView* expanded_view_ = nullptr;
 
-  // Whether the virtual keyboard is currently shown. Only changes when the
-  // keyboard state changes to KeyboardControllerState::SHOWN or to
-  // KeyboardControllerState::HIDDEN.
+  // Whether the virtual keyboard is currently shown. Used to determine whether
+  // to show the PIN keyboard or not.
   bool keyboard_shown_ = false;
 
   // Accelerators handled by login screen.

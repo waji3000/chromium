@@ -29,12 +29,15 @@
 #include "components/previews/content/previews_ui_service.h"
 #include "components/previews/core/previews_experiments.h"
 #include "components/previews/core/previews_features.h"
+#include "components/previews/core/previews_lite_page_redirect.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "net/http/http_response_headers.h"
+#include "services/network/public/cpp/features.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 
@@ -84,11 +87,29 @@ bool ShouldShowUIForPreviewsType(previews::PreviewsType type) {
   if (type == previews::PreviewsType::NONE)
     return false;
 
-  // Show the UI for LoFi at commit if the UI is the Android Omnibox.
-  if (type == previews::PreviewsType::LOFI)
-    return previews::params::IsPreviewsOmniboxUiEnabled();
-
+  // Show the UI for LoFi at commit if the UI is the Android Omnibox or when
+  // network-service is enabled.
+  if (type == previews::PreviewsType::LOFI) {
+    return previews::params::IsPreviewsOmniboxUiEnabled() ||
+           base::FeatureList::IsEnabled(network::features::kNetworkService);
+  }
   return true;
+}
+
+void LoadOriginalForLitePageRedirect(content::WebContents* web_contents) {
+  std::string original_url;
+  bool extracted = previews::ExtractOriginalURLFromLitePageRedirectURL(
+      web_contents->GetController().GetLastCommittedEntry()->GetURL(),
+      &original_url);
+  ALLOW_UNUSED_LOCAL(extracted);
+  DCHECK(extracted);
+  content::OpenURLParams url_params(GURL(original_url), content::Referrer(),
+                                    WindowOpenDisposition::CURRENT_TAB,
+                                    ui::PAGE_TRANSITION_RELOAD,
+                                    false /* is_render_initiated */);
+  url_params.user_gesture = true;
+  url_params.started_from_context_menu = false;
+  web_contents->OpenURL(url_params);
 }
 
 }  // namespace
@@ -120,6 +141,7 @@ void PreviewsUITabHelper::ShowUIElement(
 
 #if defined(OS_ANDROID)
   if (previews::params::IsPreviewsOmniboxUiEnabled()) {
+    displayed_preview_ui_ = true;
     should_display_android_omnibox_badge_ = true;
     return;
   }
@@ -211,7 +233,6 @@ void PreviewsUITabHelper::ReloadWithoutPreviews(
     std::move(on_dismiss_callback_).Run(true);
   switch (previews_type) {
     case previews::PreviewsType::LITE_PAGE:
-    case previews::PreviewsType::LITE_PAGE_REDIRECT:
     case previews::PreviewsType::OFFLINE:
     case previews::PreviewsType::NOSCRIPT:
     case previews::PreviewsType::RESOURCE_LOADING_HINTS:
@@ -222,6 +243,9 @@ void PreviewsUITabHelper::ReloadWithoutPreviews(
       break;
     case previews::PreviewsType::LOFI:
       web_contents()->ReloadLoFiImages();
+      break;
+    case previews::PreviewsType::LITE_PAGE_REDIRECT:
+      LoadOriginalForLitePageRedirect(web_contents());
       break;
     case previews::PreviewsType::NONE:
     case previews::PreviewsType::UNSPECIFIED:
@@ -388,3 +412,5 @@ void PreviewsUITabHelper::RemovePreviewsUserData(int64_t navigation_id) {
 const void* PreviewsUITabHelper::OptOutEventKey() {
   return &kOptOutEventKey;
 }
+
+WEB_CONTENTS_USER_DATA_KEY_IMPL(PreviewsUITabHelper)

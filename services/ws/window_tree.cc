@@ -257,6 +257,8 @@ void WindowTree::RequestClose(ServerWindow* window) {
 }
 
 void WindowTree::OnEmbeddingDestroyed(Embedding* embedding) {
+  DVLOG(3) << "OnEmbeddingDestroyed client=" << client_id_
+           << " window=" << ClientWindowIdForWindow(embedding->window());
   auto iter = FindClientRootWithRoot(embedding->window());
   DCHECK(iter != client_roots_.end());
   window_tree_client_->OnWindowDeleted(
@@ -315,6 +317,11 @@ bool WindowTree::HasAtLeastOneRootWithCompositorFrameSink() {
 
 bool WindowTree::IsWindowKnown(aura::Window* window) const {
   return window && known_windows_map_.count(window) > 0u;
+}
+
+Id WindowTree::TransportIdForWindow(aura::Window* window) const {
+  DCHECK(IsWindowKnown(window));
+  return ClientWindowIdToTransportId(ClientWindowIdForWindow(window));
 }
 
 ClientWindowId WindowTree::ClientWindowIdForWindow(aura::Window* window) const {
@@ -638,11 +645,6 @@ Id WindowTree::ClientWindowIdToTransportId(
   return (client_id << 32) | client_window_id.sink_id();
 }
 
-Id WindowTree::TransportIdForWindow(aura::Window* window) const {
-  DCHECK(IsWindowKnown(window));
-  return ClientWindowIdToTransportId(ClientWindowIdForWindow(window));
-}
-
 ClientWindowId WindowTree::MakeClientWindowId(Id transport_window_id) const {
   if (!ClientIdFromTransportId(transport_window_id))
     return ClientWindowId(client_id_, transport_window_id);
@@ -773,8 +775,12 @@ bool WindowTree::DeleteWindowImpl(const ClientWindowId& window_id) {
   DVLOG(3) << "deleting window client=" << client_id_
            << " client window_id=" << window_id.ToString();
   if (!window) {
-    DVLOG(1) << "DeleteWindow failed (no window)";
-    return false;
+    DVLOG(1) << "DeleteWindow: no window, returning true anyway";
+    // Even though there is no window, return true. This way, if both sides
+    // try to delete the window at the same time, there is no race. Deletion
+    // at the same should generally only happen for embed roots, but shutdown
+    // paths (in Ash) may also trigger deletion.
+    return true;
   }
 
   const bool is_client_created_window = IsClientCreatedWindow(window);

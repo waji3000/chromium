@@ -42,9 +42,9 @@ void JSEventHandler::SetCompiledHandler(
 }
 
 // https://html.spec.whatwg.org/C/webappapis.html#the-event-handler-processing-algorithm
-void JSEventHandler::CallListenerFunction(EventTarget& event_target,
-                                          Event& event,
-                                          v8::Local<v8::Value> js_event) {
+void JSEventHandler::InvokeInternal(EventTarget& event_target,
+                                    Event& event,
+                                    v8::Local<v8::Value> js_event) {
   DCHECK(!js_event.IsEmpty());
 
   // Step 1. Let callback be the result of getting the current value of the
@@ -103,8 +103,23 @@ void JSEventHandler::CallListenerFunction(EventTarget& event_target,
     arguments = {ScriptValue::From(script_state_of_listener, js_event)};
   }
 
+  const bool is_beforeunload_event =
+      event.IsBeforeUnloadEvent() &&
+      event.type() == event_type_names::kBeforeunload;
+  const bool is_print_event =
+      // TODO(yukishiino): Should check event.Is{Before,After}PrintEvent.
+      event.type() == event_type_names::kBeforeprint ||
+      event.type() == event_type_names::kAfterprint;
+  if (!event_handler_->IsRunnableOrThrowException(
+          (is_beforeunload_event || is_print_event)
+              ? V8EventHandlerNonNull::IgnorePause::kIgnore
+              : V8EventHandlerNonNull::IgnorePause::kDontIgnore)) {
+    return;
+  }
   ScriptValue result;
-  if (!event_handler_->Invoke(event.currentTarget(), arguments).To(&result) ||
+  if (!event_handler_
+           ->InvokeWithoutRunnabilityCheck(event.currentTarget(), arguments)
+           .To(&result) ||
       GetIsolate()->IsExecutionTerminating())
     return;
   v8::Local<v8::Value> v8_return_value = result.V8Value();
@@ -124,7 +139,7 @@ void JSEventHandler::CallListenerFunction(EventTarget& event_target,
   String result_for_beforeunload;
   if (IsOnBeforeUnloadEventHandler()) {
     // TODO(yukiy): use |NativeValueTraits|.
-    V8StringResource<> native_result(v8_return_value);
+    V8StringResource<kTreatNullAsNullString> native_result(v8_return_value);
 
     // |native_result.Prepare()| throws exception if it fails to convert
     // |native_result| to String.
@@ -148,13 +163,13 @@ void JSEventHandler::CallListenerFunction(EventTarget& event_target,
   //             then return value will never be false, since in such cases
   //             return value will have been coerced into either null or a
   //             DOMString.
-  if (event.IsBeforeUnloadEvent() &&
-      event.type() == event_type_names::kBeforeunload) {
-    DCHECK(result_for_beforeunload);
-    event.preventDefault();
-    BeforeUnloadEvent* before_unload_event = ToBeforeUnloadEvent(&event);
-    if (before_unload_event->returnValue().IsEmpty())
-      before_unload_event->setReturnValue(result_for_beforeunload);
+  if (is_beforeunload_event) {
+    if (result_for_beforeunload) {
+      event.preventDefault();
+      BeforeUnloadEvent* before_unload_event = ToBeforeUnloadEvent(&event);
+      if (before_unload_event->returnValue().IsEmpty())
+        before_unload_event->setReturnValue(result_for_beforeunload);
+    }
   } else if (!IsOnBeforeUnloadEventHandler()) {
     if (special_error_event_handling && v8_return_value->IsBoolean() &&
         v8_return_value.As<v8::Boolean>()->Value())

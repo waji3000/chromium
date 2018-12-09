@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/views/frame/browser_non_client_frame_view_mac.h"
 
+#include "base/command_line.h"
 #include "base/metrics/histogram_macros.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/themes/theme_service.h"
@@ -11,6 +12,7 @@
 #include "chrome/browser/ui/cocoa/fullscreen/fullscreen_menubar_tracker.h"
 #include "chrome/browser/ui/cocoa/fullscreen/fullscreen_toolbar_controller_views.h"
 #include "chrome/browser/ui/exclusive_access/fullscreen_controller.h"
+#include "chrome/browser/ui/extensions/hosted_app_browser_controller.h"
 #include "chrome/browser/ui/layout_constants.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
 #include "chrome/browser/ui/views/frame/browser_frame.h"
@@ -18,6 +20,7 @@
 #include "chrome/browser/ui/views/frame/browser_view_layout.h"
 #include "chrome/browser/ui/views/frame/hosted_app_button_container.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/prefs/pref_service.h"
 #include "ui/base/hit_test.h"
@@ -31,6 +34,9 @@ constexpr int kFramePaddingLeft = 75;
 
 FullscreenToolbarStyle GetUserPreferredToolbarStyle(
     const PrefService* pref_service) {
+  // In Kiosk mode, we don't show top Chrome UI.
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kKioskMode))
+    return FullscreenToolbarStyle::TOOLBAR_NONE;
   return pref_service->GetBoolean(prefs::kShowFullscreenToolbar)
              ? FullscreenToolbarStyle::TOOLBAR_PRESENT
              : FullscreenToolbarStyle::TOOLBAR_HIDDEN;
@@ -58,10 +64,14 @@ BrowserNonClientFrameViewMac::BrowserNonClientFrameViewMac(
                           base::Unretained(this), true));
 
   if (browser_view->IsBrowserTypeHostedApp()) {
-    set_hosted_app_button_container(new HostedAppButtonContainer(
-        frame, browser_view, GetReadableFrameForegroundColor(kActive),
-        GetReadableFrameForegroundColor(kInactive), kHostedAppMenuMargin));
-    AddChildView(hosted_app_button_container());
+    if (browser_view->browser()
+            ->hosted_app_controller()
+            ->ShouldShowHostedAppButtonContainer()) {
+      set_hosted_app_button_container(new HostedAppButtonContainer(
+          frame, browser_view, GetReadableFrameForegroundColor(kActive),
+          GetReadableFrameForegroundColor(kInactive), kHostedAppMenuMargin));
+      AddChildView(hosted_app_button_container());
+    }
 
     DCHECK(browser_view->ShouldShowWindowTitle());
     window_title_ = new views::Label(browser_view->GetWindowTitle());
@@ -114,9 +124,11 @@ gfx::Rect BrowserNonClientFrameViewMac::GetBoundsForTabStrip(
 }
 
 int BrowserNonClientFrameViewMac::GetTopInset(bool restored) const {
-  if (browser_view()->IsBrowserTypeHostedApp())
+  if (hosted_app_button_container()) {
+    DCHECK(browser_view()->IsBrowserTypeHostedApp());
     return hosted_app_button_container()->GetPreferredSize().height() +
            kHostedAppMenuMargin * 2;
+  }
 
   if (!browser_view()->IsTabStripVisible())
     return 0;
@@ -184,8 +196,6 @@ void BrowserNonClientFrameViewMac::UpdateFullscreenTopUI(
   // Re-layout if toolbar style changes in fullscreen mode.
   if (frame()->IsFullscreen())
     browser_view()->Layout();
-
-  [FullscreenToolbarController recordToolbarStyle:new_style];
 }
 
 bool BrowserNonClientFrameViewMac::ShouldHideTopUIForFullscreen() const {

@@ -4,7 +4,9 @@
 
 #include "services/network/test/test_network_service_client.h"
 
+#include "base/optional.h"
 #include "base/task/post_task.h"
+#include "base/unguessable_token.h"
 
 namespace network {
 
@@ -40,6 +42,7 @@ void TestNetworkServiceClient::OnAuthRequired(
 }
 
 void TestNetworkServiceClient::OnCertificateRequested(
+    const base::Optional<base::UnguessableToken>& window_id,
     uint32_t process_id,
     uint32_t routing_id,
     uint32_t request_id,
@@ -80,7 +83,7 @@ void TestNetworkServiceClient::OnCookieChange(
 }
 
 #if defined(OS_CHROMEOS)
-void TestNetworkServiceClient::OnUsedTrustAnchor(
+void TestNetworkServiceClient::OnTrustAnchorUsed(
     const std::string& username_hash) {
   NOTREACHED();
 }

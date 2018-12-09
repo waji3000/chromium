@@ -85,21 +85,24 @@ jlong AwGLFunctor::GetAwDrawGLViewContext(
   return reinterpret_cast<intptr_t>(&render_thread_manager_);
 }
 
-static jint JNI_AwGLFunctor_GetNativeInstanceCount(
+jlong AwGLFunctor::GetCompositorFrameConsumer(
     JNIEnv* env,
-    const JavaParamRef<jclass>&) {
+    const base::android::JavaParamRef<jobject>& obj) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  return reinterpret_cast<intptr_t>(GetCompositorFrameConsumer());
+}
+
+static jint JNI_AwGLFunctor_GetNativeInstanceCount(JNIEnv* env) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return g_instance_count;
 }
 
-static jlong JNI_AwGLFunctor_GetAwDrawGLFunction(JNIEnv* env,
-                                                 const JavaParamRef<jclass>&) {
+static jlong JNI_AwGLFunctor_GetAwDrawGLFunction(JNIEnv* env) {
   return reinterpret_cast<intptr_t>(&DrawGLFunction);
 }
 
 static jlong JNI_AwGLFunctor_Create(
     JNIEnv* env,
-    const JavaParamRef<jclass>&,
     const base::android::JavaParamRef<jobject>& obj) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return reinterpret_cast<intptr_t>(

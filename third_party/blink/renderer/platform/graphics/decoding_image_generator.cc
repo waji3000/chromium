@@ -175,19 +175,15 @@ bool DecodingImageGenerator::GetPixels(const SkImageInfo& dst_info,
   if (decoded && needs_color_xform) {
     TRACE_EVENT0("blink", "DecodingImageGenerator::getPixels - apply xform");
     SkPixmap src(decode_info, memory, adjusted_row_bytes);
-    decoded =
-        decoded && src.readPixels(target_info, memory, adjusted_row_bytes);
+    decoded = src.readPixels(target_info, memory, adjusted_row_bytes);
     DCHECK(decoded);
   }
 
   // Convert the color type to the requested one if necessary
-  if (target_info.colorType() != dst_info.colorType()) {
-    if (decoded) {
-      decoded = decoded &&
-                SkPixmap{target_info, memory, adjusted_row_bytes}.readPixels(
-                    SkPixmap{dst_info, pixels, row_bytes});
-      DCHECK(decoded);
-    }
+  if (decoded && target_info.colorType() != dst_info.colorType()) {
+    decoded = SkPixmap{target_info, memory, adjusted_row_bytes}.readPixels(
+        SkPixmap{dst_info, pixels, row_bytes});
+    DCHECK(decoded);
   }
   return decoded;
 }
@@ -196,9 +192,7 @@ bool DecodingImageGenerator::QueryYUVA8(
     SkYUVASizeInfo* size_info,
     SkYUVAIndex indices[SkYUVAIndex::kIndexCount],
     SkYUVColorSpace* color_space) const {
-  // YUV decoding does not currently support progressive decoding. See comment
-  // in ImageFrameGenerator.h.
-  if (!can_yuv_decode_ || !all_data_received_)
+  if (!can_yuv_decode_)
     return false;
 
   TRACE_EVENT0("blink", "DecodingImageGenerator::queryYUVA8");

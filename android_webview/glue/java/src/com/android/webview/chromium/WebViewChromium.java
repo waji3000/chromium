@@ -218,6 +218,8 @@ class WebViewChromium implements WebViewProvider, WebViewProvider.ScrollDelegate
 
             if (mShouldDisableThreadChecking) disableThreadChecking();
 
+            mSharedWebViewChromium.init(mContentsClientAdapter);
+
             mFactory.addTask(new Runnable() {
                 @Override
                 public void run() {
@@ -265,7 +267,7 @@ class WebViewChromium implements WebViewProvider, WebViewProvider.ScrollDelegate
                     || mAppTargetSdkVersion < Build.VERSION_CODES.LOLLIPOP);
 
             mAwContents = new AwContents(mFactory.getBrowserContextOnUiThread(), mWebView, mContext,
-                    new InternalAccessAdapter(), new WebViewNativeDrawGLFunctorFactory(),
+                    new InternalAccessAdapter(), new WebViewNativeDrawFunctorFactory(),
                     mContentsClientAdapter, mWebSettings.getAwSettings(),
                     new AwContents.DependencyFactory() {
                         @Override
@@ -274,8 +276,6 @@ class WebViewChromium implements WebViewProvider, WebViewProvider.ScrollDelegate
                             return mFactory.createAutofillProvider(context, mWebView);
                         }
                     });
-            mSharedWebViewChromium.setAwContentsOnUiThread(mAwContents);
-
             if (mAppTargetSdkVersion >= Build.VERSION_CODES.KITKAT) {
                 // On KK and above, favicons are automatically downloaded as the method
                 // old apps use to enable that behavior is deprecated.
@@ -290,6 +290,8 @@ class WebViewChromium implements WebViewProvider, WebViewProvider.ScrollDelegate
 
             // TODO: This assumes AwContents ignores second Paint param.
             mAwContents.setLayerType(mWebView.getLayerType(), null);
+
+            mSharedWebViewChromium.initForReal(mAwContents);
         }
     }
 
@@ -2275,11 +2277,10 @@ class WebViewChromium implements WebViewProvider, WebViewProvider.ScrollDelegate
         checkThread();
         return new AwPrintDocumentAdapter(mAwContents.getPdfExporter(), documentName);
     }
-    // AwContents.NativeDrawGLFunctorFactory implementation ----------------------------------
-    private class WebViewNativeDrawGLFunctorFactory
-            implements AwContents.NativeDrawGLFunctorFactory {
+    // AwContents.NativeDrawFunctorFactory implementation ----------------------------------
+    private class WebViewNativeDrawFunctorFactory implements AwContents.NativeDrawFunctorFactory {
         @Override
-        public AwContents.NativeDrawGLFunctor createFunctor(long context) {
+        public AwContents.NativeDrawGLFunctor createGLFunctor(long context) {
             return new DrawGLFunctor(context, mFactory.getWebViewDelegate());
         }
     }

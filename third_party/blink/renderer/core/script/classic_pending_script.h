@@ -47,6 +47,11 @@ class CORE_EXPORT ClassicPendingScript final : public PendingScript,
                                             ScriptSourceLocationType,
                                             const ScriptFetchOptions&);
 
+  ClassicPendingScript(ScriptElementBase*,
+                       const TextPosition&,
+                       ScriptSourceLocationType,
+                       const ScriptFetchOptions&,
+                       bool is_external);
   ~ClassicPendingScript() override;
 
   // ScriptStreamer callbacks.
@@ -55,9 +60,11 @@ class CORE_EXPORT ClassicPendingScript final : public PendingScript,
 
   void Trace(blink::Visitor*) override;
 
-  blink::ScriptType GetScriptType() const override {
-    return blink::ScriptType::kClassic;
+  mojom::ScriptType GetScriptType() const override {
+    return mojom::ScriptType::kClassic;
   }
+
+  void WatchForLoad(PendingScriptClient*) override;
 
   ClassicScript* GetSource(const KURL& document_url) const override;
   bool IsReady() const override;
@@ -75,36 +82,24 @@ class CORE_EXPORT ClassicPendingScript final : public PendingScript,
  private:
   // See AdvanceReadyState implementation for valid state transitions.
   enum ReadyState {
-    // These states are considered "not ready".
+    // This state is considered "not ready".
     kWaitingForResource,
-    kWaitingForStreaming,
     // These states are considered "ready".
     kReady,
-    kReadyStreaming,
     kErrorOccurred,
   };
 
-  ClassicPendingScript(ScriptElementBase*,
-                       const TextPosition&,
-                       ScriptSourceLocationType,
-                       const ScriptFetchOptions&,
-                       bool is_external);
   ClassicPendingScript() = delete;
 
   // Advances the current state of the script, reporting to the client if
   // appropriate.
   void AdvanceReadyState(ReadyState);
 
-  // Handle the end of streaming.
-  void FinishWaitingForStreaming();
-  void FinishReadyStreaming();
-  void CancelStreaming();
   void CheckState() const override;
 
   // ResourceClient
   void NotifyFinished(Resource*) override;
   String DebugName() const override { return "PendingScript"; }
-  void DataReceived(Resource*, const char*, size_t) override;
 
   static void RecordStreamingHistogram(
       ScriptSchedulingType type,
@@ -134,7 +129,6 @@ class CORE_EXPORT ClassicPendingScript final : public PendingScript,
   // The request is intervened by document.write() intervention.
   bool intervened_ = false;
 
-  Member<ScriptStreamer> streamer_;
   base::OnceClosure streamer_done_;
 
   // This flag tracks whether streamer_ is currently streaming. It is used

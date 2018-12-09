@@ -9,6 +9,8 @@
 #include "base/bind.h"
 #include "base/task/task_scheduler/scheduler_parallel_task_runner.h"
 #include "base/task/task_scheduler/scheduler_sequenced_task_runner.h"
+#include "base/threading/scoped_blocking_call.h"
+#include "base/threading/thread_restrictions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace base {
@@ -21,7 +23,7 @@ MockSchedulerWorkerObserver::~MockSchedulerWorkerObserver() = default;
 scoped_refptr<Sequence> CreateSequenceWithTask(Task task,
                                                const TaskTraits& traits) {
   scoped_refptr<Sequence> sequence = MakeRefCounted<Sequence>(traits);
-  sequence->PushTask(std::move(task));
+  sequence->BeginTransaction().PushTask(std::move(task));
   return sequence;
 }
 
@@ -59,6 +61,14 @@ scoped_refptr<SequencedTaskRunner> CreateSequencedTaskRunnerWithTraits(
       traits, mock_scheduler_task_runner_delegate);
 }
 
+// Waits on |event| in a scope where the blocking observer is null, to avoid
+// affecting the max tasks in a worker pool.
+void WaitWithoutBlockingObserver(WaitableEvent* event) {
+  internal::ScopedClearBlockingObserverForTesting clear_blocking_observer;
+  ScopedAllowBaseSyncPrimitivesForTesting allow_base_sync_primitives;
+  event->Wait();
+}
+
 MockSchedulerTaskRunnerDelegate::MockSchedulerTaskRunnerDelegate(
     TrackedRef<TaskTracker> task_tracker,
     DelayedTaskManager* delayed_task_manager)
@@ -75,21 +85,24 @@ bool MockSchedulerTaskRunnerDelegate::PostTaskWithSequence(
   DCHECK(task.task);
   DCHECK(sequence);
 
-  if (!task_tracker_->WillPostTask(&task,
-                                   sequence->traits().shutdown_behavior()))
+  if (!task_tracker_->WillPostTask(&task, sequence->shutdown_behavior()))
     return false;
 
   if (task.delayed_run_time.is_null()) {
-    worker_pool_->PostTaskWithSequenceNow(std::move(task), std::move(sequence));
+    worker_pool_->PostTaskWithSequenceNow(
+        std::move(task),
+        SequenceAndTransaction::FromSequence(std::move(sequence)));
   } else {
     delayed_task_manager_->AddDelayedTask(
-        std::move(task), BindOnce(
-                             [](scoped_refptr<Sequence> sequence,
-                                SchedulerWorkerPool* worker_pool, Task task) {
-                               worker_pool->PostTaskWithSequenceNow(
-                                   std::move(task), std::move(sequence));
-                             },
-                             std::move(sequence), worker_pool_));
+        std::move(task),
+        BindOnce(
+            [](scoped_refptr<Sequence> sequence,
+               SchedulerWorkerPool* worker_pool, Task task) {
+              worker_pool->PostTaskWithSequenceNow(
+                  std::move(task),
+                  SequenceAndTransaction::FromSequence(std::move(sequence)));
+            },
+            std::move(sequence), worker_pool_));
   }
 
   return true;
@@ -102,6 +115,10 @@ bool MockSchedulerTaskRunnerDelegate::IsRunningPoolWithTraits(
 
   return worker_pool_->IsBoundToCurrentThread();
 }
+
+void MockSchedulerTaskRunnerDelegate::UpdatePriority(
+    scoped_refptr<Sequence> sequence,
+    TaskPriority priority) {}
 
 void MockSchedulerTaskRunnerDelegate::SetWorkerPool(
     SchedulerWorkerPool* worker_pool) {

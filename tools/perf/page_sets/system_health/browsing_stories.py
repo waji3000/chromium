@@ -596,6 +596,23 @@ class YouTubeDesktopStory(_MediaBrowsingStory):
   TAGS = [story_tags.JAVASCRIPT_HEAVY, story_tags.YEAR_2016]
 
 
+class YouTubeDesktopStory2018(_MediaBrowsingStory):
+  """Load a typical YouTube video then navigate to a next few videos. Stop and
+  watch each video for a few seconds.
+  """
+  NAME = 'browse:media:youtube:2018'
+  URL = 'https://www.youtube.com/watch?v=QGfhS1hfTWw&autoplay=0'
+  ITEM_SELECTOR = 'ytd-compact-video-renderer.ytd-watch-next-secondary-results-renderer a'
+  SUPPORTED_PLATFORMS = platforms.DESKTOP_ONLY
+  IS_SINGLE_PAGE_APP = True
+  # A longer view time allows videos to load and play.
+  ITEM_VIEW_TIME_IN_SECONDS = 5
+  ITEMS_TO_VISIT = 8
+  ITEM_SELECTOR_INDEX = 3
+  PLATFORM_SPECIFIC = True
+  TAGS = [story_tags.JAVASCRIPT_HEAVY, story_tags.YEAR_2018]
+
+
 class FacebookPhotosMobileStory(_MediaBrowsingStory):
   """Load a photo page from Rihanna's facebook page then navigate a few next
   photos.
@@ -663,6 +680,7 @@ class TumblrDesktopStory2018(_MediaBrowsingStory):
     action_runner.Wait(1)  # To make browsing more realistic.
 
 
+
 class PinterestDesktopStory(_MediaBrowsingStory):
   NAME = 'browse:media:pinterest'
   URL = 'https://pinterest.com'
@@ -699,6 +717,75 @@ class PinterestDesktopStory(_MediaBrowsingStory):
                           '".Button.borderless.close.visible")')
     action_runner.ClickElement(element_function=x_element_function)
     action_runner.Wait(1)  # Wait to make navigation realistic.
+
+
+class PinterestDesktopStory2018(_MediaBrowsingStory):
+  NAME = 'browse:media:pinterest:2018'
+  URL = 'https://pinterest.com'
+  ITEM_SELECTOR = '.pinWrapper a[data-force-refresh="1"]'
+  ITEM_VIEW_TIME = 5
+  IS_SINGLE_PAGE_APP = True
+  ITEMS_TO_VISIT = 8
+  INCREMENT_INDEX_AFTER_EACH_ITEM = True
+  SUPPORTED_PLATFORMS = platforms.DESKTOP_ONLY
+  TAGS = [story_tags.YEAR_2018]
+  # SKIP_LOGIN = False
+
+  def _Login(self, action_runner):
+    pinterest_login.LoginDesktopAccount(action_runner, 'googletest')
+
+  def _ViewMediaItem(self, action_runner, index):
+    super(PinterestDesktopStory2018, self)._ViewMediaItem(action_runner, index)
+    # 1. click on item
+    # 2. pin every other item
+    # 3. go back to the main page
+    action_runner.Wait(1)  # Wait to make navigation realistic.
+    if index % 2 == 0:
+      if not self.SKIP_LOGIN:
+        action_runner.Wait(2)
+      action_runner.WaitForElement(selector='.SaveButton')
+      action_runner.ClickElement(selector='.SaveButton')
+      if not self.SKIP_LOGIN:
+        action_runner.Wait(2)
+      action_runner.Wait(2.5)
+      action_runner.WaitForElement(
+                  selector='div[data-test-id=BoardPickerSaveButton]')
+      action_runner.ClickElement(
+                  selector='div[data-test-id=BoardPickerSaveButton]')
+      action_runner.Wait(1.5)
+    action_runner.Wait(1)
+    if not self.SKIP_LOGIN:
+      action_runner.Wait(2)
+    action_runner.NavigateBack()
+
+    action_runner.WaitForElement(selector='input[name=searchBoxInput]')
+    action_runner.Wait(1)
+    if not self.SKIP_LOGIN:
+      action_runner.Wait(2)
+
+
+class GooglePlayStoreDesktopStory(_MediaBrowsingStory):
+  """ Navigate to the movies page of Google Play Store, scroll to the bottom,
+  and click "see more" of a middle category (last before second scroll).
+  """
+  NAME = 'browse:media:googleplaystore:2018'
+  URL = 'https://play.google.com/store/movies'
+  ITEM_SELECTOR = ''
+  SUPPORTED_PLATFORMS = platforms.DESKTOP_ONLY
+  IS_SINGLE_PAGE_APP = True
+  TAGS = [story_tags.YEAR_2018, story_tags.IMAGES]
+  # intends to select the last category of movies and its "see more" button
+  _SEE_MORE_SELECTOR = ('div[class*="cluster-container"]:last-of-type '
+                        'a[class*="see-more"]')
+
+  def _DidLoadDocument(self, action_runner):
+    action_runner.ScrollPage()
+    action_runner.Wait(2)
+    action_runner.ScrollPage()
+    action_runner.Wait(2)
+    action_runner.MouseClick(self._SEE_MORE_SELECTOR)
+    action_runner.Wait(2)
+    action_runner.ScrollPage()
 
 
 ##############################################################################

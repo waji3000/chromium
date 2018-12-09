@@ -31,7 +31,6 @@
 #include "third_party/blink/renderer/core/origin_trials/origin_trials.h"
 #include "third_party/blink/renderer/core/workers/worker_animation_frame_provider.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
-#include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 
@@ -48,22 +47,20 @@ CanvasRenderingContext::CanvasRenderingContext(
   // For wide gamut color spaces, user must explicitly request half float
   // storage. Otherwise, we fall back to sRGB in uint8. Invalid requests fall
   // back to sRGB in uint8 too.
-  if (SharedGpuContext::IsGpuCompositingEnabled()) {
-    if (creation_attributes_.pixel_format == kF16CanvasPixelFormatName) {
-      color_params_.SetCanvasPixelFormat(kF16CanvasPixelFormat);
-      if (creation_attributes_.color_space == kLinearRGBCanvasColorSpaceName)
-        color_params_.SetCanvasColorSpace(kLinearRGBCanvasColorSpace);
-      if (creation_attributes_.color_space == kRec2020CanvasColorSpaceName)
-        color_params_.SetCanvasColorSpace(kRec2020CanvasColorSpace);
-      else if (creation_attributes_.color_space == kP3CanvasColorSpaceName)
-        color_params_.SetCanvasColorSpace(kP3CanvasColorSpace);
-    }
+  if (creation_attributes_.pixel_format == kF16CanvasPixelFormatName) {
+    color_params_.SetCanvasPixelFormat(kF16CanvasPixelFormat);
+    if (creation_attributes_.color_space == kLinearRGBCanvasColorSpaceName)
+      color_params_.SetCanvasColorSpace(kLinearRGBCanvasColorSpace);
+    if (creation_attributes_.color_space == kRec2020CanvasColorSpaceName)
+      color_params_.SetCanvasColorSpace(kRec2020CanvasColorSpace);
+    else if (creation_attributes_.color_space == kP3CanvasColorSpaceName)
+      color_params_.SetCanvasColorSpace(kP3CanvasColorSpace);
   }
 
   if (!creation_attributes_.alpha)
     color_params_.SetOpacityMode(kOpaque);
 
-  if (!OriginTrials::LowLatencyCanvasEnabled(host->GetTopExecutionContext()))
+  if (!origin_trials::LowLatencyCanvasEnabled(host->GetTopExecutionContext()))
     creation_attributes_.low_latency = false;
 
   // Make creation_attributes_ reflect the effective color_space and
@@ -166,30 +163,8 @@ CanvasRenderingContext::ResolveContextTypeAliases(
   return type;
 }
 
-bool CanvasRenderingContext::WouldTaintOrigin(
-    CanvasImageSource* image_source,
-    const SecurityOrigin* destination_security_origin) {
-  const KURL& source_url = image_source->SourceURL();
-  const bool has_url = (source_url.IsValid() && !source_url.IsAboutBlankURL());
-
-  if (has_url) {
-    if (source_url.ProtocolIsData() ||
-        clean_urls_.Contains(source_url.GetString())) {
-      return false;
-    }
-    if (dirty_urls_.Contains(source_url.GetString()))
-      return true;
-  }
-
-  const bool taint_origin =
-      image_source->WouldTaintOrigin(destination_security_origin);
-  if (has_url) {
-    if (taint_origin)
-      dirty_urls_.insert(source_url.GetString());
-    else
-      clean_urls_.insert(source_url.GetString());
-  }
-  return taint_origin;
+bool CanvasRenderingContext::WouldTaintOrigin(CanvasImageSource* image_source) {
+  return image_source->WouldTaintOrigin();
 }
 
 void CanvasRenderingContext::Trace(blink::Visitor* visitor) {
@@ -203,14 +178,14 @@ void CanvasRenderingContext::StartListeningForDidProcessTask() {
     return;
 
   listening_for_did_process_task_ = true;
-  Platform::Current()->CurrentThread()->AddTaskObserver(this);
+  Thread::Current()->AddTaskObserver(this);
 }
 
 void CanvasRenderingContext::StopListeningForDidProcessTask() {
   if (!listening_for_did_process_task_)
     return;
 
-  Platform::Current()->CurrentThread()->RemoveTaskObserver(this);
+  Thread::Current()->RemoveTaskObserver(this);
   listening_for_did_process_task_ = false;
 }
 

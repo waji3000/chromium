@@ -56,6 +56,8 @@ class CORE_EXPORT HTMLInputElement
 
  public:
   static HTMLInputElement* Create(Document&, const CreateElementFlags);
+
+  HTMLInputElement(Document&, const CreateElementFlags);
   ~HTMLInputElement() override;
   void Trace(blink::Visitor*) override;
 
@@ -268,7 +270,7 @@ class CORE_EXPORT HTMLInputElement
 
   void EndEditing();
 
-  static FileChooserFileInfoList FilesFromFileInputFormControlState(
+  static Vector<String> FilesFromFileInputFormControlState(
       const FormControlState&);
 
   bool MatchesReadOnlyPseudoClass() const final;
@@ -307,8 +309,6 @@ class CORE_EXPORT HTMLInputElement
   void ChildrenChanged(const ChildrenChange&) override;
 
  protected:
-  HTMLInputElement(Document&, const CreateElementFlags);
-
   void DefaultEventHandler(Event&) override;
   void CreateShadowSubtree();
 
@@ -327,7 +327,7 @@ class CORE_EXPORT HTMLInputElement
   bool MayTriggerVirtualKeyboard() const final;
   bool IsEnumeratable() const final;
   bool IsInteractiveContent() const final;
-  bool SupportLabels() const final;
+  bool IsLabelable() const final;
   bool MatchesDefaultPseudoClass() const override;
 
   bool IsTextControl() const final { return IsTextField(); }

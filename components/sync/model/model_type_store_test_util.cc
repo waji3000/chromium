@@ -38,6 +38,14 @@ class ForwardingModelTypeStore : public ModelTypeStore {
     other_->ReadAllMetadata(std::move(callback));
   }
 
+  void ReadAllDataAndPreprocess(
+      PreprocessCallback preprocess_on_backend_sequence_callback,
+      CallbackWithResult completion_on_frontend_sequence_callback) override {
+    other_->ReadAllDataAndPreprocess(
+        std::move(preprocess_on_backend_sequence_callback),
+        std::move(completion_on_frontend_sequence_callback));
+  }
+
   std::unique_ptr<WriteBatch> CreateWriteBatch() override {
     return other_->CreateWriteBatch();
   }
@@ -84,12 +92,14 @@ ModelTypeStoreTestUtil::FactoryForInMemoryStoreForTest() {
 }
 
 // static
-void ModelTypeStoreTestUtil::MoveStoreToCallback(
-    std::unique_ptr<ModelTypeStore> store,
-    ModelType type,
-    ModelTypeStore::InitCallback callback) {
-  ASSERT_TRUE(store);
-  std::move(callback).Run(/*error=*/base::nullopt, std::move(store));
+OnceModelTypeStoreFactory ModelTypeStoreTestUtil::MoveStoreToFactory(
+    std::unique_ptr<ModelTypeStore> store) {
+  return base::BindOnce(
+      [](std::unique_ptr<ModelTypeStore> store, ModelType type,
+         ModelTypeStore::InitCallback callback) {
+        std::move(callback).Run(/*error=*/base::nullopt, std::move(store));
+      },
+      std::move(store));
 }
 
 // static

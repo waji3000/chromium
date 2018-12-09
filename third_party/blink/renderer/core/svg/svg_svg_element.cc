@@ -118,17 +118,16 @@ void SVGSVGElement::setCurrentScale(float scale) {
 class SVGCurrentTranslateTearOff : public SVGPointTearOff {
  public:
   static SVGCurrentTranslateTearOff* Create(SVGSVGElement* context_element) {
-    return new SVGCurrentTranslateTearOff(context_element);
+    return MakeGarbageCollected<SVGCurrentTranslateTearOff>(context_element);
   }
+
+  SVGCurrentTranslateTearOff(SVGSVGElement* context_element)
+      : SVGPointTearOff(context_element->translation_, context_element) {}
 
   void CommitChange() override {
     DCHECK(ContextElement());
     ToSVGSVGElement(ContextElement())->UpdateUserTransform();
   }
-
- private:
-  SVGCurrentTranslateTearOff(SVGSVGElement* context_element)
-      : SVGPointTearOff(context_element->translation_, context_element) {}
 };
 
 SVGPointTearOff* SVGSVGElement::currentTranslateFromJavascript() {
@@ -141,9 +140,10 @@ void SVGSVGElement::SetCurrentTranslate(const FloatPoint& point) {
 }
 
 void SVGSVGElement::UpdateUserTransform() {
-  if (LayoutObject* object = GetLayoutObject())
+  if (LayoutObject* object = GetLayoutObject()) {
     object->SetNeedsLayoutAndFullPaintInvalidation(
-        LayoutInvalidationReason::kUnknown);
+        layout_invalidation_reason::kUnknown);
+  }
 }
 
 bool SVGSVGElement::ZoomAndPanEnabled() const {
@@ -514,17 +514,15 @@ Node::InsertionNotificationRequest SVGSVGElement::InsertedInto(
     if (root_parent.GetDocument().IsXMLDocument())
       UseCounter::Count(GetDocument(), WebFeature::kSVGSVGElementInXMLDocument);
 
-    if (RuntimeEnabledFeatures::SMILEnabled()) {
-      GetDocument().AccessSVGExtensions().AddTimeContainer(this);
+    GetDocument().AccessSVGExtensions().AddTimeContainer(this);
 
-      // Animations are started at the end of document parsing and after firing
-      // the load event, but if we miss that train (deferred programmatic
-      // element insertion for example) we need to initialize the time container
-      // here.
-      if (!GetDocument().Parsing() && GetDocument().LoadEventFinished() &&
-          !TimeContainer()->IsStarted())
-        TimeContainer()->Start();
-    }
+    // Animations are started at the end of document parsing and after firing
+    // the load event, but if we miss that train (deferred programmatic
+    // element insertion for example) we need to initialize the time container
+    // here.
+    if (!GetDocument().Parsing() && GetDocument().LoadEventFinished() &&
+        !TimeContainer()->IsStarted())
+      TimeContainer()->Start();
   }
   return SVGGraphicsElement::InsertedInto(root_parent);
 }

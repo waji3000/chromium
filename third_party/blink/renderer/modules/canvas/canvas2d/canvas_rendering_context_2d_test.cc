@@ -7,7 +7,6 @@
 #include <memory>
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/public/mojom/page/page_visibility_state.mojom-blink.h"
 #include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
@@ -59,10 +58,7 @@ class FakeImageSource : public CanvasImageSource {
                                                AccelerationHint,
                                                const FloatSize&) override;
 
-  bool WouldTaintOrigin(
-      const SecurityOrigin* destination_security_origin) const override {
-    return false;
-  }
+  bool WouldTaintOrigin() const override { return false; }
   FloatSize ElementSize(const FloatSize&) const override {
     return FloatSize(size_);
   }
@@ -147,7 +143,9 @@ class CanvasRenderingContext2DTest : public PageTestBase {
 
   class WrapGradients final : public GarbageCollectedFinalized<WrapGradients> {
    public:
-    static WrapGradients* Create() { return new WrapGradients; }
+    static WrapGradients* Create() {
+      return MakeGarbageCollected<WrapGradients>();
+    }
 
     void Trace(blink::Visitor* visitor) {
       visitor->Trace(opaque_gradient_);
@@ -1191,11 +1189,11 @@ TEST_F(CanvasRenderingContext2DTestWithTestingPlatform,
   EXPECT_TRUE(CanvasElement().GetLayoutBoxModelObject());
   PaintLayer* layer = CanvasElement().GetLayoutBoxModelObject()->Layer();
   EXPECT_TRUE(layer);
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   // Hide element to trigger hibernation (if enabled).
-  GetDocument().GetPage()->SetVisibilityState(
-      mojom::PageVisibilityState::kHidden, false);
+  GetDocument().GetPage()->SetIsHidden(/*is_hidden=*/true,
+                                       /*is_initial_state=*/false);
   RunUntilIdle();  // Run hibernation task.
   // If enabled, hibernation should cause compositing update.
   EXPECT_EQ(!!CANVAS2D_HIBERNATION_ENABLED,
@@ -1203,12 +1201,12 @@ TEST_F(CanvasRenderingContext2DTestWithTestingPlatform,
   EXPECT_EQ(!!CANVAS2D_HIBERNATION_ENABLED,
             !CanvasElement().ResourceProvider());
 
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_FALSE(layer->NeedsCompositingInputsUpdate());
 
   // Wake up again, which should request a compositing update synchronously.
-  GetDocument().GetPage()->SetVisibilityState(
-      mojom::PageVisibilityState::kVisible, false);
+  GetDocument().GetPage()->SetIsHidden(/*is_hidden=*/false,
+                                       /*is_initial_state=*/false);
   EXPECT_EQ(!!CANVAS2D_HIBERNATION_ENABLED,
             layer->NeedsCompositingInputsUpdate());
   RunUntilIdle();  // Clear task queue.
@@ -1230,11 +1228,11 @@ TEST_F(CanvasRenderingContext2DTestWithTestingPlatform,
   EXPECT_TRUE(CanvasElement().GetLayoutBoxModelObject());
   PaintLayer* layer = CanvasElement().GetLayoutBoxModelObject()->Layer();
   EXPECT_TRUE(layer);
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   // Hide element to trigger hibernation (if enabled).
-  GetDocument().GetPage()->SetVisibilityState(
-      mojom::PageVisibilityState::kHidden, false);
+  GetDocument().GetPage()->SetIsHidden(/*is_hidden=*/true,
+                                       /*is_initial_state=*/false);
   RunUntilIdle();  // Run hibernation task.
 
   // Never hibernate a canvas with no resource provider

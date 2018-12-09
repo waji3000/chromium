@@ -1172,6 +1172,52 @@
 
     /** @type {!Array<string>} */
     const styleRules = [];
+    // Shadow DOM V0 polyfill
+    if (majorVersion <= 73 && !Element.prototype.createShadowRoot) {
+      Element.prototype.createShadowRoot = function() {
+        try {
+          return this.attachShadow({mode: 'open'});
+        } catch (e) {
+          // some elements we use to add shadow roots can no
+          // longer have shadow roots.
+          const fakeShadowHost = document.createElement('span');
+          this.appendChild(fakeShadowHost);
+          fakeShadowHost.className = 'fake-shadow-host';
+          return fakeShadowHost.createShadowRoot();
+        }
+      };
+
+      const origAdd = DOMTokenList.prototype.add;
+      DOMTokenList.prototype.add = function(...tokens) {
+        if (tokens[0].startsWith('insertion-point') || tokens[0].startsWith('tabbed-pane-header'))
+          this._myElement.slot = '.' + tokens[0];
+        return origAdd.apply(this, tokens);
+      };
+
+      const origCreateElement = Document.prototype.createElement;
+      Document.prototype.createElement = function(tagName, ...rest) {
+        if (tagName === 'content')
+          tagName = 'slot';
+        const element = origCreateElement.call(this, tagName, ...rest);
+        element.classList._myElement = element;
+        return element;
+      };
+
+      Object.defineProperty(HTMLSlotElement.prototype, 'select', {
+        async set(selector) {
+          this.name = selector;
+        }
+      });
+      const origCreateElementWithClass = Document.prototype.createElementWithClass;
+      Document.prototype.createElementWithClass = function(tagName, className, ...rest) {
+        if (tagName !== 'button' || (className !== 'soft-dropdown' && className !== 'dropdown-button'))
+          return origCreateElementWithClass.call(this, tagName, className, ...rest);
+        const element = origCreateElementWithClass.call(this, 'div', className, ...rest);
+        element.tabIndex = 0;
+        element.role = 'button';
+        return element;
+      };
+    }
 
     if (majorVersion <= 66) {
       /** @type {(!function(number, number):Element|undefined)} */
@@ -1250,6 +1296,10 @@
       styleRules.push(
           '.cm-breakpoint.cm-breakpoint-conditional .CodeMirror-linenumber { border-style: solid !important; }');
     }
+    if (majorVersion <= 71) {
+      styleRules.push(
+          '.coverage-toolbar-container, .animation-timeline-toolbar-container, .computed-properties { flex-basis: auto; }');
+    }
 
     if (majorVersion <= 50)
       Event.prototype.deepPath = undefined;
@@ -1276,7 +1326,7 @@
         return null;
       const majorVersion = parseInt(remoteVersion.split('.')[0], 10);
       return majorVersion;
-    } finally {
+    } catch (e) {
       return null;
     }
   }

@@ -187,9 +187,10 @@ requestCandidatesForSelectedRange:(NSRange)selectedRange
   return sequenceNumber_;
 }
 
-- (void (^)(NSInteger sequenceNumber,
-            NSArray<NSTextCheckingResult*>* candidates))lastCompletionHandler {
-  return lastCompletionHandler_;
+- (base::mac::ScopedBlock<void (^)(NSInteger sequenceNumber,
+                                   NSArray<NSTextCheckingResult*>* candidates)>)
+    takeCompletionHandler {
+  return std::move(lastCompletionHandler_);
 }
 
 @end
@@ -461,9 +462,6 @@ class RenderWidgetHostViewMacTest : public RenderViewHostImplTestHarness {
   RenderWidgetHostViewMacTest() : rwhv_mac_(nullptr) {
     mock_clock_.Advance(base::TimeDelta::FromMilliseconds(100));
     ui::SetEventTickClockForTesting(&mock_clock_);
-
-    vsync_feature_list_.InitAndEnableFeature(
-        features::kVsyncAlignedInputEvents);
   }
 
   void SetUp() override {
@@ -527,8 +525,6 @@ class RenderWidgetHostViewMacTest : public RenderViewHostImplTestHarness {
  private:
   // This class isn't derived from PlatformTest.
   base::mac::ScopedNSAutoreleasePool pool_;
-
-  base::test::ScopedFeatureList vsync_feature_list_;
 
   base::SimpleTestTickClock mock_clock_;
 
@@ -1309,7 +1305,7 @@ TEST_F(RenderWidgetHostViewMacTest, TimerBasedPhaseInfo) {
   // event gets dispatched.
   base::RunLoop run_loop;
   base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-      FROM_HERE, run_loop.QuitClosure(),
+      FROM_HERE, run_loop.QuitWhenIdleClosure(),
       base::TimeDelta::FromMilliseconds(100));
   run_loop.Run();
 
@@ -2128,9 +2124,7 @@ TEST_F(InputMethodMacTest, TouchBarTextSuggestionsReplacement) {
     tab_view()->SelectionChanged(kOriginalString, 3, gfx::Range(3, 3));
 
     NSInteger firstSequenceNumber = [spellChecker sequenceNumber];
-    base::mac::ScopedBlock<void (^)(NSInteger sequenceNumber,
-                                    NSArray<NSTextCheckingResult*>* candidates)>
-        firstCompletionHandler([[spellChecker lastCompletionHandler] retain]);
+    auto firstCompletionHandler = [spellChecker takeCompletionHandler];
 
     EXPECT_NE(nil, (id)firstCompletionHandler.get());
     EXPECT_EQ(0U, candidate_list_item().candidates.count);
@@ -2148,7 +2142,7 @@ TEST_F(InputMethodMacTest, TouchBarTextSuggestionsReplacement) {
     EXPECT_EQ(0U, candidate_list_item().candidates.count);
 
     // But calling the current handler should work.
-    [spellChecker lastCompletionHandler](
+    [spellChecker takeCompletionHandler].get()(
         [spellChecker sequenceNumber],
         @[ static_cast<NSTextCheckingResult*>(fakeResult) ]);
     base::RunLoop().RunUntilIdle();
@@ -2183,6 +2177,11 @@ TEST_F(InputMethodMacTest, TouchBarTextSuggestionsInvalidSelection) {
     SetTextInputType(tab_view(), ui::TEXT_INPUT_TYPE_TEXT);
     candidate_list_item().allowsCollapsing = NO;
 
+    if (auto completionHandler = [spellChecker takeCompletionHandler]) {
+      completionHandler.get()([spellChecker sequenceNumber], @[]);
+      base::RunLoop().RunUntilIdle();
+    }
+
     FakeTextCheckingResult* fakeResult =
         [FakeTextCheckingResult resultWithRange:NSMakeRange(0, 3)
                               replacementString:@"foo"];
@@ -2192,46 +2191,40 @@ TEST_F(InputMethodMacTest, TouchBarTextSuggestionsInvalidSelection) {
     tab_view()->SelectionChanged(kOriginalString, 3,
                                  gfx::Range::InvalidRange());
 
-    [spellChecker lastCompletionHandler](
-        [spellChecker sequenceNumber],
-        @[ static_cast<NSTextCheckingResult*>(fakeResult) ]);
-    base::RunLoop().RunUntilIdle();
+    if (auto completionHandler = [spellChecker takeCompletionHandler]) {
+      completionHandler.get()(
+          [spellChecker sequenceNumber],
+          @[ static_cast<NSTextCheckingResult*>(fakeResult) ]);
+      base::RunLoop().RunUntilIdle();
+    }
 
     EXPECT_NE(nil, candidate_list_item().candidates);
     EXPECT_EQ(0U, candidate_list_item().candidates.count);
   }
 }
 
-TEST_F(RenderWidgetHostViewMacTest, ClearCompositorFrame) {
-  BrowserCompositorMac* browser_compositor = rwhv_mac_->BrowserCompositor();
-  ui::Compositor* ui_compositor = browser_compositor->GetCompositor();
-  EXPECT_NE(ui_compositor, nullptr);
-  EXPECT_FALSE(ui_compositor->IsLocked());
-  rwhv_mac_->ClearCompositorFrame();
-  EXPECT_EQ(browser_compositor->GetCompositor(), ui_compositor);
-  EXPECT_FALSE(ui_compositor->IsLocked());
-}
-
 // This test verifies that in AutoResize mode a child-allocated
 // viz::LocalSurfaceId will be properly routed and stored in the parent.
 TEST_F(RenderWidgetHostViewMacTest, ChildAllocationAcceptedInParent) {
-  viz::LocalSurfaceId local_surface_id1(rwhv_mac_->GetLocalSurfaceId());
+  viz::LocalSurfaceId local_surface_id1(
+      rwhv_mac_->GetLocalSurfaceIdAllocation().local_surface_id());
   EXPECT_TRUE(local_surface_id1.is_valid());
 
   host_->SetAutoResize(true, gfx::Size(50, 50), gfx::Size(100, 100));
 
   viz::ChildLocalSurfaceIdAllocator child_allocator;
-  child_allocator.UpdateFromParent(
-      local_surface_id1, rwhv_mac_->GetLocalSurfaceIdAllocationTime());
+  child_allocator.UpdateFromParent(rwhv_mac_->GetLocalSurfaceIdAllocation());
   child_allocator.GenerateId();
   viz::LocalSurfaceId local_surface_id2 =
-      child_allocator.GetCurrentLocalSurfaceId();
+      child_allocator.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   cc::RenderFrameMetadata metadata;
   metadata.viewport_size_in_pixels = gfx::Size(75, 75);
-  metadata.local_surface_id = local_surface_id2;
+  metadata.local_surface_id_allocation =
+      child_allocator.GetCurrentLocalSurfaceIdAllocation();
   host_->DidUpdateVisualProperties(metadata);
 
-  viz::LocalSurfaceId local_surface_id3(rwhv_mac_->GetLocalSurfaceId());
+  viz::LocalSurfaceId local_surface_id3(
+      rwhv_mac_->GetLocalSurfaceIdAllocation().local_surface_id());
   EXPECT_NE(local_surface_id1, local_surface_id3);
   EXPECT_EQ(local_surface_id2, local_surface_id3);
 }
@@ -2239,25 +2232,27 @@ TEST_F(RenderWidgetHostViewMacTest, ChildAllocationAcceptedInParent) {
 // This test verifies that when the child and parent both allocate their own
 // viz::LocalSurfaceId the resulting conflict is resolved.
 TEST_F(RenderWidgetHostViewMacTest, ConflictingAllocationsResolve) {
-  viz::LocalSurfaceId local_surface_id1(rwhv_mac_->GetLocalSurfaceId());
+  viz::LocalSurfaceId local_surface_id1(
+      rwhv_mac_->GetLocalSurfaceIdAllocation().local_surface_id());
   EXPECT_TRUE(local_surface_id1.is_valid());
 
   host_->SetAutoResize(true, gfx::Size(50, 50), gfx::Size(100, 100));
   viz::ChildLocalSurfaceIdAllocator child_allocator;
-  child_allocator.UpdateFromParent(
-      local_surface_id1, rwhv_mac_->GetLocalSurfaceIdAllocationTime());
+  child_allocator.UpdateFromParent(rwhv_mac_->GetLocalSurfaceIdAllocation());
   child_allocator.GenerateId();
   viz::LocalSurfaceId local_surface_id2 =
-      child_allocator.GetCurrentLocalSurfaceId();
+      child_allocator.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   cc::RenderFrameMetadata metadata;
   metadata.viewport_size_in_pixels = gfx::Size(75, 75);
-  metadata.local_surface_id = local_surface_id2;
+  metadata.local_surface_id_allocation =
+      child_allocator.GetCurrentLocalSurfaceIdAllocation();
   host_->DidUpdateVisualProperties(metadata);
 
   // Cause a conflicting viz::LocalSurfaceId allocation
   BrowserCompositorMac* browser_compositor = rwhv_mac_->BrowserCompositor();
   EXPECT_TRUE(browser_compositor->ForceNewSurfaceForTesting());
-  viz::LocalSurfaceId local_surface_id3(rwhv_mac_->GetLocalSurfaceId());
+  viz::LocalSurfaceId local_surface_id3(
+      rwhv_mac_->GetLocalSurfaceIdAllocation().local_surface_id());
   EXPECT_NE(local_surface_id1, local_surface_id3);
 
   // RenderWidgetHostImpl has delayed auto-resize processing. Yield here to
@@ -2267,7 +2262,8 @@ TEST_F(RenderWidgetHostViewMacTest, ConflictingAllocationsResolve) {
                                                 run_loop.QuitClosure());
   run_loop.Run();
 
-  viz::LocalSurfaceId local_surface_id4(rwhv_mac_->GetLocalSurfaceId());
+  viz::LocalSurfaceId local_surface_id4(
+      rwhv_mac_->GetLocalSurfaceIdAllocation().local_surface_id());
   EXPECT_NE(local_surface_id1, local_surface_id4);
   EXPECT_NE(local_surface_id2, local_surface_id4);
   viz::LocalSurfaceId merged_local_surface_id(

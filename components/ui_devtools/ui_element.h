@@ -39,10 +39,15 @@ class UI_DEVTOOLS_EXPORT UIElement {
   const std::vector<UIElement*>& children() const { return children_; }
   bool is_updating() const { return is_updating_; }
   void set_is_updating(bool is_updating) { is_updating_ = is_updating; }
+  void set_owns_children(bool owns_children) { owns_children_ = owns_children; }
 
   // |child| is inserted in front of |before|. If |before| is null, it
   // is inserted at the end. Parent takes ownership of the added child.
   void AddChild(UIElement* child, UIElement* before = nullptr);
+
+  // Removes all elements from |children_|. Caller is responsible for destroying
+  // children.
+  void ClearChildren();
 
   // Remove |child| out of vector |children_| but |child| is not destroyed.
   // The caller is responsible for destroying |child|.
@@ -88,6 +93,7 @@ class UI_DEVTOOLS_EXPORT UIElement {
   UIElement* parent_;
   UIElementDelegate* delegate_;
   bool is_updating_ = false;
+  bool owns_children_ = true;
 
   DISALLOW_COPY_AND_ASSIGN(UIElement);
 };

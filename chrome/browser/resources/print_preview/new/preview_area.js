@@ -22,6 +22,9 @@ print_preview_new.PreviewAreaState = {
   INVALID_SETTINGS: 'invalid-settings',
   PREVIEW_FAILED: 'preview-failed',
   UNSUPPORTED_CLOUD_PRINTER: 'unsupported-cloud-printer',
+  // <if expr="chromeos">
+  NO_DESTINATIONS_FOUND: 'no-destinations-found',
+  // </if>
 };
 
 Polymer({
@@ -260,15 +263,15 @@ Polymer({
   currentMessage_: function() {
     switch (this.previewState) {
       case print_preview_new.PreviewAreaState.NO_PLUGIN:
-        return this.i18nAdvanced('noPlugin');
+        return this.i18n('noPlugin');
       case print_preview_new.PreviewAreaState.LOADING:
-        return this.i18nAdvanced('loading');
+        return this.i18n('loading');
       case print_preview_new.PreviewAreaState.DISPLAY_PREVIEW:
         return '';
       // <if expr="is_macosx">
       case print_preview_new.PreviewAreaState.OPEN_IN_PREVIEW_LOADING:
       case print_preview_new.PreviewAreaState.OPEN_IN_PREVIEW_LOADED:
-        return this.i18nAdvanced('openingPDFInPreview');
+        return this.i18n('openingPDFInPreview');
       // </if>
       case print_preview_new.PreviewAreaState.INVALID_SETTINGS:
         return this.i18nAdvanced('invalidPrinterSettings', {
@@ -276,12 +279,16 @@ Polymer({
           tags: ['BR'],
         });
       case print_preview_new.PreviewAreaState.PREVIEW_FAILED:
-        return this.i18nAdvanced('previewFailed');
+        return this.i18n('previewFailed');
       case print_preview_new.PreviewAreaState.UNSUPPORTED_CLOUD_PRINTER:
         return this.i18nAdvanced('unsupportedCloudPrinter', {
           substitutions: [],
           tags: ['BR'],
         });
+      // <if expr="chromeos">
+      case print_preview_new.PreviewAreaState.NO_DESTINATIONS_FOUND:
+        return this.i18n('noDestinationsMessage');
+      // </if>
       default:
         return '';
     }
@@ -316,6 +323,13 @@ Polymer({
       this.requestPreviewWhenReady_ = false;
     }
   },
+
+  // <if expr="chromeos">
+  setNoDestinationsFound: function() {
+    this.previewState =
+        print_preview_new.PreviewAreaState.NO_DESTINATIONS_FOUND;
+  },
+  // </if>
 
   // <if expr="is_macosx">
   /** Set the preview state to display the "opening in preview" message. */
@@ -537,6 +551,28 @@ Polymer({
     // we don't want this to happen as it can cause the margin to stop
     // being draggable.
     this.pluginProxy_.setPointerEvents(!e.detail);
+  },
+
+  /**
+   * @param {!CustomEvent} e Contains information about where the plugin
+   *     should scroll to.
+   * @private
+   */
+  onTextFocusPosition_: function(e) {
+    // TODO(tkent): This is a workaround of a preview-area scrolling
+    // issue. Blink scrolls preview-area on focus, but we don't want it.  We
+    // should adjust scroll position of PDF preview and positions of
+    // MarginContgrols here, or restructure the HTML so that the PDF review
+    // and MarginControls are on the single scrollable container.
+    // crbug.com/601341
+    this.scrollTop = 0;
+    this.scrollLeft = 0;
+
+    const position = /** @type {{ x: number, y: number }} */ (e.detail);
+    if (position.x === 0 && position.y === 0)
+      return;
+
+    this.pluginProxy_.scrollPosition(position.x, position.y);
   },
 
   /** @private */

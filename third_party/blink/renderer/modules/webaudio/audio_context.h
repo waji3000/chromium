@@ -37,6 +37,7 @@ class MODULES_EXPORT AudioContext : public BaseAudioContext {
                               const AudioContextOptions*,
                               ExceptionState&);
 
+  AudioContext(Document&, const WebAudioLatencyHint&);
   ~AudioContext() override;
   void Trace(blink::Visitor*) override;
 
@@ -67,11 +68,11 @@ class MODULES_EXPORT AudioContext : public BaseAudioContext {
   void NotifySourceNodeStart() final;
 
  protected:
-  AudioContext(Document&, const WebAudioLatencyHint&);
   void Uninitialize() final;
 
  private:
   friend class AudioContextAutoplayTest;
+  friend class AudioContextTest;
 
   // Do not change the order of this enum, it is used for metrics.
   enum AutoplayStatus {
@@ -122,6 +123,9 @@ class MODULES_EXPORT AudioContext : public BaseAudioContext {
   // playing audible audio.
   void NotifyAudibleAudioStarted() final;
   void NotifyAudibleAudioStopped() final;
+
+  void EnsureAudioContextManagerService();
+  void OnAudioContextManagerServiceConnectionError();
 
   unsigned context_id_;
   Member<ScriptPromiseResolver> close_resolver_;

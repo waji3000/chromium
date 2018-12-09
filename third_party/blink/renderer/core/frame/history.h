@@ -51,7 +51,11 @@ class CORE_EXPORT History final : public ScriptWrappable,
   USING_GARBAGE_COLLECTED_MIXIN(History);
 
  public:
-  static History* Create(LocalFrame* frame) { return new History(frame); }
+  static History* Create(LocalFrame* frame) {
+    return MakeGarbageCollected<History>(frame);
+  }
+
+  explicit History(LocalFrame*);
 
   unsigned length(ExceptionState&) const;
   SerializedScriptValue* state(ExceptionState&);
@@ -68,10 +72,7 @@ class CORE_EXPORT History final : public ScriptWrappable,
   void replaceState(scoped_refptr<SerializedScriptValue> data,
                     const String& title,
                     const String& url,
-                    ExceptionState& exception_state) {
-    StateObjectAdded(std::move(data), title, url, ScrollRestorationInternal(),
-                     WebFrameLoadType::kReplaceCurrentItem, exception_state);
-  }
+                    ExceptionState& exception_state);
 
   void setScrollRestoration(const String& value, ExceptionState&);
   String scrollRestoration(ExceptionState&);
@@ -85,8 +86,6 @@ class CORE_EXPORT History final : public ScriptWrappable,
   FRIEND_TEST_ALL_PREFIXES(HistoryTest, CanChangeToURL);
   FRIEND_TEST_ALL_PREFIXES(HistoryTest, CanChangeToURLInFileOrigin);
   FRIEND_TEST_ALL_PREFIXES(HistoryTest, CanChangeToURLInUniqueOrigin);
-
-  explicit History(LocalFrame*);
 
   static bool CanChangeToUrl(const KURL&,
                              const SecurityOrigin*,

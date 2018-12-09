@@ -20,6 +20,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
 #include "base/single_thread_task_runner.h"
+#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/task/post_task.h"
@@ -84,11 +85,6 @@ using content::BrowserThread;
 namespace chromeos {
 
 namespace {
-
-// Timeout for unlock animation guard - some animations may be required to run
-// on successful authentication before unlocking, but we want to be sure that
-// unlock happens even if animations are broken.
-const int kUnlockGuardTimeoutMs = 400;
 
 // Returns true if fingerprint authentication is available for |user|.
 bool IsFingerprintAvailableForUser(const user_manager::User* user) {
@@ -270,6 +266,10 @@ void ScreenLocker::OnAuthFailure(const AuthFailure& error) {
 }
 
 void ScreenLocker::OnAuthSuccess(const UserContext& user_context) {
+  CHECK(!base::ContainsKey(users_with_disabled_auth_,
+                           user_context.GetAccountId()))
+      << "Authentication is disabled for this user.";
+
   incorrect_passwords_count_ = 0;
   if (authentication_start_time_.is_null()) {
     if (user_context.GetAccountId().is_valid())
@@ -311,20 +311,15 @@ void ScreenLocker::OnAuthSuccess(const UserContext& user_context) {
     NOTREACHED() << "Logged in user not found.";
   }
 
-  authentication_capture_.reset(new AuthenticationParametersCapture());
-  authentication_capture_->user_context = user_context;
-
-  // Add guard for case when something get broken in call chain to unlock
-  // for sure.
-  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-      FROM_HERE,
-      base::BindOnce(&ScreenLocker::UnlockOnLoginSuccess,
-                     weak_factory_.GetWeakPtr()),
-      base::TimeDelta::FromMilliseconds(kUnlockGuardTimeoutMs));
-  delegate_->AnimateAuthenticationSuccess();
-
   if (on_auth_complete_)
     std::move(on_auth_complete_).Run(true);
+
+  if (auth_status_consumer_)
+    auth_status_consumer_->OnAuthSuccess(user_context);
+  weak_factory_.InvalidateWeakPtrs();
+
+  VLOG(1) << "Hiding the lock screen.";
+  chromeos::ScreenLocker::Hide();
 }
 
 void ScreenLocker::OnPasswordAuthSuccess(const UserContext& user_context) {
@@ -337,28 +332,38 @@ void ScreenLocker::OnPasswordAuthSuccess(const UserContext& user_context) {
   SaveSyncPasswordHash(user_context);
 }
 
-void ScreenLocker::UnlockOnLoginSuccess() {
-  DCHECK(base::MessageLoopForUI::IsCurrent());
-  if (!authentication_capture_.get()) {
-    LOG(WARNING) << "Call to UnlockOnLoginSuccess without previous "
-                 << "authentication success.";
-    return;
-  }
+void ScreenLocker::SetAuthEnabledForUser(
+    const AccountId& account_id,
+    bool is_enabled,
+    base::Optional<base::Time> auth_reenabled_time) {
+  const user_manager::User* user = FindUnlockUser(account_id);
+  CHECK(user) << "Invalid user - cannot disable authentication.";
 
-  if (auth_status_consumer_) {
-    auth_status_consumer_->OnAuthSuccess(authentication_capture_->user_context);
+  if (is_enabled) {
+    users_with_disabled_auth_.erase(account_id);
+  } else {
+    users_with_disabled_auth_.insert(account_id);
   }
-  authentication_capture_.reset();
-  weak_factory_.InvalidateWeakPtrs();
-
-  VLOG(1) << "Hiding the lock screen.";
-  chromeos::ScreenLocker::Hide();
+  LoginScreenClient::Get()->login_screen()->SetAuthEnabledForUser(
+      account_id, is_enabled, auth_reenabled_time);
 }
 
 void ScreenLocker::Authenticate(const UserContext& user_context,
                                 AuthenticateCallback callback) {
   LOG_ASSERT(IsUserLoggedIn(user_context.GetAccountId()))
       << "Invalid user trying to unlock.";
+
+  // Do not attempt authentication if it is disabled for the user.
+  if (base::ContainsKey(users_with_disabled_auth_,
+                        user_context.GetAccountId())) {
+    VLOG(1) << "Authentication disabled for user.";
+    if (auth_status_consumer_)
+      auth_status_consumer_->OnAuthFailure(
+          AuthFailure(AuthFailure::AUTH_DISABLED));
+    if (callback)
+      std::move(callback).Run(false);
+    return;
+  }
 
   DCHECK(!on_auth_complete_);
   on_auth_complete_ = std::move(callback);
@@ -542,7 +547,7 @@ void ScreenLocker::HandleShowLockScreenRequest() {
 // static
 void ScreenLocker::Show() {
   base::RecordAction(UserMetricsAction("ScreenLocker_Show"));
-  DCHECK(base::MessageLoopForUI::IsCurrent());
+  DCHECK(base::MessageLoopCurrentForUI::IsSet());
 
   // Check whether the currently logged in user is a guest account and if so,
   // refuse to lock the screen (crosbug.com/23764).
@@ -569,7 +574,7 @@ void ScreenLocker::Show() {
 
 // static
 void ScreenLocker::Hide() {
-  DCHECK(base::MessageLoopForUI::IsCurrent());
+  DCHECK(base::MessageLoopCurrentForUI::IsSet());
   // For a guest user, screen_locker_ would have never been initialized.
   if (user_manager::UserManager::Get()->IsLoggedInAsGuest()) {
     VLOG(1) << "Refusing to hide lock screen for guest account";
@@ -610,12 +615,20 @@ void ScreenLocker::SaveSyncPasswordHash(const UserContext& user_context) {
   if (profile)
     login::SaveSyncPasswordDataToProfile(user_context, profile);
 }
+
+void ScreenLocker::SetAuthenticatorsForTesting(
+    scoped_refptr<Authenticator> authenticator,
+    scoped_refptr<ExtendedAuthenticator> extended_authenticator) {
+  authenticator_ = std::move(authenticator);
+  extended_authenticator_ = std::move(extended_authenticator);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // ScreenLocker, private:
 
 ScreenLocker::~ScreenLocker() {
   VLOG(1) << "Destroying ScreenLocker " << this;
-  DCHECK(base::MessageLoopForUI::IsCurrent());
+  DCHECK(base::MessageLoopCurrentForUI::IsSet());
 
   if (authenticator_)
     authenticator_->SetConsumer(nullptr);
@@ -639,10 +652,6 @@ ScreenLocker::~ScreenLocker() {
   if (saved_ime_state_.get()) {
     input_method::InputMethodManager::Get()->SetState(saved_ime_state_);
   }
-}
-
-void ScreenLocker::SetAuthenticator(Authenticator* authenticator) {
-  authenticator_ = authenticator;
 }
 
 void ScreenLocker::ScreenLockReady() {
@@ -702,7 +711,9 @@ void ScreenLocker::OnAuthScanDone(
   quick_unlock::QuickUnlockStorage* quick_unlock_storage =
       quick_unlock::QuickUnlockFactory::GetForUser(active_user);
   if (!quick_unlock_storage ||
-      !quick_unlock_storage->IsFingerprintAuthenticationAvailable()) {
+      !quick_unlock_storage->IsFingerprintAuthenticationAvailable() ||
+      base::ContainsKey(users_with_disabled_auth_,
+                        active_user->GetAccountId())) {
     return;
   }
 

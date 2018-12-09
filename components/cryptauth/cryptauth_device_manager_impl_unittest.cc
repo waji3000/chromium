@@ -17,13 +17,13 @@
 #include "base/strings/stringprintf.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/simple_test_clock.h"
+#include "chromeos/components/multidevice/software_feature_state.h"
 #include "components/cryptauth/fake_cryptauth_gcm_manager.h"
 #include "components/cryptauth/mock_cryptauth_client.h"
 #include "components/cryptauth/mock_sync_scheduler.h"
 #include "components/cryptauth/network_request_error.h"
 #include "components/cryptauth/pref_names.h"
 #include "components/cryptauth/proto/enum_util.h"
-#include "components/cryptauth/software_feature_state.h"
 #include "components/prefs/scoped_user_pref_update.h"
 #include "components/prefs/testing_pref_service.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
@@ -320,11 +320,12 @@ void ExpectSyncedDevicesAndPrefAreEqual(
 
         SoftwareFeature software_feature =
             SoftwareFeatureStringToEnum(it.first);
-        switch (static_cast<SoftwareFeatureState>(software_feature_state)) {
-          case SoftwareFeatureState::kEnabled:
+        switch (static_cast<chromeos::multidevice::SoftwareFeatureState>(
+            software_feature_state)) {
+          case chromeos::multidevice::SoftwareFeatureState::kEnabled:
             enabled_software_features.push_back(software_feature);
             FALLTHROUGH;
-          case SoftwareFeatureState::kSupported:
+          case chromeos::multidevice::SoftwareFeatureState::kSupported:
             supported_software_features.push_back(software_feature);
             break;
           default:
@@ -1170,8 +1171,15 @@ TEST_F(CryptAuthDeviceManagerImplTest, MetricsForEnabledAndNotSupported) {
       SoftwareFeatureEnumToString(SoftwareFeature::BETTER_TOGETHER_HOST));
   enabled_not_supported_device.add_enabled_software_features(
       SoftwareFeatureEnumToString(SoftwareFeature::BETTER_TOGETHER_HOST));
+
+  // EASY_UNLOCK_HOST is a special case; it is allowed to not be marked as
+  // supported, but still be set as enabled.
   enabled_not_supported_device.add_enabled_software_features(
       SoftwareFeatureEnumToString(SoftwareFeature::EASY_UNLOCK_HOST));
+
+  // These will fail because they are not set as supported.
+  enabled_not_supported_device.add_enabled_software_features(
+      SoftwareFeatureEnumToString(SoftwareFeature::MAGIC_TETHER_HOST));
   enabled_not_supported_device.add_enabled_software_features(
       "MyUnknownFeature");
 
@@ -1194,9 +1202,9 @@ TEST_F(CryptAuthDeviceManagerImplTest, MetricsForEnabledAndNotSupported) {
   success_callback_.Run(response);
 
   histogram_tester.ExpectTotalCount(
-      "CryptAuth.DeviceSyncSoftwareFeaturesResult", 3);
+      "CryptAuth.DeviceSyncSoftwareFeaturesResult", 4);
   histogram_tester.ExpectBucketCount<bool>(
-      "CryptAuth.DeviceSyncSoftwareFeaturesResult", true, 1);
+      "CryptAuth.DeviceSyncSoftwareFeaturesResult", true, 2);
   histogram_tester.ExpectBucketCount<bool>(
       "CryptAuth.DeviceSyncSoftwareFeaturesResult", false, 2);
 
@@ -1207,7 +1215,10 @@ TEST_F(CryptAuthDeviceManagerImplTest, MetricsForEnabledAndNotSupported) {
       cryptauth::SoftwareFeature::BETTER_TOGETHER_HOST, 0);
   histogram_tester.ExpectBucketCount<cryptauth::SoftwareFeature>(
       "CryptAuth.DeviceSyncSoftwareFeaturesResult.Failures",
-      cryptauth::SoftwareFeature::EASY_UNLOCK_HOST, 1);
+      cryptauth::SoftwareFeature::EASY_UNLOCK_HOST, 0);
+  histogram_tester.ExpectBucketCount<cryptauth::SoftwareFeature>(
+      "CryptAuth.DeviceSyncSoftwareFeaturesResult.Failures",
+      cryptauth::SoftwareFeature::MAGIC_TETHER_HOST, 1);
   histogram_tester.ExpectBucketCount<cryptauth::SoftwareFeature>(
       "CryptAuth.DeviceSyncSoftwareFeaturesResult.Failures",
       cryptauth::SoftwareFeature::UNKNOWN_FEATURE, 1);

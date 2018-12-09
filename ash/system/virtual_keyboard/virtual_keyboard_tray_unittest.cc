@@ -9,8 +9,8 @@
 #include "ash/test/ash_test_base.h"
 #include "base/command_line.h"
 #include "ui/keyboard/keyboard_controller.h"
-#include "ui/keyboard/keyboard_switches.h"
 #include "ui/keyboard/keyboard_util.h"
+#include "ui/keyboard/public/keyboard_switches.h"
 #include "ui/keyboard/test/keyboard_test_util.h"
 
 namespace ash {
@@ -26,9 +26,11 @@ class VirtualKeyboardTrayTest : public AshTestBase {
     // These tests only apply to the floating virtual keyboard, as it is the
     // only case where both the virtual keyboard and the shelf are visible.
     keyboard_controller()->LoadKeyboardWindowInBackground();
-    keyboard_controller()->NotifyKeyboardWindowLoaded();
-    keyboard_controller()->SetContainerType(keyboard::ContainerType::FLOATING,
-                                            base::nullopt, base::DoNothing());
+    // Wait for the keyboard window to load.
+    base::RunLoop().RunUntilIdle();
+    keyboard_controller()->SetContainerType(
+        keyboard::mojom::ContainerType::kFloating, base::nullopt,
+        base::DoNothing());
   }
 
   keyboard::KeyboardController* keyboard_controller() {

@@ -39,6 +39,12 @@ class CORE_EXPORT ScrollTimeline final : public AnimationTimeline {
                                 ScrollTimelineOptions*,
                                 ExceptionState&);
 
+  ScrollTimeline(Element*,
+                 ScrollDirection,
+                 CSSPrimitiveValue*,
+                 CSSPrimitiveValue*,
+                 double);
+
   // AnimationTimeline implementation.
   double currentTime(bool& is_null) final;
   bool IsScrollTimeline() const override { return true; }
@@ -52,8 +58,9 @@ class CORE_EXPORT ScrollTimeline final : public AnimationTimeline {
 
   // Returns the Node that should actually have the ScrollableArea (if one
   // exists). This can differ from |scrollSource| when |scroll_source_| is the
-  // Document's scrollingElement.
-  Node* ResolvedScrollSource() const;
+  // Document's scrollingElement, and it may be null if the document was removed
+  // before the ScrollTimeline was created.
+  Node* ResolvedScrollSource() const { return resolved_scroll_source_; }
 
   ScrollDirection GetOrientation() const { return orientation_; }
 
@@ -80,13 +87,11 @@ class CORE_EXPORT ScrollTimeline final : public AnimationTimeline {
   static bool HasActiveScrollTimeline(Node* node);
 
  private:
-  ScrollTimeline(Element*,
-                 ScrollDirection,
-                 CSSPrimitiveValue*,
-                 CSSPrimitiveValue*,
-                 double);
-
+  // Use |scroll_source_| only to implement the web-exposed API but use
+  // resolved_scroll_source_ to actually access the scroll related properties.
   Member<Element> scroll_source_;
+  Member<Node> resolved_scroll_source_;
+
   ScrollDirection orientation_;
   Member<CSSPrimitiveValue> start_scroll_offset_;
   Member<CSSPrimitiveValue> end_scroll_offset_;

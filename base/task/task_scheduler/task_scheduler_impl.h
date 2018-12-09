@@ -25,6 +25,7 @@
 #include "base/task/task_scheduler/task_scheduler.h"
 #include "base/task/task_scheduler/task_tracker.h"
 #include "base/task/task_traits.h"
+#include "base/updateable_sequenced_task_runner.h"
 #include "build/build_config.h"
 
 #if defined(OS_POSIX) && !defined(OS_NACL_SFI)
@@ -39,11 +40,8 @@ namespace base {
 
 class HistogramBase;
 class Thread;
-struct Feature;
 
 namespace internal {
-
-extern const BASE_EXPORT base::Feature kMergeBlockingNonBlockingPools;
 
 // Default TaskScheduler implementation. This class is thread-safe.
 class BASE_EXPORT TaskSchedulerImpl : public TaskScheduler,
@@ -96,6 +94,9 @@ class BASE_EXPORT TaskSchedulerImpl : public TaskScheduler,
       const TaskTraits& traits,
       SingleThreadTaskRunnerThreadMode thread_mode) override;
 #endif  // defined(OS_WIN)
+  scoped_refptr<UpdateableSequencedTaskRunner>
+  CreateUpdateableSequencedTaskRunnerWithTraitsForTesting(
+      const TaskTraits& traits);
 
  private:
   // Returns the worker pool that runs Tasks with |traits|.
@@ -109,12 +110,15 @@ class BASE_EXPORT TaskSchedulerImpl : public TaskScheduler,
   void ReportHeartbeatMetrics() const;
 
   // SchedulerWorkerPool::Delegate:
-  void ReEnqueueSequence(scoped_refptr<Sequence> sequence) override;
+  void ReEnqueueSequence(
+      SequenceAndTransaction sequence_and_transaction) override;
 
   // SchedulerTaskRunnerDelegate:
   bool PostTaskWithSequence(Task task,
                             scoped_refptr<Sequence> sequence) override;
   bool IsRunningPoolWithTraits(const TaskTraits& traits) const override;
+  void UpdatePriority(scoped_refptr<Sequence> sequence,
+                      TaskPriority priority) override;
 
   const std::unique_ptr<TaskTrackerImpl> task_tracker_;
   std::unique_ptr<Thread> service_thread_;

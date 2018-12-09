@@ -18,8 +18,11 @@
           "ash.mojom.AppListController",
           "ash.mojom.AshMessageCenterController",
           "ash.mojom.AssistantController",
+          "ash.mojom.AssistantScreenContextController",
+          "ash.mojom.AssistantSetupController",
           "ash.mojom.AssistantVolumeControl",
           "ash.mojom.CastConfig",
+          "ash.mojom.ContainedShellController",
           "ash.mojom.CrosDisplayConfigController",
           "ash.mojom.DockedMagnifierController",
           "ash.mojom.EventRewriterController",
@@ -27,7 +30,7 @@
           "ash.mojom.HighlighterController",
           "ash.mojom.ImeController",
           "ash.mojom.KeyboardController",
-          "ash.mojom.LocaleNotificationController",
+          "ash.mojom.LocaleUpdateController",
           "ash.mojom.LoginScreen",
           "ash.mojom.MediaController",
           "ash.mojom.NewWindowController",
@@ -44,11 +47,11 @@
           "ash.mojom.TrayAction",
           "ash.mojom.VoiceInteractionController",
           "ash.mojom.VpnList",
-          "ash.mojom.WallpaperController",
-          "keyboard.mojom.KeyboardController"
+          "ash.mojom.WallpaperController"
         ],
         // Test-only interfaces.
         "test": [
+          "ash.mojom.LoginScreenTestApi",
           "ash.mojom.ShelfTestApi",
           "ash.mojom.ShellTestApi",
           "ash.mojom.StatusAreaWidgetTestApi",
@@ -69,6 +72,7 @@
         "*": [ "accessibility", "app" ],
         "ash_pref_connector": [ "pref_connector" ],
         "catalog": [ "directory" ],
+        "content": [ "navigation" ],
         "device": [
           "device:bluetooth_system",
           "device:fingerprint"

@@ -1111,6 +1111,16 @@ class RenderFrameSubmissionObserver
   // OnRenderFrameMetadataChangedAfterActivation.
   void WaitForMetadataChange();
 
+  // Blocks the browser ui thread until RenderFrameMetadata arrives with
+  // page scale factor matching |expected_page_scale_factor|.
+  void WaitForPageScaleFactor(float expected_page_scale_factor,
+                              const float tolerance);
+
+  // Blocks the browser ui thread until RenderFrameMetadata arrives with
+  // external page scale factor matching |expected_external_page_scale_factor|.
+  void WaitForExternalPageScaleFactor(float expected_external_page_scale_factor,
+                                      const float tolerance);
+
   // Blocks the browser ui thread until RenderFrameMetadata arrives where its
   // scroll offset matches |expected_offset|.
   void WaitForScrollOffset(const gfx::Vector2dF& expected_offset);
@@ -1579,14 +1589,12 @@ class SynchronizeVisualPropertiesMessageFilter
 
  private:
   void OnSynchronizeFrameHostVisualProperties(
-      const viz::SurfaceId& surface_id,
+      const viz::FrameSinkId& frame_sink_id,
       const FrameVisualProperties& visual_properties);
   void OnSynchronizeBrowserPluginVisualProperties(
       int browser_plugin_guest_instance_id,
-      viz::LocalSurfaceId surface_id,
       FrameVisualProperties visual_properties);
   void OnSynchronizeVisualProperties(
-      const viz::LocalSurfaceId& surface_id,
       const viz::FrameSinkId& frame_sink_id,
       const FrameVisualProperties& visual_properties);
   // |rect| is in DIPs.

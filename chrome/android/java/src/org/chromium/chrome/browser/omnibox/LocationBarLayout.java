@@ -4,7 +4,6 @@
 
 package org.chromium.chrome.browser.omnibox;
 
-import android.app.Activity;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
@@ -13,7 +12,6 @@ import android.support.annotation.Nullable;
 import android.support.v4.view.MarginLayoutParamsCompat;
 import android.support.v4.view.ViewCompat;
 import android.support.v7.content.res.AppCompatResources;
-import android.support.v7.widget.AppCompatImageButton;
 import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.util.SparseArray;
@@ -24,6 +22,7 @@ import android.view.View.OnClickListener;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
 
 import org.chromium.base.ApiCompatibilityUtils;
@@ -32,7 +31,6 @@ import org.chromium.base.ObserverList;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.chrome.R;
-import org.chromium.chrome.browser.ChromeActivity;
 import org.chromium.chrome.browser.ChromeFeatureList;
 import org.chromium.chrome.browser.ChromeSwitches;
 import org.chromium.chrome.browser.WindowDelegate;
@@ -54,12 +52,10 @@ import org.chromium.chrome.browser.preferences.privacy.PrivacyPreferencesManager
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.search_engines.TemplateUrlService;
 import org.chromium.chrome.browser.tab.Tab;
-import org.chromium.chrome.browser.toolbar.ToolbarActionModeCallback;
 import org.chromium.chrome.browser.toolbar.ToolbarDataProvider;
 import org.chromium.chrome.browser.toolbar.ToolbarManager;
+import org.chromium.chrome.browser.toolbar.top.ToolbarActionModeCallback;
 import org.chromium.chrome.browser.util.ColorUtils;
-import org.chromium.chrome.browser.widget.ScrimView;
-import org.chromium.chrome.browser.widget.ScrimView.ScrimParams;
 import org.chromium.content_public.browser.LoadUrlParams;
 import org.chromium.ui.base.DeviceFormFactor;
 import org.chromium.ui.base.PageTransition;
@@ -74,17 +70,11 @@ import java.util.List;
  */
 public class LocationBarLayout extends FrameLayout
         implements OnClickListener, LocationBar, AutocompleteDelegate, FakeboxDelegate,
-                   ScrimView.ScrimObserver, LocationBarVoiceRecognitionHandler.Delegate,
-                   StatusViewCoordinator.Delegate {
+                   LocationBarVoiceRecognitionHandler.Delegate, StatusViewCoordinator.Delegate {
     private static final String TAG = "cr_LocationBar";
 
-    private final int mLightScrimColor;
-
-    /** Params that control how the location bar interacts with the scrim. */
-    private ScrimParams mScrimParams;
-
-    protected AppCompatImageButton mDeleteButton;
-    protected AppCompatImageButton mMicButton;
+    protected ImageButton mDeleteButton;
+    protected ImageButton mMicButton;
     protected View mUrlBar;
     private final boolean mIsTablet;
 
@@ -104,8 +94,6 @@ public class LocationBarLayout extends FrameLayout
 
     private WindowAndroid mWindowAndroid;
     private WindowDelegate mWindowDelegate;
-
-    private ScrimView mScrim;
 
     private boolean mUrlHasFocus;
     protected boolean mUrlFocusChangeInProgress;
@@ -163,11 +151,9 @@ public class LocationBarLayout extends FrameLayout
 
         LayoutInflater.from(context).inflate(layoutId, this, true);
 
-        mLightScrimColor = ApiCompatibilityUtils.getColor(
-                context.getResources(), R.color.omnibox_focused_fading_background_color_light);
         mIsTablet = DeviceFormFactor.isNonMultiDisplayContextOnTablet(context);
 
-        mDeleteButton = (AppCompatImageButton) findViewById(R.id.delete_button);
+        mDeleteButton = findViewById(R.id.delete_button);
 
         mUrlBar = findViewById(R.id.url_bar);
         mUrlCoordinator = new UrlBarCoordinator((UrlBar) mUrlBar);
@@ -178,11 +164,6 @@ public class LocationBarLayout extends FrameLayout
                     @Override
                     public boolean isTablet() {
                         return mIsTablet;
-                    }
-
-                    @Override
-                    public boolean isIncognito() {
-                        return mToolbarDataProvider.isIncognito();
                     }
 
                     @Override
@@ -205,7 +186,7 @@ public class LocationBarLayout extends FrameLayout
         addUrlFocusChangeListener(mAutocompleteCoordinator);
         mUrlCoordinator.setUrlTextChangeListener(mAutocompleteCoordinator);
 
-        mMicButton = (AppCompatImageButton) findViewById(R.id.mic_button);
+        mMicButton = findViewById(R.id.mic_button);
 
         mUrlActionContainer = (LinearLayout) findViewById(R.id.url_action_container);
 
@@ -270,6 +251,7 @@ public class LocationBarLayout extends FrameLayout
 
         mUrlCoordinator.setWindowDelegate(windowDelegate);
         mStatusViewCoordinator.setWindowAndroid(windowAndroid);
+        mAutocompleteCoordinator.setWindowAndroid(windowAndroid);
     }
 
     /**
@@ -385,7 +367,6 @@ public class LocationBarLayout extends FrameLayout
      * @return Whether the URL focus change is taking place, e.g. a focus animation is running on
      *         a phone device.
      */
-    @Override
     public boolean isUrlFocusChangeInProgress() {
         return mUrlFocusChangeInProgress;
     }
@@ -481,8 +462,6 @@ public class LocationBarLayout extends FrameLayout
         for (UrlFocusChangeListener listener : mUrlFocusChangeListeners) {
             listener.onUrlFocusChange(hasFocus);
         }
-
-        updateFadingBackgroundView(hasFocus, false);
     }
 
     @Override
@@ -980,67 +959,6 @@ public class LocationBarLayout extends FrameLayout
     public boolean allowKeyboardLearning() {
         if (mToolbarDataProvider == null) return false;
         return !mToolbarDataProvider.isIncognito();
-    }
-
-    @Override
-    public void onScrimClick() {
-        setUrlBarFocus(false);
-        updateFadingBackgroundView(false, false);
-    }
-
-    @Override
-    public void onScrimVisibilityChanged(boolean visible) {
-        Activity activity = mWindowAndroid.getActivity().get();
-        if (!(activity instanceof ChromeActivity)) return;
-        ChromeActivity chromeActivity = (ChromeActivity) activity;
-
-        if (visible) {
-            chromeActivity.addViewObscuringAllTabs(mScrim);
-        } else {
-            chromeActivity.removeViewObscuringAllTabs(mScrim);
-        }
-    }
-
-    @Override
-    public void setScrim(ScrimView scrim) {
-        mScrim = scrim;
-
-        // In some cases, users can start chrome and immediately start tapping the omnibox. In that
-        // case, the omnibox will focus, but there is no scrim. This checks if the scrim needs to
-        // be visible and updates it accordingly.
-        updateFadingBackgroundView(isUrlBarFocused(), true);
-    }
-
-    /**
-     * Update the fading background view that shows when the omnibox is focused. If Chrome Home is
-     * enabled, this method is a no-op.
-     * @param visible Whether the background should be made visible.
-     * @param ignoreNtpChecks Whether the checks for the ntp should be considered when updating the
-     *                        scrim.
-     */
-    protected void updateFadingBackgroundView(boolean visible, boolean ignoreNtpChecks) {
-        if (mScrim == null) return;
-        NewTabPage ntp = mToolbarDataProvider.getNewTabPageForCurrentTab();
-        boolean locationBarShownInNTP = ntp != null && ntp.isLocationBarShownInNTP();
-
-        if (visible && (!locationBarShownInNTP || ignoreNtpChecks)) {
-            if (mScrimParams == null) {
-                int topMargin = getResources().getDimensionPixelSize(R.dimen.tab_strip_height);
-                View omniboxSuggestionsContainer =
-                        mAutocompleteCoordinator.getSuggestionContainerView();
-                if (omniboxSuggestionsContainer == null) return;
-                mScrimParams =
-                        new ScrimParams(omniboxSuggestionsContainer, false, false, topMargin, this);
-            }
-            mScrimParams.backgroundColor =
-                    !mIsTablet && !mToolbarDataProvider.isIncognito() ? mLightScrimColor : null;
-
-            // If the location bar is shown in the NTP, the toolbar will eventually trigger a
-            // fade in.
-            mScrim.showScrim(mScrimParams);
-        } else {
-            mScrim.hideScrim(!locationBarShownInNTP);
-        }
     }
 
     @Override

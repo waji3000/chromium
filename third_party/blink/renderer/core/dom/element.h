@@ -57,7 +57,9 @@ class DOMRectList;
 class DOMStringMap;
 class DOMTokenList;
 class Document;
+class DisplayLockContext;
 class ElementAnimations;
+class ElementInternals;
 class ElementIntersectionObserverData;
 class ElementRareData;
 class ExceptionState;
@@ -154,6 +156,8 @@ class CORE_EXPORT Element : public ContainerNode {
 
  public:
   static Element* Create(const QualifiedName&, Document*);
+
+  Element(const QualifiedName& tag_name, Document*, ConstructionType);
   ~Element() override;
 
   DEFINE_ATTRIBUTE_EVENT_LISTENER(beforecopy, kBeforecopy);
@@ -807,6 +811,9 @@ class CORE_EXPORT Element : public ContainerNode {
   // https://dom.spec.whatwg.org/#concept-element-is-value
   void SetIsValue(const AtomicString&);
   const AtomicString& IsValue() const;
+  void SetDidAttachInternals();
+  bool DidAttachInternals() const;
+  ElementInternals& EnsureElementInternals();
 
   bool ContainsFullScreenElement() const {
     return HasElementFlag(ElementFlags::kContainsFullScreenElement);
@@ -836,8 +843,13 @@ class CORE_EXPORT Element : public ContainerNode {
   const SpaceSplitString& ClassNames() const;
   bool HasClassName(const AtomicString& class_name) const;
 
-  bool HasPartName() const;
-  const SpaceSplitString* PartNames() const;
+  // Returns true if the element has 1 or more part names.
+  bool HasPart() const;
+  // Returns the list of part names if it has ever been created.
+  DOMTokenList* GetPart() const;
+  // IDL method.
+  // Returns the list of part names, creating it if it doesn't exist.
+  DOMTokenList& part();
 
   bool HasPartNamesMap() const;
   const NamesMap* PartNamesMap() const;
@@ -887,10 +899,11 @@ class CORE_EXPORT Element : public ContainerNode {
   void SetNeedsResizeObserverUpdate();
 
   ScriptPromise acquireDisplayLock(ScriptState*, V8DisplayLockCallback*);
+  DisplayLockContext* GetDisplayLockContext() const;
+
+  bool StyleRecalcBlockedByDisplayLock() const;
 
  protected:
-  Element(const QualifiedName& tag_name, Document*, ConstructionType);
-
   const ElementData* GetElementData() const { return element_data_.Get(); }
   UniqueElementData& EnsureUniqueElementData();
 
@@ -1097,6 +1110,8 @@ class CORE_EXPORT Element : public ContainerNode {
   void DetachAllAttrNodesFromElement();
   void DetachAttrNodeFromElementWithValue(Attr*, const AtomicString& value);
   void DetachAttrNodeAtIndex(Attr*, wtf_size_t index);
+
+  void NotifyDisplayLockDidRecalcStyle();
 
   Member<ElementData> element_data_;
 };

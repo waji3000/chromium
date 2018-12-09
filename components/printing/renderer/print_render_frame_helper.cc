@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "base/auto_reset.h"
+#include "base/i18n/rtl.h"
 #include "base/json/json_writer.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -39,7 +40,6 @@
 #include "printing/units.h"
 #include "third_party/blink/public/common/frame/frame_owner_element_type.h"
 #include "third_party/blink/public/common/frame/sandbox_flags.h"
-#include "third_party/blink/public/mojom/page/page_visibility_state.mojom.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_data.h"
 #include "third_party/blink/public/platform/web_double_size.h"
@@ -53,6 +53,7 @@
 #include "third_party/blink/public/web/web_frame_widget.h"
 #include "third_party/blink/public/web/web_local_frame.h"
 #include "third_party/blink/public/web/web_local_frame_client.h"
+#include "third_party/blink/public/web/web_navigation_control.h"
 #include "third_party/blink/public/web/web_plugin.h"
 #include "third_party/blink/public/web/web_plugin_document.h"
 #include "third_party/blink/public/web/web_print_params.h"
@@ -105,7 +106,7 @@ bool g_is_preview_enabled = false;
 const char kPageLoadScriptFormat[] =
     "document.open(); document.write(%s); document.close();";
 
-const char kPageSetupScriptFormat[] = "setup(%s);";
+const char kPageSetupScriptFormat[] = "setupHeaderFooterTemplate(%s);";
 
 void ExecuteScript(blink::WebLocalFrame* frame,
                    const char* script_format,
@@ -663,35 +664,37 @@ void PrintRenderFrameHelper::PrintHeaderAndFooter(
 
   blink::WebView* web_view = blink::WebView::Create(
       /*client=*/nullptr, /*widget_client=*/nullptr,
-      blink::mojom::PageVisibilityState::kVisible,
-      /*opener=*/nullptr);
+      /*is_hidden=*/false, /*compositing_enabled=*/false, /*opener=*/nullptr);
   web_view->GetSettings()->SetJavaScriptEnabled(true);
 
   class HeaderAndFooterClient final : public blink::WebLocalFrameClient {
    public:
     // WebLocalFrameClient:
-    void BindToFrame(blink::WebLocalFrame* frame) override { frame_ = frame; }
+    void BindToFrame(blink::WebNavigationControl* frame) override {
+      frame_ = frame;
+    }
     void FrameDetached(DetachType detach_type) override {
       frame_->FrameWidget()->Close();
       frame_->Close();
       frame_ = nullptr;
     }
+    void BeginNavigation(
+        std::unique_ptr<blink::WebNavigationInfo> info) override {
+      frame_->CommitNavigation(
+          info->url_request, info->frame_load_type, blink::WebHistoryItem(),
+          info->is_client_redirect, base::UnguessableToken::Create(),
+          nullptr /* navigation_params */, nullptr /* extra_data */);
+    }
 
    private:
-    blink::WebLocalFrame* frame_;
-  };
-
-  class NonCompositingWebWidgetClient : public blink::WebWidgetClient {
-   public:
-    // blink::WebWidgetClient implementation.
-    bool AllowsBrokenNullLayerTreeView() const override { return true; }
+    blink::WebNavigationControl* frame_ = nullptr;
   };
 
   HeaderAndFooterClient frame_client;
   blink::WebLocalFrame* frame = blink::WebLocalFrame::CreateMainFrame(
       web_view, &frame_client, nullptr, nullptr);
 
-  NonCompositingWebWidgetClient web_widget_client;
+  blink::WebWidgetClient web_widget_client;
   blink::WebFrameWidget::CreateForMainFrame(&web_widget_client, frame);
 
   base::Value html(ui::ResourceBundle::GetSharedInstance().GetRawDataResource(
@@ -712,6 +715,7 @@ void PrintRenderFrameHelper::PrintHeaderAndFooter(
   options->SetString("title", title.empty() ? params.title : title);
   options->SetString("headerTemplate", params.header_template);
   options->SetString("footerTemplate", params.footer_template);
+  options->SetBoolean("isRtl", base::i18n::IsRTL());
 
   ExecuteScript(frame, kPageSetupScriptFormat, *options);
 
@@ -722,7 +726,7 @@ void PrintRenderFrameHelper::PrintHeaderAndFooter(
   frame->PrintPage(0, canvas);
   frame->PrintEnd();
 
-  web_view->Close();
+  web_view->MainFrameWidget()->Close();
 }
 
 // static - Not anonymous so that platform implementations can use it.
@@ -774,13 +778,11 @@ class PrepareFrameAndViewForPrint : public blink::WebViewClient,
  private:
   // blink::WebViewClient:
   void DidStopLoading() override;
-  // TODO(ojan): Remove this override and have this class give a LayerTreeView
-  // to the WebWidget.
-  bool AllowsBrokenNullLayerTreeView() const override;
   blink::WebScreenInfo GetScreenInfo() override;
   WebWidgetClient* WidgetClient() override { return this; }
 
   // blink::WebLocalFrameClient:
+  void BindToFrame(blink::WebNavigationControl* frame) override;
   blink::WebLocalFrame* CreateChildFrame(
       blink::WebLocalFrame* parent,
       blink::WebTreeScopeType scope,
@@ -791,6 +793,7 @@ class PrepareFrameAndViewForPrint : public blink::WebViewClient,
       const blink::WebFrameOwnerProperties& frame_owner_properties,
       blink::FrameOwnerElementType owner_type) override;
   void FrameDetached(DetachType detach_type) override;
+  void BeginNavigation(std::unique_ptr<blink::WebNavigationInfo> info) override;
   std::unique_ptr<blink::WebURLLoaderFactory> CreateURLLoaderFactory() override;
 
   void CallOnReady();
@@ -799,6 +802,7 @@ class PrepareFrameAndViewForPrint : public blink::WebViewClient,
   void CopySelection(const WebPreferences& preferences);
 
   FrameReference frame_;
+  blink::WebNavigationControl* navigation_control_ = nullptr;
   blink::WebNode node_to_print_;
   bool owns_web_view_ = false;
   blink::WebPrintParams web_print_params_;
@@ -827,7 +831,7 @@ PrepareFrameAndViewForPrint::PrepareFrameAndViewForPrint(
       weak_ptr_factory_(this) {
   PrintMsg_Print_Params print_params = params;
   bool source_is_pdf = PrintingNodeOrPdfFrame(frame, node_to_print_);
-  if (!should_print_selection_only_ || !source_is_pdf) {
+  if (!should_print_selection_only_) {
     bool fit_to_page =
         ignore_css_margins && IsWebPrintScalingOptionFitToPage(print_params);
     ComputeWebKitPrintParamsInDesiredDpi(params, source_is_pdf,
@@ -878,8 +882,8 @@ void PrepareFrameAndViewForPrint::ResizeForPrinting() {
     if (web_frame->IsWebLocalFrame())
       prev_scroll_offset_ = web_frame->ToWebLocalFrame()->GetScrollOffset();
   }
-  prev_view_size_ = web_view->Size();
-  web_view->Resize(print_layout_size);
+  prev_view_size_ = web_view->MainFrameWidget()->Size();
+  web_view->MainFrameWidget()->Resize(print_layout_size);
 }
 
 void PrepareFrameAndViewForPrint::StartPrinting() {
@@ -906,8 +910,11 @@ void PrepareFrameAndViewForPrint::CopySelectionIfNeeded(
 void PrepareFrameAndViewForPrint::CopySelection(
     const WebPreferences& preferences) {
   ResizeForPrinting();
+  frame()->PrintBegin(web_print_params_, node_to_print_);
   std::string html = frame()->SelectionAsMarkup().Utf8();
+  frame()->PrintEnd();
   RestoreSize();
+
   // Create a new WebView with the same settings as the current display one.
   // Except that we disable javascript (don't want any active content running
   // on the page).
@@ -916,7 +923,8 @@ void PrepareFrameAndViewForPrint::CopySelection(
 
   blink::WebView* web_view = blink::WebView::Create(
       /*client=*/this, /*widget_client=*/this,
-      blink::mojom::PageVisibilityState::kVisible,
+      /*is_hidden=*/false,
+      /*compositing_enabled=*/false,
       /*opener=*/nullptr);
   owns_web_view_ = true;
   content::RenderView::ApplyWebPreferences(prefs, web_view);
@@ -928,12 +936,8 @@ void PrepareFrameAndViewForPrint::CopySelection(
 
   // When loading is done this will call didStopLoading() and that will do the
   // actual printing.
-  frame()->LoadHTMLString(blink::WebData(html),
-                          blink::WebURL(GURL(url::kAboutBlankURL)));
-}
-
-bool PrepareFrameAndViewForPrint::AllowsBrokenNullLayerTreeView() const {
-  return true;
+  navigation_control_->LoadHTMLString(blink::WebData(html),
+                                      blink::WebURL(GURL(url::kAboutBlankURL)));
 }
 
 blink::WebScreenInfo PrepareFrameAndViewForPrint::GetScreenInfo() {
@@ -947,6 +951,11 @@ void PrepareFrameAndViewForPrint::DidStopLoading() {
   base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE, base::BindOnce(&PrepareFrameAndViewForPrint::CallOnReady,
                                 weak_ptr_factory_.GetWeakPtr()));
+}
+
+void PrepareFrameAndViewForPrint::BindToFrame(
+    blink::WebNavigationControl* navigation_control) {
+  navigation_control_ = navigation_control;
 }
 
 blink::WebLocalFrame* PrepareFrameAndViewForPrint::CreateChildFrame(
@@ -970,7 +979,18 @@ void PrepareFrameAndViewForPrint::FrameDetached(DetachType detach_type) {
   DCHECK(frame);
   frame->FrameWidget()->Close();
   frame->Close();
+  navigation_control_ = nullptr;
   frame_.Reset(nullptr);
+}
+
+void PrepareFrameAndViewForPrint::BeginNavigation(
+    std::unique_ptr<blink::WebNavigationInfo> info) {
+  // TODO(dgozman): We disable javascript through WebPreferences, so perhaps
+  // we want to disallow any navigations here by just removing this method?
+  navigation_control_->CommitNavigation(
+      info->url_request, info->frame_load_type, blink::WebHistoryItem(),
+      info->is_client_redirect, base::UnguessableToken::Create(),
+      nullptr /* navigation_params */, nullptr /* extra_data */);
 }
 
 std::unique_ptr<blink::WebURLLoaderFactory>
@@ -991,7 +1011,7 @@ void PrepareFrameAndViewForPrint::RestoreSize() {
     return;
 
   blink::WebView* web_view = frame_.GetFrame()->View();
-  web_view->Resize(prev_view_size_);
+  web_view->MainFrameWidget()->Resize(prev_view_size_);
   if (blink::WebFrame* web_frame = web_view->MainFrame()) {
     // TODO(lukasza, weili): Support restoring scroll offset of a remote main
     // frame - https://crbug.com/734815.
@@ -1015,9 +1035,10 @@ void PrepareFrameAndViewForPrint::FinishPrinting() {
     if (owns_web_view_) {
       DCHECK(!frame->IsLoading());
       owns_web_view_ = false;
-      web_view->Close();
+      web_view->MainFrameWidget()->Close();
     }
   }
+  navigation_control_ = nullptr;
   frame_.Reset(nullptr);
   on_ready_.Reset();
 }

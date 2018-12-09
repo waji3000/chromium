@@ -41,22 +41,6 @@ class MODULES_EXPORT ExtendableMessageEvent final : public ExtendableEvent {
       ServiceWorker* source,
       WaitUntilObserver*);
 
-  SerializedScriptValue* SerializedData() const {
-    return serialized_data_.get();
-  }
-  void SetSerializedData(scoped_refptr<SerializedScriptValue> serialized_data) {
-    serialized_data_ = std::move(serialized_data);
-  }
-  const String& origin() const { return origin_; }
-  const String& lastEventId() const { return last_event_id_; }
-  MessagePortArray ports() const;
-  void source(ClientOrServiceWorkerOrMessagePort& result) const;
-
-  const AtomicString& InterfaceName() const override;
-
-  void Trace(blink::Visitor*) override;
-
- private:
   ExtendableMessageEvent(const AtomicString& type,
                          const ExtendableMessageEventInit* initializer);
   ExtendableMessageEvent(const AtomicString& type,
@@ -67,6 +51,23 @@ class MODULES_EXPORT ExtendableMessageEvent final : public ExtendableEvent {
                          MessagePortArray* ports,
                          WaitUntilObserver*);
 
+  SerializedScriptValue* SerializedData() const {
+    return serialized_data_.get();
+  }
+  void SetSerializedData(scoped_refptr<SerializedScriptValue> serialized_data) {
+    serialized_data_ = std::move(serialized_data);
+  }
+
+  const String& origin() const { return origin_; }
+  const String& lastEventId() const { return last_event_id_; }
+  void source(ClientOrServiceWorkerOrMessagePort& result) const;
+  MessagePortArray ports() const;
+
+  const AtomicString& InterfaceName() const override;
+
+  void Trace(blink::Visitor*) override;
+
+ private:
   scoped_refptr<SerializedScriptValue> serialized_data_;
   String origin_;
   String last_event_id_;

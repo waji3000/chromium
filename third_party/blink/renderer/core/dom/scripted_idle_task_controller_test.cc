@@ -83,7 +83,9 @@ class MockIdleTask : public ScriptedIdleTaskController::IdleTask {
 
 class ScriptedIdleTaskControllerTest : public testing::Test {
  public:
-  void SetUp() override { execution_context_ = new NullExecutionContext(); }
+  void SetUp() override {
+    execution_context_ = MakeGarbageCollected<NullExecutionContext>();
+  }
 
  protected:
   Persistent<ExecutionContext> execution_context_;
@@ -97,7 +99,7 @@ TEST_F(ScriptedIdleTaskControllerTest, RunCallback) {
   ScriptedIdleTaskController* controller =
       ScriptedIdleTaskController::Create(execution_context_);
 
-  Persistent<MockIdleTask> idle_task(new MockIdleTask());
+  Persistent<MockIdleTask> idle_task(MakeGarbageCollected<MockIdleTask>());
   IdleRequestOptions* options = IdleRequestOptions::Create();
   EXPECT_FALSE(scheduler.HasIdleTask());
   int id = controller->RegisterCallback(idle_task, options);
@@ -118,7 +120,7 @@ TEST_F(ScriptedIdleTaskControllerTest, DontRunCallbackWhenAskedToYield) {
   ScriptedIdleTaskController* controller =
       ScriptedIdleTaskController::Create(execution_context_);
 
-  Persistent<MockIdleTask> idle_task(new MockIdleTask());
+  Persistent<MockIdleTask> idle_task(MakeGarbageCollected<MockIdleTask>());
   IdleRequestOptions* options = IdleRequestOptions::Create();
   int id = controller->RegisterCallback(idle_task, options);
   EXPECT_NE(0, id);

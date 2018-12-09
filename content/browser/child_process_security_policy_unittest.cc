@@ -12,6 +12,7 @@
 #include "content/browser/site_instance_impl.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "content/test/test_content_browser_client.h"
 #include "storage/browser/fileapi/file_permission_policy.h"
 #include "storage/browser/fileapi/file_system_url.h"
@@ -26,7 +27,6 @@ namespace content {
 namespace {
 
 const int kRendererID = 42;
-const int kWorkerRendererID = kRendererID + 1;
 
 #if defined(FILE_PATH_USES_DRIVE_LETTERS)
 #define TEST_PATH(x) FILE_PATH_LITERAL("c:") FILE_PATH_LITERAL(x)
@@ -114,6 +114,7 @@ class ChildProcessSecurityPolicyTest : public testing::Test {
   }
 
  private:
+  TestBrowserThreadBundle thread_bundle_;
   ChildProcessSecurityPolicyTestBrowserClient test_browser_client_;
   ContentBrowserClient* old_browser_client_;
 };
@@ -830,28 +831,6 @@ TEST_F(ChildProcessSecurityPolicyTest, FilePermissions) {
                                         base::File::FLAG_TEMPORARY));
   p->Remove(kRendererID);
 
-  // Grant file permissions for the file to main thread renderer process,
-  // make sure its worker thread renderer process inherits those.
-  p->Add(kRendererID);
-  GrantPermissionsForFile(p, kRendererID, granted_file,
-                             base::File::FLAG_OPEN |
-                             base::File::FLAG_READ);
-  EXPECT_TRUE(p->HasPermissionsForFile(kRendererID, granted_file,
-                                       base::File::FLAG_OPEN |
-                                       base::File::FLAG_READ));
-  EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, granted_file,
-                                       base::File::FLAG_WRITE));
-  p->AddWorker(kWorkerRendererID, kRendererID);
-  EXPECT_TRUE(p->HasPermissionsForFile(kWorkerRendererID, granted_file,
-                                       base::File::FLAG_OPEN |
-                                       base::File::FLAG_READ));
-  EXPECT_FALSE(p->HasPermissionsForFile(kWorkerRendererID, granted_file,
-                                        base::File::FLAG_WRITE));
-  p->Remove(kRendererID);
-  EXPECT_FALSE(p->HasPermissionsForFile(kWorkerRendererID, granted_file,
-                                        base::File::FLAG_OPEN |
-                                        base::File::FLAG_READ));
-  p->Remove(kWorkerRendererID);
 
   p->Add(kRendererID);
   GrantPermissionsForFile(p, kRendererID, relative_file,

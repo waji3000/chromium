@@ -33,11 +33,9 @@ base::Optional<bool> BooleanOperationWithRethrow(
   v8::TryCatch block(script_state->GetIsolate());
   v8::Local<v8::Value> args[] = {value.V8Value()};
   v8::Local<v8::Value> local_value;
-  bool result_bool = false;
 
   if (!V8ScriptRunner::CallExtra(script_state, operation, args)
-           .ToLocal(&local_value) ||
-      !local_value->BooleanValue(script_state->GetContext()).To(&result_bool)) {
+           .ToLocal(&local_value)) {
     DCHECK(block.HasCaught() ||
            script_state->GetIsolate()->IsExecutionTerminating());
     exception_state.RethrowV8Exception(block.Exception());
@@ -45,7 +43,7 @@ base::Optional<bool> BooleanOperationWithRethrow(
   }
 
   DCHECK(!block.HasCaught());
-  return result_bool;
+  return local_value->BooleanValue(script_state->GetIsolate());
 }
 
 // Performs |operation| on |value|, catching any exceptions. This is for use in
@@ -58,13 +56,11 @@ bool BooleanOperationForDCheck(ScriptState* script_state,
                                bool fallback_value) {
   v8::Local<v8::Value> args[] = {value.V8Value()};
   v8::Local<v8::Value> result_value;
-  bool result_bool = false;
   v8::TryCatch block(script_state->GetIsolate());
   if (V8ScriptRunner::CallExtra(script_state, operation, args)
-          .ToLocal(&result_value) &&
-      result_value->BooleanValue(script_state->GetContext()).To(&result_bool)) {
+          .ToLocal(&result_value)) {
     DCHECK(!block.HasCaught());
-    return result_bool;
+    return result_value->BooleanValue(script_state->GetIsolate());
   }
   DCHECK(block.HasCaught() ||
          script_state->GetIsolate()->IsExecutionTerminating());
@@ -94,6 +90,28 @@ ScriptValue ReadableStreamOperations::CreateReadableStream(
       script_state,
       V8ScriptRunner::CallExtra(
           script_state, "createReadableStreamWithExternalController", args));
+}
+
+ScriptValue ReadableStreamOperations::CreateReadableStream(
+    ScriptState* script_state,
+    ScriptValue underlying_source,
+    ScriptValue strategy,
+    ExceptionState& exception_state) {
+  ScriptState::Scope scope(script_state);
+
+  v8::TryCatch block(script_state->GetIsolate());
+  v8::Local<v8::Value> args[] = {underlying_source.V8Value(),
+                                 strategy.V8Value()};
+  v8::Local<v8::Value> result;
+
+  if (!V8ScriptRunner::CallExtra(script_state, "createReadableStream", args)
+           .ToLocal(&result)) {
+    DCHECK(block.HasCaught() ||
+           script_state->GetIsolate()->IsExecutionTerminating());
+    exception_state.RethrowV8Exception(block.Exception());
+    return ScriptValue();
+  }
+  return ScriptValue(script_state, result);
 }
 
 ScriptValue ReadableStreamOperations::CreateCountQueuingStrategy(
@@ -229,81 +247,54 @@ ScriptPromise ReadableStreamOperations::DefaultReaderRead(
   return ScriptPromise::Cast(script_state, maybe_result.ToLocalChecked());
 }
 
-void ReadableStreamOperations::Tee(ScriptState* script_state,
-                                   ScriptValue stream,
-                                   ScriptValue* new_stream1,
-                                   ScriptValue* new_stream2,
-                                   ExceptionState& exception_state) {
+ScriptValue ReadableStreamOperations::Tee(ScriptState* script_state,
+                                          ScriptValue stream,
+                                          ExceptionState& exception_state) {
   DCHECK(IsReadableStreamForDCheck(script_state, stream));
   DCHECK(!IsLockedForDCheck(script_state, stream));
 
-  v8::Local<v8::Value> args[] = {stream.V8Value()};
-
   v8::TryCatch block(script_state->GetIsolate());
+  v8::Local<v8::Value> args[] = {stream.V8Value()};
   v8::Local<v8::Value> result;
   if (!V8ScriptRunner::CallExtra(script_state, "ReadableStreamTee", args)
            .ToLocal(&result)) {
-    DCHECK(block.HasCaught() ||
-           script_state->GetIsolate()->IsExecutionTerminating());
     exception_state.RethrowV8Exception(block.Exception());
-    return;
+    return ScriptValue();
   }
-
-  DCHECK(result->IsArray());
-  v8::Local<v8::Array> branches = result.As<v8::Array>();
-  DCHECK_EQ(2u, branches->Length());
-
-  ScriptValue result1(script_state,
-                      branches->Get(script_state->GetContext(), 0));
-  DCHECK(!result1.IsEmpty());
-  DCHECK(IsReadableStreamForDCheck(script_state, result1));
-
-  ScriptValue result2(script_state,
-                      branches->Get(script_state->GetContext(), 1));
-  DCHECK(!result2.IsEmpty());
-  DCHECK(IsReadableStreamForDCheck(script_state, result2));
-
-  *new_stream1 = std::move(result1);
-  *new_stream2 = std::move(result2);
+  return ScriptValue(script_state, result);
 }
 
-MessagePort* ReadableStreamOperations::ReadableStreamSerialize(
-    ScriptState* script_state,
-    ScriptValue stream,
-    ExceptionState& exception_state) {
+void ReadableStreamOperations::Serialize(ScriptState* script_state,
+                                         ScriptValue stream,
+                                         MessagePort* port,
+                                         ExceptionState& exception_state) {
+  DCHECK(port);
   DCHECK(IsReadableStreamForDCheck(script_state, stream));
   DCHECK(RuntimeEnabledFeatures::TransferableStreamsEnabled());
   v8::TryCatch block(script_state->GetIsolate());
-  v8::Local<v8::Value> args[] = {stream.V8Value()};
+  v8::Local<v8::Value> port_v8_value = ToV8(port, script_state);
+  DCHECK(!port_v8_value.IsEmpty());
+  v8::Local<v8::Value> args[] = {stream.V8Value(), port_v8_value};
   ScriptValue result(
       script_state,
       V8ScriptRunner::CallExtra(script_state, "ReadableStreamSerialize", args));
   if (block.HasCaught()) {
     exception_state.RethrowV8Exception(block.Exception());
-    return nullptr;
+    return;
   }
-  if (result.IsEmpty()) {
-    DCHECK(script_state->GetIsolate()->IsExecutionTerminating());
-    exception_state.ThrowDOMException(
-        DOMExceptionCode::kInvalidStateError,
-        "Serialize failed because execution is terminating");
-    return nullptr;
-  }
-
-  return V8MessagePort::ToImpl(
-      result.V8Value()->ToObject(script_state->GetContext()).ToLocalChecked());
+  return;
 }
 
-ScriptValue ReadableStreamOperations::ReadableStreamDeserialize(
+ScriptValue ReadableStreamOperations::Deserialize(
     ScriptState* script_state,
     MessagePort* port,
     ExceptionState& exception_state) {
   DCHECK(port);
   DCHECK(RuntimeEnabledFeatures::TransferableStreamsEnabled());
   auto* isolate = script_state->GetIsolate();
-  v8::Local<v8::Context> context = script_state->GetContext();
-  v8::Local<v8::Value> port_v8 = ToV8(port, context->Global(), isolate);
   v8::TryCatch block(isolate);
+  v8::Local<v8::Value> port_v8 = ToV8(port, script_state);
+  DCHECK(!port_v8.IsEmpty());
   v8::Local<v8::Value> args[] = {port_v8};
   ScriptValue result(script_state,
                      V8ScriptRunner::CallExtra(
@@ -313,11 +304,89 @@ ScriptValue ReadableStreamOperations::ReadableStreamDeserialize(
     return ScriptValue();
   }
   if (result.IsEmpty()) {
-    DCHECK(script_state->GetIsolate()->IsExecutionTerminating());
+    DCHECK(isolate->IsExecutionTerminating());
     return ScriptValue();
   }
   DCHECK(IsReadableStreamForDCheck(script_state, result));
   return result;
+}
+
+ScriptPromise ReadableStreamOperations::Cancel(
+    ScriptState* script_state,
+    ScriptValue stream,
+    ScriptValue reason,
+    ExceptionState& exception_state) {
+  v8::Local<v8::Value> args[] = {stream.V8Value(), reason.V8Value()};
+  v8::TryCatch block(script_state->GetIsolate());
+  v8::Local<v8::Value> result;
+
+  if (!V8ScriptRunner::CallExtra(script_state, "ReadableStreamCancel", args)
+           .ToLocal(&result)) {
+    DCHECK(block.HasCaught() ||
+           script_state->GetIsolate()->IsExecutionTerminating());
+    exception_state.RethrowV8Exception(block.Exception());
+    return ScriptPromise();
+  }
+  return ScriptPromise(script_state, result);
+}
+
+ScriptPromise ReadableStreamOperations::PipeTo(
+    ScriptState* script_state,
+    ScriptValue stream,
+    ScriptValue destination,
+    ScriptValue options,
+    ExceptionState& exception_state) {
+  v8::TryCatch block(script_state->GetIsolate());
+  v8::Local<v8::Value> result;
+  v8::Isolate* isolate = script_state->GetIsolate();
+  v8::Local<v8::Boolean> prevent_close;
+  v8::Local<v8::Boolean> prevent_abort;
+  v8::Local<v8::Boolean> prevent_cancel;
+
+  if (options.IsUndefined()) {
+    // All values default to false.
+    prevent_close = v8::Boolean::New(isolate, false);
+    prevent_abort = v8::Boolean::New(isolate, false);
+    prevent_cancel = v8::Boolean::New(isolate, false);
+  } else {
+    v8::Local<v8::Context> context = script_state->GetContext();
+    v8::Local<v8::Object> v8_options;
+    if (!options.V8Value()->ToObject(context).ToLocal(&v8_options)) {
+      exception_state.RethrowV8Exception(block.Exception());
+      return ScriptPromise();
+    }
+    v8::Local<v8::Value> prevent_close_v, prevent_abort_v, prevent_cancel_v;
+    if (!v8_options->Get(context, V8String(isolate, "preventClose"))
+             .ToLocal(&prevent_close_v)) {
+      exception_state.RethrowV8Exception(block.Exception());
+      return ScriptPromise();
+    }
+    if (!v8_options->Get(context, V8String(isolate, "preventAbort"))
+             .ToLocal(&prevent_abort_v)) {
+      exception_state.RethrowV8Exception(block.Exception());
+      return ScriptPromise();
+    }
+    if (!v8_options->Get(context, V8String(isolate, "preventCancel"))
+             .ToLocal(&prevent_cancel_v)) {
+      exception_state.RethrowV8Exception(block.Exception());
+      return ScriptPromise();
+    }
+    prevent_close = prevent_close_v->ToBoolean(isolate);
+    prevent_abort = prevent_abort_v->ToBoolean(isolate);
+    prevent_cancel = prevent_cancel_v->ToBoolean(isolate);
+  }
+
+  v8::Local<v8::Value> args[] = {stream.V8Value(), destination.V8Value(),
+                                 prevent_close, prevent_abort, prevent_cancel};
+  if (!V8ScriptRunner::CallExtra(script_state, "ReadableStreamPipeTo", args)
+           .ToLocal(&result)) {
+    DCHECK(block.HasCaught() ||
+           script_state->GetIsolate()->IsExecutionTerminating());
+    exception_state.RethrowV8Exception(block.Exception());
+    return ScriptPromise();
+  }
+
+  return ScriptPromise(script_state, result);
 }
 
 }  // namespace blink

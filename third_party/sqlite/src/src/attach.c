@@ -100,7 +100,7 @@ static void attachFunc(
     if( pNew->pBt ) sqlite3BtreeClose(pNew->pBt);
     pNew->pBt = 0;
     pNew->pSchema = 0;
-    rc = sqlite3BtreeOpen(pVfs, "x", db, &pNew->pBt, 0, SQLITE_OPEN_MAIN_DB);
+    rc = sqlite3BtreeOpen(pVfs, "x\0", db, &pNew->pBt, 0, SQLITE_OPEN_MAIN_DB);
   }else{
     /* This is a real ATTACH
     **
@@ -414,6 +414,7 @@ void sqlite3Detach(Parse *pParse, Expr *pDbname){
     0,                /* pNext */
     detachFunc,       /* xSFunc */
     0,                /* xFinalize */
+    0, 0,             /* xValue, xInverse */
     "sqlite_detach",  /* zName */
     {0}
   };
@@ -433,6 +434,7 @@ void sqlite3Attach(Parse *pParse, Expr *p, Expr *pDbname, Expr *pKey){
     0,                /* pNext */
     attachFunc,       /* xSFunc */
     0,                /* xFinalize */
+    0, 0,             /* xValue, xInverse */
     "sqlite_attach",  /* zName */
     {0}
   };

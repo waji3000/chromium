@@ -99,7 +99,7 @@ class Manager(object):
         self._printer.write_update('Collecting tests ...')
         running_all_tests = False
 
-        if not args or any('external' in path for path in args):
+        if self._options.manifest_update and (not args or any('external' in path for path in args)):
             self._printer.write_update('Generating MANIFEST.json for web-platform-tests ...')
             WPTManifest.ensure_manifest(self._port.host)
             self._printer.write_update('Completed generating manifest.')
@@ -193,7 +193,6 @@ class Manager(object):
             self._upload_json_files()
 
             self._copy_results_html_file(self._results_directory, 'results.html')
-            self._copy_results_html_file(self._results_directory, 'legacy-results.html')
             if initial_results.keyboard_interrupted:
                 exit_code = exit_codes.INTERRUPTED_EXIT_STATUS
             else:
@@ -376,7 +375,7 @@ class Manager(object):
         # Check that the system dependencies (themes, fonts, ...) are correct.
         if not self._options.nocheck_sys_deps:
             self._printer.write_update('Checking system dependencies ...')
-            exit_code = self._port.check_sys_deps(self._needs_servers(test_names))
+            exit_code = self._port.check_sys_deps()
             if exit_code:
                 return exit_code
 

@@ -38,6 +38,8 @@ class MODULES_EXPORT MediaDevices final
 
  public:
   static MediaDevices* Create(ExecutionContext*);
+
+  explicit MediaDevices(ExecutionContext*);
   ~MediaDevices() override;
 
   ScriptPromise enumerateDevices(ScriptState*);
@@ -49,6 +51,10 @@ class MODULES_EXPORT MediaDevices final
                                      WebUserMediaRequest::MediaType,
                                      const MediaStreamConstraints*,
                                      ExceptionState&);
+
+  ScriptPromise getDisplayMedia(ScriptState*,
+                                const MediaStreamConstraints*,
+                                ExceptionState&);
 
   // EventTarget overrides.
   const AtomicString& InterfaceName() const override;
@@ -99,7 +105,6 @@ class MODULES_EXPORT MediaDevices final
 
  private:
   FRIEND_TEST_ALL_PREFIXES(MediaDevicesTest, ObserveDeviceChangeEvent);
-  explicit MediaDevices(ExecutionContext*);
   void ScheduleDispatchEvent(Event*);
   void DispatchScheduledEvent();
   void StartObserving();

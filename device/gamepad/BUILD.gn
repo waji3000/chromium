@@ -38,6 +38,9 @@ component("gamepad") {
     "gamepad_export.h",
     "gamepad_haptics_manager.cc",
     "gamepad_haptics_manager.h",
+    "gamepad_id.h",
+    "gamepad_id_list.cc",
+    "gamepad_id_list.h",
     "gamepad_monitor.cc",
     "gamepad_monitor.h",
     "gamepad_pad_state_provider.cc",
@@ -66,6 +69,14 @@ component("gamepad") {
     "gamepad_user_gesture.h",
     "hid_dll_functions_win.cc",
     "hid_dll_functions_win.h",
+    "hid_haptic_gamepad_base.cc",
+    "hid_haptic_gamepad_base.h",
+    "hid_haptic_gamepad_linux.cc",
+    "hid_haptic_gamepad_linux.h",
+    "hid_haptic_gamepad_mac.cc",
+    "hid_haptic_gamepad_mac.h",
+    "hid_haptic_gamepad_win.cc",
+    "hid_haptic_gamepad_win.h",
     "raw_input_data_fetcher_win.cc",
     "raw_input_data_fetcher_win.h",
     "raw_input_gamepad_device_win.cc",
@@ -93,6 +104,10 @@ component("gamepad") {
     "//device/gamepad/public/mojom",
     "//mojo/public/cpp/system",
     "//third_party/blink/public:blink_headers",
+  ]
+
+  public_deps = [
+    "//services/device/public/mojom",
   ]
 
   defines = [ "DEVICE_GAMEPAD_IMPLEMENTATION" ]

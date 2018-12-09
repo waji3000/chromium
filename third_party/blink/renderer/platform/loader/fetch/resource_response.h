@@ -144,18 +144,26 @@ class PLATFORM_EXPORT ResourceResponse final {
   };
 
   ResourceResponse();
-  explicit ResourceResponse(const KURL&);
+  explicit ResourceResponse(const KURL& current_request_url);
   ResourceResponse(const ResourceResponse&);
   ResourceResponse& operator=(const ResourceResponse&);
 
   bool IsNull() const { return is_null_; }
   bool IsHTTP() const;
 
-  // The URL of the resource. Note that if a service worker responded to the
-  // request for this resource, it may have fetched an entirely different URL
-  // and responded with that resource. wasFetchedViaServiceWorker() and
-  // originalURLViaServiceWorker() can be used to determine whether and how a
-  // service worker responded to the request. Example service worker code:
+  // The current request URL for this resource (the URL after redirects).
+  // Corresponds to:
+  // https://fetch.spec.whatwg.org/#concept-request-current-url
+  //
+  // Beware that this might not be the same the response URL, so it is usually
+  // incorrect to use this in security checks. Use FetchResponseType() to
+  // determine origin sameness.
+  //
+  // Specifically, if a service worker responded to the request for this
+  // resource, it may have fetched an entirely different URL and responded with
+  // that resource. WasFetchedViaServiceWorker() and ResponseUrl() can be used
+  // to determine whether and how a service worker responded to the request.
+  // Example service worker code:
   //
   // onfetch = (event => {
   //   if (event.request.url == 'https://abc.com')
@@ -163,17 +171,35 @@ class PLATFORM_EXPORT ResourceResponse final {
   // });
   //
   // If this service worker responds to an "https://abc.com" request, then for
-  // the resulting ResourceResponse, url() is "https://abc.com",
-  // wasFetchedViaServiceWorker() is true, and originalURLViaServiceWorker() is
+  // the resulting ResourceResponse, CurrentRequestUrl() is "https://abc.com",
+  // WasFetchedViaServiceWorker() is true, and ResponseUrl() is
   // "https://def.com".
-  const KURL& Url() const;
-  void SetURL(const KURL&);
+  const KURL& CurrentRequestUrl() const;
+  void SetCurrentRequestUrl(const KURL&);
+
+  // The response URL of this resource. Corresponds to:
+  // https://fetch.spec.whatwg.org/#concept-response-url
+  //
+  // Beware that this can be the empty URL. Specifically, if a service worker
+  // responded to a request using a response created with the Response
+  // constructor, the response URL is empty. Example service worker code:
+  //
+  // onfetch = (event => {
+  //   if (event.request.url == 'https://abc.com')
+  //     event.respondWith(new Response('hi'));
+  // });
+  //
+  // If this service worker responds to an "https://abc.com" request, then
+  // for the resulting ResourceResponse, CurrentRequestUrl() is
+  // "https://abc.com", WasFetchedViaServiceWorker() is true, and
+  // ResponseUrl() is the empty URL.
+  KURL ResponseUrl() const;
 
   const AtomicString& MimeType() const;
   void SetMimeType(const AtomicString&);
 
-  long long ExpectedContentLength() const;
-  void SetExpectedContentLength(long long);
+  int64_t ExpectedContentLength() const;
+  void SetExpectedContentLength(int64_t);
 
   const AtomicString& TextEncodingName() const;
   void SetTextEncodingName(const AtomicString&);
@@ -248,6 +274,9 @@ class PLATFORM_EXPORT ResourceResponse final {
     is_legacy_symantec_cert_ = is_legacy_symantec_cert;
   }
 
+  bool IsLegacyTLSVersion() const { return is_legacy_tls_version_; }
+  void SetIsLegacyTLSVersion(bool value) { is_legacy_tls_version_ = value; }
+
   SecurityStyle GetSecurityStyle() const { return security_style_; }
   void SetSecurityStyle(SecurityStyle security_style) {
     security_style_ = security_style;
@@ -269,8 +298,8 @@ class PLATFORM_EXPORT ResourceResponse final {
                           const Vector<AtomicString>& certificate,
                           const SignedCertificateTimestampList& sct_list);
 
-  long long AppCacheID() const { return app_cache_id_; }
-  void SetAppCacheID(long long id) { app_cache_id_ = id; }
+  int64_t AppCacheID() const { return app_cache_id_; }
+  void SetAppCacheID(int64_t id) { app_cache_id_ = id; }
 
   const KURL& AppCacheManifestURL() const { return app_cache_manifest_url_; }
   void SetAppCacheManifestURL(const KURL& url) {
@@ -302,12 +331,12 @@ class PLATFORM_EXPORT ResourceResponse final {
   }
   bool IsOpaqueResponseFromServiceWorker() const;
   // https://html.spec.whatwg.org/#cors-same-origin
-  bool IsCORSSameOrigin() const {
-    return network::cors::IsCORSSameOriginResponseType(response_type_);
+  bool IsCorsSameOrigin() const {
+    return network::cors::IsCorsSameOriginResponseType(response_type_);
   }
   // https://html.spec.whatwg.org/#cors-cross-origin
-  bool IsCORSCrossOrigin() const {
-    return network::cors::IsCORSCrossOriginResponseType(response_type_);
+  bool IsCorsCrossOrigin() const {
+    return network::cors::IsCorsCrossOriginResponseType(response_type_);
   }
 
   // See ServiceWorkerResponseInfo::url_list_via_service_worker.
@@ -318,12 +347,8 @@ class PLATFORM_EXPORT ResourceResponse final {
     url_list_via_service_worker_ = url_list;
   }
 
-  // Returns the last URL of urlListViaServiceWorker if exists. Otherwise
-  // returns an empty URL.
-  KURL OriginalURLViaServiceWorker() const;
-
   const Vector<char>& MultipartBoundary() const { return multipart_boundary_; }
-  void SetMultipartBoundary(const char* bytes, size_t size) {
+  void SetMultipartBoundary(const char* bytes, uint32_t size) {
     multipart_boundary_.clear();
     multipart_boundary_.Append(bytes, size);
   }
@@ -376,14 +401,14 @@ class PLATFORM_EXPORT ResourceResponse final {
 
   AtomicString ConnectionInfoString() const;
 
-  long long EncodedDataLength() const { return encoded_data_length_; }
-  void SetEncodedDataLength(long long value);
+  int64_t EncodedDataLength() const { return encoded_data_length_; }
+  void SetEncodedDataLength(int64_t value);
 
-  long long EncodedBodyLength() const { return encoded_body_length_; }
-  void SetEncodedBodyLength(long long value);
+  int64_t EncodedBodyLength() const { return encoded_body_length_; }
+  void SetEncodedBodyLength(int64_t value);
 
-  long long DecodedBodyLength() const { return decoded_body_length_; }
-  void SetDecodedBodyLength(long long value);
+  int64_t DecodedBodyLength() const { return decoded_body_length_; }
+  void SetDecodedBodyLength(int64_t value);
 
   // Extra data associated with this response.
   ExtraData* GetExtraData() const { return extra_data_.get(); }
@@ -396,20 +421,18 @@ class PLATFORM_EXPORT ResourceResponse final {
     return 1280;
   }
 
-  // PlzNavigate: Even if there is redirections, only one
-  // ResourceResponse is built: the final response.
-  // The redirect response chain can be accessed by this function.
-  const Vector<ResourceResponse>& RedirectResponses() const {
-    return redirect_responses_;
-  }
-  void AppendRedirectResponse(const ResourceResponse&);
-
   bool AsyncRevalidationRequested() const {
     return async_revalidation_requested_;
   }
 
   void SetAsyncRevalidationRequested(bool requested) {
     async_revalidation_requested_ = requested;
+  }
+
+  bool NetworkAccessed() const { return network_accessed_; }
+
+  void SetNetworkAccessed(bool network_accessed) {
+    network_accessed_ = network_accessed;
   }
 
   bool IsSignedExchangeInnerResponse() const {
@@ -421,13 +444,10 @@ class PLATFORM_EXPORT ResourceResponse final {
     is_signed_exchange_inner_response_ = is_signed_exchange_inner_response;
   }
 
-  // This method doesn't compare the all members.
-  static bool Compare(const ResourceResponse&, const ResourceResponse&);
-
  private:
   void UpdateHeaderParsedState(const AtomicString& name);
 
-  KURL url_;
+  KURL current_request_url_;
   AtomicString mime_type_;
   long long expected_content_length_ = 0;
   AtomicString text_encoding_name_;
@@ -463,6 +483,10 @@ class PLATFORM_EXPORT ResourceResponse final {
   // is slated for distrust in future.
   bool is_legacy_symantec_cert_ = false;
 
+  // True if the response was sent over TLS 1.0 or 1.1, which are deprecated and
+  // will be removed in the future.
+  bool is_legacy_tls_version_ = false;
+
   // The time at which the resource's certificate expires. Null if there was no
   // certificate.
   base::Time cert_validity_start_;
@@ -487,6 +511,9 @@ class PLATFORM_EXPORT ResourceResponse final {
   // True if this resource is from an inner response of a signed exchange.
   // https://wicg.github.io/webpackage/draft-yasskin-http-origin-signed-responses.html
   bool is_signed_exchange_inner_response_ = false;
+
+  // True if this resource was loaded from the network.
+  bool network_accessed_ = false;
 
   // https://fetch.spec.whatwg.org/#concept-response-type
   network::mojom::FetchResponseType response_type_ =
@@ -520,7 +547,7 @@ class PLATFORM_EXPORT ResourceResponse final {
 
   // The id of the appcache this response was retrieved from, or zero if
   // the response was not retrieved from an appcache.
-  long long app_cache_id_ = 0;
+  int64_t app_cache_id_ = 0;
 
   // The manifest url of the appcache this response was retrieved from, if any.
   // Note: only valid for main resource responses.
@@ -553,29 +580,18 @@ class PLATFORM_EXPORT ResourceResponse final {
       net::HttpResponseInfo::ConnectionInfo::CONNECTION_INFO_UNKNOWN;
 
   // Size of the response in bytes prior to decompression.
-  long long encoded_data_length_ = 0;
+  int64_t encoded_data_length_ = 0;
 
   // Size of the response body in bytes prior to decompression.
-  long long encoded_body_length_ = 0;
+  int64_t encoded_body_length_ = 0;
 
   // Sizes of the response body in bytes after any content-encoding is
   // removed.
-  long long decoded_body_length_ = 0;
+  int64_t decoded_body_length_ = 0;
 
   // ExtraData associated with the response.
   scoped_refptr<ExtraData> extra_data_;
-
-  // PlzNavigate: the redirect responses are transmitted
-  // inside the final response.
-  Vector<ResourceResponse> redirect_responses_;
 };
-
-inline bool operator==(const ResourceResponse& a, const ResourceResponse& b) {
-  return ResourceResponse::Compare(a, b);
-}
-inline bool operator!=(const ResourceResponse& a, const ResourceResponse& b) {
-  return !(a == b);
-}
 
 }  // namespace blink
 

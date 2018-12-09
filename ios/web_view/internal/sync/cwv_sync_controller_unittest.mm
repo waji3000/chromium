@@ -50,18 +50,17 @@ class CWVSyncControllerTest : public PlatformTest {
   CWVSyncControllerTest()
       : browser_state_(/*off_the_record=*/false),
         signin_client_(browser_state_.GetPrefs()),
-        sigin_error_controller_(
-            SigninErrorController::AccountMode::ANY_ACCOUNT),
-        token_service_(
-            browser_state_.GetPrefs(),
-            std::make_unique<ProfileOAuth2TokenServiceIOSDelegate>(
-                &signin_client_,
-                std::make_unique<FakeProfileOAuth2TokenServiceIOSProvider>(),
-                &account_tracker_service_,
-                &sigin_error_controller_)),
-        gaia_cookie_manager_service_(&token_service_,
-                                     "cookie-source",
-                                     &signin_client_),
+        token_service_delegate_(new ProfileOAuth2TokenServiceIOSDelegate(
+            &signin_client_,
+            std::make_unique<FakeProfileOAuth2TokenServiceIOSProvider>(),
+            &account_tracker_service_)),
+        token_service_(browser_state_.GetPrefs(),
+                       std::unique_ptr<ProfileOAuth2TokenServiceIOSDelegate>(
+                           token_service_delegate_)),
+        gaia_cookie_manager_service_(&token_service_, &signin_client_),
+        signin_error_controller_(
+            SigninErrorController::AccountMode::ANY_ACCOUNT,
+            &token_service_),
         signin_manager_(&signin_client_,
                         &token_service_,
                         &account_tracker_service_,
@@ -76,7 +75,8 @@ class CWVSyncControllerTest : public PlatformTest {
     init_params.signin_scoped_device_id_callback = base::BindRepeating(
         &signin::GetSigninScopedDeviceId, browser_state_.GetPrefs());
     profile_sync_service_ =
-        std::make_unique<browser_sync::ProfileSyncServiceMock>(&init_params);
+        std::make_unique<browser_sync::ProfileSyncServiceMock>(
+            std::move(init_params));
 
     account_tracker_service_.Initialize(browser_state_.GetPrefs(),
                                         base::FilePath());
@@ -88,7 +88,8 @@ class CWVSyncControllerTest : public PlatformTest {
         initWithProfileSyncService:profile_sync_service_.get()
              accountTrackerService:&account_tracker_service_
                      signinManager:&signin_manager_
-                      tokenService:&token_service_];
+                      tokenService:&token_service_
+             signinErrorController:&signin_error_controller_];
   };
 
   ~CWVSyncControllerTest() override {
@@ -110,9 +111,13 @@ class CWVSyncControllerTest : public PlatformTest {
   std::unique_ptr<browser_sync::ProfileSyncServiceMock> profile_sync_service_;
   AccountTrackerService account_tracker_service_;
   TestSigninClient signin_client_;
-  SigninErrorController sigin_error_controller_;
+
+  // Weak, owned by the token service.
+  ProfileOAuth2TokenServiceIOSDelegate* token_service_delegate_;
+
   FakeProfileOAuth2TokenService token_service_;
   FakeGaiaCookieManagerService gaia_cookie_manager_service_;
+  SigninErrorController signin_error_controller_;
   FakeSigninManager signin_manager_;
   CWVSyncController* sync_controller_;
   syncer::SyncServiceObserver* sync_service_observer_;
@@ -133,9 +138,6 @@ TEST_F(CWVSyncControllerTest, DataSourceCallbacks) {
                  [scopes containsObject:@"scope2.chromium.org"];
         }]
               completionHandler:[OCMArg any]];
-
-    EXPECT_CALL(*profile_sync_service_, RequestStart());
-    EXPECT_CALL(*profile_sync_service_, SetFirstSetupComplete());
 
     CWVIdentity* identity =
         [[CWVIdentity alloc] initWithEmail:@"johndoe@chromium.org"
@@ -168,30 +170,31 @@ TEST_F(CWVSyncControllerTest, DelegateCallbacks) {
             &CWVSyncControllerTest_DelegateCallbacks_Test::OnConfigureDone));
     syncer::DataTypeManager::ConfigureResult result;
     profile_sync_service_->OnConfigureDone(result);
-
     [[delegate expect]
           syncController:sync_controller_
         didFailWithError:[OCMArg checkWithBlock:^BOOL(NSError* error) {
           return error.code == CWVSyncErrorInvalidGAIACredentials;
         }]];
+
+    // Create authentication error.
     GoogleServiceAuthError auth_error(
         GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
-    [sync_controller_ didUpdateAuthError:auth_error];
+    std::string account_id = account_tracker_service_.SeedAccountInfo(
+        "gaia_id", "email@example.com");
+    token_service_delegate_->AddOrUpdateAccount(account_id);
+    token_service_delegate_->UpdateAuthError(account_id, auth_error);
 
     [[delegate expect] syncController:sync_controller_
                 didStopSyncWithReason:CWVStopSyncReasonServer];
     [sync_controller_
         didSignoutWithSourceMetric:signin_metrics::ProfileSignout::
                                        SERVER_FORCED_DISABLE];
-
     [delegate verify];
   }
 }
 
 // Verifies CWVSyncController properly maintains the current syncing user.
 TEST_F(CWVSyncControllerTest, CurrentIdentity) {
-  EXPECT_CALL(*profile_sync_service_, RequestStart());
-  EXPECT_CALL(*profile_sync_service_, SetFirstSetupComplete());
   CWVIdentity* identity =
       [[CWVIdentity alloc] initWithEmail:@"johndoe@chromium.org"
                                 fullName:@"John Doe"
@@ -204,7 +207,6 @@ TEST_F(CWVSyncControllerTest, CurrentIdentity) {
   EXPECT_NSEQ(identity.fullName, currentIdentity.fullName);
   EXPECT_NSEQ(identity.gaiaID, currentIdentity.gaiaID);
 
-  EXPECT_CALL(*profile_sync_service_, RequestStop(_));
   [sync_controller_ stopSyncAndClearIdentity];
   EXPECT_FALSE(sync_controller_.currentIdentity);
 }

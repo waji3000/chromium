@@ -77,8 +77,8 @@ class WebTestDelegate {
   // Reads in the given file and returns its contents as data URL.
   virtual blink::WebURL LocalFileToDataURL(const blink::WebURL& file_url) = 0;
 
-  // Replaces file:///tmp/LayoutTests/ with the actual path to the
-  // LayoutTests directory, or rewrite URLs generated from absolute
+  // Replaces file:///tmp/web_tests/ with the actual path to the
+  // web_tests directory, or rewrite URLs generated from absolute
   // path links in web-platform-tests.
   virtual blink::WebURL RewriteLayoutTestsURL(const std::string& utf8_url,
                                               bool is_wpt_mode) = 0;
@@ -190,8 +190,8 @@ class WebTestDelegate {
   // Sets the POSIX locale of the current process.
   virtual void SetLocale(const std::string& locale) = 0;
 
-  // Invoked when layout test runtime flags change.
-  virtual void OnLayoutTestRuntimeFlagsChanged(
+  // Invoked when web test runtime flags change.
+  virtual void OnWebTestRuntimeFlagsChanged(
       const base::DictionaryValue& changed_values) = 0;
 
   // Invoked when the test finished.

@@ -3,12 +3,13 @@
 # found in the LICENSE file.
 
 import("//android_webview/system_webview_apk_tmpl.gni")
-import("//android_webview/webview_repack_locales.gni")
 import("//android_webview/variables.gni")
+import("//android_webview/webview_repack_locales.gni")
 import("//build/config/android/chrome_version.gni")
 import("//build/config/android/config.gni")
 import("//build/config/android/rules.gni")
 import("//build/config/locales.gni")
+import("//chrome/android/chrome_common_shared_library.gni")
 import("//chrome/android/trichrome.gni")
 import("//components/spellcheck/spellcheck_build_features.gni")
 import("//tools/grit/repack.gni")
@@ -59,7 +60,6 @@ generate_jni("native_jni") {
     "java/src/org/chromium/android_webview/AwRenderProcess.java",
     "java/src/org/chromium/android_webview/AwResource.java",
     "java/src/org/chromium/android_webview/AwSettings.java",
-    "java/src/org/chromium/android_webview/AwTokenBindingManager.java",
     "java/src/org/chromium/android_webview/AwTracingController.java",
     "java/src/org/chromium/android_webview/AwVariationsSeedBridge.java",
     "java/src/org/chromium/android_webview/AwWebContentsDelegate.java",
@@ -426,26 +426,24 @@ if (android_64bit_target_cpu) {
     ]
   }
 
-  shared_library("monochrome") {
-    deps = [
-      ":webview_entry_point",
-    ]
-    configs -= [ "//build/config/android:hide_all_but_jni_onload" ]
-    configs += [ "//build/config/android:hide_all_but_jni" ]
-    if (use_lld) {
-      configs += [ "//build/config/android:lld_pack_relocations" ]
+  template("webview_library") {
+    chrome_common_shared_library(target_name) {
+      forward_variables_from(invoker, "*")
+      deps = [
+        ":webview_entry_point",
+        "//components/crash/android:crashpad_main",
+      ]
+      is_webview = true
     }
+  }
 
-    if (target_cpu != "mipsel" && target_cpu != "mips64el") {
-      # .gnu.hash support added in Android M. Without this flag, library will also
-      # contain an unused .hash section. (http://crbug.com/742525#c28)
-      # Not to be used for MIPS arhitecture since MIPS does not
-      # support hashstyle gnu: http://crbug.com/811306
-      ldflags = [ "-Wl,--hash-style=gnu" ]
-    }
+  # The webview-only library needs the same library name as the browser
+  # library, since the system webview factory will differentiate only by ABI.
+  webview_library("monochrome") {
+  }
 
-    public_configs = extra_chrome_shared_library_configs
-    deps += extra_chrome_shared_library_deps
+  # Bundle-specific webview library. Currently identical, but may diverge.
+  webview_library("monochrome_base") {
   }
 }
 
@@ -551,6 +549,8 @@ source_set("common") {
     "browser/aw_safe_browsing_whitelist_manager.h",
     "browser/aw_settings.cc",
     "browser/aw_settings.h",
+    "browser/aw_speech_recognition_manager_delegate.cc",
+    "browser/aw_speech_recognition_manager_delegate.h",
     "browser/aw_ssl_host_state_delegate.cc",
     "browser/aw_ssl_host_state_delegate.h",
     "browser/aw_url_checker_delegate_impl.cc",
@@ -619,8 +619,8 @@ source_set("common") {
     "browser/net/init_native_callback.h",
     "browser/net/input_stream_reader.cc",
     "browser/net/input_stream_reader.h",
-    "browser/net/token_binding_manager.cc",
-    "browser/net/token_binding_manager.h",
+    "browser/net_helpers.cc",
+    "browser/net_helpers.h",
     "browser/parent_compositor_draw_constraints.cc",
     "browser/parent_compositor_draw_constraints.h",
     "browser/parent_output_surface.cc",
@@ -654,7 +654,6 @@ source_set("common") {
     "browser/state_serializer.h",
     "browser/surfaces_instance.cc",
     "browser/surfaces_instance.h",
-    "browser/token_binding_manager_bridge.cc",
     "browser/tracing/aw_trace_event_args_whitelist.cc",
     "browser/tracing/aw_trace_event_args_whitelist.h",
     "browser/tracing/aw_tracing_controller.cc",
@@ -733,6 +732,7 @@ source_set("common") {
     "//components/cdm/renderer",
     "//components/crash/content/app",
     "//components/crash/content/browser",
+    "//components/crash/core/common",
     "//components/download/public/common:public",
     "//components/embedder_support/android:web_contents_delegate",
     "//components/google/core/browser",
@@ -798,6 +798,7 @@ source_set("common") {
     "//storage/browser",
     "//storage/common",
     "//third_party/blink/public:blink",
+    "//third_party/crashpad/crashpad/client",
     "//ui/base",
     "//ui/events:gesture_detection",
     "//ui/gfx",
@@ -848,6 +849,7 @@ android_library("android_webview_java") {
     "java/src/org/chromium/android_webview/AwDevToolsServer.java",
     "java/src/org/chromium/android_webview/AwFeatureList.java",
     "java/src/org/chromium/android_webview/AwFormDatabase.java",
+    "java/src/org/chromium/android_webview/AwFunctor.java",
     "java/src/org/chromium/android_webview/AwGeolocationPermissions.java",
     "java/src/org/chromium/android_webview/AwGLFunctor.java",
     "java/src/org/chromium/android_webview/AwHttpAuthHandler.java",
@@ -872,7 +874,6 @@ android_library("android_webview_java") {
     "java/src/org/chromium/android_webview/AwSettings.java",
     "java/src/org/chromium/android_webview/AwSupportLibIsomorphic.java",
     "java/src/org/chromium/android_webview/AwSwitches.java",
-    "java/src/org/chromium/android_webview/AwTokenBindingManager.java",
     "java/src/org/chromium/android_webview/AwTracingController.java",
     "java/src/org/chromium/android_webview/AwViewMethods.java",
     "java/src/org/chromium/android_webview/AwViewAndroidDelegate.java",
@@ -960,7 +961,7 @@ android_library("android_webview_variations_utils_java") {
     "//android_webview/proto:aw_variations_seed_proto_java",
     "//base:base_java",
     "//components/variations/android:variations_java",
-    "//third_party/protobuf:protobuf_lite_javalib",
+    "//third_party/android_deps:com_google_protobuf_protobuf_lite_java",
   ]
 }
 

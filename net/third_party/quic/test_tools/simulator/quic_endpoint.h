@@ -102,11 +102,20 @@ class QuicEndpoint : public Endpoint,
   void OnCongestionWindowChange(QuicTime now) override {}
   void OnConnectionMigration(AddressChangeType type) override {}
   void OnPathDegrading() override {}
-  void PostProcessAfterData() override {}
   void OnAckNeedsRetransmittableFrame() override {}
   void SendPing() override {}
   bool AllowSelfAddressChange() const override;
   void OnForwardProgressConfirmed() override {}
+  bool OnMaxStreamIdFrame(const QuicMaxStreamIdFrame& frame) override {
+    return true;
+  };
+  bool OnStreamIdBlockedFrame(const QuicStreamIdBlockedFrame& frame) override {
+    return true;
+  };
+  bool OnStopSendingFrame(const QuicStopSendingFrame& frame) override {
+    return true;
+  };
+
   // End QuicConnectionVisitorInterface implementation.
 
   // Begin SessionNotifierInterface methods:

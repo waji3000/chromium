@@ -28,7 +28,7 @@
 #include <memory>
 #include "cc/paint/paint_canvas.h"
 #include "third_party/blink/public/platform/web_fullscreen_video_status.h"
-#include "third_party/blink/renderer/core/css_property_names.h"
+#include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/dom/attribute.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
@@ -56,8 +56,8 @@
 #include "third_party/blink/renderer/platform/graphics/gpu/extensions_3d_util.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/histogram.h"
-#include "third_party/blink/renderer/platform/layout_test_support.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+#include "third_party/blink/renderer/platform/web_test_support.h"
 
 namespace blink {
 
@@ -86,11 +86,11 @@ inline HTMLVideoElement::HTMLVideoElement(Document& document)
 
   if (RuntimeEnabledFeatures::VideoFullscreenDetectionEnabled()) {
     custom_controls_fullscreen_detector_ =
-        new MediaCustomControlsFullscreenDetector(*this);
+        MakeGarbageCollected<MediaCustomControlsFullscreenDetector>(*this);
   }
 
   if (media_element_parser_helpers::IsMediaElement(this) &&
-      !media_element_parser_helpers::IsUnsizedMediaEnabled(document)) {
+      !document.IsFeatureEnabled(mojom::FeaturePolicyFeature::kUnsizedMedia)) {
     is_default_overridden_intrinsic_size_ = true;
     overridden_intrinsic_size_ =
         IntSize(LayoutReplaced::kDefaultWidth, LayoutReplaced::kDefaultHeight);
@@ -98,7 +98,7 @@ inline HTMLVideoElement::HTMLVideoElement(Document& document)
 }
 
 HTMLVideoElement* HTMLVideoElement::Create(Document& document) {
-  HTMLVideoElement* video = new HTMLVideoElement(document);
+  HTMLVideoElement* video = MakeGarbageCollected<HTMLVideoElement>(document);
   video->EnsureUserAgentShadowRoot();
   video->PauseIfNeeded();
   return video;
@@ -489,8 +489,8 @@ void HTMLVideoElement::DidEnterFullscreen() {
     exitPictureInPicture(base::DoNothing());
 
   if (GetWebMediaPlayer()) {
-    // FIXME: There is no embedder-side handling in layout test mode.
-    if (!LayoutTestSupport::IsRunningLayoutTest())
+    // FIXME: There is no embedder-side handling in web test mode.
+    if (!WebTestSupport::IsRunningWebTest())
       GetWebMediaPlayer()->EnteredFullscreen();
     GetWebMediaPlayer()->OnDisplayTypeChanged(DisplayType());
   }
@@ -582,8 +582,8 @@ scoped_refptr<Image> HTMLVideoElement::GetSourceImageForCanvas(
   return snapshot;
 }
 
-bool HTMLVideoElement::WouldTaintOrigin(const SecurityOrigin*) const {
-  return !IsMediaDataCORSSameOrigin();
+bool HTMLVideoElement::WouldTaintOrigin() const {
+  return !IsMediaDataCorsSameOrigin();
 }
 
 FloatSize HTMLVideoElement::ElementSize(const FloatSize&) const {
@@ -623,7 +623,8 @@ ScriptPromise HTMLVideoElement::CreateImageBitmap(
 void HTMLVideoElement::MediaRemotingStarted(
     const WebString& remote_device_friendly_name) {
   if (!remoting_interstitial_) {
-    remoting_interstitial_ = new MediaRemotingInterstitial(*this);
+    remoting_interstitial_ =
+        MakeGarbageCollected<MediaRemotingInterstitial>(*this);
     ShadowRoot& shadow_root = EnsureUserAgentShadowRoot();
     shadow_root.InsertBefore(remoting_interstitial_, shadow_root.firstChild());
     HTMLMediaElement::AssertShadowRootChildren(shadow_root);
@@ -697,7 +698,8 @@ bool HTMLVideoElement::IsInAutoPIP() const {
 
 void HTMLVideoElement::OnEnteredPictureInPicture() {
   if (!picture_in_picture_interstitial_) {
-    picture_in_picture_interstitial_ = new PictureInPictureInterstitial(*this);
+    picture_in_picture_interstitial_ =
+        MakeGarbageCollected<PictureInPictureInterstitial>(*this);
     ShadowRoot& shadow_root = EnsureUserAgentShadowRoot();
     shadow_root.InsertBefore(picture_in_picture_interstitial_,
                              shadow_root.firstChild());

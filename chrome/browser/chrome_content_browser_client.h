@@ -74,6 +74,9 @@ namespace url {
 class Origin;
 }
 
+// Returns the user agent of Chrome.
+std::string GetUserAgent();
+
 class ChromeContentBrowserClient : public content::ContentBrowserClient {
  public:
   explicit ChromeContentBrowserClient(
@@ -143,6 +146,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   CreateURLLoaderFactoryForNetworkRequests(
       content::RenderProcessHost* process,
       network::mojom::NetworkContext* network_context,
+      network::mojom::TrustedURLLoaderHeaderClientPtrInfo* header_client,
       const url::Origin& request_initiator) override;
   void GetAdditionalWebUISchemes(
       std::vector<std::string>* additional_schemes) override;
@@ -168,6 +172,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   bool ShouldTryToUseExistingProcessHost(
       content::BrowserContext* browser_context,
       const GURL& url) override;
+  bool ShouldSubframesTryToReuseExistingProcess(
+      content::RenderFrameHost* main_frame) override;
   void SiteInstanceGotProcess(content::SiteInstance* site_instance) override;
   void SiteInstanceDeleting(content::SiteInstance* site_instance) override;
   bool ShouldSwapBrowsingInstancesForNavigation(
@@ -178,6 +184,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   bool ShouldAssignSiteForURL(const GURL& url) override;
   std::vector<url::Origin> GetOriginsRequiringDedicatedProcess() override;
   bool ShouldEnableStrictSiteIsolation() override;
+  bool ShouldDisableSiteIsolation() override;
   bool IsFileAccessAllowed(const base::FilePath& path,
                            const base::FilePath& absolute_path,
                            const base::FilePath& profile_path) override;
@@ -256,13 +263,14 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       const url::Origin& embedding_origin) override;
   std::string GetWebBluetoothBlocklist() override;
 #if defined(OS_CHROMEOS)
-  void OnUsedTrustAnchor(const std::string& username_hash) override;
+  void OnTrustAnchorUsed(const std::string& username_hash) override;
 #endif
   net::CookieStore* OverrideCookieStoreForURL(
       const GURL& url,
       content::ResourceContext* context) override;
   scoped_refptr<network::SharedURLLoaderFactory>
   GetSystemSharedURLLoaderFactory() override;
+  network::mojom::NetworkContext* GetSystemNetworkContext() override;
   std::string GetGeolocationApiKey() override;
 
 #if defined(OS_ANDROID)
@@ -310,6 +318,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   void ResourceDispatcherHostCreated() override;
   content::SpeechRecognitionManagerDelegate*
   CreateSpeechRecognitionManagerDelegate() override;
+  content::TtsControllerDelegate* GetTtsControllerDelegate() override;
+  content::TtsPlatform* GetTtsPlatform() override;
   net::NetLog* GetNetLog() override;
   void OverrideWebkitPrefs(content::RenderViewHost* rvh,
                            content::WebPreferences* prefs) override;
@@ -353,7 +363,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       const GURL& url) override;
   void OverridePageVisibilityState(
       content::RenderFrameHost* render_frame_host,
-      blink::mojom::PageVisibilityState* visibility_state) override;
+      content::PageVisibilityState* visibility_state) override;
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   void GetAdditionalMappedFilesForChildProcess(
       const base::CommandLine& command_line,
@@ -389,22 +399,24 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       const service_manager::BindSourceInfo& source_info,
       const std::string& interface_name,
       mojo::ScopedMessagePipeHandle* interface_pipe) override;
-  void RegisterInProcessServices(
-      StaticServiceMap* services,
+  void RegisterIOThreadServiceHandlers(
       content::ServiceManagerConnection* connection) override;
   void RegisterOutOfProcessServices(
       OutOfProcessServiceMap* services) override;
+  void HandleServiceRequest(
+      const std::string& service_name,
+      service_manager::mojom::ServiceRequest request) override;
   bool ShouldTerminateOnServiceQuit(
       const service_manager::Identity& id) override;
   std::unique_ptr<base::Value> GetServiceManifestOverlay(
       base::StringPiece name) override;
   std::vector<content::ContentBrowserClient::ServiceManifestInfo>
   GetExtraServiceManifests() override;
-  std::vector<service_manager::Identity> GetStartupServices() override;
-  void OpenURL(content::BrowserContext* browser_context,
+  std::vector<std::string> GetStartupServices() override;
+  void OpenURL(content::SiteInstance* site_instance,
                const content::OpenURLParams& params,
-               const base::Callback<void(content::WebContents*)>& callback)
-      override;
+               const base::RepeatingCallback<void(content::WebContents*)>&
+                   callback) override;
   content::ControllerPresentationServiceDelegate*
   GetControllerPresentationServiceDelegate(
       content::WebContents* web_contents) override;
@@ -449,9 +461,11 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   bool WillCreateURLLoaderFactory(
       content::BrowserContext* browser_context,
       content::RenderFrameHost* frame,
+      int render_process_id,
       bool is_navigation,
       const url::Origin& request_initiator,
       network::mojom::URLLoaderFactoryRequest* factory_request,
+      network::mojom::TrustedURLLoaderHeaderClientPtrInfo* header_client,
       bool* bypass_redirect_checks) override;
   std::vector<std::unique_ptr<content::URLLoaderRequestInterceptor>>
   WillCreateURLLoaderRequestInterceptors(
@@ -502,7 +516,9 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       content::NavigationUIData* navigation_data,
       bool is_main_frame,
       ui::PageTransition page_transition,
-      bool has_user_gesture) override;
+      bool has_user_gesture,
+      const std::string& method,
+      const net::HttpRequestHeaders& headers) override;
   std::unique_ptr<content::OverlayWindow> CreateWindowForPictureInPicture(
       content::PictureInPictureWindowController* controller) override;
   bool IsSafeRedirectTarget(const GURL& url,
@@ -521,12 +537,18 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
 
   content::PreviewsState DetermineAllowedPreviews(
       content::PreviewsState initial_state,
-      content::NavigationHandle* navigation_handle) override;
+      content::NavigationHandle* navigation_handle,
+      const GURL& current_navigation_url) override;
 
   content::PreviewsState DetermineCommittedPreviews(
       content::PreviewsState initial_state,
       content::NavigationHandle* navigation_handle,
       const net::HttpResponseHeaders* response_headers) override;
+  void LogWebFeatureForCurrentPage(content::RenderFrameHost* render_frame_host,
+                                   blink::mojom::WebFeature feature) override;
+
+  std::string GetProduct() const override;
+  std::string GetUserAgent() const override;
 
   // Determines the committed previews state for the passed in params.
   static content::PreviewsState DetermineCommittedPreviewsForURL(

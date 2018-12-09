@@ -88,7 +88,7 @@ std::unique_ptr<TransformationMatrix> getPoseMatrix(
 
 XRFrameProvider::XRFrameProvider(XRDevice* device)
     : device_(device), last_has_focus_(device->HasFrameFocus()) {
-  frame_transport_ = new XRFrameTransport();
+  frame_transport_ = MakeGarbageCollected<XRFrameTransport>();
 }
 
 void XRFrameProvider::BeginImmersiveSession(
@@ -156,7 +156,7 @@ void XRFrameProvider::OnImmersiveSessionEnded() {
   presentation_provider_.reset();
   immersive_data_provider_.reset();
 
-  frame_transport_ = new XRFrameTransport();
+  frame_transport_ = MakeGarbageCollected<XRFrameTransport>();
 
   // When we no longer have an active immersive session schedule all the
   // outstanding frames that were requested while the immersive session was
@@ -242,7 +242,8 @@ void XRFrameProvider::ScheduleNonImmersiveFrame() {
 
   // TODO(http://crbug.com/856257) Remove the special casing for AR and non-AR.
   if (!HasARSession()) {
-    doc->RequestAnimationFrame(new XRFrameProviderRequestCallback(this));
+    doc->RequestAnimationFrame(
+        MakeGarbageCollected<XRFrameProviderRequestCallback>(this));
   }
 }
 
@@ -336,7 +337,8 @@ void XRFrameProvider::OnNonImmersiveFrameData(
     // Try to request a regular animation frame to avoid getting stuck.
     DVLOG(1) << __FUNCTION__ << ": NO FRAME DATA!";
     frame_pose_ = nullptr;
-    doc->RequestAnimationFrame(new XRFrameProviderRequestCallback(this));
+    doc->RequestAnimationFrame(
+        MakeGarbageCollected<XRFrameProviderRequestCallback>(this));
     return;
   }
 

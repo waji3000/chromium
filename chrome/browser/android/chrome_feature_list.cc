@@ -49,12 +49,14 @@ namespace {
 // this array may either refer to features defined in the header of this file or
 // in other locations in the code base (e.g. chrome/, components/, etc).
 const base::Feature* kFeaturesExposedToJava[] = {
+    &autofill::features::kAutofillKeyboardAccessory,
     &autofill::features::kAutofillManualFallbackAndroid,
     &autofill::features::kAutofillRefreshStyleAndroid,
-    &contextual_suggestions::kContextualSuggestionsAlternateCardLayout,
+    &autofill::features::kAutofillEnableCompanyName,
     &contextual_suggestions::kContextualSuggestionsButton,
     &contextual_suggestions::kContextualSuggestionsIPHReverseScroll,
     &contextual_suggestions::kContextualSuggestionsOptOut,
+    &features::kAllowStartingServiceManagerOnly,
     &features::kAppNotificationStatusMessaging,
     &features::kClearOldBrowsingData,
     &features::kClipboardContentSetting,
@@ -69,29 +71,31 @@ const base::Feature* kFeaturesExposedToJava[] = {
     &features::kShowTrustedPublisherURL,
     &features::kSoundContentSetting,
     &features::kSSLCommittedInterstitials,
+    &features::kUserActivationV2,
     &features::kWebAuth,
     &features::kWebPayments,
     &feed::kInterestFeedContentSuggestions,
     &invalidation::switches::kFCMInvalidations,
     &kAdjustWebApkInstallationSpace,
+    &kAllowRemoteContextForNotifications,
     &kAndroidPayIntegrationV1,
     &kAndroidPayIntegrationV2,
     &kAndroidPaymentApps,
-    &kAndroidSiteSettingsUI,
+    &kAndroidSiteSettingsUIRefresh,
     &kAutofillAssistant,
     &kCastDeviceFilter,
     &kCCTBackgroundTab,
     &kCCTExternalLinkHandling,
     &kCCTModule,
     &kCCTModuleCache,
-    &kCCTParallelRequest,
+    &kCCTModuleCustomHeader,
+    &kCCTModulePostMessage,
     &kCCTPostMessageAPI,
     &kCCTRedirectPreconnect,
     &kCCTReportParallelRequestStatus,
     &kCCTResourcePrefetch,
     &kChromeDuetFeature,
     &kChromeSmartSelection,
-    &kChromeMemexFeature,
     &kCommandLineOnNonRooted,
     &kContentSuggestionsScrollToLoad,
     &kContentSuggestionsThumbnailDominantColor,
@@ -101,15 +105,14 @@ const base::Feature* kFeaturesExposedToJava[] = {
     &kContextualSearchUnityIntegration,
     &kCustomContextMenu,
     &kCustomFeedbackUi,
-    &kDeveloperPreferences,
     &kDontPrefetchLibraries,
     &kDownloadProgressInfoBar,
     &kDownloadHomeV2,
     &kDownloadHomeShowStorageInfo,
-    &data_reduction_proxy::features::kDataReductionMainMenu,
     &kEphemeralTab,
     &kExploreSites,
     &kFullscreenActivity,
+    &kGestureNavigation,
     &kHandleMediaIntents,
     &kHideUserDataFromIncognitoNotifications,
     &kHomePageButtonForceEnabled,
@@ -126,7 +129,6 @@ const base::Feature* kFeaturesExposedToJava[] = {
     &kNoCreditCardAbort,
     &kNTPButton,
     &kNTPLaunchAfterInactivity,
-    &kSimplifiedNTP,
     &kOmniboxSpareRenderer,
     &kOmniboxVoiceSearchAlwaysVisible,
     &kPayWithGoogleV1,
@@ -170,6 +172,7 @@ const base::Feature* kFeaturesExposedToJava[] = {
     &omnibox::kHideSteadyStateUrlScheme,
     &omnibox::kHideSteadyStateUrlTrivialSubdomains,
     &omnibox::kQueryInOmnibox,
+    &password_manager::features::kGooglePasswordManager,
     &password_manager::features::kPasswordSearchMobile,
     &password_manager::features::kPasswordsKeyboardAccessory,
     &translate::kTranslateAndroidManualTrigger,
@@ -196,13 +199,16 @@ const base::Feature kAdjustWebApkInstallationSpace = {
 const base::Feature kAndroidPayIntegrationV1{"AndroidPayIntegrationV1",
                                              base::FEATURE_ENABLED_BY_DEFAULT};
 
+const base::Feature kAllowRemoteContextForNotifications{
+    "AllowRemoteContextForNotifications", base::FEATURE_ENABLED_BY_DEFAULT};
+
 const base::Feature kAndroidPayIntegrationV2{"AndroidPayIntegrationV2",
                                              base::FEATURE_ENABLED_BY_DEFAULT};
 
 const base::Feature kAndroidPaymentApps{"AndroidPaymentApps",
                                         base::FEATURE_ENABLED_BY_DEFAULT};
-const base::Feature kAndroidSiteSettingsUI{"AndroidSiteSettingsUI",
-                                           base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kAndroidSiteSettingsUIRefresh{
+    "AndroidSiteSettingsUIRefresh", base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kAutofillAssistant{"AutofillAssistant",
                                        base::FEATURE_DISABLED_BY_DEFAULT};
@@ -225,8 +231,11 @@ const base::Feature kCCTModule{"CCTModule", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kCCTModuleCache{"CCTModuleCache",
                                     base::FEATURE_DISABLED_BY_DEFAULT};
 
-const base::Feature kCCTParallelRequest{"CCTParallelRequest",
-                                        base::FEATURE_ENABLED_BY_DEFAULT};
+const base::Feature kCCTModuleCustomHeader{"CCTModuleCustomHeader",
+                                           base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kCCTModulePostMessage{"CCTModulePostMessage",
+                                          base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kCCTPostMessageAPI{"CCTPostMessageAPI",
                                        base::FEATURE_ENABLED_BY_DEFAULT};
@@ -242,9 +251,6 @@ const base::Feature kCCTResourcePrefetch{"CCTResourcePrefetch",
 
 const base::Feature kChromeDuetFeature{"ChromeDuet",
                                        base::FEATURE_DISABLED_BY_DEFAULT};
-
-const base::Feature kChromeMemexFeature{"ChromeMemex",
-                                        base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kChromeSmartSelection{"ChromeSmartSelection",
                                           base::FEATURE_ENABLED_BY_DEFAULT};
@@ -277,9 +283,6 @@ const base::Feature kCustomContextMenu{"CustomContextMenu",
 const base::Feature kCustomFeedbackUi{"CustomFeedbackUi",
                                       base::FEATURE_DISABLED_BY_DEFAULT};
 
-const base::Feature kDeveloperPreferences{"DeveloperPreferences",
-                                          base::FEATURE_DISABLED_BY_DEFAULT};
-
 const base::Feature kDontPrefetchLibraries{"DontPrefetchLibraries",
                                            base::FEATURE_DISABLED_BY_DEFAULT};
 
@@ -303,6 +306,9 @@ const base::Feature kExploreSites{"ExploreSites",
 
 const base::Feature kFullscreenActivity{"FullscreenActivity",
                                         base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kGestureNavigation{"GestureNavigation",
+                                       base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kHandleMediaIntents{"HandleMediaIntents",
                                         base::FEATURE_ENABLED_BY_DEFAULT};
@@ -386,9 +392,6 @@ const base::Feature kReaderModeInCCT{"ReaderModeInCCT",
 const base::Feature kServiceManagerForDownload{
     "ServiceManagerForDownload", base::FEATURE_DISABLED_BY_DEFAULT};
 
-const base::Feature kSimplifiedNTP{"SimplifiedNTP",
-                                   base::FEATURE_ENABLED_BY_DEFAULT};
-
 const base::Feature kSoleIntegration{"SoleIntegration",
                                      base::FEATURE_ENABLED_BY_DEFAULT};
 
@@ -400,9 +403,6 @@ const base::Feature kSpecialLocaleFeature{"SpecialLocale",
 
 const base::Feature kSpecialLocaleWrapper{"SpecialLocaleWrapper",
                                           base::FEATURE_ENABLED_BY_DEFAULT};
-
-const base::Feature kTabModalJsDialog{"TabModalJsDialog",
-                                      base::FEATURE_ENABLED_BY_DEFAULT};
 
 const base::Feature kTabReparenting{"TabReparenting",
                                     base::FEATURE_ENABLED_BY_DEFAULT};
@@ -422,18 +422,12 @@ const base::Feature kVideoPersistence{"VideoPersistence",
 const base::Feature kVrBrowsingFeedback{"VrBrowsingFeedback",
                                         base::FEATURE_ENABLED_BY_DEFAULT};
 
-const base::Feature kVrBrowsingTabsView{"VrBrowsingTabsView",
-                                        base::FEATURE_DISABLED_BY_DEFAULT};
-
-static jboolean JNI_ChromeFeatureList_IsInitialized(
-    JNIEnv* env,
-    const JavaParamRef<jclass>& clazz) {
+static jboolean JNI_ChromeFeatureList_IsInitialized(JNIEnv* env) {
   return !!base::FeatureList::GetInstance();
 }
 
 static jboolean JNI_ChromeFeatureList_IsEnabled(
     JNIEnv* env,
-    const JavaParamRef<jclass>& clazz,
     const JavaParamRef<jstring>& jfeature_name) {
   const base::Feature* feature =
       FindFeatureExposedToJava(ConvertJavaStringToUTF8(env, jfeature_name));
@@ -443,7 +437,6 @@ static jboolean JNI_ChromeFeatureList_IsEnabled(
 static ScopedJavaLocalRef<jstring>
 JNI_ChromeFeatureList_GetFieldTrialParamByFeature(
     JNIEnv* env,
-    const JavaParamRef<jclass>& clazz,
     const JavaParamRef<jstring>& jfeature_name,
     const JavaParamRef<jstring>& jparam_name) {
   const base::Feature* feature =
@@ -456,7 +449,6 @@ JNI_ChromeFeatureList_GetFieldTrialParamByFeature(
 
 static jint JNI_ChromeFeatureList_GetFieldTrialParamByFeatureAsInt(
     JNIEnv* env,
-    const JavaParamRef<jclass>& clazz,
     const JavaParamRef<jstring>& jfeature_name,
     const JavaParamRef<jstring>& jparam_name,
     const jint jdefault_value) {
@@ -469,7 +461,6 @@ static jint JNI_ChromeFeatureList_GetFieldTrialParamByFeatureAsInt(
 
 static jdouble JNI_ChromeFeatureList_GetFieldTrialParamByFeatureAsDouble(
     JNIEnv* env,
-    const JavaParamRef<jclass>& clazz,
     const JavaParamRef<jstring>& jfeature_name,
     const JavaParamRef<jstring>& jparam_name,
     const jdouble jdefault_value) {
@@ -482,7 +473,6 @@ static jdouble JNI_ChromeFeatureList_GetFieldTrialParamByFeatureAsDouble(
 
 static jboolean JNI_ChromeFeatureList_GetFieldTrialParamByFeatureAsBoolean(
     JNIEnv* env,
-    const JavaParamRef<jclass>& clazz,
     const JavaParamRef<jstring>& jfeature_name,
     const JavaParamRef<jstring>& jparam_name,
     const jboolean jdefault_value) {

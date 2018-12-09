@@ -368,6 +368,7 @@ class MetaBuildWrapper(object):
             self.PathJoin(self.chromium_src_dir, 'tools', 'swarming_client',
                           'isolate.py'),
             'remap',
+            '--collapse_symlinks',
             '-s', self.PathJoin(self.args.path, self.args.target + '.isolated'),
             '-o', zip_dir
           ]
@@ -1047,6 +1048,17 @@ class MetaBuildWrapper(object):
     # the last instance of each arg is listed.
     gn_args = gn_helpers.ToGNString(gn_helpers.FromGNArgs(gn_args))
 
+    # If we're using the Simple Chrome SDK, add a comment at the top that
+    # points to the doc. This must happen after the gn_helpers.ToGNString()
+    # call above since gn_helpers strips comments.
+    if vals['cros_passthrough']:
+      simplechrome_comment = [
+          '# These args are generated via the Simple Chrome SDK. See the link',
+          '# below for more details:',
+          '# https://chromium.googlesource.com/chromiumos/docs/+/master/simple_chrome_workflow.md',  # pylint: disable=line-too-long
+      ]
+      gn_args = '%s\n%s' % ('\n'.join(simplechrome_comment), gn_args)
+
     args_file = vals.get('args_file', None)
     if args_file:
       gn_args = ('import("%s")\n' % vals['args_file']) + gn_args
@@ -1100,6 +1112,7 @@ class MetaBuildWrapper(object):
       cmdline = [
           '../../testing/test_env.py',
           os.path.join('bin', 'run_%s' % target),
+          '--test-launcher-bot-mode',
       ]
     elif is_simplechrome and test_type != 'script':
       cmdline = [

@@ -27,11 +27,13 @@ Adapter::Adapter(Profile* profile,
                  AlsReader* als_reader,
                  BrightnessMonitor* brightness_monitor,
                  Modeller* modeller,
+                 MetricsReporter* metrics_reporter,
                  chromeos::PowerManagerClient* power_manager_client)
     : profile_(profile),
       als_reader_observer_(this),
       brightness_monitor_observer_(this),
       modeller_observer_(this),
+      metrics_reporter_(metrics_reporter),
       power_manager_client_(power_manager_client),
       tick_clock_(base::DefaultTickClock::GetInstance()),
       weak_ptr_factory_(this) {
@@ -48,6 +50,15 @@ Adapter::Adapter(Profile* profile,
   power_manager_client_->WaitForServiceToBeAvailable(
       base::BindOnce(&Adapter::OnPowerManagerServiceAvailable,
                      weak_ptr_factory_.GetWeakPtr()));
+
+  if (!base::FeatureList::IsEnabled(features::kAutoScreenBrightness)) {
+    adapter_status_ = Status::kDisabled;
+    return;
+  }
+
+  continue_auto_brightness_after_user_adjustment_ =
+      base::FeatureList::IsEnabled(
+          features::kAutoScreenBrightnessContinuedAdjustment);
 
   InitParams();
 }
@@ -88,9 +99,35 @@ void Adapter::OnUserBrightnessChanged(double old_brightness_percent,
                                       double new_brightness_percent) {}
 
 void Adapter::OnUserBrightnessChangeRequested() {
-  // This will disable |adapter_status_| so that the model will not make any
-  // brightness adjustment.
-  adapter_status_ = Status::kDisabled;
+  if (!continue_auto_brightness_after_user_adjustment_) {
+    // This will disable |adapter_status_| so that the model will not make any
+    // brightness adjustment.
+    adapter_status_ = Status::kDisabled;
+  }
+
+  if (!als_init_status_)
+    return;
+
+  if (!metrics_reporter_)
+    return;
+
+  switch (*als_init_status_) {
+    case AlsReader::AlsInitStatus::kSuccess:
+      metrics_reporter_->OnUserBrightnessChangeRequested(
+          MetricsReporter::UserAdjustment::kSupportedAls);
+      return;
+    case AlsReader::AlsInitStatus::kDisabled:
+    case AlsReader::AlsInitStatus::kMissingPath:
+      metrics_reporter_->OnUserBrightnessChangeRequested(
+          MetricsReporter::UserAdjustment::kNoAls);
+      return;
+    case AlsReader::AlsInitStatus::kIncorrectConfig:
+      metrics_reporter_->OnUserBrightnessChangeRequested(
+          MetricsReporter::UserAdjustment::kUnsupportedAls);
+      return;
+    case AlsReader::AlsInitStatus::kInProgress:
+      NOTREACHED() << "ALS should have been initialized with a valid value.";
+  }
 }
 
 void Adapter::OnModelTrained(const MonotoneCubicSpline& brightness_curve) {
@@ -144,13 +181,13 @@ double Adapter::GetDarkeningThresholdForTesting() const {
   return *darkening_lux_threshold_;
 }
 
-// TODO(jiameng): add UMA metrics to record errors.
 void Adapter::InitParams() {
   params_.brightening_lux_threshold_ratio = GetFieldTrialParamByFeatureAsDouble(
       features::kAutoScreenBrightness, "brightening_lux_threshold_ratio",
       params_.brightening_lux_threshold_ratio);
   if (params_.brightening_lux_threshold_ratio <= 0) {
     adapter_status_ = Status::kDisabled;
+    LogParameterError(ParameterError::kAdapterError);
     return;
   }
 
@@ -160,6 +197,7 @@ void Adapter::InitParams() {
   if (params_.darkening_lux_threshold_ratio <= 0 ||
       params_.darkening_lux_threshold_ratio > 1) {
     adapter_status_ = Status::kDisabled;
+    LogParameterError(ParameterError::kAdapterError);
     return;
   }
 
@@ -171,6 +209,7 @@ void Adapter::InitParams() {
   if (params_.immediate_brightening_lux_threshold_ratio <
       params_.brightening_lux_threshold_ratio) {
     adapter_status_ = Status::kDisabled;
+    LogParameterError(ParameterError::kAdapterError);
     return;
   }
 
@@ -183,6 +222,7 @@ void Adapter::InitParams() {
           params_.darkening_lux_threshold_ratio ||
       params_.immediate_darkening_lux_threshold_ratio > 1) {
     adapter_status_ = Status::kDisabled;
+    LogParameterError(ParameterError::kAdapterError);
     return;
   }
 
@@ -197,6 +237,7 @@ void Adapter::InitParams() {
           params_.min_time_between_brightness_changes.InSeconds());
   if (min_seconds_between_brightness_changes < 0) {
     adapter_status_ = Status::kDisabled;
+    LogParameterError(ParameterError::kAdapterError);
     return;
   }
   params_.min_time_between_brightness_changes =
@@ -206,6 +247,7 @@ void Adapter::InitParams() {
       features::kAutoScreenBrightness, "model_curve", 2);
   if (model_curve < 0 || model_curve > 2) {
     adapter_status_ = Status::kDisabled;
+    LogParameterError(ParameterError::kAdapterError);
     return;
   }
   params_.model_curve = static_cast<ModelCurve>(model_curve);

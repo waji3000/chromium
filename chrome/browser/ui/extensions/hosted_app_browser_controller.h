@@ -33,6 +33,8 @@ class HostedAppBrowserController : public SiteEngagementObserver,
                                    public ExtensionUninstallDialog::Delegate {
  public:
   // Returns whether |browser| uses the experimental hosted app experience.
+  // Convenience wrapper for checking IsForExperimentalHostedAppBrowser() on
+  // |browser|'s HostedAppBrowserController if it exists.
   static bool IsForExperimentalHostedAppBrowser(const Browser* browser);
 
   // Functions to set preferences that are unique to app windows.
@@ -48,14 +50,24 @@ class HostedAppBrowserController : public SiteEngagementObserver,
   // Returns true if the associated Hosted App is for a PWA.
   bool created_for_installed_pwa() const { return created_for_installed_pwa_; }
 
+  // Returns true if this controller is for a System Web App.
+  bool IsForSystemWebApp() const;
+
+  // Returns true if this controller is for an experimental hosted app browser.
+  bool IsForExperimentalHostedAppBrowser() const;
+
   // Whether the browser being controlled should be currently showing the
-  // location bar.
-  bool ShouldShowLocationBar() const;
+  // toolbar.
+  bool ShouldShowToolbar() const;
+
+  // Returns true if the hosted app buttons should be shown in the frame for
+  // this BrowserView.
+  bool ShouldShowHostedAppButtonContainer() const;
 
   // Updates the location bar visibility based on whether it should be
   // currently visible or not. If |animate| is set, the change will be
   // animated.
-  void UpdateLocationBarVisibility(bool animate) const;
+  void UpdateToolbarVisibility(bool animate) const;
 
   // Returns the app icon for the window to use in the task list.
   gfx::ImageSkia GetWindowAppIcon() const;

@@ -108,25 +108,25 @@ void ChromeSearchResult::SetIsOmniboxSearch(bool is_omnibox_search) {
     updater->SetSearchResultMetadata(id(), CloneMetadata());
 }
 
-void ChromeSearchResult::SetAnswerCardContentsToken(
-    const base::UnguessableToken& token) {
-  metadata_->answer_card_contents_token = token;
-  AppListModelUpdater* updater = model_updater();
-  if (updater)
-    updater->SetSearchResultMetadata(id(), CloneMetadata());
-}
-
-void ChromeSearchResult::SetAnswerCardSize(const gfx::Size& size) {
-  metadata_->answer_card_size = size;
-  AppListModelUpdater* updater = model_updater();
-  if (updater)
-    updater->SetSearchResultMetadata(id(), CloneMetadata());
-}
-
 void ChromeSearchResult::SetPercentDownloaded(int percent_downloaded) {
   AppListModelUpdater* updater = model_updater();
   if (updater)
     updater->SetSearchResultPercentDownloaded(id(), percent_downloaded);
+}
+
+void ChromeSearchResult::SetQueryUrl(const GURL& url) {
+  metadata_->query_url = url;
+  auto* updater = model_updater();
+  if (updater)
+    updater->SetSearchResultMetadata(id(), CloneMetadata());
+}
+
+void ChromeSearchResult::SetEquivalentResutlId(
+    const std::string& equivlanet_result_id) {
+  metadata_->equivalent_result_id = equivlanet_result_id;
+  auto* updater = model_updater();
+  if (updater)
+    updater->SetSearchResultMetadata(id(), CloneMetadata());
 }
 
 void ChromeSearchResult::SetIcon(const gfx::ImageSkia& icon) {

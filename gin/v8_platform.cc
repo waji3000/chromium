@@ -15,7 +15,7 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/rand_util.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "base/task/post_task.h"
 #include "base/task/task_scheduler/task_scheduler.h"
 #include "base/task/task_traits.h"
@@ -245,8 +245,8 @@ class PageAllocator : public v8::PageAllocator {
       base::DecommitSystemPages(address, length);
       return true;
     } else {
-      return base::SetSystemPagesAccess(address, length,
-                                        GetPageConfig(permissions));
+      return base::TrySetSystemPagesAccess(address, length,
+                                           GetPageConfig(permissions));
     }
   }
 

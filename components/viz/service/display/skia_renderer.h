@@ -92,25 +92,26 @@ class VIZ_SERVICE_EXPORT SkiaRenderer : public DirectRenderer {
   void ClearFramebuffer();
 
   void PrepareCanvasForDrawQuads(
-      const SharedQuadState* shared_quad_state,
+      const gfx::Transform& transform,
       const gfx::QuadF* draw_region,
       const gfx::Rect* scissor_rect,
       base::Optional<SkAutoCanvasRestore>* auto_canvas_restore);
-  void DrawDebugBorderQuad(const DebugBorderDrawQuad* quad);
-  void DrawPictureQuad(const PictureDrawQuad* quad);
-  void DrawRenderPassQuad(const RenderPassDrawQuad* quad);
+  void DrawDebugBorderQuad(const DebugBorderDrawQuad* quad, SkPaint* paint);
+  void DrawPictureQuad(const PictureDrawQuad* quad, SkPaint* paint);
+  void DrawRenderPassQuad(const RenderPassDrawQuad* quad, SkPaint* paint);
   void DrawRenderPassQuadInternal(const RenderPassDrawQuad* quad,
-                                  sk_sp<SkImage> content_image);
+                                  sk_sp<SkImage> content_image,
+                                  SkPaint* paint);
 
-  void DrawSolidColorQuad(const SolidColorDrawQuad* quad);
-  void DrawTextureQuad(const TextureDrawQuad* quad);
+  void DrawSolidColorQuad(const SolidColorDrawQuad* quad, SkPaint* paint);
+  void DrawTextureQuad(const TextureDrawQuad* quad, SkPaint* paint);
   bool MustDrawBatchedTileQuadsBeforeQuad(const DrawQuad* new_quad,
                                           const gfx::QuadF* draw_region);
   void AddTileQuadToBatch(const TileDrawQuad* quad,
                           const gfx::QuadF* draw_region);
   void DrawBatchedTileQuads();
-  void DrawYUVVideoQuad(const YUVVideoDrawQuad* quad);
-  void DrawUnsupportedQuad(const DrawQuad* quad);
+  void DrawYUVVideoQuad(const YUVVideoDrawQuad* quad, SkPaint* paint);
+  void DrawUnsupportedQuad(const DrawQuad* quad, SkPaint* paint);
   bool CalculateRPDQParams(sk_sp<SkImage> src_image,
                            const RenderPassDrawQuad* quad,
                            DrawRenderPassDrawQuadParams* params);
@@ -164,7 +165,6 @@ class VIZ_SERVICE_EXPORT SkiaRenderer : public DirectRenderer {
   bool disable_picture_quad_image_filtering_ = false;
   bool is_scissor_enabled_ = false;
   gfx::Rect scissor_rect_;
-  SkPaint current_paint_;
 
   // Specific for overdraw.
   sk_sp<SkSurface> overdraw_surface_;
@@ -180,9 +180,10 @@ class VIZ_SERVICE_EXPORT SkiaRenderer : public DirectRenderer {
 
   // State common to all tile quads in a batch
   struct BatchedTileState {
-    const SharedQuadState* shared_quad_state;
+    gfx::Transform transform;
     gfx::Rect scissor_rect;
     gfx::QuadF draw_region;
+    SkBlendMode blend_mode;
     bool is_nearest_neighbor;
     bool has_scissor_rect;
     bool has_draw_region;

@@ -3,19 +3,20 @@
 # found in the LICENSE file.
 
 import("//build/buildflag_header.gni")
-import("//build/config/jumbo.gni")
 import("//build/config/chrome_build.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/linux/pkg_config.gni")
 import("//build/config/ui.gni")
+import("//testing/test.gni")
 import("//ui/gl/features.gni")
 import("//ui/ozone/ozone.gni")
-import("//testing/test.gni")
 
 declare_args() {
   enable_swiftshader = (is_win || is_linux || (is_mac && use_egl) ||
                         is_chromeos || is_fuchsia) &&
                        (target_cpu == "x86" || target_cpu == "x64" ||
-                        target_cpu == "arm64")
+                        target_cpu == "arm64" || target_cpu == "mipsel" ||
+                        target_cpu == "mips64el")
 }
 
 use_glx = use_x11 || ozone_platform_x11
@@ -52,8 +53,8 @@ jumbo_component("gl") {
   output_name = "gl_wrapper"  # Avoid colliding with OS X"s libGL.dylib.
 
   sources = [
-    "android/android_surface_composer_compat.cc",
-    "android/android_surface_composer_compat.h",
+    "android/android_surface_control_compat.cc",
+    "android/android_surface_control_compat.h",
     "android/scoped_java_surface.cc",
     "android/scoped_java_surface.h",
     "android/surface_texture.cc",
@@ -458,6 +459,7 @@ source_set("run_all_unittests") {
     deps += [
       "//mojo/core/embedder",
       "//services/service_manager/public/cpp/test:test_support",
+      "//services/ws/public/mojom:constants",
       "//ui/ozone",
     ]
   }

@@ -4,8 +4,10 @@
 
 #include "ui/views/mus/desktop_window_tree_host_mus.h"
 
+#include "base/command_line.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/bind_test_util.h"
+#include "services/ws/test_ws/test_ws.mojom.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/focus_client.h"
@@ -21,10 +23,12 @@
 #include "ui/aura/test/mus/test_window_tree.h"
 #include "ui/aura/test/mus/window_tree_client_test_api.h"
 #include "ui/aura/window.h"
+#include "ui/display/display_switches.h"
 #include "ui/events/base_event_utils.h"
 #include "ui/events/event.h"
 #include "ui/events/gestures/gesture_recognizer.h"
 #include "ui/events/gestures/gesture_recognizer_observer.h"
+#include "ui/gfx/geometry/dip_util.h"
 #include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/mus/mus_client.h"
 #include "ui/views/mus/mus_client_test_api.h"
@@ -34,6 +38,7 @@
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/widget_observer.h"
 #include "ui/wm/core/shadow_types.h"
+#include "ui/wm/core/transient_window_manager.h"
 
 namespace views {
 
@@ -101,6 +106,29 @@ class ExpectsNullCursorClientDuringTearDown : public aura::WindowObserver {
   aura::Window* window_;
   DISALLOW_COPY_AND_ASSIGN(ExpectsNullCursorClientDuringTearDown);
 };
+
+// Tests that the window service can set the initial show state for a window.
+// https://crbug.com/899055
+TEST_F(DesktopWindowTreeHostMusTest, ShowStateFromWindowService) {
+  // Configure the window service to maximize the next top-level window.
+  test_ws::mojom::TestWsPtr test_ws_ptr;
+  MusClient::Get()->window_tree_client()->connector()->BindInterface(
+      test_ws::mojom::kServiceName, &test_ws_ptr);
+  test_ws::mojom::TestWsAsyncWaiter wait_for(test_ws_ptr.get());
+  wait_for.MaximizeNextWindow();
+
+  // Create a widget with the default show state.
+  Widget widget;
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_WINDOW);
+  params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.bounds = gfx::Rect(0, 0, 100, 100);
+  EXPECT_EQ(ui::SHOW_STATE_DEFAULT, params.show_state);
+  widget.Init(params);
+  aura::test::WaitForAllChangesToComplete();
+
+  // Window service provided the show state.
+  EXPECT_TRUE(widget.IsMaximized());
+}
 
 TEST_F(DesktopWindowTreeHostMusTest, Visibility) {
   std::unique_ptr<Widget> widget(CreateWidget());
@@ -388,6 +416,87 @@ TEST_F(DesktopWindowTreeHostMusTest, CreateFullscreenWidget) {
   }
 }
 
+TEST_F(DesktopWindowTreeHostMusTest, ClientWindowHasContent) {
+  // Opaque window has content.
+  {
+    Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
+    params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+
+    Widget widget;
+    widget.Init(params);
+    EXPECT_TRUE(widget.GetNativeWindow()->GetProperty(
+        aura::client::kClientWindowHasContent));
+  }
+
+  // Translucent window does not have content.
+  {
+    Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
+    params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+    params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
+
+    Widget widget;
+    widget.Init(params);
+    EXPECT_FALSE(widget.GetNativeWindow()->GetProperty(
+        aura::client::kClientWindowHasContent));
+  }
+
+  // Window with LAYER_NOT_DRAWN does not have content.
+  {
+    Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
+    params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+    params.layer_type = ui::LAYER_NOT_DRAWN;
+
+    Widget widget;
+    widget.Init(params);
+    EXPECT_FALSE(widget.GetNativeWindow()->GetProperty(
+        aura::client::kClientWindowHasContent));
+  }
+}
+
+// DesktopWindowTreeHostMusTest with --force-device-scale-factor=2.
+class DesktopWindowTreeHostMusTestHighDPI
+    : public DesktopWindowTreeHostMusTest {
+ public:
+  DesktopWindowTreeHostMusTestHighDPI() = default;
+  ~DesktopWindowTreeHostMusTestHighDPI() override = default;
+
+  // DesktopWindowTreeHostMusTest:
+  void SetUp() override {
+    base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+        switches::kForceDeviceScaleFactor, "2");
+    DesktopWindowTreeHostMusTest::SetUp();
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(DesktopWindowTreeHostMusTestHighDPI);
+};
+
+// Ensure menu widgets correctly scale initial bounds: http://crbug.com/899084
+TEST_F(DesktopWindowTreeHostMusTestHighDPI, InitializeMenuWithDIPBounds) {
+  // Swap the WindowTree implementation to verify SetWindowBounds() is called
+  // with the correct DIP bounds, using the host's cached device_scale_factor.
+  aura::TestWindowTree test_window_tree;
+  aura::WindowTreeClientTestApi test_api(
+      MusClient::Get()->window_tree_client());
+  ws::mojom::WindowTree* old_tree = test_api.SwapTree(&test_window_tree);
+
+  Widget widget;
+  Widget::InitParams params(Widget::InitParams::TYPE_MENU);
+  params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.bounds = gfx::Rect(2, 4, 60, 80);
+  widget.Init(params);
+
+  // Check the second-last set window bounds (for the frame, not the content).
+  EXPECT_EQ(params.bounds, test_window_tree.second_last_set_window_bounds());
+  EXPECT_EQ(params.bounds, widget.GetWindowBoundsInScreen());
+  EXPECT_EQ(2.0f, widget.GetNativeWindow()->GetHost()->device_scale_factor());
+  gfx::Rect pixels(gfx::ConvertRectToPixel(2.0f, params.bounds));
+  EXPECT_EQ(pixels, widget.GetNativeWindow()->GetHost()->GetBoundsInPixels());
+
+  widget.CloseNow();
+  test_api.SwapTree(old_tree);
+}
+
 TEST_F(DesktopWindowTreeHostMusTest, GetWindowBoundsInScreen) {
   ScreenMus* screen = MusClientTestApi::screen();
 
@@ -576,12 +685,15 @@ TEST_F(DesktopWindowTreeHostMusTest, MinimizeActivate) {
   EXPECT_TRUE(widget->IsActive());
 
   widget->Minimize();
+  aura::test::WaitForAllChangesToComplete();
   EXPECT_FALSE(widget->IsActive());
+  EXPECT_FALSE(widget->IsVisible());
   EXPECT_TRUE(widget->IsMinimized());
 
   // Activate() should restore the window.
   widget->Activate();
   EXPECT_TRUE(widget->IsActive());
+  EXPECT_TRUE(widget->IsVisible());
   EXPECT_FALSE(widget->IsMinimized());
 }
 
@@ -690,6 +802,114 @@ TEST_F(DesktopWindowTreeHostMusTest, WindowMoveShouldNotTransfersBack) {
   EXPECT_EQ(0, counter.GetTransferCount(root, window));
   EXPECT_EQ(1, counter.GetTransferCount(root, window2));
   EXPECT_EQ(2, counter.GetTotalCount());
+}
+
+TEST_F(DesktopWindowTreeHostMusTest, ShowWindowFromServerDoesntActivate) {
+  std::unique_ptr<Widget> widget(CreateWidget());
+
+  // This simulates what happens when a show happens from the server.
+  widget->GetNativeWindow()->GetHost()->Show();
+  EXPECT_TRUE(widget->IsVisible());
+  // The window should not be active yet.
+  EXPECT_FALSE(widget->GetNativeWindow()->HasFocus());
+  EXPECT_FALSE(widget->IsActive());
+}
+
+// Used to track the number of times OnWidgetVisibilityChanged() is called.
+class WidgetVisibilityObserver : public WidgetObserver {
+ public:
+  WidgetVisibilityObserver() = default;
+  ~WidgetVisibilityObserver() override = default;
+
+  int get_and_clear_change_count() {
+    int result = change_count_;
+    change_count_ = 0;
+    return result;
+  }
+
+  // WidgetObserver:
+  void OnWidgetVisibilityChanged(Widget* widget, bool visible) override {
+    change_count_++;
+  }
+
+ private:
+  int change_count_ = 0;
+
+  DISALLOW_COPY_AND_ASSIGN(WidgetVisibilityObserver);
+};
+
+TEST_F(DesktopWindowTreeHostMusTest,
+       TogglingVisibilityOfWindowTreeWindowTriggersWidgetNotification) {
+  std::unique_ptr<Widget> widget(CreateWidget());
+  widget->Show();
+
+  WidgetVisibilityObserver observer;
+  widget->AddObserver(&observer);
+
+  widget->Show();
+  EXPECT_EQ(0, observer.get_and_clear_change_count());
+  EXPECT_TRUE(widget->IsVisible());
+  EXPECT_TRUE(widget->GetNativeWindow()->GetHost()->compositor()->IsVisible());
+  EXPECT_TRUE(widget->GetNativeWindow()->GetRootWindow()->IsVisible());
+
+  widget->Hide();
+  EXPECT_EQ(1, observer.get_and_clear_change_count());
+  EXPECT_FALSE(widget->IsVisible());
+  EXPECT_FALSE(widget->GetNativeWindow()->GetHost()->compositor()->IsVisible());
+  EXPECT_FALSE(widget->GetNativeWindow()->GetRootWindow()->IsVisible());
+
+  // Changing the visibility of the WindowTreeHost Window should notify the
+  // observer.
+  widget->GetNativeWindow()->GetHost()->window()->Show();
+  EXPECT_EQ(1, observer.get_and_clear_change_count());
+  EXPECT_TRUE(widget->IsVisible());
+  EXPECT_TRUE(widget->GetNativeWindow()->GetHost()->compositor()->IsVisible());
+  EXPECT_TRUE(widget->GetNativeWindow()->GetRootWindow()->IsVisible());
+
+  widget->GetNativeWindow()->GetHost()->window()->Hide();
+  EXPECT_EQ(1, observer.get_and_clear_change_count());
+  EXPECT_FALSE(widget->IsVisible());
+  EXPECT_FALSE(widget->GetNativeWindow()->GetHost()->compositor()->IsVisible());
+  EXPECT_FALSE(widget->GetNativeWindow()->GetRootWindow()->IsVisible());
+
+  widget->RemoveObserver(&observer);
+}
+
+TEST_F(DesktopWindowTreeHostMusTest, TransientChildMatchesParentVisibility) {
+  std::unique_ptr<Widget> widget(CreateWidget());
+  widget->Show();
+
+  std::unique_ptr<Widget> transient_child =
+      CreateWidget(nullptr, widget->GetNativeWindow());
+  transient_child->Show();
+
+  WidgetVisibilityObserver observer;
+  transient_child->AddObserver(&observer);
+
+  // Hiding the parent should also hide the transient child.
+  widget->Hide();
+  EXPECT_FALSE(transient_child->IsVisible());
+  EXPECT_EQ(1, observer.get_and_clear_change_count());
+  EXPECT_FALSE(
+      transient_child->GetNativeWindow()->GetHost()->compositor()->IsVisible());
+  EXPECT_FALSE(
+      transient_child->GetNativeWindow()->GetRootWindow()->IsVisible());
+
+  // set_parent_controls_visibility(true) makes it so showing the parent also
+  // shows the child.
+  wm::TransientWindowManager::GetOrCreate(
+      transient_child->GetNativeWindow()->GetRootWindow())
+      ->set_parent_controls_visibility(true);
+  // With set_parent_controls_visibility() true, showing the parent should also
+  // show the transient child.
+  widget->Show();
+  EXPECT_TRUE(transient_child->IsVisible());
+  EXPECT_EQ(1, observer.get_and_clear_change_count());
+  EXPECT_TRUE(
+      transient_child->GetNativeWindow()->GetHost()->compositor()->IsVisible());
+  EXPECT_TRUE(transient_child->GetNativeWindow()->GetRootWindow()->IsVisible());
+
+  transient_child->RemoveObserver(&observer);
 }
 
 }  // namespace views

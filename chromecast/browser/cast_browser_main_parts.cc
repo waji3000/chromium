@@ -10,7 +10,6 @@
 #include <string>
 #include <vector>
 
-#include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
@@ -26,28 +25,24 @@
 #include "build/build_config.h"
 #include "cc/base/switches.h"
 #include "chromecast/base/cast_constants.h"
-#include "chromecast/base/cast_features.h"
 #include "chromecast/base/cast_paths.h"
 #include "chromecast/base/chromecast_switches.h"
 #include "chromecast/base/metrics/cast_metrics_helper.h"
 #include "chromecast/base/metrics/grouped_histogram.h"
-#include "chromecast/base/pref_names.h"
 #include "chromecast/base/version.h"
 #include "chromecast/browser/cast_browser_context.h"
 #include "chromecast/browser/cast_browser_process.h"
 #include "chromecast/browser/cast_content_browser_client.h"
+#include "chromecast/browser/cast_feature_list_creator.h"
 #include "chromecast/browser/cast_memory_pressure_monitor.h"
 #include "chromecast/browser/cast_net_log.h"
 #include "chromecast/browser/devtools/remote_debugging_server.h"
 #include "chromecast/browser/media/media_caps_impl.h"
-#include "chromecast/browser/metrics/cast_metrics_prefs.h"
 #include "chromecast/browser/metrics/cast_metrics_service_client.h"
-#include "chromecast/browser/pref_service_helper.h"
 #include "chromecast/browser/tts/tts_controller_impl.h"
 #include "chromecast/browser/tts/tts_platform_stub.h"
 #include "chromecast/browser/url_request_context_factory.h"
 #include "chromecast/chromecast_buildflags.h"
-#include "chromecast/common/global_descriptors.h"
 #include "chromecast/graphics/cast_window_manager.h"
 #include "chromecast/media/base/key_systems_common.h"
 #include "chromecast/media/base/media_resource_tracker.h"
@@ -56,8 +51,7 @@
 #include "chromecast/net/connectivity_checker.h"
 #include "chromecast/public/cast_media_shlib.h"
 #include "chromecast/service/cast_service.h"
-#include "components/prefs/pref_registry_simple.h"
-#include "components/proxy_config/pref_proxy_config_tracker_impl.h"
+#include "components/prefs/pref_service.h"
 #include "components/viz/common/switches.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
@@ -115,6 +109,11 @@
 #include "components/keyed_service/content/browser_context_dependency_manager.h"  // nogncheck
 #include "extensions/browser/browser_context_keyed_service_factories.h"  // nogncheck
 #include "extensions/browser/extension_prefs.h"  // nogncheck
+#endif
+
+#if BUILDFLAG(ENABLE_CAST_WAYLAND_SERVER)
+#include "chromecast/browser/exo/wayland_server_controller.h"
+#include "chromecast/browser/exo/wm_helper_cast_shell.h"
 #endif
 
 #if !defined(OS_ANDROID) && !defined(OS_FUCHSIA)
@@ -318,7 +317,6 @@ CastBrowserMainParts::CastBrowserMainParts(
     CastContentBrowserClient* cast_content_browser_client)
     : BrowserMainParts(),
       cast_browser_process_(new CastBrowserProcess()),
-      field_trial_list_(nullptr),
       parameters_(parameters),
       cast_content_browser_client_(cast_content_browser_client),
       url_request_context_factory_(url_request_context_factory),
@@ -417,42 +415,14 @@ void CastBrowserMainParts::ToolkitInitialized() {
 
 int CastBrowserMainParts::PreCreateThreads() {
 #if defined(OS_ANDROID)
-  // GPU process is started immediately after threads are created,
-  // requiring ChildProcessCrashObserver to be initialized beforehand.
-  base::FilePath crash_dumps_dir;
-  if (!chromecast::CrashHandler::GetCrashDumpLocation(&crash_dumps_dir)) {
-    LOG(ERROR) << "Could not find crash dump location.";
-  }
   crash_reporter::ChildExitObserver::Create();
   crash_reporter::ChildExitObserver::GetInstance()->RegisterClient(
-      std::make_unique<crash_reporter::ChildProcessCrashObserver>(
-          crash_dumps_dir, kAndroidMinidumpDescriptor));
-#else
-  base::FilePath home_dir;
-  CHECK(base::PathService::Get(DIR_CAST_HOME, &home_dir));
-  if (!base::CreateDirectory(home_dir))
-    return 1;
+      std::make_unique<crash_reporter::ChildProcessCrashObserver>());
 #endif
 
-  scoped_refptr<PrefRegistrySimple> pref_registry(new PrefRegistrySimple());
-  metrics::RegisterPrefs(pref_registry.get());
-  PrefProxyConfigTrackerImpl::RegisterPrefs(pref_registry.get());
   cast_browser_process_->SetPrefService(
-      PrefServiceHelper::CreatePrefService(pref_registry.get()));
-
-  // As soon as the PrefService is set, initialize the base::FeatureList, so
-  // objects initialized after this point can use features from
-  // base::FeatureList.
-  const auto* features_dict =
-      cast_browser_process_->pref_service()->GetDictionary(
-          prefs::kLatestDCSFeatures);
-  const auto* experiment_ids = cast_browser_process_->pref_service()->GetList(
-      prefs::kActiveDCSExperiments);
-  auto* command_line = base::CommandLine::ForCurrentProcess();
-  InitializeFeatureList(
-      *features_dict, *experiment_ids,
-      command_line->GetSwitchValueASCII(switches::kEnableFeatures),
-      command_line->GetSwitchValueASCII(switches::kDisableFeatures));
+      cast_content_browser_client_->GetCastFeatureListCreator()
+          ->TakePrefService());
 
 #if defined(USE_AURA)
   cast_browser_process_->SetCastScreen(std::make_unique<CastScreen>());
@@ -594,6 +564,11 @@ void CastBrowserMainParts::PreMainMessageLoopRun() {
       cast_browser_process_->browser_context());
 #endif
 
+#if BUILDFLAG(ENABLE_CAST_WAYLAND_SERVER)
+  wayland_server_controller_ =
+      std::make_unique<WaylandServerController>(window_manager_.get());
+#endif
+
   // Initializing metrics service and network delegates must happen after cast
   // service is intialized because CastMetricsServiceClient and
   // CastNetworkDelegate may use components initialized by cast service.
@@ -615,7 +590,9 @@ void CastBrowserMainParts::StartPeriodicCrashReportUpload() {
 void CastBrowserMainParts::OnStartPeriodicCrashReportUpload() {
   base::FilePath crash_dir;
   CrashHandler::GetCrashDumpLocation(&crash_dir);
-  CrashHandler::UploadDumps(crash_dir, "", "");
+  base::FilePath reports_dir;
+  CrashHandler::GetCrashReportsLocation(&reports_dir);
+  CrashHandler::UploadDumps(crash_dir, reports_dir, "", "");
 }
 #endif  // defined(OS_ANDROID)
 
@@ -660,6 +637,9 @@ bool CastBrowserMainParts::MainMessageLoopRun(int* result_code) {
 }
 
 void CastBrowserMainParts::PostMainMessageLoopRun() {
+#if BUILDFLAG(ENABLE_CAST_WAYLAND_SERVER)
+  wayland_server_controller_.reset();
+#endif
 #if BUILDFLAG(ENABLE_CHROMECAST_EXTENSIONS)
   BrowserContextDependencyManager::GetInstance()->DestroyBrowserContextServices(
       browser_context());

@@ -3,6 +3,7 @@ include_rules = [
   "+cc/paint",
   "+chrome/app",
   "+chrome/chrome_watcher",
+  "+chrome/credential_provider/common",
   "+chrome/grit",
   "+chrome/install_static",
   "+chrome/installer/util",
@@ -50,6 +51,7 @@ include_rules = [
   "+media/midi",  # For midi switches
   "+media/mojo",  # For mojo media services.
   "+media/renderers",
+  "+media/webrtc",  # For webrtc media switches.
   "+ppapi/c",  # For various types.
   "+ppapi/host",
   "+ppapi/proxy",
@@ -82,6 +84,7 @@ include_rules = [
   "+services/shape_detection/public/mojom",
   "+services/video_capture/public",
   "+services/viz/privileged",
+  "+services/viz/public/interfaces",
   "+services/ws/common",
   "+services/ws/public",
   "+skia/ext",
@@ -104,6 +107,12 @@ include_rules = [
   # The message center may not exist, or may run out of process (in mash).
   "-ui/message_center",
   "+ui/message_center/public",
+
+  # KeyboardController and related classes are part of Ash.
+  "-ui/keyboard",
+  "+ui/keyboard/grit",
+  "+ui/keyboard/public",
+  "+ui/keyboard/resources",
 
   # chrome only needs switches from cc. All usage of the compositor is from
   # content. Definitely don't include generic stuff from cc/base here, if this

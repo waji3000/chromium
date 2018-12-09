@@ -11,18 +11,14 @@ namespace chromeos {
 
 namespace secure_channel {
 
-// static
-std::unique_ptr<service_manager::Service>
-SecureChannelService::CreateService() {
-  return std::make_unique<SecureChannelService>();
-}
-
-SecureChannelService::SecureChannelService() = default;
+SecureChannelService::SecureChannelService(
+    service_manager::mojom::ServiceRequest request)
+    : service_binding_(this, std::move(request)) {}
 
 SecureChannelService::~SecureChannelService() = default;
 
 void SecureChannelService::OnStart() {
-  PA_LOG(INFO) << "SecureChannelService::OnStart()";
+  PA_LOG(VERBOSE) << "SecureChannelService::OnStart()";
 
   secure_channel_ = SecureChannelInitializer::Factory::Get()->BuildInstance();
 
@@ -35,8 +31,8 @@ void SecureChannelService::OnBindInterface(
     const service_manager::BindSourceInfo& source_info,
     const std::string& interface_name,
     mojo::ScopedMessagePipeHandle interface_pipe) {
-  PA_LOG(INFO) << "SecureChannelService::OnBindInterface() for interface "
-               << interface_name << ".";
+  PA_LOG(VERBOSE) << "SecureChannelService::OnBindInterface() for interface "
+                  << interface_name << ".";
   registry_.BindInterface(interface_name, std::move(interface_pipe));
 }
 

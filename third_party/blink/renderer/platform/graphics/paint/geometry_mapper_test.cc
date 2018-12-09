@@ -394,6 +394,21 @@ TEST_P(GeometryMapperTest, SimpleClipInclusiveIntersect) {
   EXPECT_CLIP_RECT_EQ(FloatClipRect(FloatRect()), actual_clip_rect);
 }
 
+TEST_P(GeometryMapperTest, SimpleClipPlusOpacity) {
+  auto clip = CreateClip(c0(), &t0(), FloatRoundedRect(10, 10, 50, 50));
+  local_state.SetClip(clip.get());
+
+  auto opacity = CreateOpacityEffect(e0(), 0.99);
+  local_state.SetEffect(opacity.get());
+
+  FloatClipRect actual_clip_rect(FloatRect(60, 10, 10, 10));
+  auto intersects = GeometryMapper::LocalToAncestorVisualRect(
+      local_state, ancestor_state, actual_clip_rect);
+
+  EXPECT_TRUE(actual_clip_rect.Rect().IsEmpty());
+  EXPECT_FALSE(intersects);
+}
+
 TEST_P(GeometryMapperTest, RoundedClip) {
   FloatRoundedRect rect(FloatRect(10, 10, 50, 50),
                         FloatRoundedRect::Radii(FloatSize(1, 1), FloatSize(),
@@ -625,7 +640,7 @@ TEST_P(GeometryMapperTest, SiblingTransformsWithClip) {
   // Fails, because the clip of the destination state is not an ancestor of the
   // clip of the source state. A known bug in SPv1 would make such query,
   // in such case, no clips are applied.
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
     EXPECT_FALSE(success);
   } else {
     EXPECT_TRUE(success);
@@ -758,8 +773,8 @@ TEST_P(GeometryMapperTest, ReflectionWithPaintOffset) {
 }
 
 TEST_P(GeometryMapperTest, InvertedClip) {
-  // This test is invalid for SPv2.
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+  // This test is invalid for CAP.
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
     return;
 
   auto clip = CreateClip(c0(), &t0(), FloatRoundedRect(10, 10, 50, 50));

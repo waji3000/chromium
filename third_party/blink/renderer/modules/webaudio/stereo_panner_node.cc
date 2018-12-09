@@ -45,7 +45,7 @@ StereoPannerHandler::~StereoPannerHandler() {
   Uninitialize();
 }
 
-void StereoPannerHandler::Process(size_t frames_to_process) {
+void StereoPannerHandler::Process(uint32_t frames_to_process) {
   AudioBus* output_bus = Output(0).Bus();
 
   if (!IsInitialized() || !Input(0).IsConnected() || !stereo_panner_.get()) {
@@ -74,7 +74,7 @@ void StereoPannerHandler::Process(size_t frames_to_process) {
   }
 }
 
-void StereoPannerHandler::ProcessOnlyAudioParams(size_t frames_to_process) {
+void StereoPannerHandler::ProcessOnlyAudioParams(uint32_t frames_to_process) {
   float values[audio_utilities::kRenderQuantumFrames];
   DCHECK_LE(frames_to_process, audio_utilities::kRenderQuantumFrames);
 
@@ -90,7 +90,7 @@ void StereoPannerHandler::Initialize() {
   AudioHandler::Initialize();
 }
 
-void StereoPannerHandler::SetChannelCount(unsigned long channel_count,
+void StereoPannerHandler::SetChannelCount(unsigned channel_count,
                                           ExceptionState& exception_state) {
   DCHECK(IsMainThread());
   BaseAudioContext::GraphAutoLocker locker(Context());
@@ -162,7 +162,7 @@ StereoPannerNode* StereoPannerNode::Create(BaseAudioContext& context,
     return nullptr;
   }
 
-  return new StereoPannerNode(context);
+  return MakeGarbageCollected<StereoPannerNode>(context);
 }
 
 StereoPannerNode* StereoPannerNode::Create(BaseAudioContext* context,

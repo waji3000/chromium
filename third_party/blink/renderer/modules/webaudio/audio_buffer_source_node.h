@@ -55,7 +55,7 @@ class AudioBufferSourceHandler final : public AudioScheduledSourceHandler {
   ~AudioBufferSourceHandler() override;
 
   // AudioHandler
-  void Process(size_t frames_to_process) override;
+  void Process(uint32_t frames_to_process) override;
 
   // setBuffer() is called on the main thread. This is the buffer we use for
   // playback.
@@ -110,12 +110,12 @@ class AudioBufferSourceHandler final : public AudioScheduledSourceHandler {
   // Returns true on success.
   bool RenderFromBuffer(AudioBus*,
                         unsigned destination_frame_offset,
-                        size_t number_of_frames);
+                        uint32_t number_of_frames);
 
   // Render silence starting from "index" frame in AudioBus.
   inline bool RenderSilenceAndFinishIfNotLooping(AudioBus*,
                                                  unsigned index,
-                                                 size_t frames_to_process);
+                                                 uint32_t frames_to_process);
 
   // Clamps grain parameters to the duration of the given AudioBuffer.
   void ClampGrainParameters(const AudioBuffer*);
@@ -193,6 +193,7 @@ class AudioBufferSourceNode final : public AudioScheduledSourceNode {
   static AudioBufferSourceNode* Create(BaseAudioContext*,
                                        AudioBufferSourceOptions*,
                                        ExceptionState&);
+  AudioBufferSourceNode(BaseAudioContext&);
   void Trace(blink::Visitor*) override;
   AudioBufferSourceHandler& GetAudioBufferSourceHandler() const;
 
@@ -216,8 +217,6 @@ class AudioBufferSourceNode final : public AudioScheduledSourceNode {
              ExceptionState&);
 
  private:
-  AudioBufferSourceNode(BaseAudioContext&);
-
   Member<AudioParam> playback_rate_;
   Member<AudioParam> detune_;
 };

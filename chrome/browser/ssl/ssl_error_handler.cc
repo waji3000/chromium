@@ -109,6 +109,7 @@ class CommonNameMismatchRedirectObserver
   }
 
  private:
+  friend class content::WebContentsUserData<CommonNameMismatchRedirectObserver>;
   CommonNameMismatchRedirectObserver(content::WebContents* web_contents,
                                      const std::string& request_url_hostname,
                                      const std::string& suggested_url_hostname)
@@ -145,8 +146,12 @@ class CommonNameMismatchRedirectObserver
   const std::string request_url_hostname_;
   const std::string suggested_url_hostname_;
 
+  WEB_CONTENTS_USER_DATA_KEY_DECL();
+
   DISALLOW_COPY_AND_ASSIGN(CommonNameMismatchRedirectObserver);
 };
+
+WEB_CONTENTS_USER_DATA_KEY_IMPL(CommonNameMismatchRedirectObserver)
 
 void RecordUMA(SSLErrorHandler::UMAEvent event) {
   UMA_HISTOGRAM_ENUMERATION(kHistogram, event,
@@ -605,6 +610,14 @@ void SSLErrorHandler::HandleSSLError(
 
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
+
+  // This can happen if GetBrowserContext no longer exist by the time this gets
+  // called (e.g. the SSL error was in a webview that has since been destroyed),
+  // if that's the case we don't need to handle the error (and will crash if we
+  // attempt to).
+  if (!profile)
+    return;
+
   bool hard_override_disabled =
       !profile->GetPrefs()->GetBoolean(prefs::kSSLErrorOverrideAllowed);
   int options_mask = CalculateOptionsMask(cert_error, hard_override_disabled,
@@ -1065,3 +1078,5 @@ int SSLErrorHandler::CalculateOptionsMask(int cert_error,
   }
   return options_mask;
 }
+
+WEB_CONTENTS_USER_DATA_KEY_IMPL(SSLErrorHandler)

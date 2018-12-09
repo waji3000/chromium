@@ -4,10 +4,13 @@
 
 #import "ios/chrome/browser/ui/settings/table_cell_catalog_view_controller.h"
 
+#import "ios/chrome/browser/ui/autofill/cells/autofill_edit_item.h"
+#import "ios/chrome/browser/ui/settings/cells/autofill_data_item.h"
+#import "ios/chrome/browser/ui/settings/cells/encryption_item.h"
 #import "ios/chrome/browser/ui/settings/cells/settings_detail_item.h"
 #import "ios/chrome/browser/ui/settings/cells/settings_switch_item.h"
-#import "ios/chrome/browser/ui/table_view/cells/table_view_accessory_item.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_detail_text_item.h"
+#import "ios/chrome/browser/ui/table_view/cells/table_view_image_item.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_link_header_footer_item.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_text_button_item.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_text_header_footer_item.h"
@@ -26,6 +29,7 @@ namespace {
 typedef NS_ENUM(NSInteger, SectionIdentifier) {
   SectionIdentifierText = kSectionIdentifierEnumZero,
   SectionIdentifierSettings,
+  SectionIdentifierAutofill,
   SectionIdentifierURL,
 };
 
@@ -42,9 +46,12 @@ typedef NS_ENUM(NSInteger, ItemType) {
   ItemTypeURLWithSupplementalText,
   ItemTypeURLWithBadgeImage,
   ItemTypeTextSettingsDetail,
+  ItemTypeEncryption,
   ItemTypeLinkFooter,
   ItemTypeDetailText,
   ItemTypeSettingsSwitch,
+  ItemTypeAutofillEditItem,
+  ItemTypeAutofillData,
 };
 }
 
@@ -75,6 +82,7 @@ typedef NS_ENUM(NSInteger, ItemType) {
   TableViewModel* model = self.tableViewModel;
   [model addSectionWithIdentifier:SectionIdentifierText];
   [model addSectionWithIdentifier:SectionIdentifierSettings];
+  [model addSectionWithIdentifier:SectionIdentifierAutofill];
   [model addSectionWithIdentifier:SectionIdentifierURL];
 
   // SectionIdentifierText.
@@ -91,18 +99,27 @@ typedef NS_ENUM(NSInteger, ItemType) {
   textItem.textColor = [UIColor blackColor];
   [model addItem:textItem toSectionWithIdentifier:SectionIdentifierText];
 
-  TableViewAccessoryItem* textAccessoryItem =
-      [[TableViewAccessoryItem alloc] initWithType:ItemTypeTextAccessoryImage];
-  textAccessoryItem.title = @"Text Accessory with History Image";
-  textAccessoryItem.image = [UIImage imageNamed:@"show_history"];
-  [model addItem:textAccessoryItem
-      toSectionWithIdentifier:SectionIdentifierText];
+  textItem = [[TableViewTextItem alloc] initWithType:ItemTypeText];
+  textItem.text = @"1234";
+  textItem.masked = YES;
+  [model addItem:textItem toSectionWithIdentifier:SectionIdentifierText];
 
-  textAccessoryItem = [[TableViewAccessoryItem alloc]
-      initWithType:ItemTypeTextAccessoryNoImage];
-  textAccessoryItem.title = @"Text Accessory No Image";
-  [model addItem:textAccessoryItem
-      toSectionWithIdentifier:SectionIdentifierText];
+  TableViewImageItem* textImageItem =
+      [[TableViewImageItem alloc] initWithType:ItemTypeTextAccessoryImage];
+  textImageItem.title = @"Image Item with History Image";
+  textImageItem.image = [UIImage imageNamed:@"show_history"];
+  [model addItem:textImageItem toSectionWithIdentifier:SectionIdentifierText];
+
+  textImageItem =
+      [[TableViewImageItem alloc] initWithType:ItemTypeTextAccessoryNoImage];
+  textImageItem.title = @"Image Item with No Image";
+  [model addItem:textImageItem toSectionWithIdentifier:SectionIdentifierText];
+
+  textImageItem =
+      [[TableViewImageItem alloc] initWithType:ItemTypeTextAccessoryNoImage];
+  textImageItem.title = @"Image Item with No Image and no Chevron";
+  textImageItem.hideChevron = YES;
+  [model addItem:textImageItem toSectionWithIdentifier:SectionIdentifierText];
 
   TableViewTextItem* textItemDefault =
       [[TableViewTextItem alloc] initWithType:ItemTypeText];
@@ -136,6 +153,12 @@ typedef NS_ENUM(NSInteger, ItemType) {
       toSectionWithIdentifier:SectionIdentifierText];
 
   // SectionIdentifierSettings.
+  TableViewTextHeaderFooterItem* settingsHeader =
+      [[TableViewTextHeaderFooterItem alloc] initWithType:ItemTypeTextHeader];
+  settingsHeader.text = @"Settings";
+  [model setHeader:settingsHeader
+      forSectionWithIdentifier:SectionIdentifierSettings];
+
   SettingsDetailItem* settingsDetailItem =
       [[SettingsDetailItem alloc] initWithType:ItemTypeTextSettingsDetail];
   settingsDetailItem.text = @"Settings cells";
@@ -156,12 +179,73 @@ typedef NS_ENUM(NSInteger, ItemType) {
   [model addItem:settingsSwitchItem
       toSectionWithIdentifier:SectionIdentifierSettings];
 
+  EncryptionItem* encryptionChecked =
+      [[EncryptionItem alloc] initWithType:ItemTypeEncryption];
+  encryptionChecked.text =
+      @"These two cells have exactly the same text, but one has a checkmark "
+      @"and the other does not.  They should lay out identically, and the "
+      @"presence of the checkmark should not cause the text to reflow.";
+  encryptionChecked.accessoryType = UITableViewCellAccessoryCheckmark;
+  [model addItem:encryptionChecked
+      toSectionWithIdentifier:SectionIdentifierSettings];
+
+  EncryptionItem* encryptionUnchecked =
+      [[EncryptionItem alloc] initWithType:ItemTypeEncryption];
+  encryptionUnchecked.text =
+      @"These two cells have exactly the same text, but one has a checkmark "
+      @"and the other does not.  They should lay out identically, and the "
+      @"presence of the checkmark should not cause the text to reflow.";
+  [model addItem:encryptionUnchecked
+      toSectionWithIdentifier:SectionIdentifierSettings];
+
   TableViewLinkHeaderFooterItem* linkFooter =
       [[TableViewLinkHeaderFooterItem alloc] initWithType:ItemTypeLinkFooter];
   linkFooter.text =
       @"This is a footer text view with a BEGIN_LINKlinkEND_LINK in the middle";
   [model setFooter:linkFooter
       forSectionWithIdentifier:SectionIdentifierSettings];
+
+  // SectionIdentifierAutofill.
+  TableViewTextHeaderFooterItem* autofillHeader =
+      [[TableViewTextHeaderFooterItem alloc] initWithType:ItemTypeTextHeader];
+  autofillHeader.text = @"Autofill";
+  [model setHeader:autofillHeader
+      forSectionWithIdentifier:SectionIdentifierAutofill];
+
+  AutofillEditItem* autofillEditItem =
+      [[AutofillEditItem alloc] initWithType:ItemTypeAutofillEditItem];
+  autofillEditItem.textFieldName = @"Autofill field";
+  autofillEditItem.textFieldValue = @" with a value";
+  autofillEditItem.identifyingIcon =
+      [UIImage imageNamed:@"table_view_cell_check_mark"];
+  [model addItem:autofillEditItem
+      toSectionWithIdentifier:SectionIdentifierAutofill];
+
+  AutofillDataItem* autofillItemWithMainLeading =
+      [[AutofillDataItem alloc] initWithType:ItemTypeAutofillData];
+  autofillItemWithMainLeading.text = @"Main Text";
+  autofillItemWithMainLeading.trailingDetailText = @"Trailing Detail Text";
+  [model addItem:autofillItemWithMainLeading
+      toSectionWithIdentifier:SectionIdentifierAutofill];
+
+  AutofillDataItem* autofillItemWithLeading =
+      [[AutofillDataItem alloc] initWithType:ItemTypeAutofillData];
+  autofillItemWithLeading.text = @"Main Text";
+  autofillItemWithLeading.leadingDetailText = @"Leading Detail Text";
+  autofillItemWithLeading.accessoryType =
+      UITableViewCellAccessoryDisclosureIndicator;
+  [model addItem:autofillItemWithLeading
+      toSectionWithIdentifier:SectionIdentifierAutofill];
+
+  AutofillDataItem* autofillItemWithAllTexts =
+      [[AutofillDataItem alloc] initWithType:ItemTypeAutofillData];
+  autofillItemWithAllTexts.text = @"Main Text";
+  autofillItemWithAllTexts.leadingDetailText = @"Leading Detail Text";
+  autofillItemWithAllTexts.trailingDetailText = @"Trailing Detail Text";
+  autofillItemWithAllTexts.accessoryType =
+      UITableViewCellAccessoryDisclosureIndicator;
+  [model addItem:autofillItemWithAllTexts
+      toSectionWithIdentifier:SectionIdentifierAutofill];
 
   // SectionIdentifierURL.
   TableViewURLItem* item =

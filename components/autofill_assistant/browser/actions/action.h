@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/callback_forward.h"
+#include "components/autofill_assistant/browser/selector.h"
 #include "components/autofill_assistant/browser/service.pb.h"
 
 namespace autofill_assistant {
@@ -38,9 +39,9 @@ class Action {
   virtual void InternalProcessAction(ActionDelegate* delegate,
                                      ProcessActionCallback callback) = 0;
 
-  // Returns selectors as a string from a repeated proto field.
-  static std::vector<std::string> ExtractSelectors(
-      const google::protobuf::RepeatedPtrField<std::string>& selectors_proto);
+  // Returns vector of string from a repeated proto field.
+  static std::vector<std::string> ExtractVector(
+      const google::protobuf::RepeatedPtrField<std::string>& repeated_strings);
 
   void UpdateProcessedAction(ProcessedActionStatusProto status);
 

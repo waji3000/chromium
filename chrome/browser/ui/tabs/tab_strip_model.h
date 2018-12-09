@@ -481,16 +481,6 @@ class TabStripModel {
   std::vector<content::WebContents*> GetWebContentsesByIndices(
       const std::vector<int>& indices);
 
-  // Notifies the observers if the active tab has changed.
-  void NotifyIfActiveTabChanged(const TabStripSelectionChange& selection);
-
-  // Notifies the observers if the active tab or the tab selection has changed.
-  // |old_model| is a snapshot of |selection_model_| before the change.
-  // Note: This function might end up sending 0 to 2 notifications in the
-  // following order: ActiveTabChanged, TabSelectionChanged.
-  void NotifyIfActiveOrSelectionChanged(
-      const TabStripSelectionChange& selection);
-
   // Sets the selection to |new_model| and notifies any observers.
   // Note: This function might end up sending 0 to 3 notifications in the
   // following order: TabDeactivated, ActiveTabChanged, TabSelectionChanged.

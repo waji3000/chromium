@@ -66,6 +66,7 @@ class CORE_EXPORT AutoplayUmaHelper : public EventListener,
  public:
   static AutoplayUmaHelper* Create(HTMLMediaElement*);
 
+  explicit AutoplayUmaHelper(HTMLMediaElement*);
   ~AutoplayUmaHelper() override;
 
   bool operator==(const EventListener&) const override;
@@ -92,8 +93,7 @@ class CORE_EXPORT AutoplayUmaHelper : public EventListener,
   // Called when source is initialized and loading starts.
   void OnLoadStarted();
 
-  explicit AutoplayUmaHelper(HTMLMediaElement*);
-  void handleEvent(ExecutionContext*, Event*) override;
+  void Invoke(ExecutionContext*, Event*) override;
   void HandlePlayingEvent();
   void HandlePauseEvent();
   virtual void HandleContextDestroyed();  // Make virtual for testing.

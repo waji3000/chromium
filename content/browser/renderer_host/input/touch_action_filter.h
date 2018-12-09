@@ -20,7 +20,8 @@ class MockRenderWidgetHost;
 
 enum class FilterGestureEventResult {
   kFilterGestureEventAllowed,
-  kFilterGestureEventFiltered
+  kFilterGestureEventFiltered,
+  kFilterGestureEventDelayed
 };
 
 // The TouchActionFilter is responsible for filtering scroll and pinch gesture
@@ -33,9 +34,11 @@ class CONTENT_EXPORT TouchActionFilter {
   ~TouchActionFilter();
 
   // Returns kFilterGestureEventFiltered if the supplied gesture event should be
-  // dropped based on the current touch-action state. Otherwise returns
-  // kFilterGestureEventAllowed, and possibly modifies the event's directional
-  // parameters to make the event compatible with the effective touch-action.
+  // dropped based on the current touch-action state.
+  // kFilterGestureEventDelayed if the |scrolling_touch_action_| has no value.
+  // Returns kFilterGestureEventAllowed, and possibly modifies the event's
+  // directional parameters to make the event compatible with the effective
+  // touch-action.
   FilterGestureEventResult FilterGestureEvent(
       blink::WebGestureEvent* gesture_event);
 
@@ -56,11 +59,16 @@ class CONTENT_EXPORT TouchActionFilter {
     return allowed_touch_action_;
   }
 
+  base::Optional<cc::TouchAction> white_listed_touch_action() const {
+    return white_listed_touch_action_;
+  }
+
   void SetForceEnableZoom(bool enabled) { force_enable_zoom_ = enabled; }
 
   void OnHasTouchEventHandlers(bool has_handlers);
 
-  void SetTouchSequenceInProgress(bool touch_sequence_in_progress);
+  void IncreaseActiveTouches();
+  void DecreaseActiveTouches();
 
   void ForceResetTouchActionForTest();
 
@@ -68,13 +76,15 @@ class CONTENT_EXPORT TouchActionFilter {
   void AppendToGestureSequenceForDebugging(const char* str);
 
  private:
+  friend class InputRouterImplTest;
   friend class InputRouterImplTestBase;
   friend class MockRenderWidgetHost;
   friend class TouchActionFilterTest;
   friend class TouchActionFilterPinchTest;
   friend class SitePerProcessBrowserTouchActionTest;
 
-  bool ShouldSuppressScrolling(const blink::WebGestureEvent&);
+  bool ShouldSuppressScrolling(const blink::WebGestureEvent&,
+                               cc::TouchAction touch_action);
   FilterGestureEventResult FilterScrollEventAndResetState();
   FilterGestureEventResult FilterPinchEventAndResetState();
   void ReportTouchAction();
@@ -110,8 +120,12 @@ class CONTENT_EXPORT TouchActionFilter {
   // before GSE.
   bool gesture_sequence_in_progress_ = false;
 
-  // True at touch sequence start and false at touch sequence end.
-  bool touch_sequence_in_progress_ = false;
+  bool compositor_touch_action_enabled_ = false;
+
+  bool has_deferred_events_ = false;
+
+  // Increment at receiving ACK for touch start and decrement at touch end.
+  int num_of_active_touches_ = 0;
 
   // What touch actions are currently permitted.
   base::Optional<cc::TouchAction> allowed_touch_action_;

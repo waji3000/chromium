@@ -22,8 +22,8 @@
 #include "content/browser/storage_partition_impl.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/generated_code_cache_settings.h"
-#include "content/public/browser/local_storage_usage_info.h"
 #include "content/public/browser/storage_partition.h"
+#include "content/public/browser/storage_usage_info.h"
 #include "content/public/common/content_features.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread.h"
@@ -42,6 +42,7 @@
 #include "storage/browser/test/mock_quota_manager.h"
 #include "storage/browser/test/mock_special_storage_policy.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/common/features.h"
 
 #if BUILDFLAG(ENABLE_PLUGINS)
 #include "ppapi/shared_impl/ppapi_constants.h"  // nogncheck
@@ -266,7 +267,7 @@ class RemoveLocalStorageTester {
   }
 
   void OnGotLocalStorageUsage(
-      const std::vector<content::LocalStorageUsageInfo>& infos) {
+      const std::vector<content::StorageUsageInfo>& infos) {
     infos_ = infos;
     await_completion_.Notify();
   }
@@ -278,7 +279,7 @@ class RemoveLocalStorageTester {
   FakeLevelDBDatabase mock_db_;
   mojo::AssociatedBinding<leveldb::mojom::LevelDBDatabase> db_binding_;
 
-  std::vector<content::LocalStorageUsageInfo> infos_;
+  std::vector<content::StorageUsageInfo> infos_;
 
   AwaitCompletionHelper await_completion_;
 
@@ -1305,16 +1306,10 @@ TEST_F(StoragePartitionImplTest, ClearCodeCache) {
 
   GURL origin = GURL(kTestOrigin1);
   std::string data("SomeData");
-  std::string data2("SomeData.wasm");
   tester.AddEntry(RemoveCodeCacheTester::kJs, kResourceURL, origin, data);
-  tester.AddEntry(RemoveCodeCacheTester::kWebAssembly, kResourceURL, origin,
-                  data2);
   EXPECT_TRUE(
       tester.ContainsEntry(RemoveCodeCacheTester::kJs, kResourceURL, origin));
   EXPECT_EQ(tester.received_data(), data);
-  EXPECT_TRUE(tester.ContainsEntry(RemoveCodeCacheTester::kWebAssembly,
-                                   kResourceURL, origin));
-  EXPECT_EQ(tester.received_data(), data2);
 
   base::RunLoop run_loop;
   base::ThreadTaskRunnerHandle::Get()->PostTask(
@@ -1323,6 +1318,42 @@ TEST_F(StoragePartitionImplTest, ClearCodeCache) {
 
   EXPECT_FALSE(
       tester.ContainsEntry(RemoveCodeCacheTester::kJs, kResourceURL, origin));
+
+  // Make sure there isn't a second invalid callback sitting in the queue.
+  // (this used to be a bug).
+  base::RunLoop().RunUntilIdle();
+}
+
+TEST_F(StoragePartitionImplTest, ClearWasmCodeCache) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitWithFeatures(
+      std::vector<base::Feature>(
+          {net::features::kIsolatedCodeCache, blink::features::kWasmCodeCache}),
+      std::vector<base::Feature>());
+  ASSERT_TRUE(base::FeatureList::IsEnabled(net::features::kIsolatedCodeCache));
+  ASSERT_TRUE(base::FeatureList::IsEnabled(blink::features::kWasmCodeCache));
+
+  StoragePartitionImpl* partition = static_cast<StoragePartitionImpl*>(
+      BrowserContext::GetDefaultStoragePartition(browser_context()));
+  // Ensure code cache is initialized.
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(partition->GetGeneratedCodeCacheContext() != nullptr);
+
+  RemoveCodeCacheTester tester(partition->GetGeneratedCodeCacheContext());
+
+  GURL origin = GURL(kTestOrigin1);
+  std::string data("SomeData.wasm");
+  tester.AddEntry(RemoveCodeCacheTester::kWebAssembly, kResourceURL, origin,
+                  data);
+  EXPECT_TRUE(tester.ContainsEntry(RemoveCodeCacheTester::kWebAssembly,
+                                   kResourceURL, origin));
+  EXPECT_EQ(tester.received_data(), data);
+
+  base::RunLoop run_loop;
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::BindOnce(&ClearCodeCache, partition, &run_loop));
+  run_loop.Run();
+
   EXPECT_FALSE(tester.ContainsEntry(RemoveCodeCacheTester::kWebAssembly,
                                     kResourceURL, origin));
 

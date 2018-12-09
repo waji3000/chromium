@@ -675,7 +675,7 @@ void AudioParamTimeline::CancelScheduledValues(
   MutexLocker locker(events_lock_);
 
   // Remove all events starting at startTime.
-  for (unsigned i = 0; i < events_.size(); ++i) {
+  for (wtf_size_t i = 0; i < events_.size(); ++i) {
     if (events_[i]->Time() >= start_time) {
       RemoveCancelledEvents(i);
       break;
@@ -692,7 +692,7 @@ void AudioParamTimeline::CancelAndHoldAtTime(double cancel_time,
 
   MutexLocker locker(events_lock_);
 
-  unsigned i;
+  wtf_size_t i;
   // Find the first event at or just past cancelTime.
   for (i = 0; i < events_.size(); ++i) {
     if (events_[i]->Time() > cancel_time) {
@@ -702,7 +702,7 @@ void AudioParamTimeline::CancelAndHoldAtTime(double cancel_time,
 
   // The event that is being cancelled.  This is the event just past
   // cancelTime, if any.
-  unsigned cancelled_event_index = i;
+  wtf_size_t cancelled_event_index = i;
 
   // If the event just before cancelTime is a SetTarget or SetValueCurve
   // event, we need to handle that event specially instead of the event after.
@@ -969,9 +969,9 @@ float AudioParamTimeline::ValuesForFrameRangeImpl(size_t start_frame,
       fill_to_end_frame = static_cast<size_t>(ceil(time2 * sample_rate));
 
     DCHECK_GE(fill_to_end_frame, start_frame);
-    size_t fill_to_frame = fill_to_end_frame - start_frame;
-    fill_to_frame =
-        std::min(fill_to_frame, static_cast<size_t>(number_of_values));
+    unsigned fill_to_frame =
+        static_cast<unsigned>(fill_to_end_frame - start_frame);
+    fill_to_frame = std::min(fill_to_frame, number_of_values);
 
     const AutomationState current_state = {
         number_of_values,
@@ -1089,15 +1089,15 @@ std::tuple<size_t, unsigned> AudioParamTimeline::HandleFirstEvent(
   if (first_event_time > start_frame / sample_rate) {
     // |fillToFrame| is an exclusive upper bound, so use ceil() to compute the
     // bound from the firstEventTime.
-    size_t fill_to_frame = end_frame;
+    size_t fill_to_end_frame = end_frame;
     double first_event_frame = ceil(first_event_time * sample_rate);
     if (end_frame > first_event_frame)
-      fill_to_frame = static_cast<size_t>(first_event_frame);
-    DCHECK_GE(fill_to_frame, start_frame);
+      fill_to_end_frame = first_event_frame;
+    DCHECK_GE(fill_to_end_frame, start_frame);
 
-    fill_to_frame -= start_frame;
-    fill_to_frame =
-        std::min(fill_to_frame, static_cast<size_t>(number_of_values));
+    unsigned fill_to_frame =
+        static_cast<unsigned>(fill_to_end_frame - start_frame);
+    fill_to_frame = std::min(fill_to_frame, number_of_values);
     write_index =
         FillWithDefault(values, default_value, fill_to_frame, write_index);
 
@@ -1703,10 +1703,10 @@ std::tuple<size_t, float, unsigned> AudioParamTimeline::ProcessSetValueCurve(
   // has not yet started. In this case, |fillToFrame| is clipped to
   // |time1|+|duration| above, but |startFrame| will keep increasing
   // (because the current time is increasing).
-  fill_to_frame =
-      (fill_to_end_frame < start_frame) ? 0 : fill_to_end_frame - start_frame;
-  fill_to_frame =
-      std::min(fill_to_frame, static_cast<size_t>(number_of_values));
+  fill_to_frame = (fill_to_end_frame < start_frame)
+                      ? 0
+                      : static_cast<unsigned>(fill_to_end_frame - start_frame);
+  fill_to_frame = std::min(fill_to_frame, number_of_values);
 
   // Index into the curve data using a floating-point value.
   // We're scaling the number of curve points by the duration (see
@@ -1880,11 +1880,11 @@ std::tuple<size_t, float, unsigned> AudioParamTimeline::ProcessCancelValues(
   return std::make_tuple(current_frame, value, write_index);
 }
 
-unsigned AudioParamTimeline::FillWithDefault(float* values,
+uint32_t AudioParamTimeline::FillWithDefault(float* values,
                                              float default_value,
-                                             size_t end_frame,
-                                             unsigned write_index) {
-  size_t index = write_index;
+                                             uint32_t end_frame,
+                                             uint32_t write_index) {
+  uint32_t index = write_index;
 
   for (; index < end_frame; ++index)
     values[index] = default_value;
@@ -1892,11 +1892,12 @@ unsigned AudioParamTimeline::FillWithDefault(float* values,
   return index;
 }
 
-void AudioParamTimeline::RemoveCancelledEvents(size_t first_event_to_remove) {
+void AudioParamTimeline::RemoveCancelledEvents(
+    wtf_size_t first_event_to_remove) {
   // For all the events that are being removed, also remove that event
   // from |new_events_|.
   if (new_events_.size() > 0) {
-    for (size_t k = first_event_to_remove; k < events_.size(); ++k) {
+    for (wtf_size_t k = first_event_to_remove; k < events_.size(); ++k) {
       new_events_.erase(events_[k].get());
     }
   }

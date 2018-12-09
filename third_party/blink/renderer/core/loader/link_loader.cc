@@ -41,6 +41,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
+#include "third_party/blink/renderer/core/frame/viewport_data.h"
 #include "third_party/blink/renderer/core/html/cross_origin_attribute.h"
 #include "third_party/blink/renderer/core/html/link_rel_attribute.h"
 #include "third_party/blink/renderer/core/html/parser/html_preload_scanner.h"
@@ -99,10 +100,10 @@ LinkLoadParameters::LinkLoadParameters(const LinkHeader& header,
       media(header.Media()),
       nonce(header.Nonce()),
       integrity(header.Integrity()),
-      referrer_policy(kReferrerPolicyDefault),
+      referrer_policy(network::mojom::ReferrerPolicy::kDefault),
       href(KURL(base_url, header.Url())),
-      srcset(header.Srcset()),
-      sizes(header.Imgsizes()) {}
+      image_srcset(header.ImageSrcset()),
+      image_sizes(header.ImageSizes()) {}
 
 class LinkLoader::FinishObserver final
     : public GarbageCollectedFinalized<ResourceFinishObserver>,
@@ -331,9 +332,12 @@ static MediaValues* CreateMediaValues(
   MediaValues* media_values =
       MediaValues::CreateDynamicIfFrameExists(document.GetFrame());
   if (viewport_description) {
-    media_values->OverrideViewportDimensions(
-        viewport_description->max_width.GetFloatValue(),
-        viewport_description->max_height.GetFloatValue());
+    FloatSize initial_viewport(media_values->DeviceWidth(),
+                               media_values->DeviceHeight());
+    PageScaleConstraints constraints = viewport_description->Resolve(
+        initial_viewport, document.GetViewportData().ViewportDefaultMinWidth());
+    media_values->OverrideViewportDimensions(constraints.layout_size.Width(),
+                                             constraints.layout_size.Height());
   }
   return media_values;
 }
@@ -362,14 +366,14 @@ static Resource* PreloadIfNeeded(const LinkLoadParameters& params,
 
   MediaValues* media_values = nullptr;
   KURL url;
-  if (resource_type == ResourceType::kImage && !params.srcset.IsEmpty() &&
+  if (resource_type == ResourceType::kImage && !params.image_srcset.IsEmpty() &&
       RuntimeEnabledFeatures::PreloadImageSrcSetEnabled()) {
     media_values = CreateMediaValues(document, viewport_description);
     float source_size =
-        SizesAttributeParser(media_values, params.sizes).length();
+        SizesAttributeParser(media_values, params.image_sizes).length();
     ImageCandidate candidate = BestFitSourceForImageAttributes(
         media_values->DevicePixelRatio(), source_size, params.href,
-        params.srcset);
+        params.image_srcset);
     url = base_url.IsNull() ? document.CompleteURL(candidate.ToString())
                             : KURL(base_url, candidate.ToString());
   } else {
@@ -500,9 +504,6 @@ static void ModulePreloadIfNeeded(const LinkLoadParameters& params,
   // |document| is the node document here, and its context document is the
   // relevant settings object.
   Document* context_document = document.ContextDocument();
-  auto* settings_object =
-      context_document->CreateFetchClientSettingsObjectSnapshot();
-
   Modulator* modulator =
       Modulator::From(ToScriptStateForMainWorld(context_document->GetFrame()));
   DCHECK(modulator);
@@ -549,7 +550,7 @@ static void ModulePreloadIfNeeded(const LinkLoadParameters& params,
   // destination, options, settings object, "client", and with the top-level
   // module fetch flag set. Wait until algorithm asynchronously completes with
   // result." [spec text]
-  modulator->FetchSingle(request, settings_object,
+  modulator->FetchSingle(request, context_document->Fetcher(),
                          ModuleGraphLevel::kDependentModuleFetch,
                          ModuleScriptCustomFetchType::kNone, link_loader);
 
@@ -606,9 +607,9 @@ void LinkLoader::LoadLinksFromHeader(
     if (!header.Valid() || header.Url().IsEmpty() || header.Rel().IsEmpty())
       continue;
 
-    if (media_policy == kOnlyLoadMedia && header.Media().IsEmpty())
+    if (media_policy == kOnlyLoadMedia && !header.IsViewportDependent())
       continue;
-    if (media_policy == kOnlyLoadNonMedia && !header.Media().IsEmpty())
+    if (media_policy == kOnlyLoadNonMedia && header.IsViewportDependent())
       continue;
 
     const LinkLoadParameters params(header, base_url);
@@ -664,7 +665,7 @@ bool LinkLoader::LoadLink(
     resource = PrefetchIfNeeded(params, document);
   }
   if (resource)
-    finish_observer_ = new FinishObserver(this, resource);
+    finish_observer_ = MakeGarbageCollected<FinishObserver>(this, resource);
 
   ModulePreloadIfNeeded(params, document, nullptr, this);
 

@@ -13,13 +13,27 @@ enum ExecuteMode {
   ON_PAGE_LOAD = 2;    // Will evaluate the script on all subsequent page loads.
 };
 
+enum LogLevel : int32 {
+  NONE = 100;  // No logging.
+  DEBUG = -1;  // Outputs messages from console.debug().
+  INFO = 0;    // Outputs messages from console.log().
+  WARN = 1;    // Outputs messages from console.warn().
+  ERROR = 2;   // Outputs messages from console.error().
+};
+
 interface Frame {
-  // Creates and registers a view with the view manager and returns its
-  // view owner which may subsequently be passed to |View.AddChild()|
-  // to attach the view to a view hierarchy.
+  // Creates a new view using the specified |view_token|. Caller should pass the
+  // other end of the token to CreateViewHolderCmd() to attach the new view to a
+  // the view tree.
   //
-  // |view_owner|: Request for the Frame's ViewOwner.
-  // |services|: Request for the Frame's View-related services.
+  // |view_token|: Token for the new view.
+  4: CreateView2(handle<eventpair> view_token,
+                 request<fuchsia.sys.ServiceProvider>? incoming_services,
+                 fuchsia.sys.ServiceProvider? outgoing_services);
+
+  // Deprecated.
+  // TODO(crbug.com/899348): Update all code to use CreateView2()
+  // and remove CreateView().
   1: CreateView(request<fuchsia.ui.viewsv1token.ViewOwner> view_owner,
                 request<fuchsia.sys.ServiceProvider>? services);
 
@@ -55,9 +69,62 @@ interface Frame {
      vector<string> origins, fuchsia.mem.Buffer script, ExecuteMode mode) ->
      (bool success);
 
+  // Posts a message to the frame's onMessage handler.
+  //
+  // |targetOrigin| restricts message delivery to the specified origin.
+  // If |targetOrigin| is "*", then the message will be sent to the document
+  // regardless of its origin.
+  // See html.spec.whatwg.org/multipage/web-messaging.html sect. 9.4.3
+  // for more details on how the target origin policy is applied.
+  //
+  // Returns |false| if |message| is invalid or |targetOrigin| is missing.
+  5: PostMessage(WebMessage message, string targetOrigin) -> (bool success);
+
   // Sets the observer for handling page navigation events.
   //
   // |observer|: The observer to use. Unregisters any existing observers
   //             if null.
   100: SetNavigationEventObserver(NavigationEventObserver? observer);
+
+  // If set to a value other than NONE, allows web content to log messages
+  // to the system logger using console.log(), console.info(), console.warn(),
+  // and console.error().
+  101: SetJavaScriptLogLevel(LogLevel level);
 };
+
+struct WebMessage {
+  // The message payload, encoded as an UTF-8 string.
+  fuchsia.mem.Buffer data;
+
+  // List of objects transferred into the MessagePort from the FIDL client.
+  // TODO(crbug.com/893236): make this a vector when FIDL-354 is fixed.
+  IncomingTransferable? incoming_transfer;
+
+  // List of objects transferred out of the MessagePort to the FIDL client.
+  OutgoingTransferable? outgoing_transfer;
+};
+
+union OutgoingTransferable {
+  request<MessagePort> message_port;
+};
+
+union IncomingTransferable {
+  MessagePort message_port;
+};
+
+// Represents one end of an HTML5 MessageChannel. Can be used to send
+// and exchange Messages with the peered MessagePort in the Frame's script
+// context. The port is destroyed when either end of the MessagePort channel
+// is torn down.
+interface MessagePort {
+  // Sends a WebMessage to the peer.
+  1: PostMessage(WebMessage message) -> (bool success);
+
+  // Asynchronously reads the next message from the channel.
+  // The client should invoke the callback when it is ready to process
+  // another message.
+  // Unreceived messages are buffered on the sender's side and bounded
+  // by its available resources.
+  2: ReceiveMessage() -> (WebMessage message);
+};
+

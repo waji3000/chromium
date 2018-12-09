@@ -45,16 +45,14 @@ class MockBaseFetchContext final : public BaseFetchContext {
   explicit MockBaseFetchContext(ExecutionContext* execution_context)
       : BaseFetchContext(
             execution_context->GetTaskRunner(blink::TaskType::kInternalTest)),
-        execution_context_(execution_context),
-        fetch_client_settings_object_(
-            new FetchClientSettingsObjectImpl(*execution_context)) {}
+        execution_context_(execution_context) {
+    SetFetchClientSettingsObject(
+        MakeGarbageCollected<FetchClientSettingsObjectImpl>(
+            *execution_context));
+  }
   ~MockBaseFetchContext() override = default;
 
   // BaseFetchContext overrides:
-  const FetchClientSettingsObject* GetFetchClientSettingsObject()
-      const override {
-    return fetch_client_settings_object_.Get();
-  }
   KURL GetSiteForCookies() const override { return KURL(); }
   bool AllowScriptFromSource(const KURL&) const override { return false; }
   SubresourceFilter* GetSubresourceFilter() const override { return nullptr; }
@@ -94,9 +92,6 @@ class MockBaseFetchContext final : public BaseFetchContext {
   }
   const KURL& Url() const override { return execution_context_->Url(); }
 
-  const SecurityOrigin* GetSecurityOrigin() const override {
-    return fetch_client_settings_object_->GetSecurityOrigin();
-  }
   const SecurityOrigin* GetParentSecurityOrigin() const override {
     return nullptr;
   }
@@ -127,10 +122,11 @@ class MockBaseFetchContext final : public BaseFetchContext {
 class BaseFetchContextTest : public testing::Test {
  protected:
   void SetUp() override {
-    execution_context_ = new NullExecutionContext();
+    execution_context_ = MakeGarbageCollected<NullExecutionContext>();
     static_cast<NullExecutionContext*>(execution_context_.Get())
         ->SetUpSecurityContext();
-    fetch_context_ = new MockBaseFetchContext(execution_context_);
+    fetch_context_ =
+        MakeGarbageCollected<MockBaseFetchContext>(execution_context_);
   }
 
   Persistent<ExecutionContext> execution_context_;

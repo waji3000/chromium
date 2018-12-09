@@ -55,6 +55,7 @@
 #include "cc/test/layer_tree_test.h"
 #include "cc/test/skia_common.h"
 #include "cc/test/test_task_graph_runner.h"
+#include "cc/trees/clip_node.h"
 #include "cc/trees/draw_property_utils.h"
 #include "cc/trees/effect_node.h"
 #include "cc/trees/latency_info_swap_promise.h"
@@ -193,9 +194,10 @@ class LayerTreeHostImplTest : public testing::Test,
   }
   void DidActivateSyncTree() override {
     // Make sure the active tree always has a valid LocalSurfaceId.
-    host_impl_->active_tree()->SetLocalSurfaceIdFromParent(
-        viz::LocalSurfaceId(1, base::UnguessableToken::Deserialize(2u, 3u)),
-        base::TimeTicks());
+    host_impl_->active_tree()->SetLocalSurfaceIdAllocationFromParent(
+        viz::LocalSurfaceIdAllocation(
+            viz::LocalSurfaceId(1, base::UnguessableToken::Deserialize(2u, 3u)),
+            base::TimeTicks::Now()));
   }
   void WillPrepareTiles() override {}
   void DidPrepareTiles() override {}
@@ -256,9 +258,10 @@ class LayerTreeHostImplTest : public testing::Test,
     bool init = host_impl_->InitializeFrameSink(layer_tree_frame_sink_.get());
     host_impl_->active_tree()->SetDeviceViewportSize(gfx::Size(10, 10));
     host_impl_->active_tree()->PushPageScaleFromMainThread(1.f, 1.f, 1.f);
-    host_impl_->active_tree()->SetLocalSurfaceIdFromParent(
-        viz::LocalSurfaceId(1, base::UnguessableToken::Deserialize(2u, 3u)),
-        base::TimeTicks());
+    host_impl_->active_tree()->SetLocalSurfaceIdAllocationFromParent(
+        viz::LocalSurfaceIdAllocation(
+            viz::LocalSurfaceId(1, base::UnguessableToken::Deserialize(2u, 3u)),
+            base::TimeTicks::Now()));
     // Set the viz::BeginFrameArgs so that methods which use it are able to.
     host_impl_->WillBeginImplFrame(viz::CreateBeginFrameArgsForTesting(
         BEGINFRAME_FROM_HERE, 0, 1,
@@ -3582,9 +3585,10 @@ class LayerTreeHostImplTestScrollbarAnimation : public LayerTreeHostImplTest {
     host_impl_->active_tree()->BuildPropertyTreesForTesting();
     host_impl_->active_tree()->DidBecomeActive();
     host_impl_->active_tree()->HandleScrollbarShowRequestsFromMain();
-    host_impl_->active_tree()->SetLocalSurfaceIdFromParent(
-        viz::LocalSurfaceId(1, base::UnguessableToken::Deserialize(2u, 3u)),
-        base::TimeTicks());
+    host_impl_->active_tree()->SetLocalSurfaceIdAllocationFromParent(
+        viz::LocalSurfaceIdAllocation(
+            viz::LocalSurfaceId(1, base::UnguessableToken::Deserialize(2u, 3u)),
+            base::TimeTicks::Now()));
     DrawFrame();
 
     // SetScrollElementId will initialize the scrollbar which will cause it to
@@ -5375,61 +5379,9 @@ class LayerTreeHostImplBrowserControlsTest : public LayerTreeHostImplTest {
       const gfx::Size& inner_viewport_size,
       const gfx::Size& outer_viewport_size,
       const gfx::Size& scroll_layer_size) {
-    tree_impl->set_browser_controls_shrink_blink_size(true);
-    tree_impl->SetTopControlsHeight(top_controls_height_);
-    tree_impl->SetCurrentBrowserControlsShownRatio(1.f);
-    tree_impl->PushPageScaleFromMainThread(1.f, 1.f, 1.f);
-    host_impl_->DidChangeBrowserControlsPosition();
-
-    std::unique_ptr<LayerImpl> root = LayerImpl::Create(tree_impl, 1);
-    std::unique_ptr<LayerImpl> root_clip = LayerImpl::Create(tree_impl, 2);
-    std::unique_ptr<LayerImpl> page_scale = LayerImpl::Create(tree_impl, 3);
-
-    std::unique_ptr<LayerImpl> outer_scroll = LayerImpl::Create(tree_impl, 4);
-    std::unique_ptr<LayerImpl> outer_clip = LayerImpl::Create(tree_impl, 5);
-
-    root_clip->SetBounds(inner_viewport_size);
-    root->SetScrollable(inner_viewport_size);
-    root->SetElementId(LayerIdToElementIdForTesting(root->id()));
-    root->SetBounds(outer_viewport_size);
-    root->SetPosition(gfx::PointF());
-    root->SetDrawsContent(false);
-    root_clip->test_properties()->force_render_surface = true;
-    root->test_properties()->is_container_for_fixed_position_layers = true;
-    outer_clip->SetBounds(outer_viewport_size);
-    outer_scroll->SetScrollable(outer_viewport_size);
-    outer_scroll->SetElementId(
-        LayerIdToElementIdForTesting(outer_scroll->id()));
-    outer_scroll->SetBounds(scroll_layer_size);
-    outer_scroll->SetPosition(gfx::PointF());
-    outer_scroll->SetDrawsContent(false);
-    outer_scroll->test_properties()->is_container_for_fixed_position_layers =
-        true;
-
-    int inner_viewport_container_layer_id = root_clip->id();
-    int outer_viewport_container_layer_id = outer_clip->id();
-    int inner_viewport_scroll_layer_id = root->id();
-    int outer_viewport_scroll_layer_id = outer_scroll->id();
-    int page_scale_layer_id = page_scale->id();
-
-    outer_clip->test_properties()->AddChild(std::move(outer_scroll));
-    root->test_properties()->AddChild(std::move(outer_clip));
-    page_scale->test_properties()->AddChild(std::move(root));
-    root_clip->test_properties()->AddChild(std::move(page_scale));
-
-    tree_impl->SetRootLayerForTesting(std::move(root_clip));
-    LayerTreeImpl::ViewportLayerIds viewport_ids;
-    viewport_ids.page_scale = page_scale_layer_id;
-    viewport_ids.inner_viewport_container = inner_viewport_container_layer_id;
-    viewport_ids.outer_viewport_container = outer_viewport_container_layer_id;
-    viewport_ids.inner_viewport_scroll = inner_viewport_scroll_layer_id;
-    viewport_ids.outer_viewport_scroll = outer_viewport_scroll_layer_id;
-    tree_impl->SetViewportLayersFromIds(viewport_ids);
-    tree_impl->BuildPropertyTreesForTesting();
-
-    host_impl_->active_tree()->SetDeviceViewportSize(inner_viewport_size);
-    LayerImpl* root_clip_ptr = tree_impl->root_layer_for_testing();
-    EXPECT_EQ(inner_viewport_size, root_clip_ptr->bounds());
+    LayerTestCommon::SetupBrowserControlsAndScrollLayerWithVirtualViewport(
+        host_impl_.get(), tree_impl, top_controls_height_, inner_viewport_size,
+        outer_viewport_size, scroll_layer_size);
   }
 
  protected:
@@ -5511,6 +5463,65 @@ TEST_F(LayerTreeHostImplBrowserControlsTest,
   }
 
   host_impl_->browser_controls_manager()->ScrollEnd();
+  host_impl_->ScrollEnd(EndState().get());
+}
+
+TEST_F(LayerTreeHostImplBrowserControlsTest,
+       MovingBrowserControlsChangesViewportClip) {
+  // TODO(bokan): This test is checking pre-blink-gen-property-tree behavior
+  // and can be removed once that flag ships. See crbug.com/901083.
+  if (DefaultSettings().use_layer_lists)
+    return;
+
+  SetupBrowserControlsAndScrollLayerWithVirtualViewport(
+      gfx::Size(50, 50), gfx::Size(25, 25), gfx::Size(100, 100));
+
+  LayerTreeImpl* active_tree = host_impl_->active_tree();
+
+  // Create a content layer beneath the outer viewport scroll layer.
+  int id = host_impl_->OuterViewportScrollLayer()->id();
+  host_impl_->OuterViewportScrollLayer()->test_properties()->AddChild(
+      LayerImpl::Create(host_impl_->active_tree(), id + 2));
+  LayerImpl* content =
+      active_tree->OuterViewportScrollLayer()->test_properties()->children[0];
+  content->SetBounds(gfx::Size(100, 100));
+  host_impl_->active_tree()->PushPageScaleFromMainThread(2.f, 2.f, 4.f);
+  host_impl_->active_tree()->BuildPropertyTreesForTesting();
+
+  DrawFrame();
+
+  LayerImpl* inner_container = active_tree->InnerViewportContainerLayer();
+  LayerImpl* outer_container = active_tree->OuterViewportContainerLayer();
+  LayerImpl* outer_scroll = active_tree->OuterViewportScrollLayer();
+  auto* property_trees = host_impl_->active_tree()->property_trees();
+  ClipNode* outer_clip_node =
+      property_trees->clip_tree.Node(outer_scroll->clip_tree_index());
+
+  // The browser controls should start off showing so the viewport should be
+  // shrunk.
+  EXPECT_EQ(50, host_impl_->browser_controls_manager()->ContentTopOffset());
+  ASSERT_EQ(gfx::Size(50, 50), inner_container->bounds());
+  ASSERT_EQ(gfx::Size(25, 25), outer_container->bounds());
+  EXPECT_EQ(gfx::SizeF(100, 100), active_tree->ScrollableSize());
+  EXPECT_EQ(gfx::SizeF(50, 50), outer_clip_node->clip.size());
+
+  EXPECT_EQ(InputHandler::SCROLL_ON_IMPL_THREAD,
+            host_impl_
+                ->ScrollBegin(BeginState(gfx::Point()).get(),
+                              InputHandler::TOUCHSCREEN)
+                .thread);
+
+  // Hide the browser controls by 10px. The outer clip should expand by 10px as
+  // well because the clip node doesn't account for the "resize to
+  // minimum-scale" that occurs for the outer viewport layer (hence, why the
+  // outer viewport layer is half the size of the inner in this test).
+  {
+    host_impl_->ScrollBy(
+        UpdateState(gfx::Point(0, 0), gfx::Vector2dF(0.f, 10.f)).get());
+    ASSERT_EQ(40, host_impl_->browser_controls_manager()->ContentTopOffset());
+    EXPECT_EQ(gfx::SizeF(50, 60), outer_clip_node->clip.size());
+  }
+
   host_impl_->ScrollEnd(EndState().get());
 }
 
@@ -5880,8 +5891,6 @@ TEST_F(LayerTreeHostImplBrowserControlsTest,
 // bounds.
 TEST_F(LayerTreeHostImplBrowserControlsTest,
        PositionBrowserControlsExplicitly) {
-  settings_ = DefaultSettings();
-  CreateHostImpl(settings_, CreateLayerTreeFrameSink());
   SetupBrowserControlsAndScrollLayerWithVirtualViewport(
       layer_size_, layer_size_, layer_size_);
   DrawFrame();
@@ -5915,8 +5924,6 @@ TEST_F(LayerTreeHostImplBrowserControlsTest,
 // applied on sync tree activation. The total browser controls offset shouldn't
 // change after the activation.
 TEST_F(LayerTreeHostImplBrowserControlsTest, ApplyDeltaOnTreeActivation) {
-  settings_ = DefaultSettings();
-  CreateHostImpl(settings_, CreateLayerTreeFrameSink());
   SetupBrowserControlsAndScrollLayerWithVirtualViewport(
       layer_size_, layer_size_, layer_size_);
   DrawFrame();
@@ -5965,8 +5972,6 @@ TEST_F(LayerTreeHostImplBrowserControlsTest, ApplyDeltaOnTreeActivation) {
 // the compositor to accommodate the browser controls.
 TEST_F(LayerTreeHostImplBrowserControlsTest,
        BrowserControlsLayoutHeightChanged) {
-  settings_ = DefaultSettings();
-  CreateHostImpl(settings_, CreateLayerTreeFrameSink());
   SetupBrowserControlsAndScrollLayerWithVirtualViewport(
       layer_size_, layer_size_, layer_size_);
   DrawFrame();
@@ -6203,8 +6208,6 @@ TEST_F(LayerTreeHostImplBrowserControlsTest,
 
 TEST_F(LayerTreeHostImplBrowserControlsTest,
        ScrollNonScrollableRootWithBrowserControls) {
-  settings_ = DefaultSettings();
-  CreateHostImpl(settings_, CreateLayerTreeFrameSink());
   SetupBrowserControlsAndScrollLayerWithVirtualViewport(
       layer_size_, layer_size_, layer_size_);
   DrawFrame();
@@ -9320,9 +9323,10 @@ TEST_F(LayerTreeHostImplTest, PartialSwapReceivesDamageRect) {
   root->test_properties()->AddChild(std::move(child));
   layer_tree_host_impl->active_tree()->SetRootLayerForTesting(std::move(root));
   layer_tree_host_impl->active_tree()->BuildPropertyTreesForTesting();
-  layer_tree_host_impl->active_tree()->SetLocalSurfaceIdFromParent(
-      viz::LocalSurfaceId(1, base::UnguessableToken::Deserialize(2u, 3u)),
-      base::TimeTicks());
+  layer_tree_host_impl->active_tree()->SetLocalSurfaceIdAllocationFromParent(
+      viz::LocalSurfaceIdAllocation(
+          viz::LocalSurfaceId(1, base::UnguessableToken::Deserialize(2u, 3u)),
+          base::TimeTicks::Now()));
 
   TestFrameData frame;
 
@@ -9891,6 +9895,11 @@ TEST_F(LayerTreeHostImplTest, RequireHighResAfterGpuRasterizationToggles) {
   // RequiresHighResToDraw is set when new output surface is used.
   EXPECT_TRUE(host_impl_->RequiresHighResToDraw());
 
+  // The first commit will also set RequiresHighResToDraw due to the
+  // raster color space changing.
+  host_impl_->ResetRequiresHighResToDraw();
+  host_impl_->CommitComplete();
+  EXPECT_TRUE(host_impl_->RequiresHighResToDraw());
   host_impl_->ResetRequiresHighResToDraw();
 
   host_impl_->SetContentHasSlowPaths(false);
@@ -10063,9 +10072,8 @@ class FrameSinkClient : public viz::TestLayerTreeFrameSinkClient {
       const viz::LocalSurfaceId& local_surface_id) override {}
   void DisplayReceivedCompositorFrame(
       const viz::CompositorFrame& frame) override {}
-  void DisplayWillDrawAndSwap(
-      bool will_draw_and_swap,
-      const viz::RenderPassList& render_passes) override {}
+  void DisplayWillDrawAndSwap(bool will_draw_and_swap,
+                              viz::RenderPassList* render_passes) override {}
   void DisplayDidDrawAndSwap() override {}
 
  private:

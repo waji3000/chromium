@@ -14,6 +14,7 @@
 #include "base/macros.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#include "components/country_codes/country_codes.h"
 #include "components/google/core/common/google_switches.h"
 #include "components/search_engines/prepopulated_engines.h"
 #include "components/search_engines/search_engines_pref_names.h"
@@ -106,7 +107,7 @@ TEST_F(TemplateURLPrepopulateDataTest, UniqueIDs) {
       'Y'<<8|'T', 'Z'<<8|'A', 'Z'<<8|'M', 'Z'<<8|'W', -1 };
 
   for (size_t i = 0; i < arraysize(kCountryIds); ++i) {
-    prefs_.SetInteger(prefs::kCountryIDAtInstall, kCountryIds[i]);
+    prefs_.SetInteger(country_codes::kCountryIDAtInstall, kCountryIds[i]);
     std::vector<std::unique_ptr<TemplateURLData>> urls =
         TemplateURLPrepopulateData::GetPrepopulatedEngines(&prefs_, nullptr);
     std::set<int> unique_ids;
@@ -253,7 +254,7 @@ TEST_F(TemplateURLPrepopulateDataTest, ClearProvidersFromPrefs) {
 // Verifies that built-in search providers are processed correctly.
 TEST_F(TemplateURLPrepopulateDataTest, ProvidersFromPrepopulated) {
   // Use United States.
-  prefs_.SetInteger(prefs::kCountryIDAtInstall, 'U'<<8|'S');
+  prefs_.SetInteger(country_codes::kCountryIDAtInstall, 'U' << 8 | 'S');
   size_t default_index;
   std::vector<std::unique_ptr<TemplateURLData>> t_urls =
       TemplateURLPrepopulateData::GetPrepopulatedEngines(&prefs_,
@@ -435,4 +436,25 @@ TEST_F(TemplateURLPrepopulateDataTest, HttpsUrls) {
     CheckTemplateUrlRefIsCryptographic(
         template_url.contextual_search_url_ref());
   }
+}
+
+TEST_F(TemplateURLPrepopulateDataTest, FindGoogleIndex) {
+  constexpr int kGoogleId = 1;
+  size_t index;
+  std::vector<std::unique_ptr<TemplateURLData>> urls;
+
+  // Google is first in US, so confirm index 0.
+  prefs_.SetInteger(country_codes::kCountryIDAtInstall, 'U' << 8 | 'S');
+  urls = TemplateURLPrepopulateData::GetPrepopulatedEngines(&prefs_, &index);
+  EXPECT_EQ(index, size_t{0});
+  EXPECT_EQ(urls[index]->prepopulate_id, kGoogleId);
+
+  // TODO(orinj): Google is not first in CN; confirm it is found at index > 0.
+  // If Google ever does reach top in China, this test will need to be adjusted:
+  // check template_url_prepopulate_data.cc reference orders (engines_CN, etc.)
+  // to find a suitable country and index.
+  prefs_.SetInteger(country_codes::kCountryIDAtInstall, 'C' << 8 | 'N');
+  urls = TemplateURLPrepopulateData::GetPrepopulatedEngines(&prefs_, &index);
+  EXPECT_EQ(index, size_t{0});
+  EXPECT_EQ(urls[index]->prepopulate_id, kGoogleId);
 }

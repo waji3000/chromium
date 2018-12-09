@@ -601,7 +601,7 @@ def _FindComponentRoot(start_path, cache, knobs):
       SRC_ROOT.
     cache: Dict of OWNERS paths. Used instead of filesystem if paths are present
       in the dict.
-    knobs: Instance of SectionSizeKnobs. Tunable knobs and options.
+    knobs: Instance of SectionSizeKnobs with tunable knobs and options.
 
   Returns:
     COMPONENT belonging to |start_path|, or empty string if not found.
@@ -639,6 +639,22 @@ def _PopulateComponents(raw_symbols, knobs):
     if symbol.source_path:
       folder_path = os.path.dirname(symbol.source_path)
       symbol.component = _FindComponentRoot(folder_path, seen_paths, knobs)
+
+
+def _UpdateSymbolNamesFromNm(raw_symbols, names_by_address):
+  """Updates raw_symbols names with extra information from nm."""
+  logging.debug('Update symbol names')
+  # linker_map_parser extracts '** outlined function' without knowing how many
+  # such symbols exist at each address. nm has this information, and stores the
+  # value as, e.g., '** outlined function * 5'. Copy the information over.
+  for s in raw_symbols:
+    if s.full_name.startswith('** outlined function'):
+      name_list = names_by_address.get(s.address)
+      if name_list:
+        for name in name_list:
+          if name.startswith('** outlined function'):
+            s.full_name = name
+            break
 
 
 def _AddNmAliases(raw_symbols, names_by_address):
@@ -720,7 +736,7 @@ def CreateMetadata(map_path, elf_path, apk_path, tool_prefix, output_directory,
     apk_path: Path to the .apk file to measure.
     tool_prefix: Prefix for c++filt & nm.
     output_directory: Build output directory.
-    linker_name: 'gold', 'lld_v#' (# is a number), 'lld-lto_v#', or None.
+    linker_name: A coded linker name (see linker_map_parser.py).
 
   Returns:
     None if |elf_path| is not supplied. Otherwise returns dict mapping string
@@ -845,6 +861,8 @@ def _ParseElfInfo(map_path, elf_path, tool_prefix, track_string_literals,
         'Adding symbols removed by identical code folding (as reported by nm)')
     # This normally does not block (it's finished by this time).
     names_by_address = elf_nm_result.get()
+    _UpdateSymbolNamesFromNm(raw_symbols, names_by_address)
+
     raw_symbols = _AddNmAliases(raw_symbols, names_by_address)
 
     if outdir_context:
@@ -853,7 +871,6 @@ def _ParseElfInfo(map_path, elf_path, tool_prefix, track_string_literals,
           'Fetched path information for %d symbols from %d files',
           len(object_paths_by_name),
           len(outdir_context.elf_object_paths) + len(missed_object_paths))
-
       # For aliases, this provides path information where there wasn't any.
       logging.info('Creating aliases for symbols shared by multiple paths')
       raw_symbols = _AssignNmAliasPathsAndCreatePathAliases(
@@ -1177,13 +1194,20 @@ def CreateSectionSizesAndSymbols(
 
   Args:
     map_path: Path to the linker .map(.gz) file to parse.
-    elf_path: Path to the corresponding unstripped ELF file. Used to find symbol
-        aliases and inlined functions. Can be None.
     tool_prefix: Prefix for c++filt & nm (required).
     output_directory: Build output directory. If None, source_paths and symbol
         alias information will not be recorded.
+    elf_path: Path to the corresponding unstripped ELF file. Used to find symbol
+        aliases and inlined functions. Can be None.
+    apk_path: Path to the .apk file to measure.
     track_string_literals: Whether to break down "** merge string" sections into
         smaller symbols (requires output_directory).
+    metadata: Metadata dict from CreateMetadata().
+    apk_so_path: Path to an .so file within an APK file.
+    pak_files: List of paths to .pak files.
+    pak_info_file: Path to a .pak.info file.
+    linker_name: A coded linker name (see linker_map_parser.py).
+    knobs: Instance of SectionSizeKnobs with tunable knobs and options.
 
   Returns:
     A tuple of (section_sizes, raw_symbols).
@@ -1483,8 +1507,8 @@ def DeduceMainPaths(args, parser):
       map_path += '.gz'
     if not os.path.exists(map_path):
       parser.error('Could not find .map(.gz)? file. Ensure you have built with '
-                   'is_official_build=true, or use --map-file to point me a '
-                   'linker map file.')
+                   'is_official_build=true and generate_linker_map=true, or '
+                   'use --map-file to point me a linker map file.')
 
   linker_name = _DetectLinkerName(map_path)
   logging.info('Linker name: %s' % linker_name)

@@ -57,7 +57,7 @@ EnforceRange
 Exposed=*
 FeaturePolicy=*
 FlexibleArrayBufferView
-Global=|*
+Global=*
 HTMLConstructor
 ImmutablePrototype
 ImplementedAs=*
@@ -79,7 +79,6 @@ OverrideBuiltins
 PartialInterfaceImplementedAs=*
 PermissiveDictionaryConversion
 PerWorldBindings
-PrimaryGlobal=|*
 PutForwards=*
 RaisesException=|Getter|Setter|Constructor
 Reflect=|*

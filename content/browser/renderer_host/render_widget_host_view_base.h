@@ -272,7 +272,6 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
       BrowserAccessibilityDelegate* delegate, bool for_root_frame);
 
   virtual void AccessibilityShowMenu(const gfx::Point& point);
-  virtual gfx::Point AccessibilityOriginInScreen(const gfx::Rect& bounds);
   virtual gfx::AcceleratedWidget AccessibilityGetAcceleratedWidget();
   virtual gfx::NativeViewAccessible AccessibilityGetNativeViewAccessible();
   virtual void SetMainFrameAXTreeID(ui::AXTreeID id) {}
@@ -331,12 +330,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   virtual const viz::FrameSinkId& GetFrameSinkId() const = 0;
 
   // Returns the LocalSurfaceId allocated by the parent client for this view.
-  // TODO(fsamuel): Return by const ref.
-  virtual const viz::LocalSurfaceId& GetLocalSurfaceId() const = 0;
-
-  // Returns the time at which the viz::LocalSurfaceId was allocated by the
-  // parent client for this view.
-  virtual base::TimeTicks GetLocalSurfaceIdAllocationTime() const;
+  virtual const viz::LocalSurfaceIdAllocation& GetLocalSurfaceIdAllocation()
+      const = 0;
 
   // When there are multiple RenderWidgetHostViews for a single page, input
   // events need to be targeted to the correct one for handling. The following
@@ -409,7 +404,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // this view or the target view has no current FrameSinkId. The latter may
   // happen if either view is not currently visible in the viewport.
   // This function is useful if there are multiple points to transform between
-  // the same two views.
+  // the same two views. |target_view| must be non-null.
   bool GetTransformToViewCoordSpace(RenderWidgetHostViewBase* target_view,
                                     gfx::Transform* transform);
 
@@ -564,6 +559,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // |text_input_manager_|.
   TextInputManager* GetTextInputManager();
 
+  void StopFling();
+
   bool is_fullscreen() { return is_fullscreen_; }
 
   void set_web_contents_accessibility(WebContentsAccessibility* wcax) {
@@ -578,6 +575,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   bool is_currently_scrolling_viewport() {
     return is_currently_scrolling_viewport_;
   }
+
 #if defined(USE_AURA)
   void EmbedChildFrameRendererWindowTreeClient(
       RenderWidgetHostViewBase* root_view,
@@ -602,6 +600,10 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // Called when the RenderWidgetHostImpl has be initialized.
   virtual void OnRenderWidgetInit() {}
 
+  void set_is_evicted() { is_evicted_ = true; }
+  void reset_is_evicted() { is_evicted_ = false; }
+  bool is_evicted() { return is_evicted_; }
+
  protected:
   explicit RenderWidgetHostViewBase(RenderWidgetHost* host);
 
@@ -617,6 +619,11 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // transfer this color to that page. This allows us to pass this background
   // color to new views on navigation.
   virtual void UpdateBackgroundColor() = 0;
+
+  // Stops flinging if a GSU event with momentum phase is sent to the renderer
+  // but not consumed.
+  virtual void StopFlingingIfNecessary(const blink::WebGestureEvent& event,
+                                       InputEventAckState ack_result);
 
 #if defined(USE_AURA)
   virtual void ScheduleEmbed(
@@ -683,6 +690,13 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   bool is_currently_scrolling_viewport_ = false;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(
+      BrowserSideFlingBrowserTest,
+      EarlyTouchscreenFlingCancelationOnInertialGSUAckNotConsumed);
+  FRIEND_TEST_ALL_PREFIXES(
+      BrowserSideFlingBrowserTest,
+      EarlyTouchpadFlingCancelationOnInertialGSUAckNotConsumed);
+
   void SynchronizeVisualProperties();
 
 #if defined(USE_AURA)
@@ -714,6 +728,10 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
       gfx::PointF* transformed_point,
       viz::EventSource source);
 
+  bool view_stopped_flinging_for_test() const {
+    return view_stopped_flinging_for_test_;
+  }
+
   gfx::Rect current_display_area_;
 
   uint32_t renderer_frame_number_ = 0;
@@ -733,6 +751,11 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
 #endif
 
   base::Optional<blink::WebGestureEvent> pending_touchpad_pinch_begin_;
+
+  // True when StopFlingingIfNecessary() calls StopFling().
+  bool view_stopped_flinging_for_test_ = false;
+
+  bool is_evicted_ = false;
 
   base::WeakPtrFactory<RenderWidgetHostViewBase> weak_factory_;
 

@@ -24,6 +24,7 @@
 #include "content/public/browser/authenticator_request_client_delegate.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/common/content_features.h"
+#include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_service_manager_context.h"
 #include "content/test/test_render_frame_host.h"
 #include "device/base/features.h"
@@ -32,6 +33,7 @@
 #include "device/fido/attested_credential_data.h"
 #include "device/fido/authenticator_data.h"
 #include "device/fido/fake_fido_discovery.h"
+#include "device/fido/features.h"
 #include "device/fido/fido_constants.h"
 #include "device/fido/hid/fake_hid_impl_for_testing.h"
 #include "device/fido/mock_fido_device.h"
@@ -44,6 +46,10 @@
 
 #if defined(OS_MACOSX)
 #include "device/fido/mac/scoped_touch_id_test_environment.h"
+#endif
+
+#if defined(OS_WIN)
+#include "device/fido/win/fake_webauthn_api.h"
 #endif
 
 namespace content {
@@ -89,6 +95,10 @@ typedef struct {
 
 constexpr char kTestOrigin1[] = "https://a.google.com";
 constexpr char kTestRelyingPartyId[] = "google.com";
+constexpr char kCryptotokenOrigin[] =
+    "chrome-extension://kmendfapggjehodndflmmgagdbamhnfd";
+constexpr char kTestExtensionOrigin[] =
+    "chrome-extension://abcdefghijklmnopqrstuvwxyzabcdef";
 
 // Test data. CBOR test data can be built using the given
 // diagnostic strings and the utility at "http://CBOR.me/".
@@ -347,9 +357,8 @@ class AuthenticatorImplTest : public content::RenderViewHostTestHarness {
       scoped_refptr<base::TestMockTimeTaskRunner> task_runner) {
     connector_ = service_manager::Connector::Create(&request_);
     fake_hid_manager_ = std::make_unique<device::FakeHidManager>();
-    service_manager::Connector::TestApi test_api(connector_.get());
-    test_api.OverrideBinderForTesting(
-        service_manager::Identity(device::mojom::kServiceName),
+    connector_->OverrideBinderForTesting(
+        service_manager::ServiceFilter::ByName(device::mojom::kServiceName),
         device::mojom::HidManager::Name_,
         base::Bind(&device::FakeHidManager::AddBinding,
                    base::Unretained(fake_hid_manager_.get())));
@@ -369,7 +378,7 @@ class AuthenticatorImplTest : public content::RenderViewHostTestHarness {
 
   std::string GetTestClientDataJSON(std::string type) {
     return AuthenticatorImpl::SerializeCollectedClientDataToJson(
-        std::move(type), GetTestOrigin(), GetTestChallengeBytes());
+        std::move(type), GetTestOrigin().Serialize(), GetTestChallengeBytes());
   }
 
   AuthenticatorStatus TryAuthenticationWithAppId(const std::string& origin,
@@ -704,6 +713,139 @@ TEST_F(AuthenticatorImplTest, AppIdExtensionValues) {
     EXPECT_EQ(AuthenticatorStatus::INVALID_DOMAIN,
               TryAuthenticationWithAppId(test_case.origin,
                                          test_case.claimed_authority));
+  }
+}
+
+// Verify that a request coming from Cryptotoken bypasses origin checks.
+TEST_F(AuthenticatorImplTest, CryptotokenBypass) {
+  EnableFeature(device::kWebAuthProxyCryptotoken);
+  SimulateNavigation(GURL(kTestOrigin1));
+  auto task_runner = base::MakeRefCounted<base::TestMockTimeTaskRunner>(
+      base::Time::Now(), base::TimeTicks::Now());
+  auto authenticator = ConstructAuthenticatorWithTimer(task_runner);
+  url::AddStandardScheme("chrome-extension", url::SCHEME_WITH_HOST);
+
+  {
+    OverrideLastCommittedOrigin(main_rfh(),
+                                url::Origin::Create(GURL(kCryptotokenOrigin)));
+    // First, verify that the Cryptotoken request succeeds with the appid.
+    PublicKeyCredentialRequestOptionsPtr options =
+        GetTestPublicKeyCredentialRequestOptions();
+    options->relying_party_id = std::string(kTestOrigin1);
+
+    device::test::ScopedVirtualFidoDevice virtual_device;
+    // Inject a registration for the URL (which is a U2F AppID).
+    ASSERT_TRUE(virtual_device.mutable_state()->InjectRegistration(
+        options->allow_credentials[0]->id, kTestOrigin1));
+
+    options->appid = kTestOrigin1;
+
+    TestGetAssertionCallback callback_receiver;
+    authenticator->GetAssertion(std::move(options),
+                                callback_receiver.callback());
+    callback_receiver.WaitForCallback();
+    ASSERT_EQ(AuthenticatorStatus::SUCCESS, callback_receiver.status());
+
+    EXPECT_EQ(true, callback_receiver.value()->echo_appid_extension);
+    EXPECT_EQ(true, callback_receiver.value()->appid_extension);
+  }
+
+  {
+    OverrideLastCommittedOrigin(
+        main_rfh(), url::Origin::Create(GURL(kTestExtensionOrigin)));
+    // Next, verify that other extensions cannot bypass the origin checks.
+    PublicKeyCredentialRequestOptionsPtr options =
+        GetTestPublicKeyCredentialRequestOptions();
+    options->relying_party_id = std::string(kTestOrigin1);
+
+    device::test::ScopedVirtualFidoDevice virtual_device;
+    // Inject a registration for the URL (which is a U2F AppID).
+    ASSERT_TRUE(virtual_device.mutable_state()->InjectRegistration(
+        options->allow_credentials[0]->id, kTestOrigin1));
+
+    options->appid = kTestOrigin1;
+
+    TestGetAssertionCallback callback_receiver;
+    authenticator->GetAssertion(std::move(options),
+                                callback_receiver.callback());
+    callback_receiver.WaitForCallback();
+    ASSERT_EQ(AuthenticatorStatus::INVALID_DOMAIN, callback_receiver.status());
+  }
+}
+
+// Requests originating from cryptotoken should only target U2F devices.
+TEST_F(AuthenticatorImplTest, CryptoTokenU2fOnly) {
+  EnableFeature(device::kWebAuthProxyCryptotoken);
+  TestServiceManagerContext smc;
+  SimulateNavigation(GURL(kTestOrigin1));
+  auto task_runner = base::MakeRefCounted<base::TestMockTimeTaskRunner>(
+      base::Time::Now(), base::TimeTicks::Now());
+  auto authenticator = ConstructAuthenticatorWithTimer(task_runner);
+  url::AddStandardScheme("chrome-extension", url::SCHEME_WITH_HOST);
+
+  // TODO(martinkr): ScopedVirtualFidoDevice does not offer devices that
+  // support both U2F and CTAP yet; we should test those.
+  for (const bool u2f_authenticator : {true, false}) {
+    SCOPED_TRACE(u2f_authenticator ? "U2F" : "CTAP");
+    OverrideLastCommittedOrigin(main_rfh(),
+                                url::Origin::Create(GURL(kCryptotokenOrigin)));
+
+    device::test::ScopedVirtualFidoDevice scoped_virtual_device;
+    scoped_virtual_device.SetSupportedProtocol(
+        u2f_authenticator ? device::ProtocolVersion::kU2f
+                          : device::ProtocolVersion::kCtap);
+
+    PublicKeyCredentialCreationOptionsPtr options =
+        GetTestPublicKeyCredentialCreationOptions();
+    TestMakeCredentialCallback callback_receiver;
+    authenticator->MakeCredential(std::move(options),
+                                  callback_receiver.callback());
+
+    base::RunLoop().RunUntilIdle();
+    task_runner->FastForwardBy(base::TimeDelta::FromMinutes(1));
+    callback_receiver.WaitForCallback();
+
+    EXPECT_EQ((u2f_authenticator ? AuthenticatorStatus::SUCCESS
+                                 : AuthenticatorStatus::NOT_ALLOWED_ERROR),
+              callback_receiver.status());
+  }
+}
+
+// Requests originating from cryptotoken should only target U2F devices.
+TEST_F(AuthenticatorImplTest, AttestationPermitted) {
+  EnableFeature(device::kWebAuthProxyCryptotoken);
+  TestServiceManagerContext smc;
+  SimulateNavigation(GURL(kTestOrigin1));
+  auto task_runner = base::MakeRefCounted<base::TestMockTimeTaskRunner>(
+      base::Time::Now(), base::TimeTicks::Now());
+  auto authenticator = ConstructAuthenticatorWithTimer(task_runner);
+  url::AddStandardScheme("chrome-extension", url::SCHEME_WITH_HOST);
+
+  // TODO(martinkr): ScopedVirtualFidoDevice does not offer devices that
+  // support both U2F and CTAP yet; we should test those.
+  for (const bool u2f_authenticator : {true, false}) {
+    SCOPED_TRACE(u2f_authenticator ? "U2F" : "CTAP");
+    OverrideLastCommittedOrigin(main_rfh(),
+                                url::Origin::Create(GURL(kCryptotokenOrigin)));
+
+    device::test::ScopedVirtualFidoDevice scoped_virtual_device;
+    scoped_virtual_device.SetSupportedProtocol(
+        u2f_authenticator ? device::ProtocolVersion::kU2f
+                          : device::ProtocolVersion::kCtap);
+
+    PublicKeyCredentialCreationOptionsPtr options =
+        GetTestPublicKeyCredentialCreationOptions();
+    TestMakeCredentialCallback callback_receiver;
+    authenticator->MakeCredential(std::move(options),
+                                  callback_receiver.callback());
+
+    base::RunLoop().RunUntilIdle();
+    task_runner->FastForwardBy(base::TimeDelta::FromMinutes(1));
+    callback_receiver.WaitForCallback();
+
+    EXPECT_EQ((u2f_authenticator ? AuthenticatorStatus::SUCCESS
+                                 : AuthenticatorStatus::NOT_ALLOWED_ERROR),
+              callback_receiver.status());
   }
 }
 
@@ -1809,9 +1951,43 @@ TEST_F(AuthenticatorContentBrowserClientTest, IsUVPAATrueIfTouchIdAvailable) {
 }
 #endif  // defined(OS_MACOSX)
 
-#if !defined(OS_MACOSX)
+#if defined(OS_WIN)
+TEST_F(AuthenticatorContentBrowserClientTest, WinIsUVPAA) {
+  for (const bool enable_feature_flag : {false, true}) {
+    SCOPED_TRACE(enable_feature_flag ? "enable_feature_flag"
+                                     : "!enable_feature_flag");
+    for (const bool enable_win_webauthn_api : {false, true}) {
+      SCOPED_TRACE(enable_win_webauthn_api ? "enable_win_webauthn_api"
+                                           : "!enable_win_webauthn_api");
+      for (const bool is_uvpaa : {false, true}) {
+        SCOPED_TRACE(is_uvpaa ? "is_uvpaa" : "!is_uvpaa");
+
+        base::test::ScopedFeatureList scoped_feature_list;
+        if (enable_feature_flag) {
+          scoped_feature_list.InitAndEnableFeature(
+              device::kWebAuthUseNativeWinApi);
+        }
+        device::ScopedFakeWinWebAuthnApi fake_api;
+        fake_api.set_available(enable_win_webauthn_api);
+        fake_api.set_is_uvpaa(is_uvpaa);
+
+        AuthenticatorPtr authenticator = ConnectToAuthenticator();
+        TestIsUvpaaCallback cb;
+        authenticator->IsUserVerifyingPlatformAuthenticatorAvailable(
+            cb.callback());
+        cb.WaitForCallback();
+        EXPECT_EQ(enable_feature_flag && enable_win_webauthn_api && is_uvpaa,
+                  cb.value());
+      }
+    }
+  }
+}
+#endif  // defined(OS_WIN)
+
+#if !defined(OS_MACOSX) && !defined(OS_WIN)
 TEST_F(AuthenticatorContentBrowserClientTest, IsUVPAAFalse) {
-  // No platform authenticator on non-macOS platforms.
+  // There are no platform authenticators other than Windows Hello and macOS
+  // Touch ID.
   NavigateAndCommit(GURL(kTestOrigin1));
   AuthenticatorPtr authenticator = ConnectToAuthenticator();
 
@@ -1820,7 +1996,37 @@ TEST_F(AuthenticatorContentBrowserClientTest, IsUVPAAFalse) {
   cb.WaitForCallback();
   EXPECT_FALSE(cb.value());
 }
-#endif  // !defined(OS_MACOSX)
+#endif  // !defined(OS_MACOSX) && !defined(OS_WIN)
+
+TEST_F(AuthenticatorContentBrowserClientTest,
+       CryptotokenBypassesAttestationConsentPrompt) {
+  EnableFeature(device::kWebAuthProxyCryptotoken);
+  TestServiceManagerContext smc;
+  SimulateNavigation(GURL(kTestOrigin1));
+  auto task_runner = base::MakeRefCounted<base::TestMockTimeTaskRunner>(
+      base::Time::Now(), base::TimeTicks::Now());
+  auto authenticator = ConstructAuthenticatorWithTimer(task_runner);
+  url::AddStandardScheme("chrome-extension", url::SCHEME_WITH_HOST);
+  OverrideLastCommittedOrigin(main_rfh(),
+                              url::Origin::Create(GURL(kCryptotokenOrigin)));
+
+  virtual_device_.SetSupportedProtocol(device::ProtocolVersion::kU2f);
+  PublicKeyCredentialCreationOptionsPtr options =
+      GetTestPublicKeyCredentialCreationOptions();
+  // Despite the direct attestation conveyance preference, the request delegate
+  // is not asked for attestation consent. Hence the request will succeed,
+  // despite the handler denying all attestation consent prompts.
+  options->attestation = AttestationConveyancePreference::DIRECT;
+  test_client_.attestation_consent = AttestationConsent::DENIED;
+
+  TestMakeCredentialCallback callback_receiver;
+  authenticator->MakeCredential(std::move(options),
+                                callback_receiver.callback());
+
+  callback_receiver.WaitForCallback();
+
+  EXPECT_EQ(AuthenticatorStatus::SUCCESS, callback_receiver.status());
+}
 
 class MockAuthenticatorRequestDelegateObserver
     : public TestAuthenticatorRequestDelegate {
@@ -1914,9 +2120,8 @@ class AuthenticatorImplRequestDelegateTest : public AuthenticatorImplTest {
       scoped_refptr<base::TestMockTimeTaskRunner> task_runner) {
     connector_ = service_manager::Connector::Create(&request_);
     fake_hid_manager_ = std::make_unique<device::FakeHidManager>();
-    service_manager::Connector::TestApi test_api(connector_.get());
-    test_api.OverrideBinderForTesting(
-        service_manager::Identity(device::mojom::kServiceName),
+    connector_->OverrideBinderForTesting(
+        service_manager::ServiceFilter::ByName(device::mojom::kServiceName),
         device::mojom::HidManager::Name_,
         base::Bind(&device::FakeHidManager::AddBinding,
                    base::Unretained(fake_hid_manager_.get())));

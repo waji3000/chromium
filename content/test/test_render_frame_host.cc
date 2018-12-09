@@ -19,7 +19,7 @@
 #include "content/common/frame_messages.h"
 #include "content/common/frame_owner_properties.h"
 #include "content/public/browser/navigation_throttle.h"
-#include "content/public/common/browser_side_navigation_policy.h"
+#include "content/public/common/navigation_policy.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
 #include "content/public/test/browser_side_navigation_test_utils.h"
@@ -248,7 +248,7 @@ void TestRenderFrameHost::SendBeforeUnloadACK(bool proceed) {
 }
 
 void TestRenderFrameHost::SimulateSwapOutACK() {
-  OnSwappedOut();
+  OnSwapOutACK();
 }
 
 void TestRenderFrameHost::NavigateAndCommitRendererInitiated(
@@ -272,6 +272,7 @@ void TestRenderFrameHost::SimulateFeaturePolicyHeader(
   blink::ParsedFeaturePolicy header(1);
   header[0].feature = feature;
   header[0].matches_all_origins = false;
+  header[0].disposition = blink::mojom::FeaturePolicyDisposition::kEnforce;
   header[0].origins = whitelist;
   DidSetFramePolicyHeaders(blink::WebSandboxFlags::kNone, header);
 }
@@ -325,6 +326,7 @@ void TestRenderFrameHost::SendNavigateWithParameters(
   FrameHostMsg_DidCommitProvisionalLoad_Params params;
   params.nav_entry_id = nav_entry_id;
   params.url = url;
+  params.origin = url::Origin::Create(url);
   params.transition = transition;
   params.should_update_history = true;
   params.did_create_new_entry = did_create_new_entry;

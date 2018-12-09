@@ -98,7 +98,8 @@ EventSource* EventSource::Create(ExecutionContext* context,
     return nullptr;
   }
 
-  EventSource* source = new EventSource(context, full_url, event_source_init);
+  EventSource* source =
+      MakeGarbageCollected<EventSource>(context, full_url, event_source_init);
 
   source->ScheduleInitialConnect();
   return source;
@@ -127,15 +128,15 @@ void EventSource::Connect() {
   request.SetHTTPHeaderField(http_names::kAccept, "text/event-stream");
   request.SetHTTPHeaderField(http_names::kCacheControl, "no-cache");
   request.SetRequestContext(mojom::RequestContextType::EVENT_SOURCE);
-  request.SetFetchRequestMode(network::mojom::FetchRequestMode::kCORS);
+  request.SetFetchRequestMode(network::mojom::FetchRequestMode::kCors);
   request.SetFetchCredentialsMode(
       with_credentials_ ? network::mojom::FetchCredentialsMode::kInclude
                         : network::mojom::FetchCredentialsMode::kSameOrigin);
   request.SetCacheMode(blink::mojom::FetchCacheMode::kNoStore);
   request.SetExternalRequestStateFromRequestorAddressSpace(
       execution_context.GetSecurityContext().AddressSpace());
-  request.SetCORSPreflightPolicy(
-      network::mojom::CORSPreflightPolicy::kPreventPreflight);
+  request.SetCorsPreflightPolicy(
+      network::mojom::CorsPreflightPolicy::kPreventPreflight);
   if (parser_ && !parser_->LastEventId().IsEmpty()) {
     // HTTP headers are Latin-1 byte strings, but the Last-Event-ID header is
     // encoded as UTF-8.
@@ -152,8 +153,8 @@ void EventSource::Connect() {
   resource_loader_options.data_buffering_policy = kDoNotBufferData;
 
   probe::willSendEventSourceRequest(&execution_context, this);
-  loader_ =
-      new ThreadableLoader(execution_context, this, resource_loader_options);
+  loader_ = MakeGarbageCollected<ThreadableLoader>(execution_context, this,
+                                                   resource_loader_options);
   loader_->Start(request);
 }
 
@@ -227,8 +228,9 @@ void EventSource::DidReceiveResponse(
   DCHECK(loader_);
 
   resource_identifier_ = identifier;
-  current_url_ = response.Url();
-  event_stream_origin_ = SecurityOrigin::Create(response.Url())->ToString();
+  current_url_ = response.CurrentRequestUrl();
+  event_stream_origin_ =
+      SecurityOrigin::Create(response.CurrentRequestUrl())->ToString();
   int status_code = response.HttpStatusCode();
   bool mime_type_is_valid = response.MimeType() == "text/event-stream";
   bool response_is_valid = status_code == 200 && mime_type_is_valid;
@@ -268,7 +270,7 @@ void EventSource::DidReceiveResponse(
       // The new parser takes over the event ID.
       last_event_id = parser_->LastEventId();
     }
-    parser_ = new EventSourceParser(last_event_id, this);
+    parser_ = MakeGarbageCollected<EventSourceParser>(last_event_id, this);
     DispatchEvent(*Event::Create(event_type_names::kOpen));
   } else {
     loader_->Cancel();
@@ -358,6 +360,7 @@ void EventSource::Trace(blink::Visitor* visitor) {
   visitor->Trace(parser_);
   visitor->Trace(loader_);
   EventTargetWithInlineData::Trace(visitor);
+  ThreadableLoaderClient::Trace(visitor);
   ContextLifecycleObserver::Trace(visitor);
   EventSourceParser::Client::Trace(visitor);
 }

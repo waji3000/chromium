@@ -186,17 +186,24 @@ GFX_EXPORT void PaintNewThrobberWaiting(Canvas* canvas,
                                         const RectF& throbber_container_bounds,
                                         SkColor color,
                                         const base::TimeDelta& elapsed_time) {
-  constexpr int kAnimationCycleMs = 1000;
   // The throbber bounces back and forth. We map the elapsed time to 0->2. Time
   // 0->1 represents when the throbber moves left to right, time 1->2 represents
   // right to left.
-  float time = 2.0f * (elapsed_time.InMilliseconds() % kAnimationCycleMs) /
-               kAnimationCycleMs;
+  float time =
+      2.0f *
+      (elapsed_time.InMilliseconds() % kNewThrobberWaitingAnimationCycleMs) /
+      kNewThrobberWaitingAnimationCycleMs;
   // 1 -> 2 values mirror back to 1 -> 0 values to represent right-to-left.
-  if (time > 1.0f)
+  const bool going_back = time > 1.0f;
+  if (going_back)
     time = 2.0f - time;
+  // This animation should be fast in the middle and slow at the edges.
+  time = Tween::CalculateValue(Tween::EASE_IN_OUT, time);
   const float min_width = throbber_container_bounds.height();
-  const float throbber_width = min_width * 2.5;
+  // The throbber animation stretches longer when moving in (left to right) than
+  // when going back.
+  const float throbber_width =
+      (going_back ? 0.75f : 1.0f) * throbber_container_bounds.width();
 
   // These bounds keep at least |min_width| of the throbber visible (inside the
   // throbber bounds).
@@ -216,10 +223,11 @@ GFX_EXPORT void PaintNewThrobberWaiting(Canvas* canvas,
   cc::PaintFlags flags;
   flags.setColor(color);
   flags.setStyle(cc::PaintFlags::kFill_Style);
-  flags.setAntiAlias(true);
+  // Disable anti-aliasing to effectively "pixel align" the rectangle.
+  flags.setAntiAlias(false);
 
   // Draw with circular end caps.
-  canvas->DrawRoundRect(bounds, bounds.height() / 2, flags);
+  canvas->DrawRect(bounds, flags);
 }
 
 }  // namespace gfx

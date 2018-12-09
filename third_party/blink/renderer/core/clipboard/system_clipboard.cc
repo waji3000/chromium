@@ -182,8 +182,14 @@ void SystemClipboard::WriteImage(Image* image,
   clipboard_->WriteImage(mojom::ClipboardBuffer::kStandard, bitmap);
 
   if (url.IsValid() && !url.IsEmpty()) {
+#if !defined(OS_MACOSX)
+    // See http://crbug.com/838808: Not writing text/plain on Mac for
+    // consistency between platforms, and to help fix errors in applications
+    // which prefer text/plain content over image content for compatibility with
+    // Microsoft Word.
     clipboard_->WriteBookmark(mojom::ClipboardBuffer::kStandard,
                               url.GetString(), NonNullString(title));
+#endif
 
     // When writing the image, we also write the image markup so that pasting
     // into rich text editors, such as Gmail, reveals the image. We also don't
@@ -217,9 +223,7 @@ void SystemClipboard::WriteDataObject(DataObject* data_object) {
 
   HashMap<String, String> custom_data;
   WebDragData data = data_object->ToWebDragData();
-  const WebVector<WebDragData::Item>& item_list = data.Items();
-  for (size_t i = 0; i < item_list.size(); ++i) {
-    const WebDragData::Item& item = item_list[i];
+  for (const WebDragData::Item& item : data.Items()) {
     if (item.storage_type == WebDragData::Item::kStorageTypeString) {
       if (item.string_type == blink::kMimeTypeTextPlain) {
         clipboard_->WriteText(mojom::ClipboardBuffer::kStandard,
@@ -248,7 +252,7 @@ bool SystemClipboard::IsValidBufferType(mojom::ClipboardBuffer buffer) {
       return true;
 #else
       // Chrome OS and non-X11 unix builds do not support
-      // the X selection clipboad.
+      // the X selection clipboard.
       // TODO: remove the need for this case, see http://crbug.com/361753
       return false;
 #endif

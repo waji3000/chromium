@@ -9,8 +9,10 @@
 
 #include "base/strings/string_piece.h"
 #include "base/time/time.h"
+#include "net/base/address_family.h"
 #include "net/base/net_export.h"
 #include "net/base/network_change_notifier.h"
+#include "net/dns/public/dns_query_type.h"
 
 namespace net {
 
@@ -50,13 +52,6 @@ NET_EXPORT std::string DNSDomainToString(const base::StringPiece& domain);
 NET_EXPORT_PRIVATE std::string GetURLFromTemplateWithoutParameters(
     const std::string& server_template);
 
-// Returns true if the URI template is acceptable for sending requests via the
-// given method. The template must be properly formatted, GET requests require
-// the template to contain a "dns" variable, an expanded template must parse
-// to a valid HTTPS URL, and the "dns" variable may not be part of the hostname.
-NET_EXPORT_PRIVATE bool IsValidDoHTemplate(const std::string& server_template,
-                                           const std::string& server_method);
-
 #if !defined(OS_NACL)
 NET_EXPORT_PRIVATE
 base::TimeDelta GetTimeDeltaForConnectionTypeFromFieldTrialOrDefault(
@@ -91,6 +86,12 @@ AddressListDeltaType FindAddressListDeltaType(const AddressList& a,
 // which specifies an offset from the start of the message for the pointed name.
 // Note that |offset| must be less than 2^14 - 1 by definition.
 NET_EXPORT std::string CreateNamePointer(uint16_t offset);
+
+// Convert a DnsQueryType enum to the wire format integer representation.
+uint16_t DnsQueryTypeToQtype(DnsQueryType dns_query_type);
+
+NET_EXPORT DnsQueryType
+AddressFamilyToDnsQueryType(AddressFamily address_family);
 
 }  // namespace net
 

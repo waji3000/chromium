@@ -84,6 +84,11 @@ class CORE_EXPORT RuleData : public GarbageCollected<RuleData> {
                                unsigned position,
                                AddRuleFlags);
 
+  RuleData(StyleRule*,
+           unsigned selector_index,
+           unsigned position,
+           AddRuleFlags);
+
   unsigned GetPosition() const { return position_; }
   StyleRule* Rule() const { return rule_; }
   const CSSSelector& Selector() const {
@@ -125,11 +130,6 @@ class CORE_EXPORT RuleData : public GarbageCollected<RuleData> {
   static constexpr size_t kPositionBits = 18;
 
  private:
-  RuleData(StyleRule*,
-           unsigned selector_index,
-           unsigned position,
-           AddRuleFlags);
-
   Member<StyleRule> rule_;
   unsigned selector_index_ : kSelectorIndexBits;
   unsigned position_ : kPositionBits;
@@ -170,7 +170,9 @@ static_assert(sizeof(RuleData) == sizeof(SameSizeAsRuleData),
 // ElementRuleCollector::CollectMatchingRules.
 class CORE_EXPORT RuleSet : public GarbageCollectedFinalized<RuleSet> {
  public:
-  static RuleSet* Create() { return new RuleSet; }
+  static RuleSet* Create() { return MakeGarbageCollected<RuleSet>(); }
+
+  RuleSet() : rule_count_(0) {}
 
   void AddRulesFromSheet(StyleSheetContents*,
                          const MediaQueryEvaluator&,
@@ -212,6 +214,11 @@ class CORE_EXPORT RuleSet : public GarbageCollectedFinalized<RuleSet> {
     DCHECK(!pending_rules_);
     return &focus_pseudo_class_rules_;
   }
+  const HeapVector<Member<const RuleData>>*
+  SpatialNavigationFocusPseudoClassRules() const {
+    DCHECK(!pending_rules_);
+    return &spatial_navigation_focus_class_rules_;
+  }
   const HeapVector<Member<const RuleData>>* UniversalRules() const {
     DCHECK(!pending_rules_);
     return &universal_rules_;
@@ -230,6 +237,10 @@ class CORE_EXPORT RuleSet : public GarbageCollectedFinalized<RuleSet> {
   }
   const HeapVector<Member<StyleRuleFontFace>>& FontFaceRules() const {
     return font_face_rules_;
+  }
+  const HeapVector<Member<StyleRuleFontFeatureValues>>& FontFeatureValuesRules()
+      const {
+    return font_feature_values_rules_;
   }
   const HeapVector<Member<StyleRuleKeyframes>>& KeyframesRules() const {
     return keyframes_rules_;
@@ -279,12 +290,11 @@ class CORE_EXPORT RuleSet : public GarbageCollectedFinalized<RuleSet> {
   using CompactRuleMap =
       HeapHashMap<AtomicString, Member<HeapVector<Member<const RuleData>>>>;
 
-  RuleSet() : rule_count_(0) {}
-
   void AddToRuleSet(const AtomicString& key, PendingRuleMap&, const RuleData*);
   void AddPageRule(StyleRulePage*);
   void AddViewportRule(StyleRuleViewport*);
   void AddFontFaceRule(StyleRuleFontFace*);
+  void AddFontFeatureValuesRule(StyleRuleFontFeatureValues*);
   void AddKeyframesRule(StyleRuleKeyframes*);
 
   void AddChildRules(const HeapVector<Member<StyleRuleBase>>&,
@@ -297,7 +307,11 @@ class CORE_EXPORT RuleSet : public GarbageCollectedFinalized<RuleSet> {
 
   class PendingRuleMaps : public GarbageCollected<PendingRuleMaps> {
    public:
-    static PendingRuleMaps* Create() { return new PendingRuleMaps; }
+    static PendingRuleMaps* Create() {
+      return MakeGarbageCollected<PendingRuleMaps>();
+    }
+
+    PendingRuleMaps() = default;
 
     PendingRuleMap id_rules;
     PendingRuleMap class_rules;
@@ -305,9 +319,6 @@ class CORE_EXPORT RuleSet : public GarbageCollectedFinalized<RuleSet> {
     PendingRuleMap shadow_pseudo_element_rules;
 
     void Trace(blink::Visitor*);
-
-   private:
-    PendingRuleMaps() = default;
   };
 
   PendingRuleMaps* EnsurePendingRules() {
@@ -323,12 +334,14 @@ class CORE_EXPORT RuleSet : public GarbageCollectedFinalized<RuleSet> {
   HeapVector<Member<const RuleData>> link_pseudo_class_rules_;
   HeapVector<Member<const RuleData>> cue_pseudo_rules_;
   HeapVector<Member<const RuleData>> focus_pseudo_class_rules_;
+  HeapVector<Member<const RuleData>> spatial_navigation_focus_class_rules_;
   HeapVector<Member<const RuleData>> universal_rules_;
   HeapVector<Member<const RuleData>> shadow_host_rules_;
   HeapVector<Member<const RuleData>> part_pseudo_rules_;
   RuleFeatureSet features_;
   HeapVector<Member<StyleRulePage>> page_rules_;
   HeapVector<Member<StyleRuleFontFace>> font_face_rules_;
+  HeapVector<Member<StyleRuleFontFeatureValues>> font_feature_values_rules_;
   HeapVector<Member<StyleRuleKeyframes>> keyframes_rules_;
   HeapVector<MinimalRuleData> deep_combinator_or_shadow_pseudo_rules_;
   HeapVector<MinimalRuleData> content_pseudo_element_rules_;

@@ -52,7 +52,7 @@ bool ApplyProxyConfigToProxyInfo(const net::ProxyConfig::ProxyRules& rules,
 
   rules.Apply(url, proxy_info);
   proxy_info->DeprioritizeBadProxies(proxy_retry_info);
-  return !proxy_info->proxy_server().is_direct();
+  return !proxy_info->is_empty() && !proxy_info->proxy_server().is_direct();
 }
 
 // Checks if |target_proxy| is in |proxy_list|.
@@ -72,12 +72,17 @@ bool IsURLValidForProxy(const GURL& url) {
   return url.SchemeIs(url::kHttpScheme) && !net::IsLocalhost(url);
 }
 
-// Copies all of the valid proxies in |proxies| to |out|.
-void AddProxies(const net::ProxyList& proxies,
-                std::vector<net::ProxyServer>* out) {
-  for (const auto& proxy : proxies.GetAll()) {
-    if (proxy.is_valid() && !proxy.is_direct())
-      out->push_back(proxy);
+// Merges headers from |in| to |out|. If the header already exists in |out| they
+// are combined.
+void MergeRequestHeaders(net::HttpRequestHeaders* out,
+                         const net::HttpRequestHeaders& in) {
+  for (net::HttpRequestHeaders::Iterator it(in); it.GetNext();) {
+    std::string old_value;
+    if (out->GetHeader(it.name(), &old_value)) {
+      out->SetHeader(it.name(), old_value + ", " + it.value());
+    } else {
+      out->SetHeader(it.name(), it.value());
+    }
   }
 }
 
@@ -88,7 +93,12 @@ NetworkServiceProxyDelegate::NetworkServiceProxyDelegate(
     mojom::CustomProxyConfigClientRequest config_client_request)
     : proxy_config_(std::move(initial_config)),
       binding_(this, std::move(config_client_request)),
-      should_use_alternate_proxy_list_cache_(kMaxCacheSize) {}
+      should_use_alternate_proxy_list_cache_(kMaxCacheSize) {
+  // Make sure there is always a valid proxy config so we don't need to null
+  // check it.
+  if (!proxy_config_)
+    proxy_config_ = mojom::CustomProxyConfig::New();
+}
 
 void NetworkServiceProxyDelegate::OnBeforeStartTransaction(
     net::URLRequest* request,
@@ -96,14 +106,14 @@ void NetworkServiceProxyDelegate::OnBeforeStartTransaction(
   if (!MayProxyURL(request->url()))
     return;
 
-  headers->MergeFrom(proxy_config_->pre_cache_headers);
+  MergeRequestHeaders(headers, proxy_config_->pre_cache_headers);
 
   auto* url_loader = URLLoader::ForRequest(*request);
   if (url_loader) {
     if (url_loader->custom_proxy_use_alternate_proxy_list()) {
       should_use_alternate_proxy_list_cache_.Put(request->url().spec(), true);
     }
-    headers->MergeFrom(url_loader->custom_proxy_pre_cache_headers());
+    MergeRequestHeaders(headers, url_loader->custom_proxy_pre_cache_headers());
   }
 }
 
@@ -113,10 +123,11 @@ void NetworkServiceProxyDelegate::OnBeforeSendHeaders(
     net::HttpRequestHeaders* headers) {
   auto* url_loader = URLLoader::ForRequest(*request);
   if (IsInProxyConfig(proxy_info.proxy_server())) {
-    headers->MergeFrom(proxy_config_->post_cache_headers);
+    MergeRequestHeaders(headers, proxy_config_->post_cache_headers);
 
     if (url_loader) {
-      headers->MergeFrom(url_loader->custom_proxy_post_cache_headers());
+      MergeRequestHeaders(headers,
+                          url_loader->custom_proxy_post_cache_headers());
     }
   } else if (MayHaveProxiedURL(request->url())) {
     for (const auto& kv : proxy_config_->pre_cache_headers.GetHeaderVector()) {
@@ -139,6 +150,10 @@ void NetworkServiceProxyDelegate::OnResolveProxy(
     const std::string& method,
     const net::ProxyRetryInfoMap& proxy_retry_info,
     net::ProxyInfo* result) {
+  // TODO(http://crbug.com/912217): Remove these or switch to DCHECK when done
+  // debugging crash.
+  CHECK(result);
+  CHECK(proxy_config_);
   if (!EligibleForProxy(*result, url, method))
     return;
 
@@ -172,13 +187,6 @@ void NetworkServiceProxyDelegate::MarkProxiesAsBad(
     MarkProxiesAsBadCallback callback) {
   std::vector<net::ProxyServer> bad_proxies = bad_proxies_list.GetAll();
 
-  if (bad_proxies.empty()) {
-    // TODO(https://crbug.com/721403): Temporary hack. The throttle currently
-    // passes an empty |bad_proxies_list| to mean "bypass all custom proxies".
-    AddProxies(proxy_config_->rules.proxies_for_http, &bad_proxies);
-    AddProxies(proxy_config_->alternate_proxy_list, &bad_proxies);
-  }
-
   // Synthesize a suitable |ProxyInfo| to add the proxies to the
   // |ProxyRetryInfoMap| of the proxy service.
   //
@@ -195,6 +203,10 @@ void NetworkServiceProxyDelegate::MarkProxiesAsBad(
       proxy_info, bypass_duration, bad_proxies, net::NetLogWithSource());
 
   std::move(callback).Run();
+}
+
+void NetworkServiceProxyDelegate::ClearBadProxiesCache() {
+  proxy_resolution_service_->ClearBadProxiesCache();
 }
 
 bool NetworkServiceProxyDelegate::IsInProxyConfig(

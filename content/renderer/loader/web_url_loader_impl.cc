@@ -25,13 +25,12 @@
 #include "build/build_config.h"
 #include "content/child/child_thread_impl.h"
 #include "content/common/service_worker/service_worker_types.h"
-#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/content_features.h"
+#include "content/public/common/navigation_policy.h"
 #include "content/public/common/previews_state.h"
 #include "content/public/common/referrer.h"
 #include "content/public/renderer/fixed_received_data.h"
 #include "content/public/renderer/request_peer.h"
-#include "content/renderer/loader/ftp_directory_listing_response_delegate.h"
 #include "content/renderer/loader/request_extra_data.h"
 #include "content/renderer/loader/resource_dispatcher.h"
 #include "content/renderer/loader/shared_memory_data_consumer_handle.h"
@@ -447,7 +446,6 @@ class WebURLLoaderImpl::Context : public base::RefCounted<Context> {
   ResourceDispatcher* resource_dispatcher_;
   std::unique_ptr<WebResourceLoadingTaskRunnerHandle> task_runner_handle_;
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
-  std::unique_ptr<FtpDirectoryListingResponseDelegate> ftp_listing_delegate_;
   std::unique_ptr<SharedMemoryDataConsumerHandle::Writer> body_stream_writer_;
   mojom::KeepAliveHandlePtr keep_alive_handle_;
   enum DeferState {NOT_DEFERRING, SHOULD_DEFER, DEFERRED_DATA};
@@ -478,6 +476,9 @@ class WebURLLoaderImpl::RequestPeerImpl : public RequestPeer {
   void OnReceivedCachedMetadata(const char* data, int len) override;
   void OnCompletedRequest(
       const network::URLLoaderCompletionStatus& status) override;
+  scoped_refptr<base::TaskRunner> GetTaskRunner() override {
+    return context_->task_runner();
+  }
 
  private:
   scoped_refptr<Context> context_;
@@ -506,6 +507,9 @@ class WebURLLoaderImpl::SinkPeer : public RequestPeer {
       const network::URLLoaderCompletionStatus& status) override {
     context_->resource_dispatcher()->Cancel(context_->request_id(),
                                             context_->task_runner());
+  }
+  scoped_refptr<base::TaskRunner> GetTaskRunner() override {
+    return context_->task_runner();
   }
 
  private:
@@ -546,11 +550,6 @@ void WebURLLoaderImpl::Context::Cancel() {
 
   if (body_stream_writer_)
     body_stream_writer_->Fail();
-
-  // Ensure that we do not notify the delegate anymore as it has
-  // its own pointer to the client.
-  if (ftp_listing_delegate_)
-    ftp_listing_delegate_->Cancel();
 
   // Do not make any further calls to the client.
   client_ = nullptr;
@@ -642,6 +641,7 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
   resource_request->method = method;
   resource_request->url = url_;
   resource_request->site_for_cookies = request.SiteForCookies();
+  resource_request->top_frame_origin = request.TopFrameOrigin();
   resource_request->upgrade_if_insecure = request.UpgradeIfInsecure();
   resource_request->is_revalidating = request.IsRevalidating();
   if (!request.RequestorOrigin().IsNull()) {
@@ -675,8 +675,10 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
     resource_request->headers.SetHeaderIfMissing(network::kAcceptHeader,
                                                  network::kDefaultAcceptHeader);
   }
-  resource_request->requested_with =
-      WebString(request.GetRequestedWith()).Utf8();
+  resource_request->requested_with_header =
+      WebString(request.GetRequestedWithHeader()).Utf8();
+  resource_request->client_data_header =
+      WebString(request.GetClientDataHeader()).Utf8();
 
   if (resource_request->resource_type == RESOURCE_TYPE_PREFETCH ||
       resource_request->resource_type == RESOURCE_TYPE_FAVICON) {
@@ -694,7 +696,7 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
   resource_request->appcache_host_id = request.AppCacheHostID();
   resource_request->should_reset_appcache = request.ShouldResetAppCache();
   resource_request->is_external_request = request.IsExternalRequest();
-  resource_request->cors_preflight_policy = request.GetCORSPreflightPolicy();
+  resource_request->cors_preflight_policy = request.GetCorsPreflightPolicy();
   resource_request->skip_service_worker = request.GetSkipServiceWorker();
   resource_request->fetch_request_mode = request.GetFetchRequestMode();
   resource_request->fetch_credentials_mode = request.GetFetchCredentialsMode();
@@ -723,6 +725,9 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
   resource_request->previews_state =
       static_cast<int>(request.GetPreviewsState());
   resource_request->throttling_profile_id = request.GetDevToolsToken();
+
+  if (base::UnguessableToken window_id = request.GetFetchWindowId())
+    resource_request->fetch_window_id = base::make_optional(window_id);
 
   // The network request has already been made by the browser. The renderer
   // should bind the URLLoaderClientEndpoints stored in |response_override| to
@@ -814,6 +819,7 @@ bool WebURLLoaderImpl::Context::OnReceivedRedirect(
   url_ = WebURL(redirect_info.new_url);
   return client_->WillFollowRedirect(
       url_, redirect_info.new_site_for_cookies,
+      redirect_info.new_top_frame_origin,
       WebString::FromUTF8(redirect_info.new_referrer),
       Referrer::NetReferrerPolicyToBlinkReferrerPolicy(
           redirect_info.new_referrer_policy),
@@ -833,17 +839,6 @@ void WebURLLoaderImpl::Context::OnReceivedResponse(
   WebURLResponse response;
   PopulateURLResponse(url_, info, &response, report_raw_headers_, request_id_);
 
-  bool show_raw_listing = false;
-  if (info.mime_type == "text/vnd.chromium.ftp-dir") {
-    if (GURL(url_).query_piece() == "raw") {
-      // Set the MIME type to plain text to prevent any active content.
-      response.SetMIMEType("text/plain");
-      show_raw_listing = true;
-    } else {
-      // We're going to produce a parsed listing in HTML.
-      response.SetMIMEType("text/html");
-    }
-  }
   if (info.headers.get() && info.mime_type == "multipart/x-mixed-replace") {
     std::string content_type;
     info.headers->EnumerateHeader(nullptr, "content-type", &content_type);
@@ -886,13 +881,6 @@ void WebURLLoaderImpl::Context::OnReceivedResponse(
   // go away.
   if (!client_)
     return;
-
-  DCHECK(!ftp_listing_delegate_);
-  if (info.mime_type == "text/vnd.chromium.ftp-dir" && !show_raw_listing) {
-    ftp_listing_delegate_ =
-        std::make_unique<FtpDirectoryListingResponseDelegate>(client_, loader_,
-                                                              response);
-  }
 }
 
 void WebURLLoaderImpl::Context::OnStartLoadingResponseBody(
@@ -912,20 +900,11 @@ void WebURLLoaderImpl::Context::OnReceivedData(
       "loading", "WebURLLoaderImpl::Context::OnReceivedData",
       this, TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT);
 
-  if (ftp_listing_delegate_) {
-    // The FTP listing delegate will make the appropriate calls to
-    // client_->didReceiveData and client_->didReceiveResponse.
-    ftp_listing_delegate_->OnReceivedData(payload, data_length);
-    return;
-  }
-
   // We dispatch the data even when |useStreamOnResponse()| is set, in order
   // to make Devtools work.
   client_->DidReceiveData(payload, data_length);
 
   if (use_stream_on_response_) {
-    // We don't support |ftp_listing_delegate_| for now.
-    // TODO(yhirano): Support ftp listening.
     body_stream_writer_->AddData(std::move(data));
   }
 }
@@ -948,11 +927,6 @@ void WebURLLoaderImpl::Context::OnCompletedRequest(
     const network::URLLoaderCompletionStatus& status) {
   int64_t total_transfer_size = status.encoded_data_length;
   int64_t encoded_body_size = status.encoded_body_length;
-
-  if (ftp_listing_delegate_) {
-    ftp_listing_delegate_->OnCompletedRequest();
-    ftp_listing_delegate_.reset(nullptr);
-  }
 
   if (body_stream_writer_ && status.error_code != net::OK)
     body_stream_writer_->Fail();
@@ -990,12 +964,6 @@ WebURLLoaderImpl::Context::~Context() {
 
 void WebURLLoaderImpl::Context::CancelBodyStreaming() {
   scoped_refptr<Context> protect(this);
-
-  // Notify renderer clients that the request is canceled.
-  if (ftp_listing_delegate_) {
-    ftp_listing_delegate_->OnCompletedRequest();
-    ftp_listing_delegate_.reset(nullptr);
-  }
 
   if (body_stream_writer_) {
     body_stream_writer_->Fail();
@@ -1170,7 +1138,7 @@ void WebURLLoaderImpl::PopulateURLResponse(
     WebURLResponse* response,
     bool report_security_info,
     int request_id) {
-  response->SetURL(url);
+  response->SetCurrentRequestUrl(url);
   response->SetResponseTime(info.response_time);
   response->SetMIMEType(WebString::FromUTF8(info.mime_type));
   response->SetTextEncodingName(WebString::FromUTF8(info.charset));
@@ -1180,6 +1148,7 @@ void WebURLLoaderImpl::PopulateURLResponse(
       !net::IsCertStatusMinorError(info.cert_status));
   response->SetCTPolicyCompliance(info.ct_policy_compliance);
   response->SetIsLegacySymantecCert(info.is_legacy_symantec_cert);
+  response->SetIsLegacyTLSVersion(info.is_legacy_tls_version);
   response->SetAppCacheID(info.appcache_id);
   response->SetAppCacheManifestURL(info.appcache_manifest_url);
   response->SetWasCached(!info.load_timing.request_start_time.is_null() &&
@@ -1214,6 +1183,7 @@ void WebURLLoaderImpl::PopulateURLResponse(
       WebString::FromUTF8(info.alpn_negotiated_protocol));
   response->SetConnectionInfo(info.connection_info);
   response->SetAsyncRevalidationRequested(info.async_revalidation_requested);
+  response->SetNetworkAccessed(info.network_accessed);
   response->SetRequestId(request_id);
   response->SetIsSignedExchangeInnerResponse(
       info.is_signed_exchange_inner_response);

@@ -16,6 +16,7 @@
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "ui/accelerated_widget_mac/ca_transaction_observer.h"
 #include "ui/accelerated_widget_mac/display_ca_layer_tree.h"
+#include "ui/base/cocoa/command_dispatcher.h"
 #include "ui/base/cocoa/ns_view_ids.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/display/display_observer.h"
@@ -66,8 +67,9 @@ class VIEWS_EXPORT BridgedNativeWidgetImpl
   static gfx::Size GetWindowSizeForClientSize(NSWindow* window,
                                               const gfx::Size& size);
 
-  // Retrieve a BridgedNativeWidgetImpl* from its id.
+  // Retrieve a BridgedNativeWidgetImpl* from its id or window.
   static BridgedNativeWidgetImpl* GetFromId(uint64_t bridged_native_widget_id);
+  static BridgedNativeWidgetImpl* GetFromNativeWindow(gfx::NativeWindow window);
 
   // Create an NSWindow for the specified parameters.
   static base::scoped_nsobject<NativeWidgetMacNSWindow> CreateNSWindow(
@@ -91,6 +93,12 @@ class VIEWS_EXPORT BridgedNativeWidgetImpl
   // process boundary, it will not be possible to explicitly set an NSWindow in
   // this way.
   void SetWindow(base::scoped_nsobject<NativeWidgetMacNSWindow> window);
+
+  // Set the command dispatcher delegate for the window. This will retain
+  // |delegate| for the lifetime of |this|.
+  void SetCommandDispatcher(
+      NSObject<CommandDispatcherDelegate>* delegate,
+      id<UserInterfaceItemCommandHandler> command_handler);
 
   // Start moving the window, pinned to the mouse cursor, and monitor events.
   // Return true on mouse up or false on premature termination via EndMoveLoop()
@@ -274,6 +282,9 @@ class VIEWS_EXPORT BridgedNativeWidgetImpl
   BridgedNativeWidgetHostHelper* const host_helper_;  // Weak, owned by |host_|.
   base::scoped_nsobject<NativeWidgetMacNSWindow> window_;
   base::scoped_nsobject<ViewsNSWindowDelegate> window_delegate_;
+  base::scoped_nsobject<NSObject<CommandDispatcherDelegate>>
+      window_command_dispatcher_delegate_;
+
   base::scoped_nsobject<BridgedContentView> bridged_view_;
   std::unique_ptr<ui::ScopedNSViewIdMapping> bridged_view_id_mapping_;
   base::scoped_nsobject<ModalShowAnimationWithLayer> show_animation_;

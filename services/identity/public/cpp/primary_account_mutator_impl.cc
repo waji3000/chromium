@@ -21,24 +21,56 @@ PrimaryAccountMutatorImpl::~PrimaryAccountMutatorImpl() {}
 
 bool PrimaryAccountMutatorImpl::SetPrimaryAccount(
     const std::string& account_id) {
-  NOTIMPLEMENTED();
-  return false;
+  if (!IsSettingPrimaryAccountAllowed())
+    return false;
+
+  if (signin_manager_->IsAuthenticated())
+    return false;
+
+  AccountInfo account_info = account_tracker_->GetAccountInfo(account_id);
+  if (account_info.account_id != account_id || account_info.email.empty())
+    return false;
+
+  // TODO(crbug.com/889899): should check that the account email is allowed.
+
+  signin_manager_->OnExternalSigninCompleted(account_info.email);
+  return true;
 }
 
-void PrimaryAccountMutatorImpl::ClearPrimaryAccount(
+bool PrimaryAccountMutatorImpl::ClearPrimaryAccount(
     ClearAccountsAction action,
     signin_metrics::ProfileSignout source_metric,
     signin_metrics::SignoutDelete delete_metric) {
-  NOTIMPLEMENTED();
+  // Check if and auth process is ongoing before reporting failure to support
+  // the legacy workflow of cancelling it by clearing the primary account.
+  if (!signin_manager_->IsAuthenticated() &&
+      !LegacyIsPrimaryAccountAuthInProgress())
+    return false;
+
+  // TODO: report failure if SignOut is not allowed.
+
+  switch (action) {
+    case PrimaryAccountMutator::ClearAccountsAction::kDefault:
+      signin_manager_->SignOut(source_metric, delete_metric);
+      break;
+    case PrimaryAccountMutator::ClearAccountsAction::kKeepAll:
+      signin_manager_->SignOutAndKeepAllAccounts(source_metric, delete_metric);
+      break;
+    case PrimaryAccountMutator::ClearAccountsAction::kRemoveAll:
+      signin_manager_->SignOutAndRemoveAllAccounts(source_metric,
+                                                   delete_metric);
+      break;
+  }
+
+  return true;
 }
 
 bool PrimaryAccountMutatorImpl::IsSettingPrimaryAccountAllowed() const {
-  NOTIMPLEMENTED();
-  return false;
+  return signin_manager_->IsSigninAllowed();
 }
 
 void PrimaryAccountMutatorImpl::SetSettingPrimaryAccountAllowed(bool allowed) {
-  NOTIMPLEMENTED();
+  signin_manager_->SetSigninAllowed(allowed);
 }
 
 bool PrimaryAccountMutatorImpl::IsClearingPrimaryAccountAllowed() const {
@@ -61,27 +93,34 @@ void PrimaryAccountMutatorImpl::
         const std::string& gaia_id,
         const std::string& username,
         const std::string& password,
-        base::RepeatingCallback<void(const std::string&)> callback) {
-  NOTIMPLEMENTED();
+        base::OnceCallback<void(const std::string&)> callback) {
+  signin_manager_->StartSignInWithRefreshToken(refresh_token, gaia_id, username,
+                                               password, std::move(callback));
 }
 
 void PrimaryAccountMutatorImpl::LegacyCompletePendingPrimaryAccountSignin() {
-  NOTIMPLEMENTED();
+  signin_manager_->CompletePendingSignin();
 }
 
 void PrimaryAccountMutatorImpl::LegacyMergeSigninCredentialIntoCookieJar() {
-  NOTIMPLEMENTED();
+  signin_manager_->MergeSigninCredentialIntoCookieJar();
 }
 
 bool PrimaryAccountMutatorImpl::LegacyIsPrimaryAccountAuthInProgress() const {
-  NOTIMPLEMENTED();
-  return false;
+  return signin_manager_->AuthInProgress();
 }
 
 AccountInfo PrimaryAccountMutatorImpl::LegacyPrimaryAccountForAuthInProgress()
     const {
-  NOTIMPLEMENTED();
-  return AccountInfo{};
+  if (!LegacyIsPrimaryAccountAuthInProgress())
+    return AccountInfo{};
+
+  AccountInfo account_info;
+  account_info.account_id = signin_manager_->GetAccountIdForAuthInProgress();
+  account_info.gaia = signin_manager_->GetGaiaIdForAuthInProgress();
+  account_info.email = signin_manager_->GetUsernameForAuthInProgress();
+
+  return account_info;
 }
 
 void PrimaryAccountMutatorImpl::LegacyCopyCredentialsFrom(
