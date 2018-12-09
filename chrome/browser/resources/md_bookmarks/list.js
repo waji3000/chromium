@@ -95,15 +95,15 @@ Polymer({
    * @param {Array<string>} newValue
    * @param {Array<string>} oldValue
    */
-  onDisplayedIdsChanged_: function(newValue, oldValue) {
+  onDisplayedIdsChanged_: async function(newValue, oldValue) {
     const updatedList = newValue.map(id => ({id: id}));
     this.updateList('displayedList_', item => item.id, updatedList);
     // Trigger a layout of the iron list. Otherwise some elements may render
     // as blank entries. See https://crbug.com/848683
     this.$.list.fire('iron-resize');
-    cr.sendWithPromise(
-          'getPluralString', 'listChanged', this.displayedList_.length)
-        .then(label => this.fire('iron-announce', {text: label}));
+    const label = await cr.sendWithPromise(
+        'getPluralString', 'listChanged', this.displayedList_.length);
+    this.fire('iron-announce', {text: label});
   },
 
   /** @private */
@@ -178,7 +178,9 @@ Polymer({
     const toHighlight = /** @type {!Array<string>} */
         (e.detail.filter((item) => this.displayedIds_.indexOf(item) != -1));
 
-    assert(toHighlight.length > 0);
+    if (toHighlight.length <= 0)
+      return;
+
     const leadId = toHighlight[0];
     this.dispatch(
         bookmarks.actions.selectAll(toHighlight, this.getState(), leadId));

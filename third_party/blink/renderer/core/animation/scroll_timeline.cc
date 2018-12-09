@@ -28,7 +28,6 @@ ActiveScrollTimelineSet& GetActiveScrollTimelineSet() {
 
 bool StringToScrollDirection(String scroll_direction,
                              ScrollTimeline::ScrollDirection& result) {
-  // TODO(smcgruer): Support 'auto' value.
   if (scroll_direction == "block") {
     result = ScrollTimeline::Block;
     return true;
@@ -52,13 +51,25 @@ bool StringToScrollOffset(String scroll_offset, CSSPrimitiveValue** result) {
   CSSTokenizer tokenizer(scroll_offset);
   const auto tokens = tokenizer.TokenizeToEOF();
   CSSParserTokenRange range(tokens);
-  CSSValue* value = CSSParsingUtils::ConsumeScrollOffset(range);
+  CSSValue* value = css_parsing_utils::ConsumeScrollOffset(range);
   if (!value)
     return false;
 
   // We support 'auto', but for simplicity just store it as nullptr.
   *result = value->IsIdentifierValue() ? nullptr : ToCSSPrimitiveValue(value);
   return true;
+}
+
+// Note that the resolution process may trigger document lifecycle to clean
+// style and layout.
+Node* ResolveScrollSource(Element* scroll_source) {
+  // When in quirks mode we need the style to be clean, so we don't use
+  // |ScrollingElementNoLayout|.
+  if (scroll_source &&
+      scroll_source == scroll_source->GetDocument().scrollingElement()) {
+    return &scroll_source->GetDocument();
+  }
+  return scroll_source;
 }
 }  // namespace
 
@@ -97,9 +108,9 @@ ScrollTimeline* ScrollTimeline::Create(Document& document,
     return nullptr;
   }
 
-  return new ScrollTimeline(scroll_source, orientation, start_scroll_offset,
-                            end_scroll_offset,
-                            options->timeRange().GetAsDouble());
+  return MakeGarbageCollected<ScrollTimeline>(
+      scroll_source, orientation, start_scroll_offset, end_scroll_offset,
+      options->timeRange().GetAsDouble());
 }
 
 ScrollTimeline::ScrollTimeline(Element* scroll_source,
@@ -108,19 +119,22 @@ ScrollTimeline::ScrollTimeline(Element* scroll_source,
                                CSSPrimitiveValue* end_scroll_offset,
                                double time_range)
     : scroll_source_(scroll_source),
+      resolved_scroll_source_(ResolveScrollSource(scroll_source_)),
       orientation_(orientation),
       start_scroll_offset_(start_scroll_offset),
       end_scroll_offset_(end_scroll_offset),
       time_range_(time_range) {
-  DCHECK(scroll_source_);
 }
 
 double ScrollTimeline::currentTime(bool& is_null) {
-  // 1. If scrollSource does not currently have a CSS layout box, or if its
-  // layout box is not a scroll container, return an unresolved time value.
-  LayoutBox* layout_box = ResolvedScrollSource()->GetLayoutBox();
+  is_null = true;
+
+  // 1. If scrollSource is null, does not currently have a CSS layout box, or if
+  // its layout box is not a scroll container, return an unresolved time value.
+  LayoutBox* layout_box = resolved_scroll_source_
+                              ? resolved_scroll_source_->GetLayoutBox()
+                              : nullptr;
   if (!layout_box || !layout_box->HasOverflowClip()) {
-    is_null = false;
     return std::numeric_limits<double>::quiet_NaN();
   }
 
@@ -205,13 +219,6 @@ void ScrollTimeline::timeRange(DoubleOrScrollTimelineAutoKeyword& result) {
   result.SetDouble(time_range_);
 }
 
-Node* ScrollTimeline::ResolvedScrollSource() const {
-  // When in quirks mode we need the style to be clean, so we don't use
-  // |ScrollingElementNoLayout|.
-  if (scroll_source_ == scroll_source_->GetDocument().scrollingElement())
-    return &scroll_source_->GetDocument();
-  return scroll_source_;
-}
 
 void ScrollTimeline::GetCurrentAndMaxOffset(const LayoutBox* layout_box,
                                             double& current_offset,
@@ -288,11 +295,13 @@ void ScrollTimeline::ResolveScrollStartAndEnd(
 }
 
 void ScrollTimeline::AttachAnimation() {
-  Node* resolved_scroll_source = ResolvedScrollSource();
-  GetActiveScrollTimelineSet().insert(resolved_scroll_source);
-  if (resolved_scroll_source->IsElementNode())
-    ToElement(resolved_scroll_source)->SetNeedsCompositingUpdate();
-  resolved_scroll_source->GetDocument()
+  if (!resolved_scroll_source_)
+    return;
+
+  GetActiveScrollTimelineSet().insert(resolved_scroll_source_);
+  if (resolved_scroll_source_->IsElementNode())
+    ToElement(resolved_scroll_source_)->SetNeedsCompositingUpdate();
+  resolved_scroll_source_->GetDocument()
       .GetLayoutView()
       ->Compositor()
       ->SetNeedsCompositingUpdate(kCompositingUpdateRebuildTree);
@@ -304,11 +313,13 @@ void ScrollTimeline::AttachAnimation() {
 }
 
 void ScrollTimeline::DetachAnimation() {
-  Node* resolved_scroll_source = ResolvedScrollSource();
-  GetActiveScrollTimelineSet().erase(resolved_scroll_source);
-  if (resolved_scroll_source->IsElementNode())
-    ToElement(resolved_scroll_source)->SetNeedsCompositingUpdate();
-  auto* layout_view = resolved_scroll_source->GetDocument().GetLayoutView();
+  if (!resolved_scroll_source_)
+    return;
+
+  GetActiveScrollTimelineSet().erase(resolved_scroll_source_);
+  if (resolved_scroll_source_->IsElementNode())
+    ToElement(resolved_scroll_source_)->SetNeedsCompositingUpdate();
+  auto* layout_view = resolved_scroll_source_->GetDocument().GetLayoutView();
   if (layout_view && layout_view->Compositor()) {
     layout_view->Compositor()->SetNeedsCompositingUpdate(
         kCompositingUpdateRebuildTree);
@@ -323,6 +334,7 @@ void ScrollTimeline::DetachAnimation() {
 
 void ScrollTimeline::Trace(blink::Visitor* visitor) {
   visitor->Trace(scroll_source_);
+  visitor->Trace(resolved_scroll_source_);
   visitor->Trace(start_scroll_offset_);
   visitor->Trace(end_scroll_offset_);
   AnimationTimeline::Trace(visitor);

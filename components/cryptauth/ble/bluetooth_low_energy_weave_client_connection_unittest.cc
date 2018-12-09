@@ -11,17 +11,16 @@
 
 #include "base/bind.h"
 #include "base/memory/ptr_util.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/test/metrics/histogram_tester.h"
+#include "base/test/scoped_task_environment.h"
 #include "base/test/test_simple_task_runner.h"
 #include "base/timer/mock_timer.h"
 #include "base/timer/timer.h"
+#include "chromeos/components/multidevice/remote_device_ref.h"
+#include "chromeos/components/multidevice/remote_device_test_util.h"
 #include "chromeos/components/proximity_auth/logging/logging.h"
-#include "components/cryptauth/connection_finder.h"
 #include "components/cryptauth/connection_observer.h"
-#include "components/cryptauth/remote_device_ref.h"
-#include "components/cryptauth/remote_device_test_util.h"
 #include "components/cryptauth/wire_message.h"
 #include "device/bluetooth/bluetooth_adapter_factory.h"
 #include "device/bluetooth/test/mock_bluetooth_adapter.h"
@@ -212,7 +211,7 @@ class TestBluetoothLowEnergyWeaveClientConnection
     : public BluetoothLowEnergyWeaveClientConnection {
  public:
   TestBluetoothLowEnergyWeaveClientConnection(
-      RemoteDeviceRef remote_device,
+      chromeos::multidevice::RemoteDeviceRef remote_device,
       scoped_refptr<device::BluetoothAdapter> adapter,
       const device::BluetoothUUID remote_service_uuid,
       device::MockBluetoothDevice* mock_bluetooth_device,
@@ -326,7 +325,7 @@ class CryptAuthBluetoothLowEnergyWeaveClientConnectionTest
     : public testing::Test {
  public:
   CryptAuthBluetoothLowEnergyWeaveClientConnectionTest()
-      : remote_device_(CreateRemoteDeviceRefForTest()),
+      : remote_device_(chromeos::multidevice::CreateRemoteDeviceRefForTest()),
         service_uuid_(device::BluetoothUUID(kServiceUUID)),
         tx_characteristic_uuid_(device::BluetoothUUID(kTXCharacteristicUUID)),
         rx_characteristic_uuid_(device::BluetoothUUID(kRXCharacteristicUUID)) {}
@@ -344,7 +343,7 @@ class CryptAuthBluetoothLowEnergyWeaveClientConnectionTest
 
     mock_bluetooth_device_ =
         std::make_unique<NiceMock<device::MockBluetoothDevice>>(
-            adapter_.get(), 0, kTestRemoteDeviceName,
+            adapter_.get(), 0, chromeos::multidevice::kTestRemoteDeviceName,
             kTestRemoteDeviceBluetoothAddress, false, false);
     service_ = std::make_unique<NiceMock<device::MockBluetoothGattService>>(
         mock_bluetooth_device_.get(), kServiceID, service_uuid_, true, false);
@@ -645,7 +644,7 @@ class CryptAuthBluetoothLowEnergyWeaveClientConnectionTest
   }
 
  protected:
-  const RemoteDeviceRef remote_device_;
+  const chromeos::multidevice::RemoteDeviceRef remote_device_;
   const device::BluetoothUUID service_uuid_;
   const device::BluetoothUUID tx_characteristic_uuid_;
   const device::BluetoothUUID rx_characteristic_uuid_;
@@ -660,7 +659,7 @@ class CryptAuthBluetoothLowEnergyWeaveClientConnectionTest
   std::unique_ptr<device::MockBluetoothGattCharacteristic> tx_characteristic_;
   std::unique_ptr<device::MockBluetoothGattCharacteristic> rx_characteristic_;
   std::vector<uint8_t> last_value_written_on_tx_characteristic_;
-  base::MessageLoop message_loop_;
+  base::test::ScopedTaskEnvironment task_environment_;
   int32_t rssi_for_channel_ = device::BluetoothDevice::kUnknownPower;
   bool last_wire_message_success_;
   bool has_verified_connection_result_;
@@ -758,6 +757,22 @@ TEST_F(CryptAuthBluetoothLowEnergyWeaveClientConnectionTest,
   VerifyBleWeaveConnectionResult(
       BluetoothLowEnergyWeaveClientConnection::BleWeaveConnectionResult::
           BLE_WEAVE_CONNECTION_RESULT_CLOSED_NORMALLY);
+}
+
+TEST_F(CryptAuthBluetoothLowEnergyWeaveClientConnectionTest,
+       ConnectThenBluetoothDisconnects) {
+  std::unique_ptr<TestBluetoothLowEnergyWeaveClientConnection> connection(
+      CreateConnection(true /* should_set_low_connection_latency */));
+  InitializeConnection(connection.get(), kDefaultMaxPacketSize);
+  EXPECT_EQ(connection->sub_status(), SubStatus::CONNECTED_AND_IDLE);
+
+  connection->DeviceConnectedStateChanged(adapter_.get(),
+                                          mock_bluetooth_device_.get(),
+                                          false /* is_now_connected */);
+
+  VerifyBleWeaveConnectionResult(
+      BluetoothLowEnergyWeaveClientConnection::BleWeaveConnectionResult::
+          BLE_WEAVE_CONNECTION_RESULT_ERROR_CONNECTION_DROPPED);
 }
 
 TEST_F(CryptAuthBluetoothLowEnergyWeaveClientConnectionTest,

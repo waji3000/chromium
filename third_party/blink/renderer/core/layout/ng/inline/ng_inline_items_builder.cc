@@ -4,13 +4,22 @@
 
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_items_builder.h"
 
+#include <type_traits>
+
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/layout/layout_text.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/layout_ng_text.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_offset_mapping_builder.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
+#include "third_party/blink/renderer/platform/fonts/shaping/shape_result_view.h"
 
 namespace blink {
+
+// Returns true if items builder is used for other than offset mapping.
+template <typename OffsetMappingBuilder>
+bool NGInlineItemsBuilderTemplate<OffsetMappingBuilder>::NeedsBoxInfo() {
+  return !std::is_same<NGOffsetMappingBuilder, OffsetMappingBuilder>::value;
+}
 
 template <typename OffsetMappingBuilder>
 NGInlineItemsBuilderTemplate<
@@ -21,11 +30,6 @@ NGInlineItemsBuilderTemplate<
 
 template <typename OffsetMappingBuilder>
 String NGInlineItemsBuilderTemplate<OffsetMappingBuilder>::ToString() {
-  // Segment Break Transformation Rules[1] defines to keep trailing new lines,
-  // but it will be removed in Phase II[2]. We prefer not to add trailing new
-  // lines and collapsible spaces in Phase I.
-  RemoveTrailingCollapsibleSpaceIfExists();
-
   return text_.ToString();
 }
 
@@ -298,6 +302,14 @@ bool NGInlineItemsBuilderTemplate<OffsetMappingBuilder>::Append(
       return false;
   }
 
+  if (bidi_context_.size() && new_style.PreserveNewline()) {
+    // We exit and then re-enter all bidi contexts around a forced breaks. We
+    // must go through the full pipeline to ensure that we exit and enter the
+    // contexts in the same in the re-layout.
+    if (layout_text->GetText().Contains(kNewlineCharacter))
+      return false;
+  }
+
   for (const NGInlineItem* item : items) {
     // Collapsed space item at the start will not be restored, and that not
     // needed to add.
@@ -335,8 +347,8 @@ bool NGInlineItemsBuilderTemplate<OffsetMappingBuilder>::Append(
     DCHECK_EQ(start, adjusted_item.StartOffset());
     DCHECK_EQ(end, adjusted_item.EndOffset());
     if (adjusted_item.TextShapeResult()) {
-      DCHECK_EQ(start, adjusted_item.TextShapeResult()->StartIndexForResult());
-      DCHECK_EQ(end, adjusted_item.TextShapeResult()->EndIndexForResult());
+      DCHECK_EQ(start, adjusted_item.TextShapeResult()->StartIndex());
+      DCHECK_EQ(end, adjusted_item.TextShapeResult()->EndIndex());
     }
     DCHECK_EQ(item->IsEmptyItem(), adjusted_item.IsEmptyItem());
 #endif
@@ -778,6 +790,10 @@ void NGInlineItemsBuilderTemplate<
     wtf_size_t index =
         static_cast<wtf_size_t>(std::distance(items_->begin(), item));
     items_->EraseAt(index);
+    for (BoxInfo& box : boxes_) {
+      if (box.item_index >= index)
+        --box.item_index;
+    }
     if (index == items_->size())
       return;
     // Re-compute |item| because |EraseAt| may have reallocated the buffer.
@@ -936,6 +952,9 @@ void NGInlineItemsBuilderTemplate<OffsetMappingBuilder>::EnterInline(
 
   AppendOpaque(NGInlineItem::kOpenTag, style, node);
 
+  if (!NeedsBoxInfo())
+    return;
+
   // Set |ShouldCreateBoxFragment| of the parent box if needed.
   BoxInfo* current_box =
       &boxes_.emplace_back(items_->size() - 1, items_->back());
@@ -951,6 +970,11 @@ void NGInlineItemsBuilderTemplate<OffsetMappingBuilder>::EnterInline(
 template <typename OffsetMappingBuilder>
 void NGInlineItemsBuilderTemplate<OffsetMappingBuilder>::ExitBlock() {
   Exit(nullptr);
+
+  // Segment Break Transformation Rules[1] defines to keep trailing new lines,
+  // but it will be removed in Phase II[2]. We prefer not to add trailing new
+  // lines and collapsible spaces in Phase I.
+  RemoveTrailingCollapsibleSpaceIfExists();
 }
 
 template <typename OffsetMappingBuilder>
@@ -960,7 +984,8 @@ void NGInlineItemsBuilderTemplate<OffsetMappingBuilder>::ExitInline(
 
   AppendOpaque(NGInlineItem::kCloseTag, node->Style(), node);
 
-  boxes_.pop_back();
+  if (NeedsBoxInfo())
+    boxes_.pop_back();
 
   Exit(node);
 

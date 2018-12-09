@@ -4,7 +4,7 @@
 
 #include "third_party/blink/renderer/core/script/document_write_intervention.h"
 
-#include "third_party/blink/public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
+#include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-shared.h"
 #include "third_party/blink/public/platform/web_effective_connection_type.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
@@ -219,7 +219,8 @@ void PossiblyFetchBlockedDocWriteScript(
       resource->Url(), element_document.GetSecurityOrigin(), cross_origin,
       resource->Encoding(), FetchParameters::kIdleLoad);
   AddHeader(&params);
-  ScriptResource::Fetch(params, element_document.Fetcher(), nullptr);
+  ScriptResource::Fetch(params, element_document.Fetcher(), nullptr,
+                        ScriptResource::kNoStreaming);
 }
 
 }  // namespace blink

@@ -17,7 +17,7 @@ namespace {
 Persistent<CustomElementReactionStack>& GetCustomElementReactionStack() {
   DEFINE_STATIC_LOCAL(Persistent<CustomElementReactionStack>,
                       custom_element_reaction_stack,
-                      (new CustomElementReactionStack));
+                      (MakeGarbageCollected<CustomElementReactionStack>()));
   return custom_element_reaction_stack;
 }
 
@@ -71,7 +71,7 @@ void CustomElementReactionStack::Enqueue(Member<ElementQueue>& queue,
 
   CustomElementReactionQueue* reactions = map_.at(element);
   if (!reactions) {
-    reactions = new CustomElementReactionQueue();
+    reactions = MakeGarbageCollected<CustomElementReactionQueue>();
     map_.insert(element, reactions);
   }
 

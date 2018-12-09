@@ -220,13 +220,12 @@ BOOL ViewHierarchyContainsWKWebView(UIView* view) {
 
 - (void)updateWebViewSnapshotWithCompletion:(void (^)(UIImage*))completion {
   DCHECK(_webState);
+  UIView* snapshotView = [self.delegate snapshotGenerator:self
+                                      baseViewForWebState:_webState];
   CGRect snapshotFrame = [self snapshotFrameVisibleFrameOnly:YES];
-  // WebState's |TakeSnapshot()| accepts a |rect| in the web view's coordinate
-  // space, but |-snapshotFrameVisibleFrameOnly:| returns a frame in the BVC's
-  // coordinate space.
-  CGRect webViewSnapshotFrame =
-      CGRectMake(0, 0, snapshotFrame.size.width, snapshotFrame.size.height);
-  if (CGRectIsEmpty(webViewSnapshotFrame)) {
+  snapshotFrame =
+      [_webState->GetView() convertRect:snapshotFrame fromView:snapshotView];
+  if (CGRectIsEmpty(snapshotFrame)) {
     if (completion) {
       base::PostTaskWithTraits(FROM_HERE, {web::WebThread::UI},
                                base::BindOnce(^{
@@ -235,13 +234,13 @@ BOOL ViewHierarchyContainsWKWebView(UIView* view) {
     }
     return;
   }
-  CGSize size = webViewSnapshotFrame.size;
+  CGSize size = snapshotFrame.size;
   DCHECK(std::isnormal(size.width) && (size.width > 0))
-      << ": webViewSnapshotFrame.size.width=" << size.width;
+      << ": snapshotFrame.size.width=" << size.width;
   DCHECK(std::isnormal(size.height) && (size.height > 0))
-      << ": webViewSnapshotFrame.size.height=" << size.height;
-  NSArray<SnapshotOverlay*>* overlays =
-      [_delegate snapshotOverlaysForWebState:_webState];
+      << ": snapshotFrame.size.height=" << size.height;
+  NSArray<SnapshotOverlay*>* overlays = [_delegate snapshotGenerator:self
+                                         snapshotOverlaysForWebState:_webState];
   UIImage* snapshot =
       [_coalescingSnapshotContext cachedSnapshotWithOverlays:overlays
                                             visibleFrameOnly:YES];
@@ -255,25 +254,30 @@ BOOL ViewHierarchyContainsWKWebView(UIView* view) {
     return;
   }
 
-  [_delegate willUpdateSnapshotForWebState:_webState];
+  [_delegate snapshotGenerator:self willUpdateSnapshotForWebState:_webState];
   __weak SnapshotGenerator* weakSelf = self;
   _webState->TakeSnapshot(
-      webViewSnapshotFrame, base::BindOnce(^(gfx::Image image) {
+      snapshotFrame, base::BindOnce(^(gfx::Image image) {
         SnapshotGenerator* strongSelf = weakSelf;
         if (!strongSelf || !_webState)
           return;
-        UIImage* snapshot = image.ToUIImage();
-        if (overlays.count > 0) {
-          snapshot = [strongSelf snapshotWithOverlays:overlays
-                                             snapshot:snapshot
-                                                frame:snapshotFrame];
+        UIImage* snapshot = nil;
+        if (!image.IsEmpty()) {
+          snapshot = image.ToUIImage();
+          if (overlays.count > 0) {
+            snapshot = [strongSelf snapshotWithOverlays:overlays
+                                               snapshot:snapshot
+                                                  frame:snapshotFrame];
+          }
         }
         [strongSelf.snapshotCache setImage:snapshot
                              withSessionID:_snapshotSessionId];
         [_coalescingSnapshotContext setCachedSnapshot:snapshot
                                          withOverlays:overlays
                                      visibleFrameOnly:YES];
-        [_delegate didUpdateSnapshotForWebState:_webState withImage:snapshot];
+        [_delegate snapshotGenerator:self
+            didUpdateSnapshotForWebState:_webState
+                               withImage:snapshot];
         if (completion)
           completion(snapshot);
       }));
@@ -286,7 +290,8 @@ BOOL ViewHierarchyContainsWKWebView(UIView* view) {
     return nil;
 
   NSArray<SnapshotOverlay*>* overlays =
-      shouldAddOverlay ? [_delegate snapshotOverlaysForWebState:_webState]
+      shouldAddOverlay ? [_delegate snapshotGenerator:self
+                             snapshotOverlaysForWebState:_webState]
                        : nil;
   UIImage* snapshot =
       [_coalescingSnapshotContext cachedSnapshotWithOverlays:overlays
@@ -295,14 +300,17 @@ BOOL ViewHierarchyContainsWKWebView(UIView* view) {
   if (snapshot)
     return snapshot;
 
-  [_delegate willUpdateSnapshotForWebState:_webState];
-  UIView* view = [_delegate viewForWebState:_webState];
+  [_delegate snapshotGenerator:self willUpdateSnapshotForWebState:_webState];
+  UIView* view = [_delegate snapshotGenerator:self
+                          baseViewForWebState:_webState];
   snapshot =
       [self generateSnapshotForView:view withRect:frame overlays:overlays];
   [_coalescingSnapshotContext setCachedSnapshot:snapshot
                                    withOverlays:overlays
                                visibleFrameOnly:visibleFrameOnly];
-  [_delegate didUpdateSnapshotForWebState:_webState withImage:snapshot];
+  [_delegate snapshotGenerator:self
+      didUpdateSnapshotForWebState:_webState
+                         withImage:snapshot];
   return snapshot;
 }
 
@@ -337,14 +345,17 @@ BOOL ViewHierarchyContainsWKWebView(UIView* view) {
 
   // Do not generate a snapshot if the delegate says the WebState view is
   // not ready (this generally mean a placeholder is displayed).
-  if (_delegate && ![_delegate canTakeSnapshotForWebState:_webState])
+  if (_delegate && ![_delegate snapshotGenerator:self
+                       canTakeSnapshotForWebState:_webState])
     return CGRectZero;
 
-  UIView* view = [_delegate viewForWebState:_webState];
+  UIView* view = [_delegate snapshotGenerator:self
+                          baseViewForWebState:_webState];
   CGRect frame = [view bounds];
   UIEdgeInsets headerInsets = UIEdgeInsetsZero;
   if (visibleFrameOnly) {
-    headerInsets = [_delegate snapshotEdgeInsetsForWebState:_webState];
+    headerInsets = [_delegate snapshotGenerator:self
+                  snapshotEdgeInsetsForWebState:_webState];
   } else if (base::FeatureList::IsEnabled(
                  web::features::kBrowserContainerFullscreen)) {
     headerInsets = UIEdgeInsetsMake(StatusBarHeight(), 0, 0, 0);

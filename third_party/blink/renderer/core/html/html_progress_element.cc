@@ -36,14 +36,15 @@ const double HTMLProgressElement::kIndeterminatePosition = -1;
 const double HTMLProgressElement::kInvalidPosition = -2;
 
 HTMLProgressElement::HTMLProgressElement(Document& document)
-    : LabelableElement(kProgressTag, document), value_(nullptr) {
+    : HTMLElement(kProgressTag, document), value_(nullptr) {
   UseCounter::Count(document, WebFeature::kProgressElement);
 }
 
 HTMLProgressElement::~HTMLProgressElement() = default;
 
 HTMLProgressElement* HTMLProgressElement::Create(Document& document) {
-  HTMLProgressElement* progress = new HTMLProgressElement(document);
+  HTMLProgressElement* progress =
+      MakeGarbageCollected<HTMLProgressElement>(document);
   progress->EnsureUserAgentShadowRoot();
   return progress;
 }
@@ -75,12 +76,12 @@ void HTMLProgressElement::ParseAttribute(
   } else if (params.name == kMaxAttr) {
     DidElementStateChange();
   } else {
-    LabelableElement::ParseAttribute(params);
+    HTMLElement::ParseAttribute(params);
   }
 }
 
 void HTMLProgressElement::AttachLayoutTree(AttachContext& context) {
-  LabelableElement::AttachLayoutTree(context);
+  HTMLElement::AttachLayoutTree(context);
   if (LayoutProgress* layout_progress = GetLayoutProgress())
     layout_progress->UpdateFromElement();
 }
@@ -152,7 +153,7 @@ bool HTMLProgressElement::ShouldAppearIndeterminate() const {
 
 void HTMLProgressElement::Trace(blink::Visitor* visitor) {
   visitor->Trace(value_);
-  LabelableElement::Trace(visitor);
+  HTMLElement::Trace(visitor);
 }
 
 void HTMLProgressElement::SetValueWidthPercentage(double width) const {

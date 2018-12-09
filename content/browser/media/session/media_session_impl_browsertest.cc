@@ -24,6 +24,7 @@
 #include "content/public/test/content_browser_test.h"
 #include "content/shell/browser/shell.h"
 #include "media/base/media_content_type.h"
+#include "services/media_session/public/cpp/test/mock_media_session.h"
 #include "services/media_session/public/mojom/audio_focus.mojom.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -184,11 +185,11 @@ class MediaSessionImplBrowserTest : public content::ContentBrowserTest {
   }
 
   void UISeekForward() {
-    media_session_->SeekForward(base::TimeDelta::FromSeconds(1));
+    media_session_->Seek(base::TimeDelta::FromSeconds(1));
   }
 
   void UISeekBackward() {
-    media_session_->SeekBackward(base::TimeDelta::FromSeconds(1));
+    media_session_->Seek(base::TimeDelta::FromSeconds(-1));
   }
 
   void SystemStartDucking() { media_session_->StartDucking(); }
@@ -1705,7 +1706,7 @@ IN_PROC_BROWSER_TEST_P(MediaSessionImplParamBrowserTest,
               MediaSessionMetadataChanged(Eq(base::nullopt)));
   EXPECT_CALL(*mock_media_session_observer(),
               MediaSessionActionsChanged(
-                  Eq(std::set<blink::mojom::MediaSessionAction>())));
+                  Eq(std::set<media_session::mojom::MediaSessionAction>())));
   media_session_->AddObserver(mock_media_session_observer());
 }
 
@@ -1714,15 +1715,15 @@ IN_PROC_BROWSER_TEST_P(MediaSessionImplParamBrowserTest,
   // Set up the service and information.
   EnsureMediaSessionService();
 
-  content::MediaMetadata metadata;
+  media_session::MediaMetadata metadata;
   metadata.title = base::ASCIIToUTF16("title");
   metadata.artist = base::ASCIIToUTF16("artist");
   metadata.album = base::ASCIIToUTF16("album");
   mock_media_session_service_->SetMetadata(metadata);
 
   mock_media_session_service_->EnableAction(
-      blink::mojom::MediaSessionAction::PLAY);
-  std::set<blink::mojom::MediaSessionAction> expectedActions =
+      media_session::mojom::MediaSessionAction::kPlay);
+  std::set<media_session::mojom::MediaSessionAction> expectedActions =
       mock_media_session_service_->actions();
 
   // Make sure the service is routed,
@@ -1740,6 +1741,35 @@ IN_PROC_BROWSER_TEST_P(MediaSessionImplParamBrowserTest,
   EXPECT_CALL(*mock_media_session_observer(),
               MediaSessionActionsChanged(Eq(expectedActions)));
   media_session_->AddObserver(mock_media_session_observer());
+}
+
+IN_PROC_BROWSER_TEST_P(MediaSessionImplParamBrowserTest,
+                       AddingMojoObserverNotifiesCurrentInformation_EmptyInfo) {
+  media_session::test::MockMediaSessionMojoObserver observer(*media_session_);
+  EXPECT_FALSE(observer.WaitForMetadata());
+}
+
+IN_PROC_BROWSER_TEST_P(MediaSessionImplParamBrowserTest,
+                       AddingMojoObserverNotifiesCurrentInformation_WithInfo) {
+  // Set up the service and information.
+  EnsureMediaSessionService();
+
+  media_session::MediaMetadata metadata;
+  metadata.title = base::ASCIIToUTF16("title");
+  metadata.artist = base::ASCIIToUTF16("artist");
+  metadata.album = base::ASCIIToUTF16("album");
+  mock_media_session_service_->SetMetadata(metadata);
+
+  // Make sure the service is routed,
+  auto player_observer = std::make_unique<MockMediaSessionPlayerObserver>(
+      shell()->web_contents()->GetMainFrame());
+
+  {
+    media_session::test::MockMediaSessionMojoObserver observer(*media_session_);
+    StartNewPlayer(player_observer.get(), media::MediaContentType::Persistent);
+    ResolveAudioFocusSuccess();
+    EXPECT_EQ(metadata, *observer.WaitForMetadata());
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(MediaSessionImplBrowserTest, Async_RequestFailure_Gain) {

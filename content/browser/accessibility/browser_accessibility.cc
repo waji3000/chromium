@@ -73,6 +73,11 @@ bool BrowserAccessibility::PlatformIsLeaf() const {
   }
 }
 
+bool BrowserAccessibility::CanFireEvents() const {
+  // Allow events unless this object would be trimmed away.
+  return !PlatformIsChildOfLeaf();
+}
+
 uint32_t BrowserAccessibility::PlatformChildCount() const {
   if (HasStringAttribute(ax::mojom::StringAttribute::kChildTreeId)) {
     AXTreeID child_tree_id = AXTreeID::FromString(
@@ -320,7 +325,7 @@ int32_t BrowserAccessibility::GetId() const {
 }
 
 gfx::RectF BrowserAccessibility::GetLocation() const {
-  return GetData().location;
+  return GetData().relative_bounds.bounds;
 }
 
 ax::mojom::Role BrowserAccessibility::GetRole() const {
@@ -952,7 +957,7 @@ const ui::AXTreeData& BrowserAccessibility::GetTreeData() const {
     return *empty_data;
 }
 
-gfx::NativeWindow BrowserAccessibility::GetTopLevelWidget() {
+gfx::NativeViewAccessible BrowserAccessibility::GetNSWindow() {
   NOTREACHED();
   return nullptr;
 }

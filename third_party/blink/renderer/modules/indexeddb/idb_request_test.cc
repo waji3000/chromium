@@ -29,7 +29,6 @@
 
 #include "base/memory/scoped_refptr.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/public/platform/modules/indexeddb/web_idb_callbacks.h"
 #include "third_party/blink/public/platform/web_url_loader_mock_factory.h"
 #include "third_party/blink/public/platform/web_url_response.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
@@ -49,6 +48,7 @@
 #include "third_party/blink/renderer/modules/indexeddb/idb_value.h"
 #include "third_party/blink/renderer/modules/indexeddb/idb_value_wrapping.h"
 #include "third_party/blink/renderer/modules/indexeddb/mock_web_idb_database.h"
+#include "third_party/blink/renderer/modules/indexeddb/web_idb_callbacks.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/shared_buffer.h"
 #include "third_party/blink/renderer/platform/testing/testing_platform_support.h"
@@ -64,7 +64,7 @@ class IDBRequestTest : public testing::Test {
   void SetUp() override {
     url_loader_mock_factory_ = platform_->GetURLLoaderMockFactory();
     WebURLResponse response;
-    response.SetURL(KURL("blob:"));
+    response.SetCurrentRequestUrl(KURL("blob:"));
     url_loader_mock_factory_->RegisterURLProtocol(WebString("blob"), response,
                                                   "");
   }
@@ -82,7 +82,7 @@ class IDBRequestTest : public testing::Test {
     HashSet<String> transaction_scope = {"store"};
     transaction_ = IDBTransaction::CreateNonVersionChange(
         scope.GetScriptState(), kTransactionId, transaction_scope,
-        kWebIDBTransactionModeReadOnly, db_.Get());
+        mojom::IDBTransactionMode::ReadOnly, db_.Get());
 
     IDBKeyPath store_key_path("primaryKey");
     scoped_refptr<IDBObjectStoreMetadata> store_metadata = base::AdoptRef(
@@ -243,7 +243,7 @@ TEST_F(IDBRequestTest, ConnectionsAfterStopping) {
   const int64_t kTransactionId = 1234;
   const int64_t kVersion = 1;
   const int64_t kOldVersion = 0;
-  const WebIDBMetadata metadata;
+  const IDBDatabaseMetadata metadata;
   Persistent<IDBDatabaseCallbacks> callbacks = IDBDatabaseCallbacks::Create();
 
   {
@@ -257,7 +257,7 @@ TEST_F(IDBRequestTest, ConnectionsAfterStopping) {
 
     scope.GetExecutionContext()->NotifyContextDestroyed();
     callbacks->OnUpgradeNeeded(kOldVersion, backend.release(), metadata,
-                               kWebIDBDataLossNone, String());
+                               mojom::IDBDataLoss::None, String());
   }
 
   {

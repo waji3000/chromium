@@ -7,10 +7,12 @@
 
 #include <memory>
 
+#include "base/optional.h"
 #include "base/sequence_checker.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "mojo/public/cpp/bindings/interface_ptr_set.h"
+#include "services/media_session/public/cpp/media_metadata.h"
 #include "services/media_session/public/mojom/media_controller.mojom.h"
 #include "services/media_session/public/mojom/media_session.mojom.h"
 
@@ -30,16 +32,22 @@ class MediaController : public mojom::MediaController,
   void Suspend() override;
   void Resume() override;
   void ToggleSuspendResume() override;
-  void AddObserver(mojom::MediaSessionObserverPtr) override;
+  void AddObserver(mojom::MediaSessionObserverPtr observer) override;
   void PreviousTrack() override;
   void NextTrack() override;
+  void Seek(base::TimeDelta seek_time) override;
 
   // mojom::MediaSessionObserver overrides.
-  void MediaSessionInfoChanged(mojom::MediaSessionInfoPtr) override;
+  void MediaSessionInfoChanged(
+      mojom::MediaSessionInfoPtr session_info) override;
+  void MediaSessionMetadataChanged(
+      const base::Optional<MediaMetadata>&) override;
 
-  void SetMediaSession(mojom::MediaSession*);
+  // Sets the media session that the controller should be bound to. If the
+  // session is already bound to the same session then we will return false.
+  bool SetMediaSession(mojom::MediaSession* session);
 
-  void BindToInterface(mojom::MediaControllerRequest);
+  void BindToInterface(mojom::MediaControllerRequest request);
   void FlushForTesting();
 
  private:
@@ -48,6 +56,9 @@ class MediaController : public mojom::MediaController,
 
   // The current info for the |session_|.
   mojom::MediaSessionInfoPtr session_info_;
+
+  // The current metadata for |session_|.
+  base::Optional<MediaMetadata> session_metadata_;
 
   // Raw pointer to the local proxy. This is used for sending control events to
   // the underlying MediaSession.

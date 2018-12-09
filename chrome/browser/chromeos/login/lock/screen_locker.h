@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_CHROMEOS_LOGIN_LOCK_SCREEN_LOCKER_H_
 
 #include <memory>
+#include <set>
 #include <string>
 
 #include "ash/public/interfaces/login_user_info.mojom.h"
@@ -13,6 +14,7 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "base/optional.h"
 #include "base/sequenced_task_runner_helpers.h"
 #include "base/time/time.h"
 #include "chrome/browser/chromeos/login/help_app_launcher.h"
@@ -38,12 +40,6 @@ class ScreenlockIconProvider;
 class WebUIScreenLocker;
 class ViewsScreenLocker;
 
-namespace test {
-class ScreenLockerTester;
-class ScreenLockerViewsTester;
-class WebUIScreenLockerTester;
-}  // namespace test
-
 // ScreenLocker creates a WebUIScreenLocker which will display the lock UI.
 // As well, it takes care of authenticating the user and managing a global
 // instance of itself which will be deleted when the system is unlocked.
@@ -65,10 +61,6 @@ class ScreenLocker : public AuthStatusConsumer,
 
     // Close any displayed error messages.
     virtual void ClearErrors() = 0;
-
-    // Run any visual effects after authentication is successful. This must call
-    // ScreenLocker::UnlockOnLoginSuccess() after all effects are done.
-    virtual void AnimateAuthenticationSuccess() = 0;
 
     // Called when the webui lock screen is ready. This gets invoked by a
     // chrome.send from the embedded webui.
@@ -120,9 +112,12 @@ class ScreenLocker : public AuthStatusConsumer,
   // unlock the device.
   void OnPasswordAuthSuccess(const UserContext& user_context);
 
-  // Does actual unlocking once authentication is successful and all blocking
-  // animations are done.
-  void UnlockOnLoginSuccess();
+  // Enables or disables authentication for the user with |account_id|. Notifies
+  // lock screen UI. |auth_reenabled_time| is used to display informaton in the
+  // UI.
+  void SetAuthEnabledForUser(const AccountId& account_id,
+                             bool is_enabled,
+                             base::Optional<base::Time> auth_reenabled_time);
 
   // Authenticates the user with given |user_context|.
   void Authenticate(const UserContext& user_context,
@@ -174,18 +169,17 @@ class ScreenLocker : public AuthStatusConsumer,
   // Hide the screen locker.
   static void Hide();
 
-  // Returns the tester
-  static test::ScreenLockerTester* GetTester();
-
   // Saves sync password hash and salt to user profile prefs based on
   // |user_context|.
   void SaveSyncPasswordHash(const UserContext& user_context);
 
+  // Change the authenticators; should only be used by tests.
+  void SetAuthenticatorsForTesting(
+      scoped_refptr<Authenticator> authenticator,
+      scoped_refptr<ExtendedAuthenticator> extended_authenticator);
+
  private:
   friend class base::DeleteHelper<ScreenLocker>;
-  friend class test::ScreenLockerTester;
-  friend class test::ScreenLockerViewsTester;
-  friend class test::WebUIScreenLockerTester;
   friend class WebUIScreenLocker;
   friend class ViewsScreenLocker;
 
@@ -193,10 +187,6 @@ class ScreenLocker : public AuthStatusConsumer,
   // Values corrospond to UMA histograms, do not modify, or add or delete other
   // than directly before AUTH_COUNT.
   enum UnlockType { AUTH_PASSWORD = 0, AUTH_PIN, AUTH_FINGERPRINT, AUTH_COUNT };
-
-  struct AuthenticationParametersCapture {
-    UserContext user_context;
-  };
 
   ~ScreenLocker() override;
 
@@ -212,9 +202,6 @@ class ScreenLocker : public AuthStatusConsumer,
                         int percent_complete) override {}
 
   void OnFingerprintAuthFailure(const user_manager::User& user);
-
-  // Sets the authenticator.
-  void SetAuthenticator(Authenticator* authenticator);
 
   // Called when the screen lock is ready.
   void ScreenLockReady();
@@ -256,6 +243,10 @@ class ScreenLocker : public AuthStatusConsumer,
   // Users that can unlock the device.
   user_manager::UserList users_;
 
+  // Set of users that have authentication disabled on lock screen. Has to be
+  // subset of |users_|.
+  std::set<AccountId> users_with_disabled_auth_;
+
   // Used to authenticate the user to unlock.
   scoped_refptr<Authenticator> authenticator_;
 
@@ -288,10 +279,6 @@ class ScreenLocker : public AuthStatusConsumer,
 
   // Callback to run, if any, when authentication is done.
   AuthenticateCallback on_auth_complete_;
-
-  // Copy of parameters passed to last call of OnLoginSuccess for usage in
-  // UnlockOnLoginSuccess().
-  std::unique_ptr<AuthenticationParametersCapture> authentication_capture_;
 
   // Provider for button icon set by the screenlockPrivate API.
   std::unique_ptr<ScreenlockIconProvider> screenlock_icon_provider_;

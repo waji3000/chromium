@@ -29,9 +29,9 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_INDEXEDDB_IDB_FACTORY_H_
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_INDEXEDDB_IDB_FACTORY_H_
 
-#include "third_party/blink/public/platform/modules/indexeddb/web_idb_factory.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/modules/indexeddb/idb_open_db_request.h"
+#include "third_party/blink/renderer/modules/indexeddb/web_idb_factory.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
@@ -46,11 +46,14 @@ class MODULES_EXPORT IDBFactory final : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
-  static IDBFactory* Create() { return new IDBFactory(); }
+  static IDBFactory* Create() { return MakeGarbageCollected<IDBFactory>(); }
   static IDBFactory* CreateForTest(
       std::unique_ptr<WebIDBFactory> web_idb_factory) {
-    return new IDBFactory(std::move(web_idb_factory));
+    return MakeGarbageCollected<IDBFactory>(std::move(web_idb_factory));
   }
+
+  IDBFactory();
+  IDBFactory(std::unique_ptr<WebIDBFactory>);
 
   // Implement the IDBFactory IDL
   IDBOpenDBRequest* open(ScriptState*, const String& name, ExceptionState&);
@@ -75,9 +78,6 @@ class MODULES_EXPORT IDBFactory final : public ScriptWrappable {
   ScriptPromise GetDatabaseInfo(ScriptState*, ExceptionState&);
 
  private:
-  IDBFactory();
-  IDBFactory(std::unique_ptr<WebIDBFactory>);
-
   WebIDBFactory* GetFactory();
 
   IDBOpenDBRequest* OpenInternal(ScriptState*,

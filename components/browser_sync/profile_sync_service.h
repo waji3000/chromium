@@ -10,7 +10,6 @@
 #include <string>
 #include <vector>
 
-#include "base/files/file_path.h"
 #include "base/location.h"
 #include "base/macros.h"
 #include "base/memory/memory_pressure_listener.h"
@@ -21,7 +20,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread.h"
 #include "base/time/time.h"
-#include "build/build_config.h"
+#include "components/browser_sync/sync_user_settings_impl.h"
 #include "components/invalidation/public/identity_provider.h"
 #include "components/signin/core/browser/gaia_cookie_manager_service.h"
 #include "components/sync/base/experiments.h"
@@ -39,7 +38,6 @@
 #include "components/sync/driver/sync_stopped_reporter.h"
 #include "components/sync/engine/configure_reason.h"
 #include "components/sync/engine/events/protocol_event_observer.h"
-#include "components/sync/engine/model_safe_worker.h"
 #include "components/sync/engine/net/network_time_update_callback.h"
 #include "components/sync/engine/shutdown_reason.h"
 #include "components/sync/engine/sync_engine.h"
@@ -60,10 +58,8 @@ class SharedURLLoaderFactory;
 
 namespace syncer {
 class BackendMigrator;
-class BaseTransaction;
 class DeviceInfoSyncBridge;
 class DeviceInfoTracker;
-class ModelTypeControllerDelegate;
 class NetworkResources;
 class SyncTypePreferenceProvider;
 class TypeDebugInfoObserver;
@@ -160,34 +156,19 @@ class ProfileSyncService : public syncer::SyncService,
  public:
   using SigninScopedDeviceIdCallback = base::RepeatingCallback<std::string()>;
 
-  // NOTE: Used in a UMA histogram, do not reorder etc.
-  enum SyncEventCodes {
-    // Events starting the sync service.
-    // START_FROM_NTP = 1,
-    // START_FROM_WRENCH = 2,
-    // START_FROM_OPTIONS = 3,
-    // START_FROM_BOOKMARK_MANAGER = 4,
-    // START_FROM_PROFILE_MENU = 5,
-    // START_FROM_URL = 6,
-
-    // Events regarding cancellation of the signon process of sync.
-    // CANCEL_FROM_SIGNON_WITHOUT_AUTH = 10,
-    // CANCEL_DURING_SIGNON = 11,
-    CANCEL_DURING_CONFIGURE = 12,  // Cancelled before choosing data types and
-                                   // clicking OK.
-
-    // Events resulting in the stoppage of sync service.
-    STOP_FROM_OPTIONS = 20,  // Sync was stopped from Wrench->Options.
-    // STOP_FROM_ADVANCED_DIALOG = 21,
-
-    MAX_SYNC_EVENT_CODE = 22
-  };
-
   // If AUTO_START, sync will set IsFirstSetupComplete() automatically and sync
   // will begin syncing without the user needing to confirm sync settings.
   enum StartBehavior {
     AUTO_START,
     MANUAL_START,
+  };
+
+  // Passed as an argument to RequestStop to control whether or not the sync
+  // engine should clear its data directory when it shuts down. See
+  // RequestStop for more information.
+  enum SyncStopDataFate {
+    KEEP_DATA,
+    CLEAR_DATA,
   };
 
   // Bundles the arguments for ProfileSyncService construction. This is a
@@ -200,7 +181,7 @@ class ProfileSyncService : public syncer::SyncService,
     ~InitParams();
 
     std::unique_ptr<syncer::SyncClient> sync_client;
-    identity::IdentityManager* identity_manager;
+    identity::IdentityManager* identity_manager = nullptr;
     SigninScopedDeviceIdCallback signin_scoped_device_id_callback;
     GaiaCookieManagerService* gaia_cookie_manager_service = nullptr;
     std::vector<invalidation::IdentityProvider*>
@@ -208,10 +189,9 @@ class ProfileSyncService : public syncer::SyncService,
     StartBehavior start_behavior = MANUAL_START;
     syncer::NetworkTimeUpdateCallback network_time_update_callback;
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory;
-    network::NetworkConnectionTracker* network_connection_tracker;
+    network::NetworkConnectionTracker* network_connection_tracker = nullptr;
     std::string debug_identifier;
     version_info::Channel channel = version_info::Channel::UNKNOWN;
-    bool user_events_separate_pref_group = false;
 
    private:
     DISALLOW_COPY_AND_ASSIGN(InitParams);
@@ -226,27 +206,32 @@ class ProfileSyncService : public syncer::SyncService,
   void Initialize();
 
   // syncer::SyncService implementation
+  syncer::SyncUserSettings* GetUserSettings() override;
+  const syncer::SyncUserSettings* GetUserSettings() const override;
   int GetDisableReasons() const override;
   TransportState GetTransportState() const override;
-  bool IsFirstSetupComplete() const override;
+  virtual bool IsFirstSetupComplete() const;  // Virtual for testing.
   bool IsLocalSyncEnabled() const override;
   void TriggerRefresh(const syncer::ModelTypeSet& types) override;
   void OnDataTypeRequestsSyncStartup(syncer::ModelType type) override;
-  void RequestStop(SyncStopDataFate data_fate) override;
-  void RequestStart() override;
-  syncer::ModelTypeSet GetActiveDataTypes() const override;
+  void StopAndClear() override;
+  void RequestStop(SyncStopDataFate data_fate);
+  virtual void RequestStart();  // Virtual for testing.
   void AddObserver(syncer::SyncServiceObserver* observer) override;
   void RemoveObserver(syncer::SyncServiceObserver* observer) override;
   bool HasObserver(const syncer::SyncServiceObserver* observer) const override;
+  syncer::ModelTypeSet GetRegisteredDataTypes() const override;
+  syncer::ModelTypeSet GetForcedDataTypes() const override;
   syncer::ModelTypeSet GetPreferredDataTypes() const override;
-  void OnUserChoseDatatypes(bool sync_everything,
-                            syncer::ModelTypeSet chosen_types) override;
-  void SetFirstSetupComplete() override;
+  syncer::ModelTypeSet GetActiveDataTypes() const override;
+  // Virtual for testing.
+  virtual void OnUserChoseDatatypes(bool sync_everything,
+                                    syncer::ModelTypeSet chosen_types);
+  virtual void SetFirstSetupComplete();  // Virtual for testing.
   std::unique_ptr<syncer::SyncSetupInProgressHandle> GetSetupInProgressHandle()
       override;
   bool IsSetupInProgress() const override;
   const GoogleServiceAuthError& GetAuthError() const override;
-  sync_sessions::OpenTabsUIDelegate* GetOpenTabsUIDelegate() override;
   bool IsPassphraseRequiredForDecryption() const override;
   base::Time GetExplicitPassphraseTime() const override;
   bool IsUsingSecondaryPassphrase() const override;
@@ -255,8 +240,6 @@ class ProfileSyncService : public syncer::SyncService,
   void SetEncryptionPassphrase(const std::string& passphrase) override;
   bool SetDecryptionPassphrase(const std::string& passphrase) override
       WARN_UNUSED_RESULT;
-  bool IsCryptographerReady(
-      const syncer::BaseTransaction* trans) const override;
   syncer::UserShare* GetUserShare() const override;
   void ReenableDatatype(syncer::ModelType type) override;
   void ReadyForStartChanged(syncer::ModelType type) override;
@@ -281,6 +264,7 @@ class ProfileSyncService : public syncer::SyncService,
                        callback) override;
   AccountInfo GetAuthenticatedAccountInfo() const override;
   bool IsAuthenticatedAccountPrimary() const override;
+  void SetInvalidationsForSessionsEnabled(bool enabled) override;
 
   // Add a sync type preference provider. Each provider may only be added once.
   void AddPreferenceProvider(syncer::SyncTypePreferenceProvider* provider);
@@ -293,12 +277,8 @@ class ProfileSyncService : public syncer::SyncService,
       syncer::SyncTypePreferenceProvider* provider) const;
 
   const syncer::LocalDeviceInfoProvider* GetLocalDeviceInfoProvider() const;
-  void SetLocalDeviceInfoProviderForTest(
-      std::unique_ptr<syncer::LocalDeviceInfoProvider> provider);
 
-  // Returns the ModelTypeControllerDelegate for syncer::DEVICE_INFO.
-  base::WeakPtr<syncer::ModelTypeControllerDelegate>
-  GetDeviceInfoSyncControllerDelegate();
+  syncer::LocalDeviceInfoProvider* GetLocalDeviceInfoProviderForTest();
 
   // Returns synced devices tracker.
   // Virtual for testing.
@@ -365,21 +345,11 @@ class ProfileSyncService : public syncer::SyncService,
     return crypto_.passphrase_required_reason();
   }
 
-  // Record stats on various events.
-  static void SyncEvent(SyncEventCodes code);
-
   // Returns whether sync is allowed to run based on command-line switches.
   // Profile::IsSyncAllowed() is probably a better signal than this function.
   // This function can be called from any thread, and the implementation doesn't
   // assume it's running on the UI thread.
   static bool IsSyncAllowedByFlag();
-
-  // Whether sync is currently blocked from starting because the sync
-  // confirmation dialog hasn't been shown. Note that once the dialog is
-  // showing (i.e. IsFirstSetupInProgress() is true), this will return false.
-  // TODO(crbug.com/839834): This method is somewhat misnamed.
-  // Virtual for testing.
-  virtual bool IsSyncConfirmationNeeded() const;
 
   // syncer::UnrecoverableErrorHandler implementation.
   void OnUnrecoverableError(const base::Location& from_here,
@@ -401,17 +371,6 @@ class ProfileSyncService : public syncer::SyncService,
 
   // SyncPrefObserver implementation.
   void OnSyncManagedPrefChange(bool is_sync_managed) override;
-
-  // Returns the set of types which are enforced programmatically and can not
-  // be disabled by the user.
-  syncer::ModelTypeSet GetForcedDataTypes() const;
-
-  // Gets the set of all data types that could be allowed (the set that
-  // should be advertised to the user).  These will typically only change
-  // via a command-line option.  See class comment for more on what it means
-  // for a datatype to be Registered.
-  // Virtual for testing.
-  virtual syncer::ModelTypeSet GetRegisteredDataTypes() const;
 
   // See the SyncServiceCrypto header.
   // Virtual for testing.
@@ -441,18 +400,7 @@ class ProfileSyncService : public syncer::SyncService,
   // killed in the near future.
   void FlushDirectory() const;
 
-  // Notifies observers that foreign sessions have been updated.
-  // TODO(crbug.com/883199): This doesn't belong here, just like
-  // OnForeignSessionUpdated() doesn't belong in the observer. Let's move them
-  // to OpenTabsUIDelegate by introducing a similar observer mechanism.
-  virtual void NotifyForeignSessionUpdated();
-
-  // Returns a serialized NigoriKey proto generated from the bootstrap token in
-  // SyncPrefs. Will return the empty string if no bootstrap token exists.
-  std::string GetCustomPassphraseKey() const;
-
-  // Set whether sync is currently allowed by the platform.
-  void SetSyncAllowedByPlatform(bool allowed);
+  void SyncAllowedByPlatformChanged(bool allowed);
 
   // Sometimes we need to wait for tasks on the sync thread in tests.
   scoped_refptr<base::SingleThreadTaskRunner> GetSyncThreadTaskRunnerForTest()
@@ -497,9 +445,6 @@ class ProfileSyncService : public syncer::SyncService,
   };
 
   friend class TestProfileSyncService;
-
-  // Returns whether sync is currently allowed on this platform.
-  bool IsSyncAllowedByPlatform() const;
 
   // Helper to install and configure a data type manager.
   void ConfigureDataTypeManager(syncer::ConfigureReason reason);
@@ -601,6 +546,8 @@ class ProfileSyncService : public syncer::SyncService,
   // email address and sign-out upon error.
   identity::IdentityManager* const identity_manager_;
 
+  SyncUserSettingsImpl user_settings_;
+
   // Handles tracking of the authenticated account and acquiring access tokens.
   // Only null after Shutdown().
   std::unique_ptr<SyncAuthManager> auth_manager_;
@@ -613,10 +560,6 @@ class ProfileSyncService : public syncer::SyncService,
 
   // This specifies where to find the sync server.
   const GURL sync_service_url_;
-
-  // Whether USER_EVENTS model type has a separate pref group instead of
-  // being bundled with the TYPED_URLS model type.
-  const bool user_events_separate_pref_group_;
 
   // A utility object containing logic and state relating to encryption.
   syncer::SyncServiceCrypto crypto_;
@@ -738,9 +681,6 @@ class ProfileSyncService : public syncer::SyncService,
   // the user. This logic is only enabled on platforms that consume the
   // IsPassphrasePrompted sync preference.
   bool passphrase_prompt_triggered_by_version_;
-
-  // Whether sync is currently allowed on this platform.
-  bool sync_allowed_by_platform_;
 
   // This weak factory invalidates its issued pointers when Sync is disabled.
   base::WeakPtrFactory<ProfileSyncService> sync_enabled_weak_factory_;

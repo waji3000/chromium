@@ -39,6 +39,10 @@
 #include "services/viz/privileged/interfaces/viz_main.mojom.h"
 #include "url/gurl.h"
 
+#if defined(USE_VIZ_DEVTOOLS)
+#include "content/browser/gpu/viz_devtools_connector.h"
+#endif
+
 namespace base {
 class Thread;
 }
@@ -204,6 +208,9 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
 
   int connection_filter_id_;
 
+  // The GPU process reported failure to initialize.
+  bool did_fail_initialize_ = false;
+
   // The total number of GPU process crashes.
   static base::subtle::Atomic32 gpu_crash_count_;
   static bool crashed_before_;
@@ -230,6 +237,10 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   std::multiset<GURL> urls_with_live_offscreen_contexts_;
 
   std::unique_ptr<viz::GpuHostImpl> gpu_host_;
+
+#if defined(USE_VIZ_DEVTOOLS)
+  std::unique_ptr<VizDevToolsConnector> devtools_connector_;
+#endif
 
   SEQUENCE_CHECKER(sequence_checker_);
 

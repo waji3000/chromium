@@ -4,7 +4,6 @@
 
 #include "third_party/blink/renderer/core/frame/web_view_frame_widget.h"
 
-#include "third_party/blink/public/mojom/page/page_visibility_state.mojom-blink.h"
 #include "third_party/blink/renderer/core/exported/web_view_impl.h"
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
 
@@ -19,13 +18,7 @@ WebViewFrameWidget::WebViewFrameWidget(WebWidgetClient& client,
 WebViewFrameWidget::~WebViewFrameWidget() = default;
 
 void WebViewFrameWidget::Close() {
-  // Note: it's important to use the captured main frame pointer here. During
-  // a frame swap, the swapped frame is detached *after* the frame tree is
-  // updated. If the main frame is being swapped, then
-  // m_webView()->mainFrameImpl() will no longer point to the original frame.
-  web_view_->SetCompositorVisibility(false);
   web_view_ = nullptr;
-
   WebFrameWidgetBase::Close();
 
   // Note: this intentionally does not forward to WebView::close(), to make it
@@ -67,8 +60,9 @@ void WebViewFrameWidget::RecordEndOfFrameMetrics(
   web_view_->RecordEndOfFrameMetrics(frame_begin_time);
 }
 
-void WebViewFrameWidget::UpdateLifecycle(LifecycleUpdate requested_update) {
-  web_view_->UpdateLifecycle(requested_update);
+void WebViewFrameWidget::UpdateLifecycle(LifecycleUpdate requested_update,
+                                         LifecycleUpdateReason reason) {
+  web_view_->UpdateLifecycle(requested_update, reason);
 }
 
 void WebViewFrameWidget::PaintContent(cc::PaintCanvas* canvas,
@@ -147,11 +141,6 @@ WebURL WebViewFrameWidget::GetURLForDebugTrace() {
   return web_view_->GetURLForDebugTrace();
 }
 
-void WebViewFrameWidget::SetVisibilityState(
-    mojom::PageVisibilityState visibility_state) {
-  web_view_->SetVisibilityState(visibility_state, false);
-}
-
 void WebViewFrameWidget::SetBackgroundColorOverride(SkColor color) {
   web_view_->SetBackgroundColorOverride(color);
 }
@@ -181,9 +170,7 @@ bool WebViewFrameWidget::ScrollFocusedEditableElementIntoView() {
   return web_view_->ScrollFocusedEditableElementIntoView();
 }
 
-void WebViewFrameWidget::Initialize() {
-  web_view_->SetCompositorVisibility(true);
-}
+void WebViewFrameWidget::Initialize() {}
 
 void WebViewFrameWidget::SetLayerTreeView(WebLayerTreeView*) {
   // The WebViewImpl already has its LayerTreeView, the WebWidgetClient
@@ -221,12 +208,17 @@ CompositorAnimationHost* WebViewFrameWidget::AnimationHost() const {
   return web_view_->AnimationHost();
 }
 
-WebHitTestResult WebViewFrameWidget::HitTestResultAt(const WebPoint& point) {
+WebHitTestResult WebViewFrameWidget::HitTestResultAt(const gfx::Point& point) {
   return web_view_->HitTestResultAt(point);
 }
 
-HitTestResult WebViewFrameWidget::CoreHitTestResultAt(const WebPoint& point) {
+HitTestResult WebViewFrameWidget::CoreHitTestResultAt(const gfx::Point& point) {
   return web_view_->CoreHitTestResultAt(point);
+}
+
+void WebViewFrameWidget::ZoomToFindInPageRect(
+    const WebRect& rect_in_root_frame) {
+  web_view_->ZoomToFindInPageRect(rect_in_root_frame);
 }
 
 void WebViewFrameWidget::Trace(blink::Visitor* visitor) {

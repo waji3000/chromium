@@ -35,28 +35,30 @@ class TouchEventManagerTest : public SimTest {
 class CheckEventListenerCallback final : public EventListener {
  public:
   static CheckEventListenerCallback* Create() {
-    return new CheckEventListenerCallback();
+    return MakeGarbageCollected<CheckEventListenerCallback>();
   }
+
+  CheckEventListenerCallback()
+      : EventListener(EventListener::kCPPEventListenerType) {
+    event_received_ = false;
+  }
+
   bool operator==(const EventListener& other) const override {
     return this == &other;
   }
 
-  void handleEvent(ExecutionContext*, Event* event) override {
+  void Invoke(ExecutionContext*, Event* event) override {
     event_received_ = true;
   }
 
   bool HasReceivedEvent() const { return event_received_; }
 
  private:
-  CheckEventListenerCallback()
-      : EventListener(EventListener::kCPPEventListenerType) {
-    event_received_ = false;
-  }
   bool event_received_;
 };
 
 TEST_F(TouchEventManagerTest, LostTouchDueToInnerIframeRemove) {
-  WebView().Resize(WebSize(400, 400));
+  WebView().MainFrameWidget()->Resize(WebSize(400, 400));
   SimRequest request("https://example.com/test.html", "text/html");
   LoadURL("https://example.com/test.html");
   request.Complete(R"HTML(

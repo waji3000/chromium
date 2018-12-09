@@ -77,17 +77,13 @@ void VizCompositorThreadRunner::CreateFrameSinkManager(
       FROM_HERE,
       base::BindOnce(
           &VizCompositorThreadRunner::CreateFrameSinkManagerOnCompositorThread,
-          base::Unretained(this), std::move(params), nullptr, nullptr, nullptr,
-          nullptr));
+          base::Unretained(this), std::move(params), nullptr, nullptr));
 }
 
 void VizCompositorThreadRunner::CreateFrameSinkManager(
     mojom::FrameSinkManagerParamsPtr params,
     scoped_refptr<gpu::CommandBufferTaskExecutor> task_executor,
     GpuServiceImpl* gpu_service) {
-  auto* gpu_channel_manager = gpu_service->gpu_channel_manager();
-  auto* image_factory = gpu_service->gpu_image_factory();
-
   // All of the unretained objects are owned on the GPU thread and destroyed
   // after VizCompositorThread has been shutdown.
   task_runner_->PostTask(
@@ -95,9 +91,21 @@ void VizCompositorThreadRunner::CreateFrameSinkManager(
       base::BindOnce(
           &VizCompositorThreadRunner::CreateFrameSinkManagerOnCompositorThread,
           base::Unretained(this), std::move(params), std::move(task_executor),
-          base::Unretained(gpu_service), base::Unretained(image_factory),
-          base::Unretained(gpu_channel_manager)));
+          base::Unretained(gpu_service)));
 }
+
+#if defined(USE_VIZ_DEVTOOLS)
+void VizCompositorThreadRunner::CreateVizDevTools(
+    mojom::VizDevToolsParamsPtr params) {
+  // It is safe to use Unretained(this) because |this| owns the |task_runner_|,
+  // and will outlive it.
+  task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          &VizCompositorThreadRunner::CreateVizDevToolsOnCompositorThread,
+          base::Unretained(this), std::move(params)));
+}
+#endif
 
 void VizCompositorThreadRunner::CleanupForShutdown(
     base::OnceClosure cleanup_finished_callback) {
@@ -112,9 +120,7 @@ void VizCompositorThreadRunner::CleanupForShutdown(
 void VizCompositorThreadRunner::CreateFrameSinkManagerOnCompositorThread(
     mojom::FrameSinkManagerParamsPtr params,
     scoped_refptr<gpu::CommandBufferTaskExecutor> task_executor,
-    GpuServiceImpl* gpu_service,
-    gpu::ImageFactory* image_factory,
-    gpu::GpuChannelManager* gpu_channel_manager) {
+    GpuServiceImpl* gpu_service) {
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(!frame_sink_manager_);
 
@@ -129,11 +135,17 @@ void VizCompositorThreadRunner::CreateFrameSinkManagerOnCompositorThread(
       command_line->HasSwitch(switches::kRunAllCompositorStagesBeforeDraw);
 
   if (task_executor) {
+    DCHECK(gpu_service);
     // Create DisplayProvider usable for GPU + software compositing.
+    auto gpu_memory_buffer_manager =
+        std::make_unique<InProcessGpuMemoryBufferManager>(
+            gpu_service->gpu_memory_buffer_factory(),
+            gpu_service->sync_point_manager());
+    auto* image_factory = gpu_service->gpu_image_factory();
     display_provider_ = std::make_unique<GpuDisplayProvider>(
         params->restart_id, gpu_service, std::move(task_executor), gpu_service,
-        std::make_unique<InProcessGpuMemoryBufferManager>(gpu_channel_manager),
-        image_factory, server_shared_bitmap_manager_.get(), headless,
+        std::move(gpu_memory_buffer_manager), image_factory,
+        server_shared_bitmap_manager_.get(), headless,
         run_all_compositor_stages_before_draw);
   } else {
     // Create DisplayProvider usable for software compositing only.
@@ -155,21 +167,28 @@ void VizCompositorThreadRunner::CreateFrameSinkManagerOnCompositorThread(
           std::move(params->frame_sink_manager_client)));
 
 #if defined(USE_VIZ_DEVTOOLS)
-  if (params->devtools_server_socket) {
-    InitVizDevToolsOnCompositorThread(
-        network::mojom::TCPServerSocketPtr(
-            std::move(params->devtools_server_socket)),
-        params->server_port);
-  }
+  if (pending_viz_dev_tools_params_)
+    InitVizDevToolsOnCompositorThread(std::move(pending_viz_dev_tools_params_));
 #endif
 }
 
 #if defined(USE_VIZ_DEVTOOLS)
+void VizCompositorThreadRunner::CreateVizDevToolsOnCompositorThread(
+    mojom::VizDevToolsParamsPtr params) {
+  if (!frame_sink_manager_) {
+    DCHECK(!pending_viz_dev_tools_params_);
+    pending_viz_dev_tools_params_ = std::move(params);
+    return;
+  }
+  InitVizDevToolsOnCompositorThread(std::move(params));
+}
+
 void VizCompositorThreadRunner::InitVizDevToolsOnCompositorThread(
-    network::mojom::TCPServerSocketPtr server_socket,
-    int port) {
+    mojom::VizDevToolsParamsPtr params) {
+  DCHECK(frame_sink_manager_);
   devtools_server_ = ui_devtools::UiDevToolsServer::CreateForViz(
-      std::move(server_socket), port);
+      network::mojom::TCPServerSocketPtr(std::move(params->server_socket)),
+      params->server_port);
   auto dom_agent =
       std::make_unique<ui_devtools::DOMAgentViz>(frame_sink_manager_.get());
   auto css_agent = std::make_unique<ui_devtools::CSSAgent>(dom_agent.get());

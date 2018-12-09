@@ -10,6 +10,7 @@
 #include <memory>
 #include <vector>
 
+#include "base/callback.h"
 #include "base/macros.h"
 #import "ios/web/navigation/navigation_item_impl.h"
 #import "ios/web/navigation/navigation_manager_impl.h"
@@ -111,6 +112,7 @@ class WKBasedNavigationManagerImpl : public NavigationManagerImpl {
   void AddPushStateItemIfNecessary(const GURL& url,
                                    NSString* state_object,
                                    ui::PageTransition transition) override;
+  bool IsRestoreSessionInProgress() const override;
 
   // NavigationManager:
   BrowserState* GetBrowserState() const override;
@@ -121,7 +123,6 @@ class WKBasedNavigationManagerImpl : public NavigationManagerImpl {
   NavigationItem* GetItemAtIndex(size_t index) const override;
   int GetIndexOfItem(const NavigationItem* item) const override;
   int GetPendingItemIndex() const override;
-  int GetLastCommittedItemIndex() const override;
   bool RemoveItemAtIndex(int index) override;
   bool CanGoBack() const override;
   bool CanGoForward() const override;
@@ -134,6 +135,7 @@ class WKBasedNavigationManagerImpl : public NavigationManagerImpl {
   bool CanPruneAllButLastCommittedItem() const override;
   void Restore(int last_committed_item_index,
                std::vector<std::unique_ptr<NavigationItem>> items) override;
+  void AddRestoreCompletionCallback(base::OnceClosure callback) override;
   void LoadIfNecessary() override;
 
  private:
@@ -198,9 +200,13 @@ class WKBasedNavigationManagerImpl : public NavigationManagerImpl {
 
   // NavigationManagerImpl:
   NavigationItemImpl* GetNavigationItemImplAtIndex(size_t index) const override;
-  NavigationItemImpl* GetLastCommittedItemImpl() const override;
-  // Returns the pending navigation item in the main frame.
-  NavigationItemImpl* GetPendingItemImpl() const override;
+  NavigationItemImpl* GetLastCommittedItemInCurrentOrRestoredSession()
+      const override;
+  int GetLastCommittedItemIndexInCurrentOrRestoredSession() const override;
+  // Returns the pending navigation item in the main frame. Unlike
+  // GetPendingItem(), this method does not return null during session
+  // restoration (and returns last known pending item instead).
+  NavigationItemImpl* GetPendingItemInCurrentOrRestoredSession() const override;
   NavigationItemImpl* GetTransientItemImpl() const override;
   void FinishGoToIndex(int index,
                        NavigationInitiationType initiation_type,
@@ -261,6 +267,11 @@ class WKBasedNavigationManagerImpl : public NavigationManagerImpl {
   // clients of this navigation manager gets sane values for visible title and
   // URL.
   std::unique_ptr<NavigationItem> restored_visible_item_;
+
+  // Non-empty only during the session restoration. The callbacks are
+  // registered in AddRestoreCompletionCallback() and are executed in the first
+  // OnNavigationItemCommitted() callback.
+  std::vector<base::OnceClosure> restore_session_completion_callbacks_;
 
   DISALLOW_COPY_AND_ASSIGN(WKBasedNavigationManagerImpl);
 };

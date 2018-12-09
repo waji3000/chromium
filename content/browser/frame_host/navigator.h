@@ -64,17 +64,17 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
                                     const base::string16& error_description) {}
 
   // The RenderFrameHostImpl has committed a navigation. The Navigator is
-  // responsible for resetting |navigation_handle| at the end of this method and
-  // should not attempt to keep it alive.
-  // Note: it is possible that |navigation_handle| is not the NavigationHandle
-  // stored in the RenderFrameHost that just committed. This happens for example
-  // when a same-page navigation commits while another navigation is ongoing.
-  // The Navigator should use the NavigationHandle provided by this method and
-  // not attempt to access the RenderFrameHost's NavigationsHandle.
+  // responsible for resetting |navigation_request| at the end of this method
+  // and should not attempt to keep it alive. Note: it is possible that
+  // |navigation_request| is not the NavigationRequest stored in the
+  // RenderFrameHost that just committed. This happens for example when a
+  // same-page navigation commits while another navigation is ongoing. The
+  // Navigator should use the NavigationRequest provided by this method and not
+  // attempt to access the RenderFrameHost's NavigationsRequests.
   virtual void DidNavigate(
       RenderFrameHostImpl* render_frame_host,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
-      std::unique_ptr<NavigationHandleImpl> navigation_handle,
+      std::unique_ptr<NavigationRequest> navigation_request,
       bool was_within_same_document) {}
 
   // Called on a newly created subframe during a history navigation. The browser
@@ -112,6 +112,7 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
       bool should_replace_current_entry,
       bool user_gesture,
       blink::WebTriggeringEventInfo triggering_event_info,
+      const std::string& href_translate,
       scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory) {}
 
   // Called when a document requests a navigation in another document through a

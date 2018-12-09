@@ -56,7 +56,7 @@ void QuicSimpleServerStream::OnTrailingHeadersComplete(
   SendErrorResponse();
 }
 
-void QuicSimpleServerStream::OnDataAvailable() {
+void QuicSimpleServerStream::OnBodyAvailable() {
   while (HasBytesToRead()) {
     struct iovec iov;
     if (GetReadableRegions(&iov, 1) == 0) {
@@ -232,6 +232,15 @@ void QuicSimpleServerStream::OnResponseBackendComplete(
     return;
   }
 
+  if (response->response_type() == QuicBackendResponse::STOP_SENDING) {
+    QUIC_DVLOG(1)
+        << "Stream " << id()
+        << " sending an incomplete response, i.e. no trailer, no fin.";
+    SendIncompleteResponse(response->headers().Clone(), response->body());
+    SendStopSending(response->stop_sending_code());
+    return;
+  }
+
   QUIC_DVLOG(1) << "Stream " << id() << " sending response.";
   SendHeadersAndBodyAndTrailers(response->headers().Clone(), response->body(),
                                 response->trailers().Clone());
@@ -273,7 +282,7 @@ void QuicSimpleServerStream::SendIncompleteResponse(
   QUIC_DLOG(INFO) << "Stream " << id()
                   << " writing body (fin = false) with size: " << body.size();
   if (!body.empty()) {
-    WriteOrBufferData(body, /*fin=*/false, nullptr);
+    WriteOrBufferBody(body, /*fin=*/false, nullptr);
   }
 }
 
@@ -303,7 +312,7 @@ void QuicSimpleServerStream::SendHeadersAndBodyAndTrailers(
   QUIC_DLOG(INFO) << "Stream " << id() << " writing body (fin = " << send_fin
                   << ") with size: " << body.size();
   if (!body.empty() || send_fin) {
-    WriteOrBufferData(body, send_fin, nullptr);
+    WriteOrBufferBody(body, send_fin, nullptr);
   }
   if (send_fin) {
     // Nothing else to send.

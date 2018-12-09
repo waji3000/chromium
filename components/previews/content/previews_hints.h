@@ -24,7 +24,7 @@
 class GURL;
 
 namespace optimization_guide {
-struct ComponentInfo;
+struct HintsComponentInfo;
 }
 
 namespace previews {
@@ -34,21 +34,17 @@ class PreviewsHints {
  public:
   ~PreviewsHints();
 
-  // Creates a Hints instance from the provided configuration.
-  static std::unique_ptr<PreviewsHints> CreateFromConfig(
-      const optimization_guide::proto::Configuration& config,
-      const optimization_guide::ComponentInfo& info);
-
-  static std::unique_ptr<PreviewsHints> CreateForTesting(
-      std::unique_ptr<HostFilter> lite_page_redirect_blacklist);
+  // Creates a Hints instance from the provided hints component. This must be
+  // called using a background task runner as it requires a significant amount
+  // of processing.
+  static std::unique_ptr<PreviewsHints> CreateFromHintsComponent(
+      const optimization_guide::HintsComponentInfo& info);
 
   // Returns the matching PageHint for |document_url| if found in |hint|.
   // TODO(dougarnett): Consider moving to some hint_util file.
   static const optimization_guide::proto::PageHint* FindPageHint(
       const GURL& document_url,
       const optimization_guide::proto::Hint& hint);
-
-  void Initialize();
 
   // Whether the URL is whitelisted for the given previews type. If so,
   // |out_inflation_percent| and |out_ect_threshold| will be populated if
@@ -114,8 +110,6 @@ class PreviewsHints {
   std::map<url_matcher::URLMatcherConditionSet::ID,
            std::set<std::pair<PreviewsType, int>>>
       whitelist_;
-
-  std::vector<optimization_guide::proto::Hint> initial_hints_;
 
   // Blacklist of host suffixes for LITE_PAGE_REDIRECT Previews.
   std::unique_ptr<HostFilter> lite_page_redirect_blacklist_;

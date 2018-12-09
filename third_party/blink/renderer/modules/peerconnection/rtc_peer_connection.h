@@ -32,6 +32,8 @@
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_PEERCONNECTION_RTC_PEER_CONNECTION_H_
 
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include "third_party/blink/public/platform/web_media_constraints.h"
 #include "third_party/blink/public/platform/web_rtc_peer_connection_handler.h"
@@ -42,10 +44,15 @@
 #include "third_party/blink/renderer/modules/crypto/normalize_algorithm.h"
 #include "third_party/blink/renderer/modules/event_target_modules.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream.h"
+#include "third_party/blink/renderer/modules/peerconnection/call_setup_state_tracker.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_ice_candidate.h"
+#include "third_party/blink/renderer/modules/peerconnection/rtc_peer_connection_controller.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_rtp_transceiver.h"
+#include "third_party/blink/renderer/modules/peerconnection/rtc_session_description_enums.h"
 #include "third_party/blink/renderer/platform/async_method_runner.h"
 #include "third_party/blink/renderer/platform/heap/heap_allocator.h"
+#include "third_party/blink/renderer/platform/peerconnection/rtc_session_description_request.h"
+#include "third_party/blink/renderer/platform/peerconnection/rtc_void_request.h"
 #include "third_party/blink/renderer/platform/scheduler/public/frame_scheduler.h"
 
 namespace blink {
@@ -88,7 +95,7 @@ enum class SdpUsageCategory {
   kMaxValue = kUnknown,
 };
 
-SdpUsageCategory MODULES_EXPORT
+MODULES_EXPORT SdpUsageCategory
 DeduceSdpUsageCategory(const String& sdp_type,
                        const String& sdp,
                        bool sdp_semantics_specified,
@@ -109,6 +116,12 @@ class MODULES_EXPORT RTCPeerConnection final
                                    const RTCConfiguration*,
                                    const Dictionary&,
                                    ExceptionState&);
+
+  RTCPeerConnection(ExecutionContext*,
+                    webrtc::PeerConnectionInterface::RTCConfiguration,
+                    bool sdp_semantics_specified,
+                    WebMediaConstraints,
+                    ExceptionState&);
   ~RTCPeerConnection() override;
 
   ScriptPromise createOffer(ScriptState*, const RTCOfferOptions*);
@@ -148,7 +161,7 @@ class MODULES_EXPORT RTCPeerConnection final
 
   String signalingState() const;
 
-  RTCConfiguration* getConfiguration() const;
+  RTCConfiguration* getConfiguration(ScriptState*) const;
   void setConfiguration(ScriptState*, const RTCConfiguration*, ExceptionState&);
 
   // Certificate management
@@ -170,6 +183,8 @@ class MODULES_EXPORT RTCPeerConnection final
   String iceGatheringState() const;
 
   String iceConnectionState() const;
+
+  String connectionState() const;
 
   // A local stream is any stream associated with a sender.
   MediaStreamVector getLocalStreams() const;
@@ -238,6 +253,8 @@ class MODULES_EXPORT RTCPeerConnection final
   DEFINE_ATTRIBUTE_EVENT_LISTENER(removestream, kRemovestream);
   DEFINE_ATTRIBUTE_EVENT_LISTENER(iceconnectionstatechange,
                                   kIceconnectionstatechange);
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(connectionstatechange,
+                                  kConnectionstatechange);
   DEFINE_ATTRIBUTE_EVENT_LISTENER(icegatheringstatechange,
                                   kIcegatheringstatechange);
   DEFINE_ATTRIBUTE_EVENT_LISTENER(datachannel, kDatachannel);
@@ -266,6 +283,8 @@ class MODULES_EXPORT RTCPeerConnection final
       webrtc::PeerConnectionInterface::IceGatheringState) override;
   void DidChangeIceConnectionState(
       webrtc::PeerConnectionInterface::IceConnectionState) override;
+  void DidChangePeerConnectionState(
+      webrtc::PeerConnectionInterface::PeerConnectionState) override;
   void DidAddReceiverPlanB(std::unique_ptr<WebRTCRtpReceiver>) override;
   void DidRemoveReceiverPlanB(std::unique_ptr<WebRTCRtpReceiver>) override;
   void DidModifyTransceivers(std::vector<std::unique_ptr<WebRTCRtpTransceiver>>,
@@ -292,17 +311,28 @@ class MODULES_EXPORT RTCPeerConnection final
   static int PeerConnectionCount();
   static int PeerConnectionCountLimit();
 
-  // SLD/SRD helper method, public for testing.
-  // "Complex" Plan B SDP is SDP that is not compatible with Unified Plan, i.e.
-  // SDP that has multiple tracks listed under the same m= sections. We should
-  // show a deprecation warning when setLocalDescription() or
-  // setRemoteDescription() is called and:
-  // - The SDP is complex Plan B SDP.
-  // - sdpSemantics was not specified at RTCPeerConnection construction.
-  // Such calls would normally succeed, but as soon as the default switches to
-  // Unified Plan they would fail. This decides whether to show deprecation for
-  // WebFeature::kRTCPeerConnectionComplexPlanBSdpUsingDefaultSdpSemantics.
-  bool ShouldShowComplexPlanBSdpWarning(const RTCSessionDescriptionInit*) const;
+  // SLD/SRD Helper method, public for testing.
+  // This function returns a value that indicates if complex SDP is being used
+  // and whether a format is explicitly specified. If the SDP is not complex or
+  // it could not be parsed, base::nullopt is returned.
+  // When "Complex" SDP (i.e., SDP that has multiple tracks) is used without
+  // explicitly specifying the SDP format, there may be errors if the
+  // application assumes a format that differs from the actual default format.
+  base::Optional<ComplexSdpCategory> CheckForComplexSdp(
+      const RTCSessionDescriptionInit* session_description_init) const;
+
+  const CallSetupStateTracker& call_setup_state_tracker() const;
+  void NoteCallSetupStateEventPending(
+      RTCPeerConnection::SetSdpOperationType operation,
+      const RTCSessionDescriptionInit& description);
+  void NoteSessionDescriptionRequestCompleted(
+      RTCCreateSessionDescriptionOperation operation,
+      bool success);
+  void NoteVoidRequestCompleted(RTCSetSessionDescriptionOperation operation,
+                                bool success);
+  // Checks if the document that the peer connection lives in has ever executed
+  // getUserMedia().
+  bool HasDocumentMedia() const;
 
   void Trace(blink::Visitor*) override;
 
@@ -331,12 +361,6 @@ class MODULES_EXPORT RTCPeerConnection final
    private:
     BoolFunction setup_function_;
   };
-
-  RTCPeerConnection(ExecutionContext*,
-                    webrtc::PeerConnectionInterface::RTCConfiguration,
-                    bool sdp_semantics_specified,
-                    WebMediaConstraints,
-                    ExceptionState&);
   void Dispose();
 
   void ScheduleDispatchEvent(Event*);
@@ -435,6 +459,11 @@ class MODULES_EXPORT RTCPeerConnection final
   bool SetIceConnectionState(
       webrtc::PeerConnectionInterface::IceConnectionState);
 
+  void ChangePeerConnectionState(
+      webrtc::PeerConnectionInterface::PeerConnectionState);
+  bool SetPeerConnectionState(
+      webrtc::PeerConnectionInterface::PeerConnectionState);
+
   void CloseInternal();
 
   void RecordRapporMetrics();
@@ -442,10 +471,14 @@ class MODULES_EXPORT RTCPeerConnection final
   DOMException* checkSdpForStateErrors(ExecutionContext*,
                                        const RTCSessionDescriptionInit*,
                                        String* sdp);
+  void MaybeWarnAboutUnsafeSdp(
+      const RTCSessionDescriptionInit* session_description_init) const;
 
   webrtc::PeerConnectionInterface::SignalingState signaling_state_;
   webrtc::PeerConnectionInterface::IceGatheringState ice_gathering_state_;
   webrtc::PeerConnectionInterface::IceConnectionState ice_connection_state_;
+  webrtc::PeerConnectionInterface::PeerConnectionState peer_connection_state_;
+  CallSetupStateTracker call_setup_state_tracker_;
 
   // A map containing any track that is in use by the peer connection. This
   // includes tracks of |rtp_senders_| and |rtp_receivers_|.

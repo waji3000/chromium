@@ -5,11 +5,14 @@
 #include "chrome/browser/chromeos/child_accounts/screen_time_controller.h"
 
 #include "base/optional.h"
+#include "base/time/clock.h"
+#include "base/time/default_clock.h"
+#include "base/timer/timer.h"
 #include "chrome/browser/chromeos/child_accounts/consumer_status_reporting_service.h"
 #include "chrome/browser/chromeos/child_accounts/consumer_status_reporting_service_factory.h"
+#include "chrome/browser/chromeos/login/lock/screen_locker.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/ash/login_screen_client.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
@@ -37,16 +40,21 @@ constexpr char kScreenStateLastStateChanged[] = "last_state_changed";
 
 // static
 void ScreenTimeController::RegisterProfilePrefs(PrefRegistrySimple* registry) {
-  registry->RegisterDictionaryPref(prefs::kUsageTimeLimit);
+  // TODO(agawronska): Move preference registration when implementing PAC.
+  registry->RegisterDictionaryPref(prefs::kParentAccessCodeConfig);
   registry->RegisterDictionaryPref(prefs::kScreenTimeLastState);
+  registry->RegisterDictionaryPref(prefs::kUsageTimeLimit);
 }
 
 ScreenTimeController::ScreenTimeController(content::BrowserContext* context)
     : context_(context),
       pref_service_(Profile::FromBrowserContext(context)->GetPrefs()),
+      clock_(base::DefaultClock::GetInstance()),
+      next_state_timer_(std::make_unique<base::OneShotTimer>()),
       time_limit_notifier_(context) {
   session_manager::SessionManager::Get()->AddObserver(this);
   system::TimezoneSettings::GetInstance()->AddObserver(this);
+  chromeos::DBusThreadManager::Get()->GetSystemClockClient()->AddObserver(this);
   pref_change_registrar_.Init(pref_service_);
   pref_change_registrar_.Add(
       prefs::kUsageTimeLimit,
@@ -57,11 +65,20 @@ ScreenTimeController::ScreenTimeController(content::BrowserContext* context)
 ScreenTimeController::~ScreenTimeController() {
   session_manager::SessionManager::Get()->RemoveObserver(this);
   system::TimezoneSettings::GetInstance()->RemoveObserver(this);
+  chromeos::DBusThreadManager::Get()->GetSystemClockClient()->RemoveObserver(
+      this);
 }
 
 base::TimeDelta ScreenTimeController::GetScreenTimeDuration() {
   return ConsumerStatusReportingServiceFactory::GetForBrowserContext(context_)
       ->GetChildScreenTime();
+}
+
+void ScreenTimeController::SetClocksForTesting(
+    const base::Clock* clock,
+    const base::TickClock* tick_clock) {
+  clock_ = clock;
+  next_state_timer_ = std::make_unique<base::OneShotTimer>(tick_clock);
 }
 
 void ScreenTimeController::CheckTimeLimit(const std::string& source) {
@@ -71,7 +88,7 @@ void ScreenTimeController::CheckTimeLimit(const std::string& source) {
   ResetStateTimers();
   ResetInSessionTimers();
 
-  base::Time now = base::Time::Now();
+  base::Time now = clock_->Now();
   const icu::TimeZone& time_zone =
       system::TimezoneSettings::GetInstance()->GetTimezone();
   base::Optional<usage_time_limit::State> last_state = GetLastStateFromPref();
@@ -129,7 +146,7 @@ void ScreenTimeController::CheckTimeLimit(const std::string& source) {
   if (!next_get_state_time.is_null()) {
     VLOG(1) << "Scheduling state change timer in "
             << state.next_state_change_time - now;
-    next_state_timer_.Start(
+    next_state_timer_->Start(
         FROM_HERE, next_get_state_time - now,
         base::BindRepeating(&ScreenTimeController::CheckTimeLimit,
                             base::Unretained(this), "next_state_timer_"));
@@ -158,7 +175,7 @@ void ScreenTimeController::UpdateTimeLimitsMessage(
       chromeos::ProfileHelper::Get()
           ->GetUserByProfile(Profile::FromBrowserContext(context_))
           ->GetAccountId();
-  LoginScreenClient::Get()->login_screen()->SetAuthEnabledForUser(
+  ScreenLocker::default_screen_locker()->SetAuthEnabledForUser(
       account_id, !visible,
       visible ? next_unlock_time : base::Optional<base::Time>());
 }
@@ -169,7 +186,7 @@ void ScreenTimeController::OnPolicyChanged() {
 
 void ScreenTimeController::ResetStateTimers() {
   VLOG(1) << "Stopping state timers";
-  next_state_timer_.Stop();
+  next_state_timer_->Stop();
 }
 
 void ScreenTimeController::ResetInSessionTimers() {
@@ -312,6 +329,10 @@ void ScreenTimeController::OnSessionStateChanged() {
 
 void ScreenTimeController::TimezoneChanged(const icu::TimeZone& timezone) {
   CheckTimeLimit("TimezoneChanged");
+}
+
+void ScreenTimeController::SystemClockUpdated() {
+  CheckTimeLimit("SystemClockUpdated");
 }
 
 }  // namespace chromeos

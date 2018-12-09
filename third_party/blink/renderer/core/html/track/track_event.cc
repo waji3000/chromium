@@ -27,6 +27,7 @@
 
 #include "third_party/blink/public/platform/web_media_player.h"
 #include "third_party/blink/renderer/bindings/core/v8/video_track_or_audio_track_or_text_track.h"
+#include "third_party/blink/renderer/core/event_interface_names.h"
 #include "third_party/blink/renderer/core/html/track/audio_track.h"
 #include "third_party/blink/renderer/core/html/track/text_track.h"
 #include "third_party/blink/renderer/core/html/track/video_track.h"
@@ -55,7 +56,7 @@ TrackEvent::TrackEvent(const AtomicString& type,
 TrackEvent::~TrackEvent() = default;
 
 const AtomicString& TrackEvent::InterfaceName() const {
-  return EventNames::TrackEvent;
+  return event_interface_names::kTrackEvent;
 }
 
 void TrackEvent::track(VideoTrackOrAudioTrackOrTextTrack& return_value) {

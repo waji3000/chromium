@@ -57,6 +57,7 @@
 #include "third_party/blink/renderer/platform/uuid.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
@@ -629,8 +630,9 @@ void ValidateAndConvertPaymentDetailsBase(const PaymentDetailsBase* input,
   // If requestShipping is specified and there are shipping options to validate,
   // proceed with validation.
   if (options->requestShipping() && input->hasShippingOptions()) {
+    output->shipping_options = Vector<PaymentShippingOptionPtr>();
     ValidateAndConvertShippingOptions(
-        input->shippingOptions(), output->shipping_options,
+        input->shippingOptions(), *output->shipping_options,
         shipping_option_output, execution_context, exception_state);
     if (exception_state.HadException())
       return;
@@ -778,8 +780,9 @@ PaymentRequest* PaymentRequest::Create(
     const HeapVector<Member<PaymentMethodData>>& method_data,
     const PaymentDetailsInit* details,
     ExceptionState& exception_state) {
-  return new PaymentRequest(execution_context, method_data, details,
-                            PaymentOptions::Create(), exception_state);
+  return MakeGarbageCollected<PaymentRequest>(execution_context, method_data,
+                                              details, PaymentOptions::Create(),
+                                              exception_state);
 }
 
 PaymentRequest* PaymentRequest::Create(
@@ -788,8 +791,8 @@ PaymentRequest* PaymentRequest::Create(
     const PaymentDetailsInit* details,
     const PaymentOptions* options,
     ExceptionState& exception_state) {
-  return new PaymentRequest(execution_context, method_data, details, options,
-                            exception_state);
+  return MakeGarbageCollected<PaymentRequest>(
+      execution_context, method_data, details, options, exception_state);
 }
 
 PaymentRequest::~PaymentRequest() = default;
@@ -922,6 +925,37 @@ ScriptPromise PaymentRequest::Retry(ScriptState* script_state,
                           script_state->GetIsolate(), error_message));
   }
 
+  if (!options_->requestPayerName() && errors->hasPayer() &&
+      errors->payer()->hasName()) {
+    GetExecutionContext()->AddConsoleMessage(
+        ConsoleMessage::Create(kJSMessageSource, kWarningMessageLevel,
+                               "The payer.name passed to retry() may not be "
+                               "shown because requestPayerName is false"));
+  }
+
+  if (!options_->requestPayerEmail() && errors->hasPayer() &&
+      errors->payer()->hasEmail()) {
+    GetExecutionContext()->AddConsoleMessage(
+        ConsoleMessage::Create(kJSMessageSource, kWarningMessageLevel,
+                               "The payer.email passed to retry() may not be "
+                               "shown because requestPayerEmail is false"));
+  }
+
+  if (!options_->requestPayerPhone() && errors->hasPayer() &&
+      errors->payer()->hasPhone()) {
+    GetExecutionContext()->AddConsoleMessage(
+        ConsoleMessage::Create(kJSMessageSource, kWarningMessageLevel,
+                               "The payer.phone passed to retry() may not be "
+                               "shown because requestPayerPhone is false"));
+  }
+
+  if (!options_->requestShipping() && errors->hasShippingAddress()) {
+    GetExecutionContext()->AddConsoleMessage(
+        ConsoleMessage::Create(kJSMessageSource, kWarningMessageLevel,
+                               "The shippingAddress passed to retry() may not "
+                               "be shown because requestShipping is false"));
+  }
+
   complete_timer_.Stop();
 
   // The payment provider should respond in PaymentRequest::OnPaymentResponse().
@@ -980,6 +1014,7 @@ ScriptPromise PaymentRequest::Complete(ScriptState* script_state,
 }
 
 void PaymentRequest::OnUpdatePaymentDetails(
+    const AtomicString& event_type,
     const ScriptValue& details_script_value) {
   if (!GetPendingAcceptPromiseResolver() || !payment_provider_)
     return;
@@ -1016,8 +1051,24 @@ void PaymentRequest::OnUpdatePaymentDetails(
     return;
   }
 
+  // TODO(https://crbug.com/902291): We should make shippingOptions optional.
+  if (options_->requestShipping() && !details->hasShippingOptions()) {
+    if (event_type == event_type_names::kShippingaddresschange) {
+      UseCounter::Count(
+          GetExecutionContext(),
+          WebFeature::kUpdateWithoutShippingOptionOnShippingAddressChange);
+      validated_details->shipping_options = Vector<PaymentShippingOptionPtr>();
+    }
+    if (event_type == event_type_names::kShippingoptionchange) {
+      UseCounter::Count(
+          GetExecutionContext(),
+          WebFeature::kUpdateWithoutShippingOptionOnShippingOptionChange);
+      validated_details->shipping_options = Vector<PaymentShippingOptionPtr>();
+    }
+  }
+
   if (!options_->requestShipping())
-    validated_details->shipping_options.clear();
+    validated_details->shipping_options = base::nullopt;
 
   payment_provider_->UpdateWith(std::move(validated_details));
 }
@@ -1102,7 +1153,7 @@ PaymentRequest::PaymentRequest(
   if (options_->requestShipping())
     shipping_type_ = options_->shippingType();
   else
-    validated_details->shipping_options.clear();
+    validated_details->shipping_options = base::nullopt;
 
   DCHECK(shipping_type_.IsNull() || shipping_type_ == "shipping" ||
          shipping_type_ == "delivery" || shipping_type_ == "pickup");
@@ -1137,7 +1188,7 @@ void PaymentRequest::OnShippingAddressChange(PaymentAddressPtr address) {
     return;
   }
 
-  shipping_address_ = new PaymentAddress(std::move(address));
+  shipping_address_ = MakeGarbageCollected<PaymentAddress>(std::move(address));
 
   PaymentRequestUpdateEvent* event = PaymentRequestUpdateEvent::Create(
       GetExecutionContext(), event_type_names::kShippingaddresschange);
@@ -1207,8 +1258,8 @@ void PaymentRequest::OnPaymentResponse(PaymentResponsePtr response) {
       return;
     }
 
-    shipping_address_ =
-        new PaymentAddress(std::move(response->shipping_address));
+    shipping_address_ = MakeGarbageCollected<PaymentAddress>(
+        std::move(response->shipping_address));
     shipping_option_ = response->shipping_option;
   } else {
     if (response->shipping_address || !response->shipping_option.IsNull()) {
@@ -1243,9 +1294,9 @@ void PaymentRequest::OnPaymentResponse(PaymentResponsePtr response) {
     // connection to display a success or failure message to the user.
     retry_resolver_.Clear();
   } else if (accept_resolver_) {
-    payment_response_ = new PaymentResponse(accept_resolver_->GetScriptState(),
-                                            std::move(response),
-                                            shipping_address_.Get(), this, id_);
+    payment_response_ = MakeGarbageCollected<PaymentResponse>(
+        accept_resolver_->GetScriptState(), std::move(response),
+        shipping_address_.Get(), this, id_);
     accept_resolver_->Resolve(payment_response_);
 
     // Do not close the mojo connection here. The merchant website should call

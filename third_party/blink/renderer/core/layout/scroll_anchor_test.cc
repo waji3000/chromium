@@ -29,7 +29,7 @@ class ScrollAnchorTest : public testing::WithParamInterface<bool>,
   void Update() {
     // TODO(skobes): Use SimTest instead of RenderingTest and move into
     // Source/web?
-    GetDocument().View()->UpdateAllLifecyclePhases();
+    UpdateAllLifecyclePhasesForTest();
   }
 
   ScrollableArea* LayoutViewport() {
@@ -436,10 +436,6 @@ TEST_P(ScrollAnchorTest, FlexboxDelayedAdjustmentRespectsSANACLAP) {
 // TODO(skobes): Convert this to web-platform-tests when document.rootScroller
 // is launched (http://crbug.com/505516).
 TEST_P(ScrollAnchorTest, NonDefaultRootScroller) {
-  // TODO(crbug.com/889449): The test fails in LayoutNG mode.
-  if (RuntimeEnabledFeatures::LayoutNGEnabled())
-    return;
-
   SetBodyInnerHTML(R"HTML(
     <style>
         ::-webkit-scrollbar {
@@ -470,7 +466,7 @@ TEST_P(ScrollAnchorTest, NonDefaultRootScroller) {
 
   NonThrowableExceptionState non_throw;
   GetDocument().setRootScroller(root_scroller_element, non_throw);
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   ScrollableArea* scroller = ScrollerForElement(root_scroller_element);
 

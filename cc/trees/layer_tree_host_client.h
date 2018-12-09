@@ -42,6 +42,10 @@ struct ApplyViewportChangesArgs {
   // Whether the browser controls have been locked to fully hidden or shown or
   // whether they can be freely moved.
   BrowserControlsState browser_controls_constraint;
+
+  // Set to true when a scroll gesture being handled on the compositor has
+  // ended.
+  bool scroll_gesture_did_end;
 };
 
 // A LayerTreeHost is bound to a LayerTreeHostClient. The main rendering
@@ -85,8 +89,11 @@ class LayerTreeHostClient {
   // (Blink's notions of) style, layout, paint invalidation and compositing
   // state. (The "compositing state" will result in a mutated layer tree on the
   // LayerTreeHost via additional interface indirections which lead back to
-  // mutations on the LayerTreeHost.)
-  virtual void UpdateLayerTreeHost() = 0;
+  // mutations on the LayerTreeHost.) The |record_main_frame_metrics| flag
+  // determines whether Blink will compute metrics related to main frame update
+  // time. If true, the caller must ensure that RecordEndOfFrameMetrics is
+  // called when this method returns and the total main frame time is known.
+  virtual void UpdateLayerTreeHost(bool record_main_frame_metrics) = 0;
 
   // Notifies the client of viewport-related changes that occured in the
   // LayerTreeHost since the last commit. This typically includes things

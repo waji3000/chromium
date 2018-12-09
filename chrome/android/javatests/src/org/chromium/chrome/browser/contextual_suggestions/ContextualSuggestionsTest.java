@@ -40,6 +40,7 @@ import org.chromium.chrome.browser.contextual_suggestions.ContextualSuggestionsM
 import org.chromium.chrome.browser.dependency_injection.ChromeAppModule;
 import org.chromium.chrome.browser.dependency_injection.ModuleFactoryOverrides;
 import org.chromium.chrome.browser.feature_engagement.TrackerFactory;
+import org.chromium.chrome.browser.fullscreen.FullscreenManagerTestUtils;
 import org.chromium.chrome.browser.modelutil.ListObservable;
 import org.chromium.chrome.browser.modelutil.ListObservable.ListObserver;
 import org.chromium.chrome.browser.multiwindow.MultiWindowTestHelper;
@@ -52,7 +53,7 @@ import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.tabmodel.TabModel;
 import org.chromium.chrome.browser.tabmodel.TabModel.TabSelectionType;
 import org.chromium.chrome.browser.test.ScreenShooter;
-import org.chromium.chrome.browser.toolbar.ToolbarPhone;
+import org.chromium.chrome.browser.toolbar.top.ToolbarPhone;
 import org.chromium.chrome.browser.widget.bottomsheet.BottomSheet;
 import org.chromium.chrome.test.BottomSheetTestRule;
 import org.chromium.chrome.test.ChromeActivityTestRule;
@@ -60,6 +61,7 @@ import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
 import org.chromium.chrome.test.ChromeTabbedActivityTestRule;
 import org.chromium.chrome.test.util.ChromeTabUtils;
 import org.chromium.chrome.test.util.RenderTestRule;
+import org.chromium.chrome.test.util.browser.Features.DisableFeatures;
 import org.chromium.chrome.test.util.browser.Features.EnableFeatures;
 import org.chromium.chrome.test.util.browser.RecyclerViewTestUtils;
 import org.chromium.chrome.test.util.browser.compositor.layouts.DisableChromeAnimations;
@@ -81,7 +83,6 @@ import java.util.concurrent.TimeoutException;
 @RunWith(ChromeJUnit4ClassRunner.class)
 @Restriction(UiRestriction.RESTRICTION_TYPE_PHONE)
 @CommandLineFlags.Add(ChromeSwitches.DISABLE_FIRST_RUN_EXPERIENCE)
-@EnableFeatures(ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON)
 public class ContextualSuggestionsTest {
     @Rule
     public ChromeTabbedActivityTestRule mActivityTestRule = new ChromeTabbedActivityTestRule();
@@ -188,6 +189,7 @@ public class ContextualSuggestionsTest {
     @Test
     @MediumTest
     @Feature({"ContextualSuggestions"})
+    @EnableFeatures(ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON)
     public void testRepeatedOpen() throws Exception {
         View toolbarButton = getToolbarButton();
         assertEquals(
@@ -208,6 +210,7 @@ public class ContextualSuggestionsTest {
     @Test
     @MediumTest
     @Feature({"ContextualSuggestions"})
+    @EnableFeatures(ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON)
     public void testOpenSuggestion() throws Exception {
         clickToolbarButton();
         testOpenFirstSuggestion();
@@ -216,6 +219,7 @@ public class ContextualSuggestionsTest {
     @Test
     @MediumTest
     @Feature({"ContextualSuggestions"})
+    @EnableFeatures(ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON)
     public void testOpenArticleInNewTab() throws Exception {
         clickToolbarButton();
 
@@ -232,6 +236,7 @@ public class ContextualSuggestionsTest {
     @Test
     @MediumTest
     @Feature({"ContextualSuggestions"})
+    @EnableFeatures(ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON)
     public void testOpenSuggestionInNewTabIncognito() throws Exception {
         clickToolbarButton();
 
@@ -249,6 +254,7 @@ public class ContextualSuggestionsTest {
     @Test
     @MediumTest
     @Feature({"ContextualSuggestions"})
+    @EnableFeatures(ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON)
     public void testShadowVisibleOnScroll() throws Exception {
         clickToolbarButton();
 
@@ -275,10 +281,109 @@ public class ContextualSuggestionsTest {
     @Test
     @MediumTest
     @Feature({"ContextualSuggestions"})
-    @DisabledTest(message = "https://crbug.com/890947")
-    public void testInProductHelp() throws InterruptedException, TimeoutException {
-        assertTrue(
-                "Help bubble should be showing.", mMediator.getHelpBubbleForTesting().isShowing());
+    @EnableFeatures(ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON)
+    public void testCanShowInProductHelp_DefaultConfidenceThreshold() {
+        // Check fieldtrial setup.
+        Assert.assertEquals(0.d,
+                ChromeFeatureList.getFieldTrialParamByFeatureAsDouble(
+                        ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON,
+                        ContextualSuggestionsMediator.IPH_CONFIDENCE_THRESHOLD_PARAM, 0.d),
+                0.d);
+        assertTrue(mMediator.getCanShowIphForCurrentResults());
+    }
+
+    @Test
+    @MediumTest
+    @Feature({"ContextualSuggestions"})
+    @CommandLineFlags.Add({"enable-features=" + ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON
+            + "<FakeEoCStudyName", "force-fieldtrials=FakeEoCStudyName/Enabled",
+            "force-fieldtrial-params=FakeEoCStudyName.Enabled:"
+                    + ContextualSuggestionsMediator.IPH_CONFIDENCE_THRESHOLD_PARAM + "/0.5"})
+    public void testCanShowInProductHelp_ResultsConfidenceAboveThreshold() {
+        // Check fieldtrial setup.
+        Assert.assertEquals(0.5d,
+                ChromeFeatureList.getFieldTrialParamByFeatureAsDouble(
+                        ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON,
+                        ContextualSuggestionsMediator.IPH_CONFIDENCE_THRESHOLD_PARAM, 0.d),
+                0.d);
+        assertTrue(mMediator.getCanShowIphForCurrentResults());
+    }
+
+    @Test
+    @MediumTest
+    @Feature({"ContextualSuggestions"})
+    @CommandLineFlags.Add({"enable-features=" + ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON
+            + "<FakeEoCStudyName", "force-fieldtrials=FakeEoCStudyName/Enabled",
+            "force-fieldtrial-params=FakeEoCStudyName.Enabled:"
+                    + ContextualSuggestionsMediator.IPH_CONFIDENCE_THRESHOLD_PARAM + "/0.75"})
+    public void testCanShowInProductHelp_ResultsConfidenceAtThreshold() {
+        // Check fieldtrial setup.
+        Assert.assertEquals(FakeContextualSuggestionsSource.TEST_PEEK_CONFIDENCE,
+                ChromeFeatureList.getFieldTrialParamByFeatureAsDouble(
+                        ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON,
+                        ContextualSuggestionsMediator.IPH_CONFIDENCE_THRESHOLD_PARAM, 0.d),
+                0.d);
+        assertTrue(mMediator.getCanShowIphForCurrentResults());
+    }
+
+    @Test
+    @MediumTest
+    @Feature({"ContextualSuggestions"})
+    @CommandLineFlags.Add({"enable-features=" + ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON
+            + "<FakeEoCStudyName", "force-fieldtrials=FakeEoCStudyName/Enabled",
+            "force-fieldtrial-params=FakeEoCStudyName.Enabled:"
+                    + ContextualSuggestionsMediator.IPH_CONFIDENCE_THRESHOLD_PARAM + "/0.8"})
+    public void testCanShowInProductHelp_ResultsConfidenceBelowThreshold() {
+        // Check fieldtrial setup.
+        Assert.assertEquals(0.8d,
+                ChromeFeatureList.getFieldTrialParamByFeatureAsDouble(
+                        ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON,
+                        ContextualSuggestionsMediator.IPH_CONFIDENCE_THRESHOLD_PARAM, 0.d),
+                0.d);
+        assertFalse(mMediator.getCanShowIphForCurrentResults());
+    }
+
+    @Test
+    @MediumTest
+    @Feature({"ContextualSuggestions"})
+    @EnableFeatures(ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON)
+    @DisableFeatures(ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_IPH_REVERSE_SCROLL)
+    public void testInProductHelp_DontRequireReverseScroll() throws Exception {
+        // IPH can only be shown after the animation completes.
+        ThreadUtils.runOnUiThreadBlocking(
+                () -> getToolbarPhone().endExperimentalButtonAnimationForTesting());
+
+        CriteriaHelper.pollUiThread(() -> mMediator.getHelpBubbleForTesting() != null &&
+                            mMediator.getHelpBubbleForTesting().isShowing(),
+                "Help bubble never shown.");
+
+        ThreadUtils.runOnUiThreadBlocking(() -> mMediator.getHelpBubbleForTesting().dismiss());
+
+        Assert.assertEquals("Help bubble should be dimissed.", 1,
+                mFakeTracker.mDimissedCallbackHelper.getCallCount());
+    }
+
+    @Test
+    @MediumTest
+    @Feature({"ContextualSuggestions"})
+    @EnableFeatures({ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON,
+            ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_IPH_REVERSE_SCROLL})
+    public void testInProductHelp_RequireReverseScroll() throws Exception {
+        // IPH can only be shown after the animation to show the toolbar button completes.
+        ThreadUtils.runOnUiThreadBlocking(
+                () -> getToolbarPhone().endExperimentalButtonAnimationForTesting());
+
+        Assert.assertNull("Help bubble should not be shown yet.",
+                mMediator.getHelpBubbleForTesting());
+
+        // Scroll the base page, hiding then reshowing the browser controls.
+        FullscreenManagerTestUtils.disableBrowserOverrides();
+        FullscreenManagerTestUtils.waitForBrowserControlsToBeMoveable(
+                mActivityTestRule, mActivityTestRule.getActivity().getActivityTab());
+
+        CriteriaHelper.pollUiThread(() -> mMediator.getHelpBubbleForTesting() != null &&
+                            mMediator.getHelpBubbleForTesting().isShowing(),
+                "Help bubble never shown.");
 
         ThreadUtils.runOnUiThreadBlocking(() -> mMediator.getHelpBubbleForTesting().dismiss());
 
@@ -289,6 +394,7 @@ public class ContextualSuggestionsTest {
     @Test
     @LargeTest
     @Feature({"ContextualSuggestions"})
+    @EnableFeatures(ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON)
     public void testMultiInstanceMode() throws Exception {
         ChromeTabbedActivity activity1 = mActivityTestRule.getActivity();
         clickToolbarButton();
@@ -368,6 +474,7 @@ public class ContextualSuggestionsTest {
     @Test
     @MediumTest
     @Feature({"ContextualSuggestions", "UiCatalogue"})
+    @EnableFeatures(ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON)
     public void testCaptureContextualSuggestionsBottomSheet() throws Exception {
         dismissHelpBubble();
 
@@ -402,6 +509,7 @@ public class ContextualSuggestionsTest {
     @Test
     @MediumTest
     @Feature({"ContextualSuggestions", "RenderTest"})
+    @EnableFeatures(ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON)
     public void testRender() throws Exception {
         dismissHelpBubble();
 
@@ -443,6 +551,7 @@ public class ContextualSuggestionsTest {
     @MediumTest
     @Feature({"ContextualSuggestions"})
     @DisabledTest
+    @EnableFeatures(ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON)
     public void testPeekDelay() throws Exception {
         // Close the suggestions from setUp().
         ThreadUtils.runOnUiThreadBlocking(() -> {
@@ -477,6 +586,7 @@ public class ContextualSuggestionsTest {
     @Test
     @MediumTest
     @Feature({"ContextualSuggestions"})
+    @EnableFeatures(ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON)
     public void testToolbarButton_ToggleTabSwitcher() throws Exception {
         View toolbarButton = getToolbarButton();
 
@@ -499,6 +609,7 @@ public class ContextualSuggestionsTest {
     @Test
     @MediumTest
     @Feature({"ContextualSuggestions"})
+    @EnableFeatures(ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON)
     public void testToolbarButton_SwitchTabs() throws Exception {
         View toolbarButton = getToolbarButton();
 
@@ -523,6 +634,7 @@ public class ContextualSuggestionsTest {
     @Test
     @MediumTest
     @Feature({"ContextualSuggestions"})
+    @EnableFeatures(ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON)
     public void testToolbarButton_ResponseInTabSwitcher() throws Exception {
         View toolbarButton = getToolbarButton();
 
@@ -565,6 +677,7 @@ public class ContextualSuggestionsTest {
     @Test
     @MediumTest
     @Feature({"ContextualSuggestions"})
+    @EnableFeatures(ChromeFeatureList.CONTEXTUAL_SUGGESTIONS_BUTTON)
     public void testSuggestionRanking() throws Exception {
         ClusterList clusters = mModel.getClusterList();
 
@@ -687,6 +800,6 @@ public class ContextualSuggestionsTest {
     }
 
     private ToolbarPhone getToolbarPhone(ChromeActivity activity) {
-        return (ToolbarPhone) activity.getToolbarManager().getToolbarLayout();
+        return (ToolbarPhone) activity.getToolbarManager().getToolbarLayoutForTesting();
     }
 }

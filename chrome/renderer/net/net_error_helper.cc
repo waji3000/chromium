@@ -46,7 +46,7 @@
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
-#include "third_party/blink/public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
+#include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-shared.h"
 #include "third_party/blink/public/platform/web_data.h"
 #include "third_party/blink/public/platform/web_security_origin.h"
 #include "third_party/blink/public/platform/web_url.h"
@@ -118,7 +118,11 @@ OfflineContentOnNetErrorFeatureState GetOfflineContentOnNetErrorFeatureState() {
 
 #if defined(OS_ANDROID)
 bool IsAutoFetchFeatureEnabled() {
-  return base::FeatureList::IsEnabled(features::kAutoFetchOnNetErrorPage);
+  // This feature is incompatible with OfflineContentOnNetError, so don't allow
+  // both.
+  return GetOfflineContentOnNetErrorFeatureState() ==
+             OfflineContentOnNetErrorFeatureState::kDisabled &&
+         base::FeatureList::IsEnabled(features::kAutoFetchOnNetErrorPage);
 }
 #else   // OS_ANDROID
 bool IsAutoFetchFeatureEnabled() {
@@ -203,6 +207,18 @@ void NetErrorHelper::LaunchOfflineItem(const std::string& id,
 
 void NetErrorHelper::LaunchDownloadsPage() {
   core_->LaunchDownloadsPage();
+}
+
+void NetErrorHelper::SavePageForLater() {
+  core_->SavePageForLater();
+}
+
+void NetErrorHelper::CancelSavePage() {
+  core_->CancelSavePage();
+}
+
+void NetErrorHelper::ListVisibilityChanged(bool is_visible) {
+  core_->ListVisibilityChanged(is_visible);
 }
 
 content::RenderFrame* NetErrorHelper::GetRenderFrame() {
@@ -360,6 +376,14 @@ NetErrorHelper::GetRemoteNetworkDiagnostics() {
   return remote_network_diagnostics_.get();
 }
 
+chrome::mojom::NetworkEasterEgg* NetErrorHelper::GetRemoteNetworkEasterEgg() {
+  if (!remote_network_easter_egg_) {
+    render_frame()->GetRemoteAssociatedInterfaces()->GetInterface(
+        &remote_network_easter_egg_);
+  }
+  return remote_network_easter_egg_.get();
+}
+
 void NetErrorHelper::GenerateLocalizedErrorPage(
     const error_page::Error& error,
     bool is_failed_post,
@@ -408,12 +432,8 @@ void NetErrorHelper::GenerateLocalizedErrorPage(
 
 void NetErrorHelper::LoadErrorPage(const std::string& html,
                                    const GURL& failed_url) {
-  render_frame()->GetWebFrame()->CommitDataNavigation(
-      blink::WebURLRequest(GURL(kUnreachableWebDataURL)), blink::WebData(html),
-      blink::WebString::FromUTF8("text/html"),
-      blink::WebString::FromUTF8("UTF-8"), failed_url,
-      blink::WebFrameLoadType::kReplaceCurrentItem, blink::WebHistoryItem(),
-      false /* is_client_redirect */, nullptr, nullptr);
+  render_frame()->LoadHTMLString(html, GURL(kUnreachableWebDataURL), "UTF-8",
+                                 failed_url, true /* replace_current_item */);
 }
 
 void NetErrorHelper::EnablePageHelperFunctions(net::Error net_error) {
@@ -457,6 +477,36 @@ void NetErrorHelper::UpdateErrorPage(const error_page::Error& error,
   }
 
   render_frame()->ExecuteJavaScript(js16);
+}
+
+void NetErrorHelper::InitializeErrorPageEasterEggHighScore(int high_score) {
+  std::string js = base::StringPrintf(
+      "if (window.initializeEasterEggHighScore) "
+      "initializeEasterEggHighScore(%i);",
+      high_score);
+  base::string16 js16;
+  if (!base::UTF8ToUTF16(js.c_str(), js.length(), &js16)) {
+    NOTREACHED();
+    return;
+  }
+
+  render_frame()->ExecuteJavaScript(js16);
+}
+
+void NetErrorHelper::RequestEasterEggHighScore() {
+  GetRemoteNetworkEasterEgg()->GetHighScore(base::BindOnce(
+      [](NetErrorHelper* helper, uint32_t high_score) {
+        helper->core_->OnEasterEggHighScoreReceived(high_score);
+      },
+      base::Unretained(this)));
+}
+
+void NetErrorHelper::UpdateEasterEggHighScore(int high_score) {
+  GetRemoteNetworkEasterEgg()->UpdateHighScore(high_score);
+}
+
+void NetErrorHelper::ResetEasterEggHighScore() {
+  GetRemoteNetworkEasterEgg()->ResetHighScore();
 }
 
 void NetErrorHelper::FetchNavigationCorrections(
@@ -540,11 +590,14 @@ void NetErrorHelper::SetIsShowingDownloadButton(bool show) {
 }
 
 void NetErrorHelper::OfflineContentAvailable(
+    bool list_visible_by_prefs,
     const std::string& offline_content_json) {
 #if defined(OS_ANDROID)
   if (!offline_content_json.empty()) {
-    render_frame()->ExecuteJavaScript(base::UTF8ToUTF16(base::StrCat(
-        {"offlineContentAvailable(", offline_content_json, ");"})));
+    std::string isShownParam(list_visible_by_prefs ? "true" : "false");
+    render_frame()->ExecuteJavaScript(base::UTF8ToUTF16(
+        base::StrCat({"offlineContentAvailable(", isShownParam, ", ",
+                      offline_content_json, ");"})));
   }
 #endif
 }

@@ -62,6 +62,10 @@ int OnMoreData(base::TimeDelta delay,
   return kDefaultAudioParams.frames_per_buffer();
 }
 
+std::string DummyGetSessionId(std::string /* audio_group_id */) {
+  return "";
+}
+
 }  // namespace
 
 namespace chromecast {
@@ -93,9 +97,9 @@ class CastAudioManagerTest : public testing::Test {
   void CreateConnectorForTesting() {
     connector_ = CreateConnector();
     // Override the MultiroomManager interface for testing.
-    service_manager::Connector::TestApi connector_test_api(connector_.get());
-    connector_test_api.OverrideBinderForTesting(
-        service_manager::Identity(chromecast::mojom::kChromecastServiceName),
+    connector_->OverrideBinderForTesting(
+        service_manager::ServiceFilter::ByName(
+            chromecast::mojom::kChromecastServiceName),
         mojom::MultiroomManager::Name_,
         base::BindRepeating(&CastAudioManagerTest::BindMultiroomManager,
                             base::Unretained(this)));
@@ -118,6 +122,7 @@ class CastAudioManagerTest : public testing::Test {
         std::make_unique<::media::TestAudioThread>(), &fake_audio_log_factory_,
         base::BindRepeating(&CastAudioManagerTest::GetCmaBackendFactory,
                             base::Unretained(this)),
+        base::BindRepeating(&DummyGetSessionId),
         scoped_task_environment_.GetMainThreadTaskRunner(),
         scoped_task_environment_.GetMainThreadTaskRunner(), connector_.get(),
         use_mixer, true /* force_use_cma_backend_for_output*/

@@ -18,7 +18,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "ui/gfx/geometry/rect.h"
@@ -156,7 +156,7 @@ bool g_egl_display_texture_share_group_supported = false;
 bool g_egl_create_context_client_arrays_supported = false;
 bool g_egl_android_native_fence_sync_supported = false;
 
-const char kSwapEventTraceCategories[] = "gpu";
+constexpr const char kSwapEventTraceCategories[] = "gpu";
 
 constexpr size_t kMaxTimestampsSupportable = 9;
 
@@ -737,7 +737,7 @@ bool GLSurfaceEGL::InitializeOneOffCommon() {
     scoped_refptr<GLSurface> surface = new SurfacelessEGL(gfx::Size(1, 1));
     scoped_refptr<GLContext> context = InitializeGLContext(
         new GLContextEGL(nullptr), surface.get(), GLContextAttribs());
-    if (!context->MakeCurrent(surface.get()))
+    if (!context || !context->MakeCurrent(surface.get()))
       g_egl_surfaceless_context_supported = false;
 
     // Ensure context supports GL_OES_surfaceless_context.

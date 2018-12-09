@@ -191,15 +191,12 @@ enum IntegerConversionConfiguration {
 };
 
 // Convert a value to a boolean.
-CORE_EXPORT bool ToBooleanSlow(v8::Isolate*,
-                               v8::Local<v8::Value>,
-                               ExceptionState&);
 inline bool ToBoolean(v8::Isolate* isolate,
                       v8::Local<v8::Value> value,
                       ExceptionState& exception_state) {
   if (LIKELY(value->IsBoolean()))
     return value.As<v8::Boolean>()->Value();
-  return ToBooleanSlow(isolate, value, exception_state);
+  return value->BooleanValue(isolate);
 }
 
 // Convert a value to a 8-bit signed integer. The conversion fails if the
@@ -439,8 +436,8 @@ CORE_EXPORT bool HasCallableIteratorSymbol(v8::Isolate*,
                                            v8::Local<v8::Value>,
                                            ExceptionState&);
 
-CORE_EXPORT v8::Isolate* ToIsolate(ExecutionContext*);
-CORE_EXPORT v8::Isolate* ToIsolate(LocalFrame*);
+CORE_EXPORT v8::Isolate* ToIsolate(const ExecutionContext*);
+CORE_EXPORT v8::Isolate* ToIsolate(const LocalFrame*);
 
 CORE_EXPORT DOMWindow* ToDOMWindow(v8::Isolate*, v8::Local<v8::Value>);
 CORE_EXPORT LocalDOMWindow* ToLocalDOMWindow(v8::Local<v8::Context>);
@@ -466,6 +463,7 @@ CORE_EXPORT v8::Local<v8::Context> ToV8ContextEvenIfDetached(LocalFrame*,
 
 // These methods can return nullptr if the context associated with the
 // ScriptState has already been detached.
+CORE_EXPORT ScriptState* ToScriptState(ExecutionContext*, DOMWrapperWorld&);
 CORE_EXPORT ScriptState* ToScriptState(LocalFrame*, DOMWrapperWorld&);
 // Do not use this method unless you are sure you should use the main world's
 // ScriptState

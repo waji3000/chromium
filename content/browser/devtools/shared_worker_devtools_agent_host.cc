@@ -12,9 +12,9 @@
 #include "content/browser/devtools/protocol/schema_handler.h"
 #include "content/browser/devtools/protocol/target_handler.h"
 #include "content/browser/devtools/shared_worker_devtools_manager.h"
-#include "content/browser/shared_worker/shared_worker_host.h"
-#include "content/browser/shared_worker/shared_worker_instance.h"
-#include "content/browser/shared_worker/shared_worker_service_impl.h"
+#include "content/browser/worker_host/shared_worker_host.h"
+#include "content/browser/worker_host/shared_worker_instance.h"
+#include "content/browser/worker_host/shared_worker_service_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "third_party/blink/public/web/devtools_agent.mojom.h"
@@ -69,15 +69,14 @@ bool SharedWorkerDevToolsAgentHost::Close() {
   return true;
 }
 
-bool SharedWorkerDevToolsAgentHost::AttachSession(DevToolsSession* session,
-                                                  TargetRegistry* registry) {
+bool SharedWorkerDevToolsAgentHost::AttachSession(DevToolsSession* session) {
   session->AddHandler(std::make_unique<protocol::InspectorHandler>());
   session->AddHandler(std::make_unique<protocol::NetworkHandler>(
       GetId(), devtools_worker_token_, GetIOContext()));
   session->AddHandler(std::make_unique<protocol::SchemaHandler>());
   session->AddHandler(std::make_unique<protocol::TargetHandler>(
       protocol::TargetHandler::AccessMode::kAutoAttachOnly, GetId(),
-      GetRendererChannel(), registry));
+      GetRendererChannel(), session->GetRootSession()));
   return true;
 }
 

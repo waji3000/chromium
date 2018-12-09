@@ -31,7 +31,7 @@
 #include "third_party/blink/renderer/core/html/forms/color_input_type.h"
 
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
-#include "third_party/blink/renderer/core/css_property_names.h"
+#include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/dom/events/scoped_event_queue.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/events/mouse_event.h"
@@ -77,7 +77,7 @@ ColorInputType::ColorInputType(HTMLInputElement& element)
     : InputType(element), KeyboardClickableInputTypeView(element) {}
 
 InputType* ColorInputType::Create(HTMLInputElement& element) {
-  return new ColorInputType(element);
+  return MakeGarbageCollected<ColorInputType>(element);
 }
 
 ColorInputType::~ColorInputType() = default;

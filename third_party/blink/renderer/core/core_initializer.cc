@@ -31,6 +31,7 @@
 #include "third_party/blink/renderer/core/core_initializer.h"
 
 #include "third_party/blink/public/platform/platform.h"
+#include "third_party/blink/renderer/bindings/core/v8/binding_security.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_streamer_thread.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_throw_dom_exception.h"
 #include "third_party/blink/renderer/core/css/media_feature_names.h"
@@ -38,7 +39,7 @@
 #include "third_party/blink/renderer/core/css/parser/css_parser_token_range.h"
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
 #include "third_party/blink/renderer/core/dom/document.h"
-#include "third_party/blink/renderer/core/event_names.h"
+#include "third_party/blink/renderer/core/event_interface_names.h"
 #include "third_party/blink/renderer/core/event_target_names.h"
 #include "third_party/blink/renderer/core/event_type_names.h"
 #include "third_party/blink/renderer/core/events/event_factory.h"
@@ -96,7 +97,7 @@ void CoreInitializer::Initialize() {
       xmlns_names::kAttrsCount;
 
   const unsigned kCoreStaticStringsCount =
-      kQualifiedNamesCount + EventNames::kNamesCount +
+      kQualifiedNamesCount + event_interface_names::kNamesCount +
       event_target_names::kNamesCount + event_type_names::kNamesCount +
       fetch_initiator_type_names::kNamesCount + font_family_names::kNamesCount +
       html_tokenizer_names::kNamesCount + http_names::kNamesCount +
@@ -110,25 +111,25 @@ void CoreInitializer::Initialize() {
 
   AtomicStringTable::Instance().ReserveCapacity(kCoreStaticStringsCount);
 
-  html_names::init();
-  mathml_names::init();
-  svg_names::init();
-  xlink_names::init();
-  xml_names::init();
-  xmlns_names::init();
+  html_names::Init();
+  mathml_names::Init();
+  svg_names::Init();
+  xlink_names::Init();
+  xml_names::Init();
+  xmlns_names::Init();
 
-  EventNames::init();
-  event_target_names::init();
-  event_type_names::init();
-  fetch_initiator_type_names::init();
-  font_family_names::init();
-  html_tokenizer_names::init();
-  http_names::init();
-  input_mode_names::init();
-  input_type_names::init();
-  media_feature_names::init();
-  media_type_names::init();
-  performance_entry_names::init();
+  event_interface_names::Init();
+  event_target_names::Init();
+  event_type_names::Init();
+  fetch_initiator_type_names::Init();
+  font_family_names::Init();
+  html_tokenizer_names::Init();
+  http_names::Init();
+  input_mode_names::Init();
+  input_type_names::Init();
+  media_feature_names::Init();
+  media_type_names::Init();
+  performance_entry_names::Init();
 
   MediaQueryEvaluator::Init();
   CSSParserTokenRange::InitStaticEOFToken();
@@ -145,6 +146,7 @@ void CoreInitializer::Initialize() {
 
   V8ThrowDOMException::Init();
 
+  BindingSecurity::Init();
   ScriptStreamerThread::Init();
 }
 

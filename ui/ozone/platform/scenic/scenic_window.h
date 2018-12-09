@@ -33,21 +33,15 @@ class OZONE_EXPORT ScenicWindow : public PlatformWindow,
                                   public InputEventDispatcherDelegate {
  public:
   // Both |window_manager| and |delegate| must outlive the ScenicWindow.
-  // |view_owner_request| is passed to the view managed when creating the
-  // underlying view. In order for the View to be displayed the ViewOwner must
-  // be used to add the view to a ViewContainer.
+  // |view_token| is passed to Scenic to attach the view to the view tree.
   ScenicWindow(ScenicWindowManager* window_manager,
                PlatformWindowDelegate* delegate,
-               fidl::InterfaceRequest<fuchsia::ui::viewsv1token::ViewOwner>
-                   view_owner_request);
+               zx::eventpair view_token);
   ~ScenicWindow() override;
 
   scenic::Session* scenic_session() { return &scenic_session_; }
-  const scenic::Node& node() const { return node_; }
 
-  // Sets texture of the window. |image| must be created in scenic_session().
-  void SetTexture(const scenic::Image& image);
-  void SetTexture(uint32_t image_id);
+  void ExportRenderingEntity(zx::eventpair export_token);
 
   // PlatformWindow implementation.
   gfx::Rect GetBounds() override;
@@ -83,7 +77,7 @@ class OZONE_EXPORT ScenicWindow : public PlatformWindow,
                OnEventCallback callback) override;
 
   // Callbacks for |scenic_session_|.
-  void OnScenicError();
+  void OnScenicError(zx_status_t status);
   void OnScenicEvents(fidl::VectorPtr<fuchsia::ui::scenic::Event> events);
 
   // InputEventDispatcher::Delegate interface.
@@ -91,7 +85,7 @@ class OZONE_EXPORT ScenicWindow : public PlatformWindow,
 
   // Error handler for |view_|. This error normally indicates the View was
   // destroyed (e.g. dropping ViewOwner).
-  void OnViewError();
+  void OnViewError(zx_status_t status);
 
   void UpdateSize();
 
@@ -109,17 +103,17 @@ class OZONE_EXPORT ScenicWindow : public PlatformWindow,
   // Scenic session used for all drawing operations in this View.
   scenic::Session scenic_session_;
 
-  // Node ID in |scenic_session_| for the parent view.
+  // Node in |scenic_session_| for the parent view.
   scenic::ImportNode parent_node_;
 
-  // Node ID in |scenic_session_| for the view.
+  // Node in |scenic_session_| for the parent view.
   scenic::EntityNode node_;
 
-  // Shape and material resources for the view in the context of
-  // |scenic_session_|. They are used to set shape and texture for the view
-  // node.
-  scenic::ShapeNode shape_node_;
-  scenic::Material material_;
+  // Node in |scenic_session_| for receiving input that hits within our View.
+  scenic::ShapeNode input_node_;
+
+  // Node in |scenic_session_| for rendering (hit testing disabled).
+  scenic::EntityNode render_node_;
 
   // The ratio used for translating device-independent coordinates to absolute
   // pixel coordinates.

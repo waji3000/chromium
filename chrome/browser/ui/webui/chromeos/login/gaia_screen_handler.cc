@@ -18,7 +18,7 @@
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "base/task/post_task.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
@@ -35,7 +35,6 @@
 #include "chrome/browser/chromeos/net/network_portal_detector_impl.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_network_configuration_updater.h"
-#include "chrome/browser/chromeos/policy/temp_certs_cache_nss.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/lifetime/browser_shutdown.h"
@@ -71,6 +70,7 @@
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
+#include "services/network/nss_temp_certs_cache_chromeos.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "ui/base/ime/chromeos/input_method_manager.h"
 #include "ui/base/ime/chromeos/input_method_util.h"
@@ -181,8 +181,6 @@ void UpdateAuthParams(base::DictionaryValue* params,
   CrosSettings* cros_settings = CrosSettings::Get();
   bool allow_new_user = true;
   cros_settings->GetBoolean(kAccountsPrefAllowNewUser, &allow_new_user);
-  params->SetBoolean("guestSignin",
-                     user_manager::UserManager::Get()->IsGuestSessionAllowed());
 
   // nosignup flow if new users are not allowed.
   if (!allow_new_user || is_restrictive_proxy)
@@ -193,7 +191,6 @@ void UpdateAuthParams(base::DictionaryValue* params,
   // Now check whether we're in multi-profiles user adding scenario and
   // disable GAIA right panel features if that's the case.
   if (UserAddingScreen::Get()->IsRunning()) {
-    params->SetBoolean("guestSignin", false);
     params->SetBoolean("supervisedUsersCanCreate", false);
   }
 }
@@ -494,7 +491,7 @@ void GaiaScreenHandler::LoadGaiaWithPartitionAndVersionAndConsent(
   params.SetString("webviewPartitionName", partition_name);
 
   frame_state_ = FRAME_STATE_LOADING;
-  CallJS("loadAuthExtension", params);
+  CallJSWithPrefix("loadAuthExtension", params);
 }
 
 void GaiaScreenHandler::ReloadGaia(bool force_reload) {
@@ -517,7 +514,7 @@ void GaiaScreenHandler::ReloadGaia(bool force_reload) {
 }
 
 void GaiaScreenHandler::MonitorOfflineIdle(bool is_online) {
-  CallJS("monitorOfflineIdle", is_online);
+  CallJSWithPrefix("monitorOfflineIdle", is_online);
 }
 
 void GaiaScreenHandler::DeclareLocalizedValues(
@@ -617,8 +614,7 @@ void GaiaScreenHandler::RegisterMessages() {
   AddCallback("hideOobeDialog", &GaiaScreenHandler::HandleHideOobeDialog);
   AddCallback("updateSigninUIState",
               &GaiaScreenHandler::HandleUpdateSigninUIState);
-  AddCallback("showGuestForGaia",
-              &GaiaScreenHandler::HandleShowGuestForGaiaScreen);
+  AddCallback("showGuestInOobe", &GaiaScreenHandler::HandleShowGuestInOobe);
 
   // Allow UMA metrics collection from JS.
   web_ui()->AddMessageHandler(std::make_unique<MetricsHandler>());
@@ -739,16 +735,18 @@ void GaiaScreenHandler::DoAdAuth(
       break;
     case authpolicy::ERROR_PARSE_UPN_FAILED:
     case authpolicy::ERROR_BAD_USER_NAME:
-      CallJS("invalidateAd", username,
-             static_cast<int>(ActiveDirectoryErrorState::BAD_USERNAME));
+      CallJSWithPrefix(
+          "invalidateAd", username,
+          static_cast<int>(ActiveDirectoryErrorState::BAD_USERNAME));
       break;
     case authpolicy::ERROR_BAD_PASSWORD:
-      CallJS("invalidateAd", username,
-             static_cast<int>(ActiveDirectoryErrorState::BAD_AUTH_PASSWORD));
+      CallJSWithPrefix(
+          "invalidateAd", username,
+          static_cast<int>(ActiveDirectoryErrorState::BAD_AUTH_PASSWORD));
       break;
     default:
-      CallJS("invalidateAd", username,
-             static_cast<int>(ActiveDirectoryErrorState::NONE));
+      CallJSWithPrefix("invalidateAd", username,
+                       static_cast<int>(ActiveDirectoryErrorState::NONE));
       core_oobe_view_->ShowSignInError(
           0, GetAdErrorMessage(error), std::string(),
           HelpAppLauncher::HELP_CANT_ACCESS_ACCOUNT);
@@ -936,12 +934,8 @@ void GaiaScreenHandler::HandleUpdateSigninUIState(int state) {
   }
 }
 
-void GaiaScreenHandler::HandleShowGuestForGaiaScreen(bool allow_guest_login,
-                                                     bool can_show_for_gaia) {
-  LoginScreenClient::Get()->login_screen()->SetAllowLoginAsGuest(
-      allow_guest_login);
-  LoginScreenClient::Get()->login_screen()->SetShowGuestButtonForGaiaScreen(
-      can_show_for_gaia);
+void GaiaScreenHandler::HandleShowGuestInOobe(bool show) {
+  LoginScreenClient::Get()->login_screen()->SetShowGuestButtonInOobe(show);
 }
 
 void GaiaScreenHandler::OnShowAddUser() {
@@ -1195,7 +1189,7 @@ void GaiaScreenHandler::ShowGaiaScreenIfReady() {
     // When the WebUI is destroyed, |untrusted_authority_certs_cache_| will go
     // out of scope and the certificates will not be held in memory anymore.
     untrusted_authority_certs_cache_ =
-        std::make_unique<policy::TempCertsCacheNSS>(
+        std::make_unique<network::NSSTempCertsCacheChromeOS>(
             g_browser_process->platform_part()
                 ->browser_policy_connector_chromeos()
                 ->GetDeviceNetworkConfigurationUpdater()
@@ -1230,7 +1224,7 @@ void GaiaScreenHandler::ShowWhitelistCheckFailedError() {
                     g_browser_process->platform_part()
                         ->browser_policy_connector_chromeos()
                         ->IsEnterpriseManaged());
-  CallJS("showWhitelistCheckFailedError", true, params);
+  CallJSWithPrefix("showWhitelistCheckFailedError", true, params);
 }
 
 void GaiaScreenHandler::LoadAuthExtension(bool force,

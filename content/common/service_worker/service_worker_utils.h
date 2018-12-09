@@ -17,6 +17,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/resource_type.h"
 #include "net/http/http_request_headers.h"
+#include "third_party/blink/public/common/fetch/fetch_api_request_headers_map.h"
 #include "third_party/blink/public/common/service_worker/service_worker_status_code.h"
 #include "url/gurl.h"
 
@@ -24,7 +25,6 @@ namespace content {
 
 class ServiceWorkerUtils {
  public:
-  using RequestHeaderMap = base::flat_map<std::string, std::string>;
 
   static bool IsMainResourceType(ResourceType type) {
     return IsResourceTypeFrame(type) || type == RESOURCE_TYPE_SHARED_WORKER;
@@ -83,15 +83,10 @@ class ServiceWorkerUtils {
       int load_flags);
 
   CONTENT_EXPORT static std::string SerializeFetchRequestToString(
-      const ServiceWorkerFetchRequest& request);
+      const blink::mojom::FetchAPIRequest& request);
 
-  CONTENT_EXPORT static ServiceWorkerFetchRequest
+  CONTENT_EXPORT static blink::mojom::FetchAPIRequestPtr
   DeserializeFetchRequestFromString(const std::string& serialized);
-
-  // TODO(https://crbug.com/789854) Remove this once ServiceWorkerHeaderMap is
-  // removed.
-  CONTENT_EXPORT static content::ServiceWorkerHeaderMap
-  ToServiceWorkerHeaderMap(const RequestHeaderMap& header_);
 
  private:
   static bool IsPathRestrictionSatisfiedInternal(

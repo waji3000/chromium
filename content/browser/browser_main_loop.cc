@@ -61,7 +61,6 @@
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
-#include "content/browser/compositor/gpu_process_transport_factory.h"
 #include "content/browser/compositor/surface_utils.h"
 #include "content/browser/compositor/viz_process_transport_factory.h"
 #include "content/browser/dom_storage/dom_storage_area.h"
@@ -125,6 +124,7 @@
 #include "media/mojo/buildflags.h"
 #include "mojo/core/embedder/embedder.h"
 #include "mojo/core/embedder/scoped_ipc_support.h"
+#include "mojo/public/cpp/bindings/mojo_buildflags.h"
 #include "mojo/public/cpp/bindings/sync_call_restrictions.h"
 #include "net/base/network_change_notifier.h"
 #include "net/socket/client_socket_factory.h"
@@ -149,6 +149,7 @@
 #include "ui/gfx/switches.h"
 
 #if defined(USE_AURA) || defined(OS_MACOSX)
+#include "content/browser/compositor/gpu_process_transport_factory.h"
 #include "content/browser/compositor/image_transport_factory.h"
 #endif
 
@@ -242,6 +243,10 @@
 
 #if defined(ENABLE_IPC_FUZZER) && defined(OS_MACOSX)
 #include "base/mac/foundation_util.h"
+#endif
+
+#if BUILDFLAG(MOJO_RANDOM_DELAYS_ENABLED)
+#include "mojo/public/cpp/bindings/lib/test_random_mojo_delays.h"
 #endif
 
 // One of the linux specific headers defines this as a macro.
@@ -561,6 +566,7 @@ void BrowserMainLoop::Init() {
     // This is always invoked before |io_thread_| is initialized (i.e. never
     // resets it).
     io_thread_ = std::move(startup_data->thread);
+    service_manager_context_ = startup_data->service_manager_context;
   }
 
   parts_.reset(
@@ -1081,14 +1087,16 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
     BrowserGpuChannelHostFactory::instance()->CloseChannel();
 
   // Shutdown the Service Manager and IPC.
-  service_manager_context_.reset();
+  if (service_manager_context_)
+    service_manager_context_->ShutDown();
+  owned_service_manager_context_.reset();
   mojo_ipc_support_.reset();
 
   if (save_file_manager_)
     save_file_manager_->Shutdown();
 
   {
-    base::ThreadRestrictions::ScopedAllowWait allow_wait_for_join;
+    base::ScopedAllowBaseSyncPrimitives allow_wait_for_join;
     {
       TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:IOThread");
       ResetThread_IO(std::move(io_thread_));
@@ -1308,6 +1316,14 @@ int BrowserMainLoop::BrowserThreadsStarted() {
   {
     TRACE_EVENT0("startup", "BrowserThreadsStarted::Subsystem:MidiService");
     midi_service_.reset(new midi::MidiService);
+  }
+
+  {
+    TRACE_EVENT0("startup", "BrowserThreadsStarted::Subsystem:GamepadService");
+    device::GamepadService::GetInstance()->StartUp(
+        content::ServiceManagerConnection::GetForProcess()
+            ->GetConnector()
+            ->Clone());
   }
 
 #if defined(OS_WIN)
@@ -1535,9 +1551,13 @@ void BrowserMainLoop::InitializeMojo() {
       base::CreateSingleThreadTaskRunnerWithTraits({BrowserThread::IO}),
       mojo::core::ScopedIPCSupport::ShutdownPolicy::FAST));
 
-  service_manager_context_.reset(
-      new ServiceManagerContext(io_thread_->task_runner()));
+  if (!service_manager_context_) {
+    owned_service_manager_context_ =
+        std::make_unique<ServiceManagerContext>(io_thread_->task_runner());
+    service_manager_context_ = owned_service_manager_context_.get();
+  }
   ServiceManagerContext::StartBrowserConnection();
+
 #if defined(OS_MACOSX)
   mojo::core::SetMachPortProvider(MachBroker::GetInstance());
 #endif  // defined(OS_MACOSX)
@@ -1588,6 +1608,10 @@ void BrowserMainLoop::InitializeMojo() {
     parts_->ServiceManagerConnectionStarted(
         ServiceManagerConnection::GetForProcess());
   }
+
+#if BUILDFLAG(MOJO_RANDOM_DELAYS_ENABLED)
+  mojo::BeginRandomMojoDelays();
+#endif
 }
 
 base::FilePath BrowserMainLoop::GetStartupTraceFileName() const {
@@ -1674,8 +1698,9 @@ void BrowserMainLoop::InitializeAudio() {
           if (connection) {
             // The browser is not shutting down: |connection| would be null
             // otherwise.
-            connection->GetConnector()->StartService(
-                audio::mojom::kServiceName);
+            connection->GetConnector()->WarmService(
+                service_manager::ServiceFilter::ByName(
+                    audio::mojom::kServiceName));
           }
         }));
   }

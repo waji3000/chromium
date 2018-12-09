@@ -165,7 +165,9 @@ void HardwareRenderer::DrawGL(AwDrawGLInfo* draw_info) {
 void HardwareRenderer::AllocateSurface() {
   DCHECK(!child_id_.is_valid());
   parent_local_surface_id_allocator_->GenerateId();
-  child_id_ = parent_local_surface_id_allocator_->GetCurrentLocalSurfaceId();
+  child_id_ =
+      parent_local_surface_id_allocator_->GetCurrentLocalSurfaceIdAllocation()
+          .local_surface_id();
   surfaces_->AddChildId(viz::SurfaceId(frame_sink_id_, child_id_));
 }
 
@@ -184,11 +186,9 @@ void HardwareRenderer::DidReceiveCompositorFrameAck(
                               last_submitted_layer_tree_frame_sink_id_);
 }
 
-void HardwareRenderer::DidPresentCompositorFrame(
-    uint32_t presentation_token,
-    const gfx::PresentationFeedback& feedback) {}
-
-void HardwareRenderer::OnBeginFrame(const viz::BeginFrameArgs& args) {
+void HardwareRenderer::OnBeginFrame(
+    const viz::BeginFrameArgs& args,
+    const base::flat_map<uint32_t, gfx::PresentationFeedback>& feedbacks) {
   // TODO(tansell): Hook this up.
 }
 

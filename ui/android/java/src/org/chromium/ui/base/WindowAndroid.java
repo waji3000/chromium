@@ -773,7 +773,7 @@ public class WindowAndroid implements AndroidPermissionDelegate {
      * Return the current window token, or null.
      */
     @CalledByNative
-    private IBinder getWindowToken() {
+    protected IBinder getWindowToken() {
         Activity activity = activityFromContext(mContextRef.get());
         if (activity == null) return null;
         Window window = activity.getWindow();
@@ -794,6 +794,15 @@ public class WindowAndroid implements AndroidPermissionDelegate {
         if (mAnimationPlaceholderView.willNotDraw() != willNotDraw) {
             mAnimationPlaceholderView.setWillNotDraw(willNotDraw);
         }
+    }
+
+    /**
+     * As long as there are still animations which haven't ended, this will return false.
+     * @return True if all known animations have ended.
+     */
+    @VisibleForTesting
+    public boolean haveAnimationsEnded() {
+        return mAnimationsOverContent.isEmpty();
     }
 
     /**

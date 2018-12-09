@@ -1360,7 +1360,7 @@ int LayoutTableSection::PaginationStrutForRow(LayoutTableRow* row,
 
 void LayoutTableSection::ComputeOverflowFromDescendants() {
   auto old_self_visual_overflow_rect = SelfVisualOverflowRect();
-  overflow_.reset();
+  ClearAllOverflows();
   overflowing_cells_.clear();
   force_full_paint_ = false;
 
@@ -1446,7 +1446,8 @@ void LayoutTableSection::ComputeLayoutOverflowFromDescendants() {
 bool LayoutTableSection::RecalcOverflow() {
   if (!ChildNeedsOverflowRecalc())
     return false;
-  ChildNeedsOverflowRecalc();
+  ClearChildNeedsLayoutOverflowRecalc();
+  ClearChildNeedsVisualOverflowRecalc();
   unsigned total_rows = grid_.size();
   bool children_overflow_changed = false;
   for (unsigned r = 0; r < total_rows; r++) {
@@ -1702,7 +1703,7 @@ void LayoutTableSection::RecalcCells() {
   }
 
   grid_.ShrinkToFit();
-  SetNeedsLayoutAndFullPaintInvalidation(LayoutInvalidationReason::kUnknown);
+  SetNeedsLayoutAndFullPaintInvalidation(layout_invalidation_reason::kUnknown);
 }
 
 // FIXME: This function could be made O(1) in certain cases (like for the
@@ -1998,7 +1999,9 @@ int LayoutTableSection::LogicalHeightForRow(
   if (grid_[row_index].logical_height.IsSpecified()) {
     LayoutUnit specified_logical_height =
         MinimumValueForLength(grid_[row_index].logical_height, LayoutUnit());
-    logical_height = std::max(logical_height, specified_logical_height.ToInt());
+    // We round here to match computations for row_pos_ in
+    // CalcRowLogicalHeight().
+    logical_height = std::max(logical_height, specified_logical_height.Round());
   }
   return logical_height;
 }

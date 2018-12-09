@@ -292,15 +292,33 @@ cr.define('extensions', function() {
      */
     hasPermissions_: function() {
       return this.data.permissions.simplePermissions.length > 0 ||
-          !!this.data.permissions.hostAccess;
+          this.hasRuntimeHostPermissions_();
     },
 
     /**
      * @return {boolean}
      * @private
      */
-    showRuntimeHostPermissions_: function() {
-      return !!this.data.permissions.hostAccess;
+    hasRuntimeHostPermissions_: function() {
+      return !!this.data.permissions.runtimeHostPermissions;
+    },
+
+    /**
+     * @return {boolean}
+     * @private
+     */
+    showFreeformRuntimeHostPermissions_: function() {
+      return this.hasRuntimeHostPermissions_() &&
+          this.data.permissions.runtimeHostPermissions.hasAllHosts;
+    },
+
+    /**
+     * @return {boolean}
+     * @private
+     */
+    showHostPermissionsToggleList_: function() {
+      return this.hasRuntimeHostPermissions_() &&
+          !this.data.permissions.runtimeHostPermissions.hasAllHosts;
     },
   });
 

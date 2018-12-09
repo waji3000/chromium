@@ -13,6 +13,9 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/sparse_histogram.h"
+#include "base/time/clock.h"
+#include "base/time/time.h"
+#include "components/offline_pages/core/offline_clock.h"
 #include "components/offline_pages/core/offline_store_utils.h"
 #include "components/offline_pages/core/prefetch/prefetch_types.h"
 #include "components/offline_pages/core/prefetch/store/prefetch_store.h"
@@ -74,8 +77,7 @@ std::vector<PrefetchItemStats> FetchUrlsSync(sql::Database* db) {
                           statement.ColumnInt64(5)),  // creation_time
                       static_cast<PrefetchItemErrorCode>(
                           statement.ColumnInt(6)),  // error_code
-                      statement.ColumnInt64(7)      // file_size
-                      );
+                      statement.ColumnInt64(7));    // file_size
   }
 
   return urls;
@@ -89,7 +91,7 @@ bool MarkUrlAsZombie(sql::Database* db,
       "offline_id = ?";
   sql::Statement statement(db->GetCachedStatement(SQL_FROM_HERE, kSql));
   statement.BindInt(0, static_cast<int>(PrefetchItemState::ZOMBIE));
-  statement.BindInt(1, store_utils::ToDatabaseTime(freshness_time));
+  statement.BindInt64(1, store_utils::ToDatabaseTime(freshness_time));
   statement.BindInt64(2, offline_id);
   return statement.Run();
 }
@@ -160,7 +162,7 @@ bool ReportMetricsAndFinalizeSync(sql::Database* db) {
 
   const std::vector<PrefetchItemStats> urls = FetchUrlsSync(db);
 
-  base::Time now = base::Time::Now();
+  base::Time now = OfflineClock()->Now();
   for (const auto& url : urls) {
     MarkUrlAsZombie(db, now, url.offline_id);
   }

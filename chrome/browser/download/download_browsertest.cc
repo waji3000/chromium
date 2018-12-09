@@ -30,7 +30,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "base/task/post_task.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/test_file_util.h"
@@ -143,6 +143,10 @@ using net::test_server::EmbeddedTestServer;
 namespace {
 
 const char kDownloadTest1Path[] = "download-test1.lib";
+
+void VerifyNewDownloadId(uint32_t expected_download_id, uint32_t download_id) {
+  ASSERT_EQ(expected_download_id, download_id);
+}
 
 class DownloadTestContentBrowserClient : public content::ContentBrowserClient {
  public:
@@ -317,7 +321,7 @@ class DownloadTestObserverResumable : public content::DownloadTestObserver {
 const char kGoodCrxId[] = "ldnnhddmnhbkjipkidpdiheffobcpfmf";
 const char kGoodCrxPath[] = "extensions/good.crx";
 
-const char kLargeThemeCrxId[] = "pjpgmfcmabopnnfonnhmdjglfpjjfkbf";
+const char kLargeThemeCrxId[] = "ibcijncamhmjjdodjamgiipcgnnaeagd";
 const char kLargeThemePath[] = "extensions/theme2.crx";
 
 // User script file used in tests.
@@ -1625,6 +1629,11 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadTest_IncognitoRegular) {
   ASSERT_TRUE(base::PathExists(download_items[0]->GetTargetFilePath()));
   EXPECT_TRUE(VerifyFile(download_items[0]->GetTargetFilePath(),
                          original_contents, origin_file_size));
+  uint32_t download_id = download_items[0]->GetId();
+  // Verify that manager will increment the download ID when a new download is
+  // requested.
+  DownloadManagerForBrowser(browser())->GetNextId(
+      base::BindOnce(&VerifyNewDownloadId, download_id + 1));
 
   // Setup an incognito window.
   Browser* incognito = CreateIncognitoBrowser();
@@ -1648,6 +1657,8 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadTest_IncognitoRegular) {
   ASSERT_TRUE(base::PathExists(download_items[0]->GetTargetFilePath()));
   EXPECT_TRUE(VerifyFile(download_items[0]->GetTargetFilePath(),
                          original_contents, origin_file_size));
+  // The incognito download should increment the download ID again.
+  ASSERT_EQ(download_id + 2, download_items[0]->GetId());
 }
 
 // Navigate to a new background page, but don't download.
@@ -3263,7 +3274,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadTest_PauseResumeCancel) {
   EXPECT_NE(DownloadItem::CANCELLED, download_item->GetState());
   download_item->Pause();
   EXPECT_TRUE(download_item->IsPaused());
-  download_item->Resume();
+  download_item->Resume(false);
   EXPECT_FALSE(download_item->IsPaused());
   EXPECT_NE(DownloadItem::CANCELLED, download_item->GetState());
   download_item->Cancel(true);
@@ -3349,7 +3360,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, Resumption_NoPrompt) {
       error_injector.get(), download::DOWNLOAD_INTERRUPT_REASON_FILE_FAILED);
   ASSERT_TRUE(download);
 
-  download->Resume();
+  download->Resume(false);
   completion_observer->WaitForFinished();
 
   EXPECT_EQ(
@@ -3372,7 +3383,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, Resumption_WithPrompt) {
       error_injector.get(), download::DOWNLOAD_INTERRUPT_REASON_FILE_NO_SPACE);
   ASSERT_TRUE(download);
 
-  download->Resume();
+  download->Resume(true);
   completion_observer->WaitForFinished();
 
   EXPECT_EQ(
@@ -3399,7 +3410,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, Resumption_WithPromptAlways) {
   // Prompts the user initially because of the kPromptForDownload preference.
   EXPECT_TRUE(DidShowFileChooser());
 
-  download->Resume();
+  download->Resume(true);
   completion_observer->WaitForFinished();
 
   EXPECT_EQ(
@@ -3428,7 +3439,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, Resumption_Automatic) {
 
   std::unique_ptr<content::DownloadTestObserver> completion_observer(
       CreateWaiter(browser(), 1));
-  download->Resume();
+  download->Resume(true);
   completion_observer->WaitForFinished();
 
   // Automatic resumption causes download target determination to be run
@@ -3463,7 +3474,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, Resumption_MultipleAttempts) {
 
   // Resuming should cause the download to be interrupted again due to the
   // errors we are injecting.
-  download->Resume();
+  download->Resume(false);
   resumable_observer->WaitForFinished();
   ASSERT_EQ(DownloadItem::INTERRUPTED, download->GetState());
   ASSERT_EQ(download::DOWNLOAD_INTERRUPT_REASON_FILE_FAILED,
@@ -3474,7 +3485,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, Resumption_MultipleAttempts) {
   // No errors this time. The download should complete successfully.
   EXPECT_FALSE(completion_observer->IsFinished());
   completion_observer->StartObserving();
-  download->Resume();
+  download->Resume(false);
   completion_observer->WaitForFinished();
   EXPECT_EQ(DownloadItem::COMPLETE, download->GetState());
 

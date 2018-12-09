@@ -27,6 +27,8 @@ class CONTENT_EXPORT BrowserAccessibilityAndroid : public BrowserAccessibility {
   base::string16 GetValue() const override;
 
   bool PlatformIsLeaf() const override;
+  // Android needs events even on objects that are trimmed away.
+  bool CanFireEvents() const override;
 
   bool IsCheckable() const;
   bool IsChecked() const;
@@ -81,6 +83,8 @@ class CONTENT_EXPORT BrowserAccessibilityAndroid : public BrowserAccessibility {
   base::string16 GetHint() const;
 
   std::string GetRoleString() const;
+
+  base::string16 GetContentInvalidErrorMessage() const;
 
   base::string16 GetRoleDescription() const;
 

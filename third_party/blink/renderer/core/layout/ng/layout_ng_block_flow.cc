@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/core/layout/ng/layout_ng_block_flow.h"
 
 #include "third_party/blink/renderer/core/layout/layout_analyzer.h"
+#include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/min_max_size.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_fragment_traversal.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_node_data.h"
@@ -15,6 +16,7 @@
 #include "third_party/blink/renderer/core/layout/ng/ng_out_of_flow_layout_part.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_physical_box_fragment.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 
 namespace blink {
 
@@ -65,7 +67,7 @@ void LayoutNGBlockFlow::UpdateBlockLayout(bool relayout_children) {
   scoped_refptr<NGLayoutResult> result =
       NGBlockNode(this).Layout(constraint_space);
 
-  for (NGOutOfFlowPositionedDescendant descendant :
+  for (const NGOutOfFlowPositionedDescendant& descendant :
        result->OutOfFlowPositionedDescendants())
     descendant.node.UseOldOutOfFlowPositioning();
 
@@ -210,7 +212,7 @@ void LayoutNGBlockFlow::UpdateOutOfFlowBlockLayout() {
   // border-box relative, flip it around the size of the border box, rather than
   // the size of the containing block (padding box).
   LayoutUnit block_top_or_left =
-      parent_style->IsFlippedBlocksWritingMode()
+      container_style->IsFlippedBlocksWritingMode()
           ? container_border_box_logical_height - static_block
           : static_block;
 
@@ -221,7 +223,7 @@ void LayoutNGBlockFlow::UpdateOutOfFlowBlockLayout() {
           ? NGPhysicalOffset(inline_left_or_top, block_top_or_left)
           : NGPhysicalOffset(block_top_or_left, inline_left_or_top);
   NGStaticPosition static_position =
-      NGStaticPosition::Create(parent_style->GetWritingMode(),
+      NGStaticPosition::Create(container_style->GetWritingMode(),
                                parent_style->Direction(), static_location);
 
   // Set correct container for inline containing blocks.
@@ -229,6 +231,17 @@ void LayoutNGBlockFlow::UpdateOutOfFlowBlockLayout() {
       NGBlockNode(this), static_position,
       css_container->IsBox() ? nullptr : css_container);
 
+  base::Optional<NGLogicalSize> initial_containing_block_fixed_size;
+  if (container->IsLayoutView() && !GetDocument().Printing()) {
+    if (LocalFrameView* frame_view = ToLayoutView(container)->GetFrameView()) {
+      IntSize size =
+          frame_view->LayoutViewport()->ExcludeScrollbars(frame_view->Size());
+      NGPhysicalSize physical_size =
+          NGPhysicalSize(LayoutUnit(size.Width()), LayoutUnit(size.Height()));
+      initial_containing_block_fixed_size =
+          physical_size.ConvertToLogical(container->Style()->GetWritingMode());
+    }
+  }
   // We really only want to lay out ourselves here, so we pass |this| to
   // Run(). Otherwise, NGOutOfFlowLayoutPart may also lay out other objects
   // it discovers that are part of the same containing block, but those
@@ -236,7 +249,7 @@ void LayoutNGBlockFlow::UpdateOutOfFlowBlockLayout() {
   NGOutOfFlowLayoutPart(
       &container_builder, css_container->CanContainAbsolutePositionObjects(),
       css_container->CanContainFixedPositionObjects(), borders_and_scrollbars,
-      constraint_space, *container_style)
+      constraint_space, *container_style, initial_containing_block_fixed_size)
       .Run(/* only_layout */ this);
   scoped_refptr<NGLayoutResult> result = container_builder.ToBoxFragment();
   // These are the unpositioned OOF descendants of the current OOF block.

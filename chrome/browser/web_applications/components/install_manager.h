@@ -22,9 +22,11 @@ class InstallManager {
       base::OnceCallback<void(const AppId& app_id, InstallResultCode code)>;
 
   // Returns true if a web app can be installed for a given |web_contents|.
-  virtual bool CanInstallWebApp(const content::WebContents* web_contents) = 0;
+  virtual bool CanInstallWebApp(content::WebContents* web_contents) = 0;
 
   // Starts a web app installation process for a given |web_contents|.
+  // |force_shortcut_app| forces the creation of a shortcut app instead of a PWA
+  // even if installation is available.
   virtual void InstallWebApp(content::WebContents* web_contents,
                              bool force_shortcut_app,
                              OnceInstallCallback callback) = 0;

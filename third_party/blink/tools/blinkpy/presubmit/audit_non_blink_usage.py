@@ -86,6 +86,9 @@ _CONFIG = [
             # //base/allocator/partition_allocator/oom_callback.h.
             'base::SetPartitionAllocOomCallback',
 
+            # //base/metrics/histogram_functions.h
+            'base::UmaHistogram.+',
+
             # //base/metrics/field_trial_params.h.
             'base::GetFieldTrialParamValueByFeature',
             'base::GetFieldTrialParamByFeatureAsBool',
@@ -223,21 +226,35 @@ _CONFIG = [
             # Nested namespaces under the blink namespace
             'background_scheduler::.+',
             'canvas_heuristic_parameters::.+',
+            'compositor_target_property::.+',
+            'cors::.+',
+            'css_parsing_utils::.+',
             'cssvalue::.+',
             'encoding::.+',
+            'encoding_enum::.+',
             'event_handling_util::.+',
             'event_util::.+',
             'file_error::.+',
+            'inspector_\\w+_event::.+',
+            'inspector_async_task::.+',
+            'inspector_set_layer_tree_id::.+',
+            'inspector_tracing_started_in_frame::.+',
+            'layout_invalidation_reason::.+',
             'media_constraints_impl::.+',
             'media_element_parser_helpers::.+',
             'network_utils::.+',
+            'origin_trials::.+',
             'paint_filter_builder::.+',
             'root_scroller_util::.+',
             'scheduler::.+',
+            'scroll_customization::.+',
+            'scroll_timeline_util::.+',
             'style_change_extra_data::.+',
             'style_change_reason::.+',
             'svg_path_parser::.+',
+            'trace_event::.+',
             'touch_action_util::.+',
+            'unicode::.+',
             'vector_math::.+',
             'web_core_test_support::.+',
             'xpath::.+',
@@ -280,6 +297,7 @@ _CONFIG = [
             # anymore.
             'service_manager::Connector',
             'service_manager::InterfaceProvider',
+            'service_manager::ServiceFilter',
 
             # STL containers such as std::string and std::vector are discouraged
             # but still needed for interop with WebKit/common. Note that other
@@ -307,6 +325,12 @@ _CONFIG = [
         ],
     },
     {
+        'paths': ['third_party/blink/renderer/core/animation'],
+        'allowed': [
+            '[a-z_]+_functions::.+',
+        ],
+    },
+    {
         'paths': ['third_party/blink/renderer/core/clipboard'],
         'allowed': ['gfx::PNGCodec', 'net::EscapeForHTML'],
     },
@@ -314,6 +338,7 @@ _CONFIG = [
         'paths': ['third_party/blink/renderer/core/css'],
         'allowed': [
             # Internal implementation details for CSS.
+            'css_property_parser_helpers::.+',
             'detail::.+',
         ],
     },
@@ -363,6 +388,12 @@ _CONFIG = [
         ],
     },
     {
+        'paths': ['third_party/blink/renderer/core/style/computed_style.h'],
+        'allowed': [
+            'css_longhand::.+',
+        ],
+    },
+    {
         'paths': ['third_party/blink/renderer/core/inspector/inspector_memory_agent.cc'],
         'allowed': [
             'base::ModuleCache',
@@ -404,6 +435,14 @@ _CONFIG = [
     },
     {
         'paths': [
+            'third_party/blink/renderer/modules/indexeddb/',
+        ],
+        'allowed': [
+            'indexed_db::.+',
+        ],
+    },
+    {
+        'paths': [
             'third_party/blink/renderer/modules/webgpu/',
         ],
         # The WebGPU Blink module needs access to the WebGPU control
@@ -421,6 +460,16 @@ _CONFIG = [
         # base::RefCounted should still be explicitly blocked, since
         # WTF::RefCounted should be used instead.
         'allowed': ['(?!base::RefCounted).+'],
+    },
+    {
+        'paths': [
+            'third_party/blink/renderer/platform/scheduler/common/single_thread_idle_task_runner.h',
+        ],
+        # base::RefCounted is prohibited in platform/ as defined above, but
+        # SingleThreadIdleTaskRunner needs to be constructed before WTF and
+        # PartitionAlloc are initialized, which forces us to use
+        # base::RefCountedThreadSafe for it.
+        'allowed': ['.+'],
     },
     {
         'paths': [
@@ -627,6 +676,7 @@ def check(path, contents):
     # TODO(tkent): Remove 'Test' after the great mv.
     if (ext not in ('.cc', '.cpp', '.h', '.mm')
             or path.find('/testing/') >= 0
+            or path.find('/tests/') >= 0
             or basename.endswith('Test')
             or basename.endswith('_test')
             or basename.endswith('_test_helpers')

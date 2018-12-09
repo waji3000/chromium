@@ -46,9 +46,7 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
     kFrameSizeAlignment = 16,
     kFrameSizePadding = 16,
 
-    // Note: This value is dependent on what's used by ffmpeg, do not change
-    // without inspecting av_frame_get_buffer() first.
-    kFrameAddressAlignment = 32
+    kFrameAddressAlignment = VideoFrameLayout::kBufferAddressAlignment
   };
 
   enum {
@@ -345,6 +343,10 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   // context.  Calls MD5Update with the context and the contents of the frame.
   static void HashFrameForTesting(base::MD5Context* context,
                                   const scoped_refptr<VideoFrame>& frame);
+
+  // Returns true if |frame| is accesible mapped in the VideoFrame memory space.
+  // static
+  static bool IsStorageTypeMappable(VideoFrame::StorageType storage_type);
 
   // Returns true if |frame| is accessible and mapped in the VideoFrame memory
   // space. If false, clients should refrain from accessing data(),

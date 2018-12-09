@@ -168,6 +168,12 @@
 #define glShallowFinishCHROMIUM GLES2_GET_FUN(ShallowFinishCHROMIUM)
 #define glShallowFlushCHROMIUM GLES2_GET_FUN(ShallowFlushCHROMIUM)
 #define glOrderingBarrierCHROMIUM GLES2_GET_FUN(OrderingBarrierCHROMIUM)
+#define glMultiDrawArraysWEBGL GLES2_GET_FUN(MultiDrawArraysWEBGL)
+#define glMultiDrawArraysInstancedWEBGL \
+  GLES2_GET_FUN(MultiDrawArraysInstancedWEBGL)
+#define glMultiDrawElementsWEBGL GLES2_GET_FUN(MultiDrawElementsWEBGL)
+#define glMultiDrawElementsInstancedWEBGL \
+  GLES2_GET_FUN(MultiDrawElementsInstancedWEBGL)
 #define glStencilFunc GLES2_GET_FUN(StencilFunc)
 #define glStencilFuncSeparate GLES2_GET_FUN(StencilFuncSeparate)
 #define glStencilMask GLES2_GET_FUN(StencilMask)
@@ -308,8 +314,6 @@
   GLES2_GET_FUN(ProduceTextureDirectCHROMIUM)
 #define glCreateAndConsumeTextureCHROMIUM \
   GLES2_GET_FUN(CreateAndConsumeTextureCHROMIUM)
-#define glCreateAndTexStorage2DSharedImageCHROMIUM \
-  GLES2_GET_FUN(CreateAndTexStorage2DSharedImageCHROMIUM)
 #define glBindUniformLocationCHROMIUM GLES2_GET_FUN(BindUniformLocationCHROMIUM)
 #define glBindTexImage2DCHROMIUM GLES2_GET_FUN(BindTexImage2DCHROMIUM)
 #define glBindTexImage2DWithInternalformatCHROMIUM \
@@ -338,8 +342,6 @@
 #define glCommitOverlayPlanesCHROMIUM GLES2_GET_FUN(CommitOverlayPlanesCHROMIUM)
 #define glFlushDriverCachesCHROMIUM GLES2_GET_FUN(FlushDriverCachesCHROMIUM)
 #define glGetLastFlushIdCHROMIUM GLES2_GET_FUN(GetLastFlushIdCHROMIUM)
-#define glScheduleDCLayerSharedStateCHROMIUM \
-  GLES2_GET_FUN(ScheduleDCLayerSharedStateCHROMIUM)
 #define glScheduleDCLayerCHROMIUM GLES2_GET_FUN(ScheduleDCLayerCHROMIUM)
 #define glSetActiveURLCHROMIUM GLES2_GET_FUN(SetActiveURLCHROMIUM)
 #define glMatrixLoadfCHROMIUM GLES2_GET_FUN(MatrixLoadfCHROMIUM)
@@ -412,5 +414,11 @@
 #define glFramebufferTextureMultiviewLayeredANGLE \
   GLES2_GET_FUN(FramebufferTextureMultiviewLayeredANGLE)
 #define glMaxShaderCompilerThreadsKHR GLES2_GET_FUN(MaxShaderCompilerThreadsKHR)
+#define glCreateAndTexStorage2DSharedImageCHROMIUM \
+  GLES2_GET_FUN(CreateAndTexStorage2DSharedImageCHROMIUM)
+#define glBeginSharedImageAccessDirectCHROMIUM \
+  GLES2_GET_FUN(BeginSharedImageAccessDirectCHROMIUM)
+#define glEndSharedImageAccessDirectCHROMIUM \
+  GLES2_GET_FUN(EndSharedImageAccessDirectCHROMIUM)
 
 #endif  // GPU_GLES2_GL2CHROMIUM_AUTOGEN_H_

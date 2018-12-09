@@ -4,6 +4,7 @@
 
 #import "ios/chrome/browser/ui/fullscreen/fullscreen_web_view_resizer.h"
 
+#include "base/ios/ios_util.h"
 #include "ios/chrome/browser/chrome_url_constants.h"
 #import "ios/chrome/browser/ui/fullscreen/fullscreen_model.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
@@ -20,13 +21,10 @@
 // The fullscreen model, used to get the information about the state of
 // fullscreen.
 @property(nonatomic, assign) FullscreenModel* model;
-// Whether the content offset should be matching the frame changes.
-@property(nonatomic, assign) BOOL compensateFrameChangeByOffset;
 @end
 
 @implementation FullscreenWebViewResizer
 
-@synthesize compensateFrameChangeByOffset = _compensateFrameChangeByOffset;
 @synthesize model = _model;
 @synthesize webState = _webState;
 
@@ -94,13 +92,7 @@
   if (!self.webState || !self.webState->GetView().superview)
     return;
 
-  UIEdgeInsets newInsets =
-      UIEdgeInsetsMake(self.model->GetCollapsedToolbarHeight() +
-                           progress * (self.model->GetExpandedToolbarHeight() -
-                                       self.model->GetCollapsedToolbarHeight()),
-                       0, progress * self.model->GetBottomToolbarHeight(), 0);
-
-  [self updateForInsets:newInsets];
+  [self updateForInsets:self.model->GetToolbarInsetsAtProgress(progress)];
 }
 
 // Updates the WebState view, resizing it such as |insets| is the insets between
@@ -112,6 +104,9 @@
   CRWWebViewScrollViewProxy* scrollViewProxy = webViewProxy.scrollViewProxy;
 
   if (self.webState->GetContentsMimeType() == "application/pdf") {
+    if (!base::ios::IsRunningOnIOS12OrLater()) {
+      insets.top -= webView.safeAreaInsets.top;
+    }
     scrollViewProxy.contentInset = insets;
     if (!CGRectEqualToRect(webView.frame, webView.superview.bounds)) {
       webView.frame = webView.superview.bounds;

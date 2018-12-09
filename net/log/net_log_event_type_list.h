@@ -483,25 +483,10 @@ EVENT_TYPE(SSL_CLIENT_CERT_REQUESTED)
 // The SSL stack blocked on a private key operation. The following parameters
 // are attached to the event.
 //   {
-//     "hash": <hash function used>,
+//     "algorithm": <TLS signature algorithm used>,
+//     "provider": <Human-readable name of the crypto provider>,
 //   }
 EVENT_TYPE(SSL_PRIVATE_KEY_OP)
-
-// The start/end of getting a Channel ID key.
-//
-// The START event contains these parameters:
-//   {
-//     "ephemeral": <Whether or not the Channel ID store is ephemeral>,
-//     "service": <Unique identifier for the ChannelIDService used>,
-//     "store": <Unique identifier for the ChannelIDStore used>,
-//   }
-//
-// The END event may contain these parameters:
-//   {
-//     "net_error": <Net error code>,
-//     "key": <Hex-encoded EC point of public key (uncompressed point format)>,
-//   }
-EVENT_TYPE(SSL_GET_CHANNEL_ID)
 
 // A client certificate (or none) was provided to the SSL library to be sent
 // to the SSL server.
@@ -826,6 +811,7 @@ EVENT_TYPE(SOCKET_POOL_CONNECTING_N_SOCKETS)
 //      "url": <String of URL being loaded>,
 //      "method": <The method ("POST" or "GET" or "HEAD" etc..)>,
 //      "load_flags": <Numeric value of the combined load flags>,
+//      "privacy_mode": <True if privacy mode is enabled for the request>
 //      "priority": <Numeric priority of the request>,
 //      "upload_id" <String of upload body identifier, if present>,
 //   }

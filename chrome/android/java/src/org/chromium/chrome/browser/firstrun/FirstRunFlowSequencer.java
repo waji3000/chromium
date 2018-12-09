@@ -60,7 +60,7 @@ public abstract class FirstRunFlowSequencer  {
     // The following are initialized via initializeSharedState().
     private boolean mIsAndroidEduDevice;
     private @ChildAccountStatus.Status int mChildAccountStatus;
-    private Account[] mGoogleAccounts;
+    private List<Account> mGoogleAccounts;
     private boolean mForceEduSignIn;
 
     /**
@@ -113,7 +113,7 @@ public abstract class FirstRunFlowSequencer  {
     }
 
     @VisibleForTesting
-    protected Account[] getGoogleAccounts() {
+    protected List<Account> getGoogleAccounts() {
         return AccountManagerFacade.get().tryGetGoogleAccounts();
     }
 
@@ -163,7 +163,7 @@ public abstract class FirstRunFlowSequencer  {
         mGoogleAccounts = getGoogleAccounts();
         // EDU devices should always have exactly 1 google account, which will be automatically
         // signed-in. All FRE screens are skipped in this case.
-        mForceEduSignIn = mIsAndroidEduDevice && mGoogleAccounts.length == 1 && !isSignedIn();
+        mForceEduSignIn = mIsAndroidEduDevice && mGoogleAccounts.size() == 1 && !isSignedIn();
     }
 
     void processFreEnvironmentPreNative() {
@@ -195,7 +195,7 @@ public abstract class FirstRunFlowSequencer  {
 
     /**
      * Called onNativeInitialized() a given flow as completed.
-     * @param data Resulting FRE properties bundle.
+     * @param freProperties Resulting FRE properties bundle.
      */
     public void onNativeInitialized(Bundle freProperties) {
         // We show the sign-in page if sync is allowed, and not signed in, and this is not
@@ -203,13 +203,13 @@ public abstract class FirstRunFlowSequencer  {
         // - no "skip the first use hints" is set, or
         // - "skip the first use hints" is set, but there is at least one account.
         boolean offerSignInOk = isSyncAllowed() && !isSignedIn() && !mForceEduSignIn
-                && (!shouldSkipFirstUseHints() || mGoogleAccounts.length > 0);
+                && (!shouldSkipFirstUseHints() || !mGoogleAccounts.isEmpty());
         freProperties.putBoolean(FirstRunActivity.SHOW_SIGNIN_PAGE, offerSignInOk);
         if (mForceEduSignIn || ChildAccountStatus.isChild(mChildAccountStatus)) {
             // If the device is an Android EDU device or has a child account, there should be
             // exactly account on the device. Force sign-in in to that account.
             freProperties.putString(
-                    AccountFirstRunFragment.FORCE_SIGNIN_ACCOUNT_TO, mGoogleAccounts[0].name);
+                    AccountFirstRunFragment.FORCE_SIGNIN_ACCOUNT_TO, mGoogleAccounts.get(0).name);
         }
 
         freProperties.putBoolean(
@@ -350,15 +350,7 @@ public abstract class FirstRunFlowSequencer  {
         Log.d(TAG, "Redirecting user through FRE.");
         if ((intent.getFlags() & Intent.FLAG_ACTIVITY_NEW_TASK) != 0) {
             boolean isVrIntent = VrModuleProvider.getIntentDelegate().isVrIntent(intent);
-            boolean isGenericFreActive = false;
-            List<WeakReference<Activity>> activities = ApplicationStatus.getRunningActivities();
-            for (WeakReference<Activity> weakActivity : activities) {
-                Activity activity = weakActivity.get();
-                if (activity instanceof FirstRunActivity) {
-                    isGenericFreActive = true;
-                    break;
-                }
-            }
+            boolean isGenericFreActive = checkIsGenericFreActive();
 
             // Launch the Generic First Run Experience if it was previously active.
             Intent freIntent = null;
@@ -368,7 +360,9 @@ public abstract class FirstRunFlowSequencer  {
                 freIntent = createGenericFirstRunIntent(
                         caller, TextUtils.equals(intent.getAction(), Intent.ACTION_MAIN));
 
-                if (maybeSwitchToTabbedMode(caller, freIntent)) {
+                if (shouldSwitchToTabbedMode(caller)) {
+                    freIntent.setClass(caller, TabbedModeFirstRunActivity.class);
+
                     // We switched to TabbedModeFRE. We need to disable animation on the original
                     // intent, to make transition seamless.
                     intent = new Intent(intent);
@@ -396,6 +390,20 @@ public abstract class FirstRunFlowSequencer  {
         return true;
     }
 
+    /** Returns whether the generic FRE is active. */
+    private static boolean checkIsGenericFreActive() {
+        List<WeakReference<Activity>> activities = ApplicationStatus.getRunningActivities();
+        for (WeakReference<Activity> weakActivity : activities) {
+            Activity activity = weakActivity.get();
+            // TabbedModeFirstRunActivity extends FirstRunActivity. LightweightFirstRunActivity
+            // does not.
+            if (activity instanceof FirstRunActivity) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * On tablets, where FRE activity is a dialog, transitions from fillscreen activities
      * (the ones that use TabbedModeTheme, e.g. ChromeTabbedActivity) look ugly, because
@@ -405,9 +413,9 @@ public abstract class FirstRunFlowSequencer  {
      * To solve this, we added TabbedMode FRE activity, which has the same window background
      * as TabbedModeTheme activities, but shows content in a FRE-like dialog.
      *
-     * This function attempts to switch FRE to TabbedModeFRE if certain conditions are met.
+     * This function returns whether to use the TabbedModeFRE.
      */
-    private static boolean maybeSwitchToTabbedMode(Context caller, Intent freIntent) {
+    private static boolean shouldSwitchToTabbedMode(Context caller) {
         // Caller must be an activity.
         if (!(caller instanceof Activity)) return false;
 
@@ -419,10 +427,6 @@ public abstract class FirstRunFlowSequencer  {
         TypedArray a = caller.obtainStyledAttributes(new int[] {android.R.attr.windowBackground});
         int backgroundResourceId = a.getResourceId(0 /* index */, 0);
         a.recycle();
-        if (backgroundResourceId != R.drawable.window_background) return false;
-
-        // Switch FRE -> TabbedModeFRE.
-        freIntent.setClass(caller, TabbedModeFirstRunActivity.class);
-        return true;
+        return (backgroundResourceId == R.drawable.window_background);
     }
 }

@@ -15,6 +15,7 @@
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
 #include "base/test/bind_test_util.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
@@ -30,26 +31,23 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/external_protocol/external_protocol_handler.h"
+#include "chrome/browser/metrics/subprocess_metrics_provider.h"
 #include "chrome/browser/net/system_network_context_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/account_reconcilor_factory.h"
-#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/signin/scoped_account_consistency.h"
-#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/browsing_data/core/browsing_data_utils.h"
-#include "components/browsing_data/core/features.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/prefs/pref_service.h"
 #include "components/signin/core/browser/account_reconcilor.h"
-#include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_buildflags.h"
-#include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/browsing_data_filter_builder.h"
@@ -59,17 +57,21 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_paths.h"
+#include "content/public/common/network_service_util.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/browsing_data_remover_test_util.h"
 #include "content/public/test/download_test_observer.h"
 #include "content/public/test/simple_url_loader_test_helper.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "google_apis/gaia/google_service_auth_error.h"
+#include "media/base/media_switches.h"
 #include "media/mojo/services/video_decode_perf_history.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+#include "services/identity/public/cpp/identity_manager.h"
+#include "services/identity/public/cpp/identity_test_utils.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/simple_url_loader.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -78,6 +80,15 @@
 #include "third_party/leveldatabase/leveldb_features.h"
 #include "third_party/re2/src/re2/re2.h"
 #include "url/gurl.h"
+
+#if BUILDFLAG(ENABLE_LIBRARY_CDMS)
+#if defined(OS_MACOSX)
+#include "base/threading/platform_thread.h"
+#endif
+#include "base/memory/scoped_refptr.h"
+#include "chrome/browser/browsing_data/browsing_data_media_license_helper.h"
+#include "chrome/browser/media/library_cdm_test_helper.h"
+#endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS)
 
 using content::BrowserThread;
 using content::BrowsingDataFilterBuilder;
@@ -280,15 +291,7 @@ bool SetGaiaCookieForProfile(Profile* profile) {
 
 class BrowsingDataRemoverBrowserTest : public InProcessBrowserTest {
  public:
-  BrowsingDataRemoverBrowserTest() {
-    feature_list_.InitWithFeatures(
-        {browsing_data::features::kRemoveNavigationHistory,
-         leveldb::kLevelDBRewriteFeature,
-         // Ensure that kOnionSoupDOMStorage is enabled because the old
-         // SessionStorage implementation causes flaky tests.
-         blink::features::kOnionSoupDOMStorage},
-        {});
-  }
+  BrowsingDataRemoverBrowserTest() {}
 
   // Call to use an Incognito browser rather than the default.
   void UseIncognitoBrowser() {
@@ -352,16 +355,22 @@ class BrowsingDataRemoverBrowserTest : public InProcessBrowserTest {
   }
 
   void RemoveAndWait(int remove_mask) {
-    RemoveAndWait(remove_mask, base::Time());
+    RemoveAndWait(remove_mask, base::Time(), base::Time::Max());
   }
 
   void RemoveAndWait(int remove_mask, base::Time delete_begin) {
+    RemoveAndWait(remove_mask, delete_begin, base::Time::Max());
+  }
+
+  void RemoveAndWait(int remove_mask,
+                     base::Time delete_begin,
+                     base::Time delete_end) {
     content::BrowsingDataRemover* remover =
         content::BrowserContext::GetBrowsingDataRemover(
             GetBrowser()->profile());
     content::BrowsingDataRemoverCompletionObserver completion_observer(remover);
     remover->RemoveAndReply(
-        delete_begin, base::Time::Max(), remove_mask,
+        delete_begin, delete_end, remove_mask,
         content::BrowsingDataRemover::ORIGIN_TYPE_UNPROTECTED_WEB,
         &completion_observer);
     completion_observer.BlockUntilCompletion();
@@ -447,6 +456,30 @@ class BrowsingDataRemoverBrowserTest : public InProcessBrowserTest {
     return count;
   }
 
+#if BUILDFLAG(ENABLE_LIBRARY_CDMS)
+  int GetMediaLicenseCount() {
+    base::RunLoop run_loop;
+    int count = -1;
+    content::StoragePartition* partition =
+        content::BrowserContext::GetDefaultStoragePartition(
+            browser()->profile());
+    scoped_refptr<BrowsingDataMediaLicenseHelper> media_license_helper =
+        BrowsingDataMediaLicenseHelper::Create(
+            partition->GetFileSystemContext());
+    media_license_helper->StartFetching(base::BindLambdaForTesting(
+        [&](const std::list<BrowsingDataMediaLicenseHelper::MediaLicenseInfo>&
+                licenses) {
+          count = licenses.size();
+          LOG(INFO) << "Found " << count << " licenses.";
+          for (const auto& license : licenses)
+            LOG(INFO) << license.last_modified_time;
+          run_loop.Quit();
+        }));
+    run_loop.Run();
+    return count;
+  }
+#endif
+
   inline void ExpectCookieTreeModelCount(int expected) {
     std::unique_ptr<CookiesTreeModel> model = GetCookiesTreeModel();
     EXPECT_EQ(expected, GetCookiesTreeModelCount(model->GetRoot()))
@@ -505,7 +538,6 @@ class BrowsingDataRemoverBrowserTest : public InProcessBrowserTest {
         new BrowsingDataIndexedDBHelper(indexed_db_context),
         BrowsingDataFileSystemHelper::Create(file_system_context),
         BrowsingDataQuotaHelper::Create(profile),
-        BrowsingDataChannelIDHelper::Create(profile->GetRequestContext()),
         new BrowsingDataServiceWorkerHelper(service_worker_context),
         new BrowsingDataSharedWorkerHelper(storage_partition,
                                            profile->GetResourceContext()),
@@ -521,6 +553,25 @@ class BrowsingDataRemoverBrowserTest : public InProcessBrowserTest {
     return model;
   }
 
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    InProcessBrowserTest::SetUpCommandLine(command_line);
+
+    std::vector<base::Feature> enabled_features = {
+        leveldb::kLevelDBRewriteFeature,
+        // Ensure that kOnionSoupDOMStorage is enabled because the old
+        // SessionStorage implementation causes flaky tests.
+        blink::features::kOnionSoupDOMStorage};
+
+#if BUILDFLAG(ENABLE_LIBRARY_CDMS)
+    // Testing MediaLicenses requires additional command line parameters as
+    // it uses the External Clear Key CDM.
+    RegisterClearKeyCdm(command_line);
+    enabled_features.push_back(media::kExternalClearKeyForTesting);
+#endif
+
+    feature_list_.InitWithFeatures(enabled_features, {});
+  }
+
   base::test::ScopedFeatureList feature_list_;
   Browser* incognito_browser_ = nullptr;
 };
@@ -530,20 +581,20 @@ class BrowsingDataRemoverBrowserTest : public InProcessBrowserTest {
 class DiceBrowsingDataRemoverBrowserTest
     : public BrowsingDataRemoverBrowserTest {
  public:
-  void AddAccountToProfile(const std::string& account_id,
-                           Profile* profile,
-                           bool is_primary) {
-    ProfileOAuth2TokenService* token_service =
-        ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
-    token_service->UpdateCredentials(account_id, "token");
-    ASSERT_TRUE(token_service->RefreshTokenIsAvailable(account_id));
+  AccountInfo AddAccountToProfile(const std::string& account_id,
+                                  Profile* profile,
+                                  bool is_primary) {
+    auto* identity_manager = IdentityManagerFactory::GetForProfile(profile);
     if (is_primary) {
-      SigninManager* signin_manager =
-          SigninManagerFactory::GetForProfile(profile);
-      DCHECK(!signin_manager->IsAuthenticated());
-      signin_manager->SetAuthenticatedAccountInfo(account_id,
-                                                  account_id + "@gmail.com");
+      DCHECK(!identity_manager->HasPrimaryAccount());
+      return identity::MakePrimaryAccountAvailable(identity_manager,
+                                                   account_id + "@gmail.com");
     }
+    auto account_info =
+        identity::MakeAccountAvailable(identity_manager, account_id);
+    DCHECK(
+        identity_manager->HasAccountWithRefreshToken(account_info.account_id));
+    return account_info;
   }
 
  private:
@@ -574,21 +625,27 @@ IN_PROC_BROWSER_TEST_F(DiceBrowsingDataRemoverBrowserTest, SyncToken) {
   ASSERT_TRUE(SetGaiaCookieForProfile(profile));
   // Set a Sync account and a secondary account.
   const char kPrimaryAccountId[] = "primary_account_id";
-  AddAccountToProfile(kPrimaryAccountId, profile, /*is_primary=*/true);
+  AccountInfo primary_account =
+      AddAccountToProfile(kPrimaryAccountId, profile, /*is_primary=*/true);
   const char kSecondaryAccountId[] = "secondary_account_id";
-  AddAccountToProfile(kSecondaryAccountId, profile, /*is_primary=*/false);
+  AccountInfo secondary_account =
+      AddAccountToProfile(kSecondaryAccountId, profile, /*is_primary=*/false);
   // Clear cookies.
   RemoveAndWait(content::BrowsingDataRemover::DATA_TYPE_COOKIES);
   // Check that the Sync account was not removed and Sync was paused.
-  ProfileOAuth2TokenService* token_service =
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
-  EXPECT_TRUE(token_service->RefreshTokenIsAvailable(kPrimaryAccountId));
-  EXPECT_EQ(GoogleServiceAuthError::InvalidGaiaCredentialsReason::
-                CREDENTIALS_REJECTED_BY_CLIENT,
-            token_service->GetAuthError(kPrimaryAccountId)
-                .GetInvalidGaiaCredentialsReason());
+  identity::IdentityManager* identity_manager =
+      IdentityManagerFactory::GetForProfile(profile);
+  EXPECT_TRUE(
+      identity_manager->HasAccountWithRefreshToken(primary_account.account_id));
+  EXPECT_EQ(
+      GoogleServiceAuthError::InvalidGaiaCredentialsReason::
+          CREDENTIALS_REJECTED_BY_CLIENT,
+      identity_manager
+          ->GetErrorStateOfRefreshTokenForAccount(primary_account.account_id)
+          .GetInvalidGaiaCredentialsReason());
   // Check that the secondary token was revoked.
-  EXPECT_FALSE(token_service->RefreshTokenIsAvailable(kSecondaryAccountId));
+  EXPECT_FALSE(identity_manager->HasAccountWithRefreshToken(
+      secondary_account.account_id));
 }
 
 // Test that Sync is not paused when cookies are cleared, if synced data is
@@ -600,9 +657,11 @@ IN_PROC_BROWSER_TEST_F(DiceBrowsingDataRemoverBrowserTest,
   ASSERT_TRUE(SetGaiaCookieForProfile(profile));
   // Set a Sync account and a secondary account.
   const char kPrimaryAccountId[] = "primary_account_id";
-  AddAccountToProfile(kPrimaryAccountId, profile, /*is_primary=*/true);
+  AccountInfo primary_account =
+      AddAccountToProfile(kPrimaryAccountId, profile, /*is_primary=*/true);
   const char kSecondaryAccountId[] = "secondary_account_id";
-  AddAccountToProfile(kSecondaryAccountId, profile, /*is_primary=*/false);
+  AccountInfo secondary_account =
+      AddAccountToProfile(kSecondaryAccountId, profile, /*is_primary=*/false);
   // Sync data is being deleted.
   std::unique_ptr<AccountReconcilor::ScopedSyncedDataDeletion> deletion =
       AccountReconcilorFactory::GetForProfile(profile)
@@ -610,12 +669,15 @@ IN_PROC_BROWSER_TEST_F(DiceBrowsingDataRemoverBrowserTest,
   // Clear cookies.
   RemoveAndWait(content::BrowsingDataRemover::DATA_TYPE_COOKIES);
   // Check that the Sync token was not revoked.
-  ProfileOAuth2TokenService* token_service =
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
-  EXPECT_TRUE(token_service->RefreshTokenIsAvailable(kPrimaryAccountId));
-  EXPECT_FALSE(token_service->RefreshTokenHasError(kPrimaryAccountId));
+  auto* identity_manager = IdentityManagerFactory::GetForProfile(profile);
+  EXPECT_TRUE(
+      identity_manager->HasAccountWithRefreshToken(primary_account.account_id));
+  EXPECT_FALSE(
+      identity_manager->HasAccountWithRefreshTokenInPersistentErrorState(
+          primary_account.account_id));
   // Check that the secondary token was revoked.
-  EXPECT_FALSE(token_service->RefreshTokenIsAvailable(kSecondaryAccountId));
+  EXPECT_FALSE(identity_manager->HasAccountWithRefreshToken(
+      secondary_account.account_id));
 }
 
 // Test that Sync is paused when cookies are cleared if Sync was in error, even
@@ -626,13 +688,15 @@ IN_PROC_BROWSER_TEST_F(DiceBrowsingDataRemoverBrowserTest, SyncTokenError) {
   ASSERT_TRUE(SetGaiaCookieForProfile(profile));
   // Set a Sync account with authentication error.
   const char kAccountId[] = "account_id";
-  AddAccountToProfile(kAccountId, profile, /*is_primary=*/true);
-  ProfileOAuth2TokenService* token_service =
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
-  token_service->GetDelegate()->UpdateAuthError(
-      kAccountId, GoogleServiceAuthError::FromInvalidGaiaCredentialsReason(
-                      GoogleServiceAuthError::InvalidGaiaCredentialsReason::
-                          CREDENTIALS_REJECTED_BY_SERVER));
+  AccountInfo primary_account =
+      AddAccountToProfile(kAccountId, profile, /*is_primary=*/true);
+  auto* identity_manager = IdentityManagerFactory::GetForProfile(profile);
+  identity::UpdatePersistentErrorOfRefreshTokenForAccount(
+      identity_manager, primary_account.account_id,
+      GoogleServiceAuthError::FromInvalidGaiaCredentialsReason(
+          GoogleServiceAuthError::InvalidGaiaCredentialsReason::
+              CREDENTIALS_REJECTED_BY_SERVER));
+
   // Sync data is being deleted.
   std::unique_ptr<AccountReconcilor::ScopedSyncedDataDeletion> deletion =
       AccountReconcilorFactory::GetForProfile(profile)
@@ -640,11 +704,14 @@ IN_PROC_BROWSER_TEST_F(DiceBrowsingDataRemoverBrowserTest, SyncTokenError) {
   // Clear cookies.
   RemoveAndWait(content::BrowsingDataRemover::DATA_TYPE_COOKIES);
   // Check that the account was not removed and Sync was paused.
-  EXPECT_TRUE(token_service->RefreshTokenIsAvailable(kAccountId));
-  EXPECT_EQ(GoogleServiceAuthError::InvalidGaiaCredentialsReason::
-                CREDENTIALS_REJECTED_BY_CLIENT,
-            token_service->GetAuthError(kAccountId)
-                .GetInvalidGaiaCredentialsReason());
+  EXPECT_TRUE(
+      identity_manager->HasAccountWithRefreshToken(primary_account.account_id));
+  EXPECT_EQ(
+      GoogleServiceAuthError::InvalidGaiaCredentialsReason::
+          CREDENTIALS_REJECTED_BY_CLIENT,
+      identity_manager
+          ->GetErrorStateOfRefreshTokenForAccount(primary_account.account_id)
+          .GetInvalidGaiaCredentialsReason());
 }
 
 // Test that the tokens are revoked when cookies are cleared when there is no
@@ -655,13 +722,14 @@ IN_PROC_BROWSER_TEST_F(DiceBrowsingDataRemoverBrowserTest, NoSync) {
   ASSERT_TRUE(SetGaiaCookieForProfile(profile));
   // Set a non-Sync account.
   const char kAccountId[] = "account_id";
-  AddAccountToProfile(kAccountId, profile, /*is_primary=*/false);
+  AccountInfo secondary_account =
+      AddAccountToProfile(kAccountId, profile, /*is_primary=*/false);
   // Clear cookies.
   RemoveAndWait(content::BrowsingDataRemover::DATA_TYPE_COOKIES);
   // Check that the account was removed.
-  ProfileOAuth2TokenService* token_service =
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
-  EXPECT_FALSE(token_service->RefreshTokenIsAvailable(kAccountId));
+  auto* identity_manager = IdentityManagerFactory::GetForProfile(profile);
+  EXPECT_FALSE(identity_manager->HasAccountWithRefreshToken(
+      secondary_account.account_id));
 }
 #endif
 
@@ -831,7 +899,7 @@ IN_PROC_BROWSER_TEST_F(BrowsingDataRemoverBrowserTest, Cache) {
 // after the crash.
 IN_PROC_BROWSER_TEST_F(BrowsingDataRemoverBrowserTest,
                        ClearCacheAndNetworkServiceCrashes) {
-  if (!base::FeatureList::IsEnabled(network::features::kNetworkService))
+  if (!content::IsOutOfProcessNetworkService())
     return;
 
   // Clear the cached data with a task posted to crash the network service.
@@ -843,6 +911,34 @@ IN_PROC_BROWSER_TEST_F(BrowsingDataRemoverBrowserTest,
                      base::Unretained(this)));
 
   RemoveAndWait(content::BrowsingDataRemover::DATA_TYPE_CACHE);
+}
+
+// Verifies that the network quality prefs are cleared.
+IN_PROC_BROWSER_TEST_F(BrowsingDataRemoverBrowserTest, VerifyNQECacheCleared) {
+  base::HistogramTester histogram_tester;
+  RemoveAndWait(content::BrowsingDataRemover::DATA_TYPE_CACHE);
+
+  // Wait until there is at least one sample in NQE.PrefsSizeOnClearing.
+  bool histogram_populated = false;
+  for (size_t attempt = 0; attempt < 3; ++attempt) {
+    const std::vector<base::Bucket> buckets =
+        histogram_tester.GetAllSamples("NQE.PrefsSizeOnClearing");
+    for (const auto& bucket : buckets) {
+      if (bucket.count > 0) {
+        histogram_populated = true;
+        break;
+      }
+    }
+    if (histogram_populated)
+      break;
+
+    // Retry fetching the histogram since it's not populated yet.
+    content::FetchHistogramsFromChildProcesses();
+    SubprocessMetricsProvider::MergeHistogramDeltasForTesting();
+    base::RunLoop().RunUntilIdle();
+  }
+
+  histogram_tester.ExpectTotalCount("NQE.PrefsSizeOnClearing", 1);
 }
 
 IN_PROC_BROWSER_TEST_F(BrowsingDataRemoverBrowserTest,
@@ -1015,6 +1111,130 @@ IN_PROC_BROWSER_TEST_P(BrowsingDataRemoverBrowserTestP, EmptyIndexedDb) {
   TestEmptySiteData("IndexedDb", GetParam());
 }
 
+#if BUILDFLAG(ENABLE_LIBRARY_CDMS)
+// Test Media Licenses by creating one and checking it is counted by the
+// cookie counter. Then delete it and check that the cookie counter is back
+// to zero.
+IN_PROC_BROWSER_TEST_P(BrowsingDataRemoverBrowserTestP, MediaLicenseDeletion) {
+  const std::string kMediaLicenseType = "MediaLicense";
+  const base::Time delete_begin = GetParam();
+
+  EXPECT_EQ(0, GetSiteDataCount());
+  EXPECT_EQ(0, GetMediaLicenseCount());
+  GURL url =
+      embedded_test_server()->GetURL("/browsing_data/media_license.html");
+  ui_test_utils::NavigateToURL(browser(), url);
+
+  EXPECT_EQ(0, GetSiteDataCount());
+  EXPECT_EQ(0, GetMediaLicenseCount());
+  ExpectCookieTreeModelCount(0);
+  EXPECT_FALSE(HasDataForType(kMediaLicenseType));
+
+  SetDataForType(kMediaLicenseType);
+  EXPECT_EQ(0, GetSiteDataCount());
+  EXPECT_EQ(1, GetMediaLicenseCount());
+  ExpectCookieTreeModelCount(1);
+  EXPECT_TRUE(HasDataForType(kMediaLicenseType));
+
+  // Try to remove the Media Licenses using a time frame up until an hour ago,
+  // which should not remove the recently created Media License.
+  RemoveAndWait(content::BrowsingDataRemover::DATA_TYPE_MEDIA_LICENSES,
+                delete_begin, kLastHour);
+  EXPECT_EQ(0, GetSiteDataCount());
+  EXPECT_EQ(1, GetMediaLicenseCount());
+  ExpectCookieTreeModelCount(1);
+  EXPECT_TRUE(HasDataForType(kMediaLicenseType));
+
+  // Now try with a time range that includes the current time, which should
+  // clear the Media License created for this test.
+  RemoveAndWait(content::BrowsingDataRemover::DATA_TYPE_MEDIA_LICENSES,
+                delete_begin, base::Time::Max());
+  EXPECT_EQ(0, GetSiteDataCount());
+  EXPECT_EQ(0, GetMediaLicenseCount());
+  ExpectCookieTreeModelCount(0);
+  EXPECT_FALSE(HasDataForType(kMediaLicenseType));
+}
+
+// Create and save a media license (which will be deleted in the following
+// test).
+IN_PROC_BROWSER_TEST_F(BrowsingDataRemoverBrowserTest,
+                       PRE_MediaLicenseTimedDeletion) {
+  const std::string kMediaLicenseType = "MediaLicense";
+
+  EXPECT_EQ(0, GetSiteDataCount());
+  EXPECT_EQ(0, GetMediaLicenseCount());
+
+  GURL url =
+      embedded_test_server()->GetURL("/browsing_data/media_license.html");
+  ui_test_utils::NavigateToURL(browser(), url);
+
+  EXPECT_EQ(0, GetSiteDataCount());
+  EXPECT_EQ(0, GetMediaLicenseCount());
+  ExpectCookieTreeModelCount(0);
+  EXPECT_FALSE(HasDataForType(kMediaLicenseType));
+
+  SetDataForType(kMediaLicenseType);
+  EXPECT_EQ(0, GetSiteDataCount());
+  EXPECT_EQ(1, GetMediaLicenseCount());
+  ExpectCookieTreeModelCount(1);
+  EXPECT_TRUE(HasDataForType(kMediaLicenseType));
+}
+
+// Create and save a second media license, and then verify that timed deletion
+// selects the correct license to delete.
+IN_PROC_BROWSER_TEST_F(BrowsingDataRemoverBrowserTest,
+                       MediaLicenseTimedDeletion) {
+  const std::string kMediaLicenseType = "MediaLicense";
+
+  // As the PRE_ test should run first, there should be one media license
+  // still stored. The time of it's creation should be sometime before
+  // this test starts. We can't see the license, since it's stored for a
+  // different origin (but we can delete it).
+  const base::Time start = base::Time::Now();
+  LOG(INFO) << "MediaLicenseTimedDeletion starting @ " << start;
+  EXPECT_EQ(1, GetMediaLicenseCount());
+
+  GURL url =
+      embedded_test_server()->GetURL("/browsing_data/media_license.html");
+  ui_test_utils::NavigateToURL(browser(), url);
+
+#if defined(OS_MACOSX)
+  // On some Macs the file system uses second granularity. So before
+  // creating the second license, delay for 1 second so that the new
+  // license's time is not the same second as |start|.
+  base::PlatformThread::Sleep(base::TimeDelta::FromSeconds(1));
+#endif
+
+  // This test should use a different domain than the PRE_ test, so there
+  // should be no existing media license for it.
+  // Note that checking HasDataForType() may result in an empty file being
+  // created. Deleting licenses checks for any file within the time range
+  // specified in order to delete all the files for the domain, so this may
+  // cause problems (especially with Macs that use second granularity).
+  // http://crbug.com/909829.
+  EXPECT_FALSE(HasDataForType(kMediaLicenseType));
+
+  // Create a media license for this domain.
+  SetDataForType(kMediaLicenseType);
+  EXPECT_EQ(2, GetMediaLicenseCount());
+  EXPECT_TRUE(HasDataForType(kMediaLicenseType));
+
+  // As Clear Browsing Data typically deletes recent data (e.g. last hour,
+  // last day, etc.), try to remove the Media Licenses created since the
+  // the start of this test, which should only delete the just created
+  // media license, and leave the one created by the PRE_ test.
+  RemoveAndWait(content::BrowsingDataRemover::DATA_TYPE_MEDIA_LICENSES, start);
+  EXPECT_EQ(1, GetMediaLicenseCount());
+  EXPECT_FALSE(HasDataForType(kMediaLicenseType));
+
+  // Now try with a time range that includes all time, which should
+  // clear the media license created by the PRE_ test.
+  RemoveAndWait(content::BrowsingDataRemover::DATA_TYPE_MEDIA_LICENSES);
+  EXPECT_EQ(0, GetMediaLicenseCount());
+  ExpectCookieTreeModelCount(0);
+}
+#endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS)
+
 const std::vector<std::string> kStorageTypes{
     "Cookie",    "LocalStorage", "FileSystem",    "SessionStorage",
     "IndexedDb", "WebSql",       "ServiceWorker", "CacheStorage",
@@ -1073,7 +1293,6 @@ IN_PROC_BROWSER_TEST_F(BrowsingDataRemoverBrowserTest, StorageRemovedFromDisk) {
     // TODO(crbug.com/823071): LevelDB logs are not deleted immediately.
     "File System/Origins/[0-9]*.log",
     "Service Worker/Database/[0-9]*.log",
-    "Session Storage/[0-9]*.log",
 
 #if defined(OS_CHROMEOS)
     // TODO(crbug.com/846297): Many leveldb files remain on ChromeOS. I couldn't
@@ -1086,14 +1305,12 @@ IN_PROC_BROWSER_TEST_F(BrowsingDataRemoverBrowserTest, StorageRemovedFromDisk) {
   EXPECT_EQ(0, found) << "A non-whitelisted file contains the hostname.";
 }
 
-// TODO(crbug.com/840080, crbug.com/824533): Filesystem, IndexedDb and
+// TODO(crbug.com/840080, crbug.com/824533): Filesystem and
 // CacheStorage can't be deleted on exit correctly at the moment.
 const std::vector<std::string> kSessionOnlyStorageTestTypes{
     "Cookie", "LocalStorage",
     // "FileSystem",
-    "SessionStorage",
-    // "IndexedDb",
-    "WebSql", "ServiceWorker",
+    "SessionStorage", "IndexedDb", "WebSql", "ServiceWorker",
     // "CacheStorage",
 };
 

@@ -183,36 +183,55 @@ void CreateTestRenderPassDrawQuad(const SharedQuadState* shared_state,
                1.0f);             // backdrop_filter_quality
 }
 
+// Create a TextureDrawDrawQuad with two given colors.
+// flipped_texture_quad: The TextureDrawDrawQuad is y flipped.
+// half_and_half: if true, the upper half part of the texture is filled with
+//   texel_color_one, other part of the texture is filled with texel_color_two.
+//   if false, a 1/2 width and height rectangle in the middle of the quad will
+//   be filled with texel_color_two, other part of the texture is filled with
+//   texel_color_one,
 void CreateTestTwoColoredTextureDrawQuad(
     bool gpu_resource,
     const gfx::Rect& rect,
-    SkColor texel_color,
-    SkColor texel_stripe_color,
+    SkColor texel_color_one,
+    SkColor texel_color_two,
     SkColor background_color,
     bool premultiplied_alpha,
+    bool flipped_texture_quad,
+    bool half_and_half,
     const SharedQuadState* shared_state,
     DisplayResourceProvider* resource_provider,
     ClientResourceProvider* child_resource_provider,
     SharedBitmapManager* shared_bitmap_manager,
     scoped_refptr<ContextProvider> child_context_provider,
     RenderPass* render_pass) {
-  SkPMColor pixel_color = premultiplied_alpha
-                              ? SkPreMultiplyColor(texel_color)
-                              : SkPackARGB32NoCheck(SkColorGetA(texel_color),
-                                                    SkColorGetR(texel_color),
-                                                    SkColorGetG(texel_color),
-                                                    SkColorGetB(texel_color));
-  SkPMColor pixel_stripe_color =
+  SkPMColor pixel_color_one =
       premultiplied_alpha
-          ? SkPreMultiplyColor(texel_stripe_color)
-          : SkPackARGB32NoCheck(SkColorGetA(texel_stripe_color),
-                                SkColorGetR(texel_stripe_color),
-                                SkColorGetG(texel_stripe_color),
-                                SkColorGetB(texel_stripe_color));
-  std::vector<uint32_t> pixels(rect.size().GetArea(), pixel_color);
-  for (int i = rect.height() / 4; i < (rect.height() * 3 / 4); ++i) {
-    for (int k = rect.width() / 4; k < (rect.width() * 3 / 4); ++k) {
-      pixels[i * rect.width() + k] = pixel_stripe_color;
+          ? SkPreMultiplyColor(texel_color_one)
+          : SkPackARGB32NoCheck(
+                SkColorGetA(texel_color_one), SkColorGetR(texel_color_one),
+                SkColorGetG(texel_color_one), SkColorGetB(texel_color_one));
+  SkPMColor pixel_color_two =
+      premultiplied_alpha
+          ? SkPreMultiplyColor(texel_color_two)
+          : SkPackARGB32NoCheck(
+                SkColorGetA(texel_color_two), SkColorGetR(texel_color_two),
+                SkColorGetG(texel_color_two), SkColorGetB(texel_color_two));
+  // The default color is texel_color_one
+  std::vector<uint32_t> pixels(rect.size().GetArea(), pixel_color_one);
+  if (half_and_half) {
+    // Fill the bottom half part of the texture with texel_color_two.
+    for (int i = rect.height() / 2; i < rect.height(); ++i) {
+      for (int k = 0; k < rect.width(); ++k) {
+        pixels[i * rect.width() + k] = pixel_color_two;
+      }
+    }
+  } else {
+    // Fill a 1/2 width and height rectangle with pixel_color_two.
+    for (int i = rect.height() / 4; i < (rect.height() * 3 / 4); ++i) {
+      for (int k = rect.width() / 4; k < (rect.width() * 3 / 4); ++k) {
+        pixels[i * rect.width() + k] = pixel_color_two;
+      }
     }
   }
 
@@ -246,13 +265,13 @@ void CreateTestTwoColoredTextureDrawQuad(
   float vertex_opacity[4] = {1.0f, 1.0f, 1.0f, 1.0f};
   const gfx::PointF uv_top_left(0.0f, 0.0f);
   const gfx::PointF uv_bottom_right(1.0f, 1.0f);
-  const bool flipped = false;
   const bool nearest_neighbor = false;
   auto* quad = render_pass->CreateAndAppendDrawQuad<TextureDrawQuad>();
   quad->SetNew(shared_state, rect, rect, needs_blending, mapped_resource,
                premultiplied_alpha, uv_top_left, uv_bottom_right,
-               background_color, vertex_opacity, flipped, nearest_neighbor,
-               false);
+               background_color, vertex_opacity, flipped_texture_quad,
+               nearest_neighbor, /*secure_output_only=*/false,
+               ui::ProtectedVideoType::kClear);
 }
 
 void CreateTestTextureDrawQuad(
@@ -312,7 +331,7 @@ void CreateTestTextureDrawQuad(
   quad->SetNew(shared_state, rect, rect, needs_blending, mapped_resource,
                premultiplied_alpha, uv_top_left, uv_bottom_right,
                background_color, vertex_opacity, flipped, nearest_neighbor,
-               false);
+               /*secure_output_only=*/false, ui::ProtectedVideoType::kClear);
 }
 
 void CreateTestTextureDrawQuad(
@@ -497,7 +516,8 @@ void CreateTestY16TextureDrawQuad_FromVideoFrame(
   float vertex_opacity[4] = {1.0f, 1.0f, 1.0f, 1.0f};
   quad->SetNew(shared_state, rect, rect, needs_blending, mapped_resource_y,
                false, tex_coord_rect.origin(), tex_coord_rect.bottom_right(),
-               SK_ColorBLACK, vertex_opacity, false, false, false);
+               SK_ColorBLACK, vertex_opacity, false, false,
+               /*secure_output_only=*/false, ui::ProtectedVideoType::kClear);
 }
 
 // Upshift video frame to 10 bit.
@@ -1267,7 +1287,6 @@ TYPED_TEST(IntersectingQuadPixelTest, SolidColorQuads) {
                SK_ColorBLUE, false);
   quad2->SetNew(this->back_quad_state_, this->quad_rect_, this->quad_rect_,
                 SK_ColorGREEN, false);
-  SCOPED_TRACE("IntersectingSolidColorQuads");
   this->AppendBackgroundAndRunTest(
       cc::FuzzyPixelComparator(false, 2.f, 0.f, 256.f, 256, 0.f),
       FILE_PATH_LITERAL("intersecting_blue_green.png"));
@@ -1309,21 +1328,72 @@ TYPED_TEST(IntersectingQuadPixelTest, TexturedQuads) {
       this->use_gpu(), this->quad_rect_,
       GetColor<TypeParam>(SkColorSetARGB(255, 0, 0, 0)),
       GetColor<TypeParam>(SkColorSetARGB(255, 0, 0, 255)), SK_ColorTRANSPARENT,
-      true, this->front_quad_state_, this->resource_provider_.get(),
+      true, false /* flipped_texture_quad */, false /* half_and_half */,
+      this->front_quad_state_, this->resource_provider_.get(),
       this->child_resource_provider_.get(), this->shared_bitmap_manager_.get(),
       this->child_context_provider_, this->render_pass_.get());
   CreateTestTwoColoredTextureDrawQuad(
       this->use_gpu(), this->quad_rect_,
       GetColor<TypeParam>(SkColorSetARGB(255, 0, 255, 0)),
       GetColor<TypeParam>(SkColorSetARGB(255, 0, 0, 0)), SK_ColorTRANSPARENT,
-      true, this->back_quad_state_, this->resource_provider_.get(),
+      true, false /* flipped_texture_quad */, false /* half_and_half */,
+      this->back_quad_state_, this->resource_provider_.get(),
       this->child_resource_provider_.get(), this->shared_bitmap_manager_.get(),
       this->child_context_provider_, this->render_pass_.get());
 
-  SCOPED_TRACE("IntersectingTexturedQuads");
   this->AppendBackgroundAndRunTest(
       cc::FuzzyPixelComparator(false, 2.f, 0.f, 256.f, 256, 0.f),
       FILE_PATH_LITERAL("intersecting_blue_green_squares.png"));
+}
+
+TYPED_TEST(IntersectingQuadPixelTest, NonFlippedTexturedQuads) {
+  this->SetupQuadStateAndRenderPass();
+  CreateTestTwoColoredTextureDrawQuad(
+      this->use_gpu(), this->quad_rect_,
+      GetColor<TypeParam>(SkColorSetARGB(255, 0, 0, 0)),
+      GetColor<TypeParam>(SkColorSetARGB(255, 0, 0, 255)), SK_ColorTRANSPARENT,
+      true, false /* flipped_texture_quad */, true /* half_and_half */,
+      this->front_quad_state_, this->resource_provider_.get(),
+      this->child_resource_provider_.get(), this->shared_bitmap_manager_.get(),
+      this->child_context_provider_, this->render_pass_.get());
+  CreateTestTwoColoredTextureDrawQuad(
+      this->use_gpu(), this->quad_rect_,
+      GetColor<TypeParam>(SkColorSetARGB(255, 0, 255, 0)),
+      GetColor<TypeParam>(SkColorSetARGB(255, 0, 0, 0)), SK_ColorTRANSPARENT,
+      true, false /* flipped_texture_quad */, true /* half_and_half */,
+      this->back_quad_state_, this->resource_provider_.get(),
+      this->child_resource_provider_.get(), this->shared_bitmap_manager_.get(),
+      this->child_context_provider_, this->render_pass_.get());
+
+  this->AppendBackgroundAndRunTest(
+      cc::FuzzyPixelComparator(false, 2.f, 0.f, 256.f, 256, 0.f),
+      FILE_PATH_LITERAL(
+          "intersecting_non_flipped_blue_green_half_size_rectangles.png"));
+}
+
+TYPED_TEST(IntersectingQuadPixelTest, FlippedTexturedQuads) {
+  this->SetupQuadStateAndRenderPass();
+  CreateTestTwoColoredTextureDrawQuad(
+      this->use_gpu(), this->quad_rect_,
+      GetColor<TypeParam>(SkColorSetARGB(255, 0, 0, 0)),
+      GetColor<TypeParam>(SkColorSetARGB(255, 0, 0, 255)), SK_ColorTRANSPARENT,
+      true, true /* flipped_texture_quad */, true /* half_and_half */,
+      this->front_quad_state_, this->resource_provider_.get(),
+      this->child_resource_provider_.get(), this->shared_bitmap_manager_.get(),
+      this->child_context_provider_, this->render_pass_.get());
+  CreateTestTwoColoredTextureDrawQuad(
+      this->use_gpu(), this->quad_rect_,
+      GetColor<TypeParam>(SkColorSetARGB(255, 0, 255, 0)),
+      GetColor<TypeParam>(SkColorSetARGB(255, 0, 0, 0)), SK_ColorTRANSPARENT,
+      true, true /* flipped_texture_quad */, true /* half_and_half */,
+      this->back_quad_state_, this->resource_provider_.get(),
+      this->child_resource_provider_.get(), this->shared_bitmap_manager_.get(),
+      this->child_context_provider_, this->render_pass_.get());
+
+  this->AppendBackgroundAndRunTest(
+      cc::FuzzyPixelComparator(false, 2.f, 0.f, 256.f, 256, 0.f),
+      FILE_PATH_LITERAL(
+          "intersecting_flipped_blue_green_half_size_rectangles.png"));
 }
 
 TYPED_TEST(IntersectingQuadSoftwareTest, PictureQuads) {
@@ -1375,7 +1445,6 @@ TYPED_TEST(IntersectingQuadSoftwareTest, PictureQuads) {
                      this->quad_rect_.size(), false, RGBA_8888,
                      this->quad_rect_, 1.f, {},
                      green_raster_source->GetDisplayItemList());
-  SCOPED_TRACE("IntersectingPictureQuadsPass");
   this->AppendBackgroundAndRunTest(
       cc::FuzzyPixelComparator(false, 2.f, 0.f, 256.f, 256, 0.f),
       FILE_PATH_LITERAL("intersecting_blue_green_squares.png"));
@@ -1397,14 +1466,16 @@ TYPED_TEST(IntersectingQuadPixelTest, RenderPassQuads) {
       this->use_gpu(), this->quad_rect_,
       GetColor<TypeParam>(SkColorSetARGB(255, 0, 0, 0)),
       GetColor<TypeParam>(SkColorSetARGB(255, 0, 0, 255)), SK_ColorTRANSPARENT,
-      true, child1_quad_state, this->resource_provider_.get(),
+      true, false /* flipped_texture_quad */, false /* half_and_half */,
+      child1_quad_state, this->resource_provider_.get(),
       this->child_resource_provider_.get(), this->shared_bitmap_manager_.get(),
       this->child_context_provider_, child_pass1.get());
   CreateTestTwoColoredTextureDrawQuad(
       this->use_gpu(), this->quad_rect_,
       GetColor<TypeParam>(SkColorSetARGB(255, 0, 255, 0)),
       GetColor<TypeParam>(SkColorSetARGB(255, 0, 0, 0)), SK_ColorTRANSPARENT,
-      true, child2_quad_state, this->resource_provider_.get(),
+      true, false /* flipped_texture_quad */, false /* half_and_half */,
+      child2_quad_state, this->resource_provider_.get(),
       this->child_resource_provider_.get(), this->shared_bitmap_manager_.get(),
       this->child_context_provider_, child_pass2.get());
 
@@ -1415,7 +1486,6 @@ TYPED_TEST(IntersectingQuadPixelTest, RenderPassQuads) {
 
   this->pass_list_.push_back(std::move(child_pass1));
   this->pass_list_.push_back(std::move(child_pass2));
-  SCOPED_TRACE("IntersectingRenderQuadsPass");
   this->AppendBackgroundAndRunTest(
       cc::FuzzyPixelComparator(false, 2.f, 0.f, 256.f, 256, 0.f),
       FILE_PATH_LITERAL("intersecting_blue_green_squares.png"));
@@ -1445,7 +1515,6 @@ TYPED_TEST(IntersectingQuadGLPixelTest, YUVVideoQuads) {
       this->resource_provider_.get(), this->child_resource_provider_.get(),
       this->child_context_provider_.get());
 
-  SCOPED_TRACE("IntersectingVideoQuads");
   this->AppendBackgroundAndRunTest(
       cc::FuzzyPixelOffByOneComparator(false),
       FILE_PATH_LITERAL("intersecting_blue_green_squares_video.png"));
@@ -1473,7 +1542,6 @@ TYPED_TEST(IntersectingQuadGLPixelTest, Y16VideoQuads) {
       this->resource_provider_.get(), this->child_resource_provider_.get(),
       this->child_context_provider_.get());
 
-  SCOPED_TRACE("IntersectingVideoQuads");
   this->AppendBackgroundAndRunTest(
       cc::FuzzyPixelOffByOneComparator(false),
       FILE_PATH_LITERAL("intersecting_light_dark_squares_video.png"));
@@ -3415,7 +3483,8 @@ TYPED_TEST(SoftwareRendererPixelTest, TextureDrawQuadNearestNeighbor) {
   auto* quad = pass->CreateAndAppendDrawQuad<TextureDrawQuad>();
   quad->SetNew(shared_state, viewport, viewport, needs_blending,
                mapped_resource, false, gfx::PointF(0, 0), gfx::PointF(1, 1),
-               SK_ColorBLACK, vertex_opacity, false, nearest_neighbor, false);
+               SK_ColorBLACK, vertex_opacity, false, nearest_neighbor,
+               /*secure_output_only=*/false, ui::ProtectedVideoType::kClear);
 
   RenderPassList pass_list;
   pass_list.push_back(std::move(pass));
@@ -3468,7 +3537,8 @@ TYPED_TEST(SoftwareRendererPixelTest, TextureDrawQuadLinear) {
   auto* quad = pass->CreateAndAppendDrawQuad<TextureDrawQuad>();
   quad->SetNew(shared_state, viewport, viewport, needs_blending,
                mapped_resource, false, gfx::PointF(0, 0), gfx::PointF(1, 1),
-               SK_ColorBLACK, vertex_opacity, false, nearest_neighbor, false);
+               SK_ColorBLACK, vertex_opacity, false, nearest_neighbor,
+               /*secure_output_only=*/false, ui::ProtectedVideoType::kClear);
 
   RenderPassList pass_list;
   pass_list.push_back(std::move(pass));
@@ -3826,10 +3896,11 @@ TEST_F(GLRendererPixelTest, TextureQuadBatching) {
           gfx::RectF(layer_rect), 1.f / rect.width(), 1.f / rect.height());
 
       auto* texture_quad = pass->CreateAndAppendDrawQuad<TextureDrawQuad>();
-      texture_quad->SetNew(shared_state, layer_rect, layer_rect, needs_blending,
-                           mapped_resource, true, uv_rect.origin(),
-                           uv_rect.bottom_right(), SK_ColorWHITE,
-                           vertex_opacity, false, false, false);
+      texture_quad->SetNew(
+          shared_state, layer_rect, layer_rect, needs_blending, mapped_resource,
+          true, uv_rect.origin(), uv_rect.bottom_right(), SK_ColorWHITE,
+          vertex_opacity, false, false, /*secure_output_only=*/false,
+          ui::ProtectedVideoType::kClear);
     }
   }
 
@@ -3967,15 +4038,32 @@ TEST_F(GLRendererPixelTestWithOverdrawFeedback, TranslucentRectangles) {
       cc::ExactPixelComparator(true)));
 }
 
-class SkiaRendererPixelTestWithOverdrawFeedback : public SkiaRendererPixelTest {
+using SkiaRendererTypes = ::testing::Types<SkiaRenderer, cc::SkiaRendererDDL>;
+TYPED_TEST_CASE(SkiaRendererPixelTestWithOverdrawFeedback, SkiaRendererTypes);
+
+template <typename RendererType>
+class SkiaRendererPixelTestWithOverdrawFeedback
+    : public cc::RendererPixelTest<RendererType> {
  protected:
-  void SetUp() override {
-    renderer_settings_.show_overdraw_feedback = true;
-    SkiaRendererPixelTest::SetUp();
-  }
+  void SetUp() override;
+  bool is_ddl_ = false;
 };
 
-TEST_F(SkiaRendererPixelTestWithOverdrawFeedback, TranslucentRectangles) {
+template <>
+inline void SkiaRendererPixelTestWithOverdrawFeedback<SkiaRenderer>::SetUp() {
+  renderer_settings_.show_overdraw_feedback = true;
+  SkiaRendererPixelTest::SetUp();
+}
+
+template <>
+inline void
+SkiaRendererPixelTestWithOverdrawFeedback<cc::SkiaRendererDDL>::SetUp() {
+  renderer_settings_.show_overdraw_feedback = true;
+  is_ddl_ = true;
+  cc::SkiaRendererDDLPixelTest::SetUp();
+}
+
+TYPED_TEST(SkiaRendererPixelTestWithOverdrawFeedback, TranslucentRectangles) {
   gfx::Rect rect(this->device_viewport_size_);
 
   int id = 1;
@@ -4012,11 +4100,18 @@ TEST_F(SkiaRendererPixelTestWithOverdrawFeedback, TranslucentRectangles) {
 
   RenderPassList pass_list;
   pass_list.push_back(std::move(pass));
-
-  EXPECT_TRUE(this->RunPixelTest(
-      &pass_list,
-      base::FilePath(FILE_PATH_LITERAL("skia_translucent_rectangles.png")),
-      cc::ExactPixelComparator(true)));
+  const auto reference_file =
+      base::FilePath(FILE_PATH_LITERAL("skia_translucent_rectangles.png"));
+  if (this->is_ddl_) {
+    // TODO(xing.xu): investigate why overdraw feedback has small difference
+    // between Skia DDL and Skia. (http://crbug.com/909971)
+    EXPECT_TRUE(this->RunPixelTest(
+        &pass_list, reference_file,
+        cc::FuzzyPixelComparator(false, 2.f, 0.f, 256.f, 256, 0.f)));
+  } else {
+    EXPECT_TRUE(this->RunPixelTest(&pass_list, reference_file,
+                                   cc::ExactPixelComparator(true)));
+  }
 }
 
 using ColorSpacePair = std::tuple<gfx::ColorSpace, gfx::ColorSpace, bool>;
@@ -4136,7 +4231,7 @@ TEST_P(ColorTransformPixelTest, Basic) {
     quad->SetNew(shared_state, rect, rect, needs_blending, mapped_resource,
                  premultiplied_alpha_, uv_top_left, uv_bottom_right,
                  SK_ColorBLACK, vertex_opacity, flipped, nearest_neighbor,
-                 false);
+                 /*secure_output_only=*/false, ui::ProtectedVideoType::kClear);
 
     auto* color_quad = pass->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
     color_quad->SetNew(shared_state, rect, rect, SK_ColorBLACK, false);

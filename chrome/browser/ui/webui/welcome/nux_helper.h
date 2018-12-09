@@ -5,6 +5,8 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_WELCOME_NUX_HELPER_H_
 #define CHROME_BROWSER_UI_WEBUI_WELCOME_NUX_HELPER_H_
 
+#include <string>
+
 #include "base/macros.h"
 #include "base/metrics/field_trial_params.h"
 
@@ -22,6 +24,17 @@ extern const base::FeatureParam<std::string>
     kNuxOnboardingForceEnabledNewUserModules;
 extern const base::FeatureParam<std::string>
     kNuxOnboardingForceEnabledReturningUserModules;
+extern const base::FeatureParam<bool>
+    kNuxOnboardingForceEnabledShowEmailInterstitial;
+
+// Get the group for users who onboard in this experiment.
+// Groups are:
+//   - Specified by study
+//   - The same for all experiments in study
+//   - Incremented with each new version
+//   - Not reused
+//   - Cleared out when experiment ends
+std::string GetOnboardingGroup();
 
 bool IsNuxOnboardingEnabled(Profile* profile);
 

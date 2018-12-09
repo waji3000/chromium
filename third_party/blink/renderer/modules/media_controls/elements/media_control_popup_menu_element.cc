@@ -17,6 +17,7 @@
 #include "third_party/blink/renderer/modules/media_controls/elements/media_control_overflow_menu_button_element.h"
 #include "third_party/blink/renderer/modules/media_controls/media_controls_impl.h"
 #include "third_party/blink/renderer/platform/keyboard_codes.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 
 namespace blink {
 
@@ -82,7 +83,7 @@ class MediaControlPopupMenuElement::EventListener final
   }
 
  private:
-  void handleEvent(ExecutionContext*, Event* event) final {
+  void Invoke(ExecutionContext*, Event* event) final {
     if (event->type() == event_type_names::kKeydown &&
         event->IsKeyboardEvent()) {
       KeyboardEvent* keyboard_event = ToKeyboardEvent(event);
@@ -134,7 +135,7 @@ void MediaControlPopupMenuElement::SetIsWanted(bool wanted) {
     SelectFirstItem();
 
     if (!event_listener_)
-      event_listener_ = new EventListener(this);
+      event_listener_ = MakeGarbageCollected<EventListener>(this);
     event_listener_->StartListening();
   } else {
     if (event_listener_)

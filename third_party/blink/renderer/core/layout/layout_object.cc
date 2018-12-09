@@ -94,7 +94,7 @@
 #include "third_party/blink/renderer/core/paint/object_paint_invalidator.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
-#include "third_party/blink/renderer/core/paint/paint_tracker.h"
+#include "third_party/blink/renderer/core/paint/paint_timing_detector.h"
 #include "third_party/blink/renderer/core/scroll/smooth_scroll_sequencer.h"
 #include "third_party/blink/renderer/core/style/content_data.h"
 #include "third_party/blink/renderer/core/style/cursor_data.h"
@@ -912,7 +912,7 @@ void LayoutObject::MarkContainerChainForLayout(bool schedule_relayout,
     object->SetNeedsCollectInlines(true);
 
   while (object) {
-    if (object->SelfNeedsLayout())
+    if (object->SelfNeedsLayout() || object->LayoutBlockedByDisplayLock())
       return;
 
     // Don't mark the outermost object of an unrooted subtree. That object will
@@ -1450,7 +1450,7 @@ bool LayoutObject::HasDistortingVisualEffects() const {
   // No filters, no blends, no opacity < 100%.
   for (const auto* effect = SafeUnalias(paint_properties.Effect()); effect;
        effect = SafeUnalias(effect->Parent())) {
-    if (!effect->Filter().IsEmpty() ||
+    if (!effect->Filter().IsEmpty() || !effect->BackdropFilter().IsEmpty() ||
         effect->GetColorFilter() != kColorFilterNone ||
         effect->BlendMode() != SkBlendMode::kSrcOver ||
         effect->Opacity() != 1.0) {
@@ -1604,7 +1604,7 @@ LayoutRect LayoutObject::VisualRectIncludingCompositedScrolling(
 }
 
 void LayoutObject::ClearPreviousVisualRects() {
-  DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV2Enabled());
+  DCHECK(!RuntimeEnabledFeatures::CompositeAfterPaintEnabled());
 
   for (auto* fragment = &fragment_; fragment;
        fragment = fragment->NextFragment()) {
@@ -1879,7 +1879,7 @@ StyleDifference LayoutObject::AdjustStyleDifference(
   }
 
   // TODO(wangxianzhu): We may avoid subtree paint invalidation on CSS clip
-  // change for SPv2.
+  // change for CAP.
   if (diff.CssClipChanged())
     diff.SetNeedsPaintInvalidationSubtree();
 
@@ -1969,7 +1969,7 @@ void LayoutObject::FirstLineStyleDidChange(const ComputedStyle& old_style,
       first_line_container->SetShouldDoFullPaintInvalidationForFirstLine();
   }
   if (diff.NeedsLayout())
-    SetNeedsLayoutAndPrefWidthsRecalc(LayoutInvalidationReason::kStyleChange);
+    SetNeedsLayoutAndPrefWidthsRecalc(layout_invalidation_reason::kStyleChange);
 }
 
 void LayoutObject::MarkContainerChainForOverflowRecalcIfNeeded() {
@@ -2076,10 +2076,12 @@ void LayoutObject::SetStyle(scoped_refptr<ComputedStyle> style) {
   StyleDifference updated_diff = AdjustStyleDifference(diff);
 
   if (!diff.NeedsFullLayout()) {
-    if (updated_diff.NeedsFullLayout())
-      SetNeedsLayoutAndPrefWidthsRecalc(LayoutInvalidationReason::kStyleChange);
-    else if (updated_diff.NeedsPositionedMovementLayout())
+    if (updated_diff.NeedsFullLayout()) {
+      SetNeedsLayoutAndPrefWidthsRecalc(
+          layout_invalidation_reason::kStyleChange);
+    } else if (updated_diff.NeedsPositionedMovementLayout()) {
       SetNeedsPositionedMovementLayout();
+    }
   }
 
   if (diff.TransformChanged() && !NeedsLayout()) {
@@ -2089,10 +2091,12 @@ void LayoutObject::SetStyle(scoped_refptr<ComputedStyle> style) {
 
   if (diff.NeedsRecomputeOverflow() && !NeedsLayout()) {
     // TODO(rhogan): Make inlines capable of recomputing overflow too.
-    if (IsLayoutBlock())
+    if (IsLayoutBlock()) {
       SetNeedsOverflowRecalc();
-    else
-      SetNeedsLayoutAndPrefWidthsRecalc(LayoutInvalidationReason::kStyleChange);
+    } else {
+      SetNeedsLayoutAndPrefWidthsRecalc(
+          layout_invalidation_reason::kStyleChange);
+    }
   }
 
   if (diff.NeedsPaintInvalidationSubtree() ||
@@ -2144,6 +2148,12 @@ void LayoutObject::StyleWillChange(StyleDifference diff,
         else
           cache->ChildrenChanged(Parent());
       }
+    }
+
+    if (diff.TextDecorationOrColorChanged() ||
+        style_->InsideLink() != new_style.InsideLink()) {
+      if (AXObjectCache* cache = GetDocument().ExistingAXObjectCache())
+        cache->TextChanged(this);
     }
 
     if (diff.TransformChanged()) {
@@ -2293,7 +2303,7 @@ void LayoutObject::StyleDidChange(StyleDifference diff,
         old_style->GetPosition() != style_->GetPosition())
       MarkContainerChainForOverflowRecalcIfNeeded();
 
-    SetNeedsLayoutAndPrefWidthsRecalc(LayoutInvalidationReason::kStyleChange);
+    SetNeedsLayoutAndPrefWidthsRecalc(layout_invalidation_reason::kStyleChange);
   } else if (diff.NeedsPositionedMovementLayout()) {
     SetNeedsPositionedMovementLayout();
   }
@@ -2356,7 +2366,7 @@ void LayoutObject::ApplyFirstLineChanges(const ComputedStyle& old_style) {
       }
     }
   }
-  SetNeedsLayoutAndPrefWidthsRecalc(LayoutInvalidationReason::kStyleChange);
+  SetNeedsLayoutAndPrefWidthsRecalc(layout_invalidation_reason::kStyleChange);
 }
 
 void LayoutObject::PropagateStyleToAnonymousChildren() {
@@ -2366,7 +2376,6 @@ void LayoutObject::PropagateStyleToAnonymousChildren() {
        child = child->NextSibling()) {
     if (!child->IsAnonymous() || child->StyleRef().StyleType() != kPseudoIdNone)
       continue;
-
     if (child->AnonymousHasStylePropagationOverride())
       continue;
 
@@ -2387,6 +2396,32 @@ void LayoutObject::PropagateStyleToAnonymousChildren() {
     UpdateAnonymousChildStyle(child, *new_style);
 
     child->SetStyle(std::move(new_style));
+  }
+
+  if (StyleRef().StyleType() == kPseudoIdNone)
+    return;
+
+  // Propagate style from pseudo elements to generated content. We skip children
+  // with pseudo element StyleType() in the for-loop above and skip over
+  // descendants which are not generated content in this subtree traversal.
+  //
+  // TODO(futhark): It's possible we could propagate anonymous style from pseudo
+  // elements through anonymous table layout objects in the recursive
+  // implementation above, but it would require propagating the StyleType()
+  // somehow because there is code relying on generated content having a certain
+  // StyleType().
+  LayoutObject* child = NextInPreOrder(this);
+  while (child) {
+    if (!child->IsAnonymous()) {
+      // Don't propagate into non-anonymous descendants of pseudo elements. This
+      // can typically happen for ::first-letter inside ::before. The
+      // ::first-letter will propagate to its anonymous children separately.
+      child = child->NextInPreOrderAfterChildren(this);
+      continue;
+    }
+    if (child->IsText() || child->IsQuote() || child->IsImage())
+      child->SetPseudoStyle(MutableStyle());
+    child = child->NextInPreOrder(this);
   }
 }
 
@@ -3231,9 +3266,9 @@ void LayoutObject::WillBeRemovedFromTree() {
     FindReferencingScrollAnchors(this, kClear);
   }
 
-  if (RuntimeEnabledFeatures::PaintTrackingEnabled()) {
+  if (RuntimeEnabledFeatures::FirstContentfulPaintPlusPlusEnabled()) {
     if (LocalFrameView* frame_view = GetFrameView()) {
-      frame_view->GetPaintTracker().NotifyNodeRemoved(*this);
+      frame_view->GetPaintTimingDetector().NotifyNodeRemoved(*this);
     }
   }
 }
@@ -4140,6 +4175,24 @@ LayoutRect LayoutObject::AdjustVisualRectForInlineBox(
     }
   }
   return visual_rect;
+}
+
+Vector<LayoutRect> LayoutObject::PhysicalOutlineRects(
+    const LayoutPoint& additional_offset,
+    NGOutlineType outline_type) const {
+  Vector<LayoutRect> outline_rects;
+  AddOutlineRects(outline_rects, additional_offset, outline_type);
+  if (IsSVGChild() || !HasFlippedBlocksWritingMode())
+    return outline_rects;
+
+  const auto* writing_mode_container =
+      IsBox() ? ToLayoutBox(this) : ContainingBlock();
+  for (auto& r : outline_rects) {
+    r.MoveBy(-additional_offset);
+    writing_mode_container->FlipForWritingMode(r);
+    r.MoveBy(additional_offset);
+  }
+  return outline_rects;
 }
 
 }  // namespace blink

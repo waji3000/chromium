@@ -20,7 +20,6 @@
 #include "ppapi/buildflags/buildflags.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
-#include "third_party/blink/public/mojom/page/page_visibility_state.mojom.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/web/web_navigation_policy.h"
 #include "third_party/blink/public/web/web_triggering_event_info.h"
@@ -203,7 +202,7 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
       const url::Origin& main_frame_origin,
       const url::Origin& content_origin,
       const gfx::Size& unobscured_size,
-      RecordPeripheralDecision record_decision) const = 0;
+      RecordPeripheralDecision record_decision) = 0;
 
   // Whitelists a |content_origin| so its content will never be throttled in
   // this RenderFrame. Whitelist is cleared by top level navigation.
@@ -235,7 +234,7 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
   virtual void SetZoomLevel(double zoom_level) = 0;
 
   // Returns the page's zoom level from the frame's RenderView.
-  virtual double GetZoomLevel() const = 0;
+  virtual double GetZoomLevel() = 0;
 
   // Adds |message| to the DevTools console.
   virtual void AddMessageToConsole(ConsoleMessageLevel level,
@@ -247,13 +246,21 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
 
   // Returns the PreviewsState of this frame, a bitmask of potentially several
   // Previews optimizations.
-  virtual PreviewsState GetPreviewsState() const = 0;
+  virtual PreviewsState GetPreviewsState() = 0;
 
   // Whether or not this frame is currently pasting.
-  virtual bool IsPasting() const = 0;
+  virtual bool IsPasting() = 0;
 
-  // Returns the current visibility of the frame.
-  virtual blink::mojom::PageVisibilityState GetVisibilityState() const = 0;
+  // Loads specified |html| to this frame. |base_url| is used to resolve
+  // relative urls in the document.
+  // |replace_current_item| should be true if we load html instead of the
+  // existing page. In this case |unreachable_url| might be the original url
+  // which did fail loading.
+  virtual void LoadHTMLString(const std::string& html,
+                              const GURL& base_url,
+                              const std::string& text_encoding,
+                              const GURL& unreachable_url,
+                              bool replace_current_item) = 0;
 
   // If PlzNavigate is enabled, returns true in between teh time that Blink
   // requests navigation until the browser responds with the result.
@@ -266,7 +273,7 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
 
   // Bitwise-ORed set of extra bindings that have been enabled.  See
   // BindingsPolicy for details.
-  virtual int GetEnabledBindings() const = 0;
+  virtual int GetEnabledBindings() = 0;
 
   // Set the accessibility mode to force creation of RenderAccessibility.
   virtual void SetAccessibilityModeForTest(ui::AXMode new_mode) = 0;

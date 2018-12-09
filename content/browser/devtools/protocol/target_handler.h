@@ -19,10 +19,10 @@ namespace content {
 
 class DevToolsAgentHostImpl;
 class DevToolsRendererChannel;
+class DevToolsSession;
 class NavigationHandle;
 class NavigationThrottle;
 class RenderFrameHostImpl;
-class TargetRegistry;
 
 namespace protocol {
 
@@ -43,7 +43,7 @@ class TargetHandler : public DevToolsDomainHandler,
   TargetHandler(AccessMode access_mode,
                 const std::string& owner_target_id,
                 DevToolsRendererChannel* renderer_channel,
-                TargetRegistry* target_registry);
+                DevToolsSession* root_session);
   ~TargetHandler() override;
 
   static std::vector<TargetHandler*> ForAgentHost(DevToolsAgentHostImpl* host);
@@ -59,9 +59,10 @@ class TargetHandler : public DevToolsDomainHandler,
 
   // Domain implementation.
   Response SetDiscoverTargets(bool discover) override;
-  Response SetAutoAttach(bool auto_attach,
-                         bool wait_for_debugger_on_start,
-                         Maybe<bool> flatten) override;
+  void SetAutoAttach(bool auto_attach,
+                     bool wait_for_debugger_on_start,
+                     Maybe<bool> flatten,
+                     std::unique_ptr<SetAutoAttachCallback> callback) override;
   Response SetRemoteLocations(
       std::unique_ptr<protocol::Array<Target::RemoteLocation>>) override;
   Response AttachToTarget(const std::string& target_id,
@@ -107,6 +108,10 @@ class TargetHandler : public DevToolsDomainHandler,
                        Maybe<std::string> target_id,
                        Session** session);
   void ClearThrottles();
+  void SetAutoAttachInternal(bool auto_attach,
+                             bool wait_for_debugger_on_start,
+                             bool flatten,
+                             base::OnceClosure callback);
 
   // DevToolsAgentHostObserver implementation.
   bool ShouldForceDevToolsAgentHostCreation() override;
@@ -127,7 +132,7 @@ class TargetHandler : public DevToolsDomainHandler,
   std::set<DevToolsAgentHost*> reported_hosts_;
   AccessMode access_mode_;
   std::string owner_target_id_;
-  TargetRegistry* target_registry_;
+  DevToolsSession* root_session_;
   base::flat_set<Throttle*> throttles_;
   base::WeakPtrFactory<TargetHandler> weak_factory_;
 

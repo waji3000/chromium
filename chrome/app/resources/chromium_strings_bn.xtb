@@ -32,6 +32,7 @@
 <translation id="2008474315282236005">এটি এই ডিভাইস থেকে ১টি আইটেম মুছে দেবে। আপনার ডেটা পরে পুনরুদ্ধার করার জন্য, Chromium এ <ph name="USER_EMAIL" /> হিসেবে প্রবেশ করুন।</translation>
 <translation id="2117378023188580026">এই আপডেটটি প্রয়োগ করতে আপনার অ্যাডমিনিস্ট্রেটর চান যে আপনি Chromium আবার চালু করুন</translation>
 <translation id="2119636228670142020">&amp;Chromium OS সম্পর্কে</translation>
+<translation id="2178765360243863853">আপনার এখনই Chromium আবার চালু করা উচিত</translation>
 <translation id="2241627712206172106">যদি আপনি একটি কম্পিউটার ভাগ করেন, তাহলে বন্ধু ও পরিবারের লোকজন পৃথকভাবে ব্রাউজ করতে পারবেন এবং তাদের ইচ্ছা অনুযায়ী Chromium এর সেট আপ করতে পারবেন৷</translation>
 <translation id="2265088490657775772">আপনার iPhone এ Chromium ইনস্টল করুন</translation>
 <translation id="2347108572062610441">আপনি Chromium চালু করলে কোন পৃষ্ঠাটি দেখানো হবে তা এই এক্সটেনশনটি পরিবর্তন করেছে।</translation>
@@ -108,6 +109,7 @@
 <translation id="4708774505295300557">আগে কোনো একজন এই কম্পিউটারে <ph name="ACCOUNT_EMAIL_LAST" /> হিসাবে Chromium এ প্রবেশ করেছেন। আপনার তথ্য পৃথক রাখার জন্য অনুগ্রহ করে একটি Chromium ব্যবহারকারী তৈরি করুন।</translation>
 <translation id="4714956846925717402">Chromium এ আরও দ্রুত যান</translation>
 <translation id="4746050847053251315">তা স্বত্তেও Chromium বন্ধ করবেন?</translation>
+<translation id="4748217263233248895">Chromium-এর জন্য একটি বিশেষ নিরাপত্তা আপডেট এইমাত্র প্রয়োগ করা হয়েছে। এখনি রিস্টার্ট করুন এবং আপনার ট্যাব আমরা রিস্টোর করব।</translation>
 <translation id="4888717733111232871">mDNS ট্রাফিকের অনুমতি দিতে Chromium এর জন্য ইনবাউন্ড নিয়ম।</translation>
 <translation id="4943838377383847465">Chromium পটভূমিতে চলছে৷</translation>
 <translation id="4987820182225656817">অতিথিগণ কোনো কিছুর জন্য অভাব বোধ না করেই Chromium ব্যবহার করতে পারবেন৷</translation>
@@ -142,7 +144,6 @@
 <translation id="5862307444128926510">Chromium-এ স্বাগতম</translation>
 <translation id="5877064549588274448">চ্যানেল পরিবর্তিত হয়েছে৷ পরিবর্তনগুলি প্রয়োগ করার জন্য আপনার ডিভাইস আবার শুরু করুন৷</translation>
 <translation id="5895138241574237353">পুনর্সূচনা</translation>
-<translation id="5902536751647951209">প্রমাণীকরণের শংসাপত্রটি কাজ করেনি। অনুগ্রহ করে আবার Google Chrome এ সাইন-ইন করুন বা আরও তথ্যের জন্য আপনার প্রশাসকের সাথে যোগাযোগ করুন। <ph name="ADDITIONAL_EXPLANATION" /></translation>
 <translation id="5906655207909574370">প্রায় আপ-টু-ডেট হয়েছে! আপডেট শেষ করতে আপনার ডিভাইস আবার চালু করুন।</translation>
 <translation id="5987687638152509985">সিঙ্ক শুরু করতে Chromium আপডেট করুন</translation>
 <translation id="6013050204643758987"><ph name="BEGIN_LINK_LINUX_OSS" />Linux (বিটা)<ph name="END_LINK_LINUX_OSS" />-এর মতো অতিরিক্ত <ph name="BEGIN_LINK_CROS_OSS" />ওপেন সোর্স সফ্টওয়্যার<ph name="END_LINK_CROS_OSS" /> ব্যবহার করে Chromium OS তৈরি করা সম্ভব হয়েছে।</translation>
@@ -163,7 +164,6 @@
 <translation id="6333502561965082103">Chromium এ আরেকটি ক্রিয়াকলাপ প্রক্রিয়ায় আছে। অনুগ্রহ করে পরে আবার চেষ্টা করুন।</translation>
 <translation id="6334986366598267305">এখন আপনার Google অ্যাকাউন্ট ও শেয়ার করা কম্পিউটারগুলিতে Chromium ব্যবহার করা আরও সহজ৷</translation>
 <translation id="6373523479360886564">আপনি কি Chromium আনইনস্টল করার ব্যাপারে নিশ্চিত?</translation>
-<translation id="6394232988457703198">আপনার এখনই Chromium আবার চালু করা উচিত হবে।</translation>
 <translation id="6400072781405947421">Chromium সঠিকভাবে কাজ নাও করতে পারে কারণ এটি এখন আর Mac OS X 10.9 এ সমর্থিত নয়।</translation>
 <translation id="6403826409255603130">Chromium হল একটি ওয়েব ব্রাউজার যা ওয়েব পৃষ্ঠার গতি এবং অ্যাপ্লিকেশনগুলিকে আলোকের গতিতে সঞ্চালিত করে৷ এটা দ্রুত, স্থিতিশীল, এবং সহজে ব্যবহারের যোগ্য৷ Chromium নির্মিত ম্যালওয়ার এবং ফিশিং সুরক্ষার সাহায্যে আরও সুরক্ষিত ভাবে ওয়েব ব্রাউজ করুন৷</translation>
 <translation id="641451971369018375">ব্রাউজিং অভিজ্ঞতা এবং Chromium উন্নত করতে Google-এর সাথে যোগাযোগ করে</translation>
@@ -211,7 +211,6 @@ Chromium আপনার সেটিংস পুনরুদ্ধার ক�
 <translation id="7471302858145901434">{0,plural, =1{Chromium OS এক দিনের মধ্যে রিস্টার্ট করুন}one{Chromium OS # দিনের মধ্যে রিস্টার্ট করুন}other{Chromium OS # দিনের মধ্যে রিস্টার্ট করুন}}</translation>
 <translation id="7483335560992089831">বর্তমানে Chromium-এর যে ভার্সনটি চলছে সেটি ইনস্টল করা যায় না৷ অনুগ্রহ করে Google Chrome বন্ধ করুন এবং আবার চেষ্টা করুন৷</translation>
 <translation id="7549178288319965365">Chromium OS সম্পর্কে</translation>
-<translation id="7577193603922410712">Chromium এর জন্য একটি বিশেষ সুরক্ষা আপডেট এইমাত্র প্রয়োগ করা হয়েছে; এটা কার্যকর করার জন্য (আমরা আপনার ট্যাবগুলি পুনরুদ্ধার করব) আপনার এখনই একে পুনরায় চালু করা উচিত হবে।</translation>
 <translation id="761356813943268536">Chromium আপনার ক্যামেরা এবং মাইক্রোফোন ব্যবহার করছে৷</translation>
 <translation id="7617377681829253106">Chromium আরও ভাল হয়ে উঠেছে</translation>
 <translation id="7686590090926151193">Chromium আপনার ডিফল্ট ব্রাউজার নয়</translation>
@@ -220,7 +219,6 @@ Chromium আপনার সেটিংস পুনরুদ্ধার ক�
 <translation id="7745317241717453663">এটি এই ডিভাইস থেকে আপনার ব্রাউজিং ডেটা মুছে ফেলবে। আপনার ডেটা পরে পুনরুদ্ধার করার জন্য, Chromium এ <ph name="USER_EMAIL" /> হিসেবে সাইন ইন করুন।</translation>
 <translation id="7747138024166251722">ইনস্টলারটি অস্থায়ী ডিরেক্টরি তৈরি করতে পারেনি৷ অনুগ্রহ করে ডিস্কে কতটা খালি স্থান দেখুন এবং সফ্টওয়্যারটি ইনস্টল করার অনুমতি যাচাই করে নিন৷</translation>
 <translation id="7773960292263897147">সতর্কতা: Chromium এক্সটেনশনগুলিকে ব্রাউজিং ইতিহাস রেকর্ড করার কাজে বাধা দিতে পারে না। ছদ্মবেশী মোডে এক্সটেনশনটি বন্ধ করতে, এই বিকল্পটি সিলেক্ট করবেন না।</translation>
-<translation id="7774736947049807614">প্রমাণীকরণের শংসাপত্রটি কাজ করেনি। অনুগ্রহ করে <ph name="USER_NAME" /> হিসেবে আবার Chromium এ সাইন-ইন করুন বা আরও তথ্যের জন্য আপনার প্রশাসকের সাথে যোগাযোগ করুন। <ph name="ADDITIONAL_EXPLANATION" /></translation>
 <translation id="7790626492778995050"><ph name="PAGE_TITLE" /> - Chromium Canary</translation>
 <translation id="7867198900892795913">Chromium লেটেস্ট ভার্সনে আপডেট করা যাচ্ছে না, তাই আপনি নতুন বৈশিষ্ট্য এবং সুরক্ষা সমাধানগুলি পাচ্ছেন না।</translation>
 <translation id="7901117350626490574">Chromium-এর একটি নতুন আপডেট উপলভ্য আছে এবং আপনি আবার চালু করলে সেটি প্রয়োগ করা হবে।</translation>

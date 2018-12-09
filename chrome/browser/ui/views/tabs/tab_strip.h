@@ -114,6 +114,8 @@ class TabStrip : public views::AccessiblePaneView,
   // keep the throbbers in sync.
   void UpdateLoadingAnimations(const base::TimeDelta& elapsed_time);
 
+  bool IsAnyIconAnimating() const;
+
   // If |adjust_layout| is true the stacked layout changes based on whether the
   // user uses a mouse or a touch device with the tabstrip.
   void set_adjust_layout(bool adjust_layout) { adjust_layout_ = adjust_layout; }
@@ -162,6 +164,9 @@ class TabStrip : public views::AccessiblePaneView,
   // changing that to the first tab would cause |tab| to be pushed over enough
   // to clip).
   bool ShouldTabBeVisible(const Tab* tab) const;
+
+  // Returns whether or not strokes should be drawn around and under the tabs.
+  bool ShouldDrawStrokes() const;
 
   // Invoked when the selection is updated.
   void SetSelection(const ui::ListSelectionModel& new_selection);
@@ -246,7 +251,6 @@ class TabStrip : public views::AccessiblePaneView,
   bool SupportsMultipleSelection() override;
   NewTabButtonPosition GetNewTabButtonPosition() const override;
   bool ShouldHideCloseButtonForTab(Tab* tab) const override;
-  bool ShouldShowCloseButtonOnHover() override;
   bool MaySetClip() override;
   void SelectTab(Tab* tab) override;
   void ExtendSelectionTo(Tab* tab) override;
@@ -276,10 +280,15 @@ class TabStrip : public views::AccessiblePaneView,
   int GetStrokeThickness() const override;
   bool CanPaintThrobberToLayer() const override;
   bool HasVisibleBackgroundTabShapes() const override;
+  bool ShouldPaintAsActiveFrame() const override;
   SkColor GetToolbarTopSeparatorColor() const override;
   SkColor GetTabSeparatorColor() const override;
-  SkColor GetTabBackgroundColor(TabState state) const override;
-  SkColor GetTabForegroundColor(TabState state) const override;
+  SkColor GetTabBackgroundColor(
+      TabState tab_state,
+      BrowserNonClientFrameView::ActiveState active_state =
+          BrowserNonClientFrameView::kUseCurrent) const override;
+  SkColor GetTabForegroundColor(TabState tab_state,
+                                SkColor background_color) const override;
   base::string16 GetAccessibleTabName(const Tab* tab) const override;
   int GetBackgroundResourceId(
       bool* has_custom_image,

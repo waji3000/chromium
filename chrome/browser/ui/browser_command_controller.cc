@@ -39,11 +39,12 @@
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/extensions/hosted_app_browser_controller.h"
 #include "chrome/browser/ui/page_info/page_info_dialog.h"
+#include "chrome/browser/ui/singleton_tabs.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/inspect_ui.h"
 #include "chrome/common/content_restriction.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/profiling.h"
+#include "chrome/common/url_constants.h"
 #include "components/bookmarks/common/bookmark_pref_names.h"
 #include "components/dom_distiller/core/dom_distiller_switches.h"
 #include "components/feature_engagement/buildflags.h"
@@ -56,6 +57,7 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/common/profiling.h"
 #include "content/public/common/service_manager_connection.h"
 #include "content/public/common/url_constants.h"
 #include "extensions/browser/extension_system.h"
@@ -606,7 +608,7 @@ bool BrowserCommandController::ExecuteCommandWithDisposition(
       ToggleBookmarkBar(browser_);
       break;
     case IDC_PROFILING_ENABLED:
-      Profiling::Toggle();
+      content::Profiling::Toggle();
       break;
 
     case IDC_SHOW_BOOKMARK_MANAGER:
@@ -676,6 +678,9 @@ bool BrowserCommandController::ExecuteCommandWithDisposition(
       break;
     case IDC_WINDOW_PIN_TAB:
       PinTab(browser_);
+      break;
+    case IDC_MANAGED_UI_HELP:
+      ShowSingletonTab(browser_, GURL(kManagedUiLearnMoreUrl));
       break;
 
     // Hosted App commands
@@ -1194,6 +1199,7 @@ void BrowserCommandController::UpdateCommandsForFullscreenMode() {
   command_updater_.UpdateCommandEnabled(IDC_VIEW_PASSWORDS, show_main_ui);
   command_updater_.UpdateCommandEnabled(IDC_ABOUT, show_main_ui);
   command_updater_.UpdateCommandEnabled(IDC_SHOW_APP_MENU, show_main_ui);
+  command_updater_.UpdateCommandEnabled(IDC_MANAGED_UI_HELP, true);
 
   if (base::debug::IsProfilingSupported())
     command_updater_.UpdateCommandEnabled(IDC_PROFILING_ENABLED, show_main_ui);

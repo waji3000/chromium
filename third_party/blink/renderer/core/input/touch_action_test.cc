@@ -206,7 +206,7 @@ WebViewImpl* TouchActionTest::SetupTest(
 
   // Set size to enable hit testing, and avoid line wrapping for consistency
   // with browser.
-  web_view->Resize(WebSize(900, 1600));
+  web_view->MainFrameWidget()->Resize(WebSize(900, 1600));
 
   // Scroll to verify the code properly transforms windows to client co-ords.
   const int kScrollOffset = 100;
@@ -387,8 +387,8 @@ void TouchActionTest::SendTouchEvent(WebView* web_view,
   if (type == WebInputEvent::kPointerCancel)
     event.dispatch_type = WebInputEvent::kEventNonBlocking;
 
-  web_view->HandleInputEvent(WebCoalescedInputEvent(event));
-  web_view->DispatchBufferedTouchEvents();
+  web_view->MainFrameWidget()->HandleInputEvent(WebCoalescedInputEvent(event));
+  web_view->MainFrameWidget()->DispatchBufferedTouchEvents();
   RunPendingTasks();
 }
 

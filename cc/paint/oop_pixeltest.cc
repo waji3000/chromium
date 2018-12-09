@@ -76,22 +76,11 @@ class OopPixelTest : public testing::Test,
 
   void SetUp() override {
     InitializeOOPContext();
-    const int raster_max_texture_size =
-        raster_context_provider_->ContextCapabilities().max_texture_size;
-
     gles2_context_provider_ =
         base::MakeRefCounted<TestInProcessContextProvider>(
             /*enable_oop_rasterization=*/false, /*support_locking=*/true);
     gpu::ContextResult result = gles2_context_provider_->BindToCurrentThread();
     DCHECK_EQ(result, gpu::ContextResult::kSuccess);
-    const int gles2_max_texture_size =
-        raster_context_provider_->ContextCapabilities().max_texture_size;
-    gpu_image_cache_.reset(new GpuImageDecodeCache(
-        gles2_context_provider_.get(), false, kRGBA_8888_SkColorType,
-        kWorkingSetSize, gles2_max_texture_size,
-        PaintImage::kDefaultGeneratorClientId));
-
-    ASSERT_EQ(raster_max_texture_size, gles2_max_texture_size);
   }
 
   // gpu::raster::GrShaderCache::Client implementation.
@@ -108,12 +97,24 @@ class OopPixelTest : public testing::Test,
             &gr_shader_cache_, &activity_flags_);
     gpu::ContextResult result = raster_context_provider_->BindToCurrentThread();
     DCHECK_EQ(result, gpu::ContextResult::kSuccess);
+  }
+
+  void CreateGpuImageCache(const gfx::ColorSpace& color_space) {
+    const int gles2_max_texture_size =
+        raster_context_provider_->ContextCapabilities().max_texture_size;
+    gpu_image_cache_.reset(new GpuImageDecodeCache(
+        gles2_context_provider_.get(), false, kRGBA_8888_SkColorType,
+        kWorkingSetSize, gles2_max_texture_size,
+        PaintImage::kDefaultGeneratorClientId, color_space.ToSkColorSpace()));
+  }
+
+  void CreateOopImageCache(const gfx::ColorSpace& color_space) {
     const int raster_max_texture_size =
         raster_context_provider_->ContextCapabilities().max_texture_size;
     oop_image_cache_.reset(new GpuImageDecodeCache(
         raster_context_provider_.get(), true, kRGBA_8888_SkColorType,
         kWorkingSetSize, raster_max_texture_size,
-        PaintImage::kDefaultGeneratorClientId));
+        PaintImage::kDefaultGeneratorClientId, color_space.ToSkColorSpace()));
   }
 
   class RasterOptions {
@@ -153,12 +154,13 @@ class OopPixelTest : public testing::Test,
 
   SkBitmap Raster(scoped_refptr<DisplayItemList> display_item_list,
                   const RasterOptions& options) {
+    CreateOopImageCache(options.color_space);
+
     GURL url("https://example.com/foo");
     TestInProcessContextProvider::ScopedRasterContextLock lock(
         raster_context_provider_.get(), url.possibly_invalid_spec().c_str());
 
     PlaybackImageProvider image_provider(oop_image_cache_.get(),
-                                         options.color_space,
                                          PlaybackImageProvider::Settings());
 
     gpu::gles2::GLES2Interface* gl = gles2_context_provider_->ContextGL();
@@ -258,6 +260,8 @@ class OopPixelTest : public testing::Test,
   SkBitmap RasterExpectedBitmap(
       scoped_refptr<DisplayItemList> display_item_list,
       const RasterOptions& options) {
+    CreateGpuImageCache(options.color_space);
+
     TestInProcessContextProvider::ScopedRasterContextLock lock(
         gles2_context_provider_.get());
     gles2_context_provider_->GrContext()->resetContext();
@@ -279,7 +283,6 @@ class OopPixelTest : public testing::Test,
       options.shader_with_animated_images->set_has_animated_images(true);
 
     PlaybackImageProvider image_provider(gpu_image_cache_.get(),
-                                         options.color_space,
                                          PlaybackImageProvider::Settings());
 
     auto raster_source = recording.CreateRasterSource();
@@ -1206,8 +1209,11 @@ TEST_F(OopPixelTest, ClearingTransparentInternalTile) {
   options.preclear = true;
   options.preclear_color = SK_ColorRED;
 
-  // Make a non-empty but noop display list to avoid early outs.
-  auto display_item_list = MakeNoopDisplayItemList();
+  // Note that clearing of the tile should supersede any early outs due to an
+  // empty display list. This is due to the fact that partial raster may in fact
+  // result in no items being generated, in which case a clear should still
+  // happen. See crbug.com/901897.
+  auto display_item_list = base::MakeRefCounted<DisplayItemList>();
 
   auto oop_result = Raster(display_item_list, options);
   auto gpu_result = RasterExpectedBitmap(display_item_list, options);
@@ -1397,21 +1403,19 @@ sk_sp<SkTextBlob> BuildTextBlob(
     typeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
   }
 
-  SkPaint paint;
-  paint.setTypeface(typeface);
-  paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
-  paint.setHinting(SkPaint::kNormal_Hinting);
-  paint.setTextSize(1u);
+  SkFont font;
+  font.setTypeface(typeface);
+  font.setHinting(SkFontHinting::kNormal);
+  font.setSize(1u);
   if (use_lcd_text) {
-    paint.setAntiAlias(true);
-    paint.setSubpixelText(true);
-    paint.setLCDRenderText(true);
+    font.setSubpixel(true);
+    font.setEdging(SkFont::Edging::kSubpixelAntiAlias);
   }
 
   SkTextBlobBuilder builder;
   SkRect bounds = SkRect::MakeWH(100, 100);
   const int glyphCount = 10;
-  const auto& runBuffer = builder.allocRunPosH(paint, glyphCount, 0, &bounds);
+  const auto& runBuffer = builder.allocRunPosH(font, glyphCount, 0, &bounds);
   for (int i = 0; i < glyphCount; i++) {
     runBuffer.glyphs[i] = static_cast<SkGlyphID>(i);
     runBuffer.pos[i] = SkIntToScalar(i);

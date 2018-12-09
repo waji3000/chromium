@@ -129,7 +129,7 @@ VRDisplay::VRDisplay(NavigatorVR* navigator_vr,
                      device::mojom::blink::XRDevicePtr device)
     : PausableObject(navigator_vr->GetDocument()),
       navigator_vr_(navigator_vr),
-      capabilities_(new VRDisplayCapabilities()),
+      capabilities_(MakeGarbageCollected<VRDisplayCapabilities>()),
       device_ptr_(std::move(device)),
       display_client_binding_(this) {
   PauseIfNeeded();  // Initialize SuspendabaleObject.
@@ -180,9 +180,9 @@ void VRDisplay::Update(const device::mojom::blink::VRDisplayInfoPtr& display) {
     DCHECK_GT(display->leftEye->renderWidth, 0u);
     is_valid = true;
 
-    eye_parameters_left_ = new VREyeParameters(
+    eye_parameters_left_ = MakeGarbageCollected<VREyeParameters>(
         display->leftEye, display->webvr_default_framebuffer_scale);
-    eye_parameters_right_ = new VREyeParameters(
+    eye_parameters_right_ = MakeGarbageCollected<VREyeParameters>(
         display->rightEye, display->webvr_default_framebuffer_scale);
   }
 
@@ -194,7 +194,7 @@ void VRDisplay::Update(const device::mojom::blink::VRDisplayInfoPtr& display) {
 
   if (!display->stageParameters.is_null()) {
     if (!stage_parameters_)
-      stage_parameters_ = new VRStageParameters();
+      stage_parameters_ = MakeGarbageCollected<VRStageParameters>();
     stage_parameters_->Update(display->stageParameters);
   } else {
     stage_parameters_ = nullptr;
@@ -295,8 +295,8 @@ void VRDisplay::RequestVSync() {
     non_immersive_provider_->GetFrameData(WTF::Bind(
         &VRDisplay::OnNonImmersiveFrameData, WrapWeakPersistent(this)));
     pending_non_immersive_vsync_ = true;
-    pending_non_immersive_vsync_id_ =
-        doc->RequestAnimationFrame(new VRDisplayFrameRequestCallback(this));
+    pending_non_immersive_vsync_id_ = doc->RequestAnimationFrame(
+        MakeGarbageCollected<VRDisplayFrameRequestCallback>(this));
     DVLOG(2) << __FUNCTION__ << " done: pending_non_immersive_vsync_="
              << pending_non_immersive_vsync_;
   }
@@ -560,7 +560,7 @@ void VRDisplay::OnRequestImmersiveSessionReturned(
         WTF::Bind(&VRDisplay::OnPresentationProviderConnectionError,
                   WrapWeakPersistent(this)));
 
-    frame_transport_ = new XRFrameTransport();
+    frame_transport_ = MakeGarbageCollected<XRFrameTransport>();
     frame_transport_->BindSubmitFrameClient(
         std::move(session->submit_frame_sink->client_request));
     frame_transport_->SetTransportOptions(
@@ -568,7 +568,7 @@ void VRDisplay::OnRequestImmersiveSessionReturned(
 
     if (immersive_client_binding_)
       immersive_client_binding_->Close();
-    immersive_client_binding_ = new SessionClientBinding(
+    immersive_client_binding_ = MakeGarbageCollected<SessionClientBinding>(
         this, SessionClientBinding::SessionBindingType::kImmersive,
         std::move(session->client_request));
 
@@ -594,7 +594,7 @@ void VRDisplay::OnNonImmersiveSessionRequestReturned(
     return;
   }
   non_immersive_provider_.Bind(std::move(session->data_provider));
-  non_immersive_client_binding_ = new SessionClientBinding(
+  non_immersive_client_binding_ = MakeGarbageCollected<SessionClientBinding>(
       this, SessionClientBinding::SessionBindingType::kNonImmersive,
       std::move(session->client_request));
   RequestVSync();

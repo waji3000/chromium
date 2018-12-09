@@ -43,14 +43,18 @@ void DemoSetupScreenHandler::Bind(DemoSetupScreen* screen) {
 
 void DemoSetupScreenHandler::OnSetupFailed(
     const DemoSetupController::DemoSetupError& error) {
-  CallJS("onSetupFailed",
-         base::JoinString({error.GetLocalizedErrorMessage(),
-                           error.GetLocalizedRecoveryMessage()},
-                          base::UTF8ToUTF16(" ")));
+  // TODO(wzang): Consider customization for RecoveryMethod::kReboot as well.
+  CallJSWithPrefix(
+      "onSetupFailed",
+      base::JoinString({error.GetLocalizedErrorMessage(),
+                        error.GetLocalizedRecoveryMessage()},
+                       base::UTF8ToUTF16(" ")),
+      error.recovery_method() ==
+          DemoSetupController::DemoSetupError::RecoveryMethod::kPowerwash);
 }
 
 void DemoSetupScreenHandler::OnSetupSucceeded() {
-  CallJS("onSetupSucceeded");
+  CallJSWithPrefix("onSetupSucceeded");
 }
 
 void DemoSetupScreenHandler::Initialize() {}
@@ -63,6 +67,8 @@ void DemoSetupScreenHandler::DeclareLocalizedValues(
                IDS_OOBE_DEMO_SETUP_ERROR_SCREEN_TITLE);
   builder->Add("demoSetupErrorScreenRetryButtonLabel",
                IDS_OOBE_DEMO_SETUP_ERROR_SCREEN_RETRY_BUTTON_LABEL);
+  builder->Add("demoSetupErrorScreenPowerwashButtonLabel",
+               IDS_LOCAL_STATE_ERROR_POWERWASH_BUTTON);
 }
 
 }  // namespace chromeos

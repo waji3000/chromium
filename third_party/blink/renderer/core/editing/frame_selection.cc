@@ -103,7 +103,8 @@ FrameSelection::FrameSelection(LocalFrame& frame)
       focused_(frame.GetPage() &&
                frame.GetPage()->GetFocusController().FocusedFrame() == frame),
       is_directional_(ShouldAlwaysUseDirectionalSelection(frame_)),
-      frame_caret_(new FrameCaret(frame, *selection_editor_)) {}
+      frame_caret_(
+          MakeGarbageCollected<FrameCaret>(frame, *selection_editor_)) {}
 
 FrameSelection::~FrameSelection() = default;
 
@@ -193,6 +194,19 @@ void FrameSelection::SetSelectionAndEndTyping(
                               .Build());
 }
 
+static void AssertUserSelection(const SelectionInDOMTree& selection,
+                                const SetSelectionOptions& options) {
+// User's selection start/end should have same editability.
+#if DCHECK_IS_ON()
+  if (!options.ShouldShowHandle() &&
+      options.GetSetSelectionBy() != SetSelectionBy::kUser)
+    return;
+  Node* base_editable_root = RootEditableElementOf(selection.Base());
+  Node* extent_editable_root = RootEditableElementOf(selection.Extent());
+  DCHECK_EQ(base_editable_root, extent_editable_root) << selection;
+#endif
+}
+
 bool FrameSelection::SetSelectionDeprecated(
     const SelectionInDOMTree& new_selection,
     const SetSelectionOptions& passed_options) {
@@ -200,7 +214,7 @@ bool FrameSelection::SetSelectionDeprecated(
   if (ShouldAlwaysUseDirectionalSelection(frame_)) {
     options_builder.SetIsDirectional(true);
   }
-  SetSelectionOptions options = options_builder.Build();
+  const SetSelectionOptions options = options_builder.Build();
 
   if (granularity_strategy_ && !options.DoNotClearStrategy())
     granularity_strategy_->Clear();
@@ -221,8 +235,10 @@ bool FrameSelection::SetSelectionDeprecated(
   if (!is_changed && is_handle_visible_ == should_show_handle &&
       is_directional_ == options.IsDirectional())
     return false;
-  if (is_changed)
+  if (is_changed) {
+    AssertUserSelection(new_selection, options);
     selection_editor_->SetSelectionAndEndTyping(new_selection);
+  }
   is_directional_ = options.IsDirectional();
   should_shrink_next_tap_ = options.ShouldShrinkNextTap();
   is_handle_visible_ = should_show_handle;
@@ -1070,33 +1086,34 @@ bool FrameSelection::SelectWordAroundCaret() {
   // http://crbug.com/657237 for more details.
   if (!selection.IsCaret())
     return false;
-  const VisiblePosition& position = selection.VisibleStart();
+  const Position position = selection.Start();
   static const EWordSide kWordSideList[2] = {kNextWordIfOnBoundary,
                                              kPreviousWordIfOnBoundary};
   for (EWordSide word_side : kWordSideList) {
-    // TODO(yoichio): We should have Position version of |start/endOfWord|
-    // for avoiding unnecessary canonicalization.
-    VisiblePosition start = StartOfWord(position, word_side);
-    VisiblePosition end = EndOfWord(position, word_side);
+    Position start = StartOfWordPosition(position, word_side);
+    Position end = EndOfWordPosition(position, word_side);
 
     // TODO(editing-dev): |StartOfWord()| and |EndOfWord()| should not make null
     // for non-null parameter.
     // See http://crbug.com/872443
-    if (start.DeepEquivalent().IsNull() || end.DeepEquivalent().IsNull())
+    if (start.IsNull() || end.IsNull())
       continue;
 
-    String text =
-        PlainText(EphemeralRange(start.DeepEquivalent(), end.DeepEquivalent()));
+    if (start > end) {
+      // Since word boundaries are computed on flat tree, they can be reversed
+      // when mapped back to DOM.
+      std::swap(start, end);
+    }
+
+    String text = PlainText(EphemeralRange(start, end));
     if (!text.IsEmpty() && !IsSeparator(text.CharacterStartingAt(0))) {
-      SetSelection(SelectionInDOMTree::Builder()
-                       .Collapse(start.ToPositionWithAffinity())
-                       .Extend(end.DeepEquivalent())
-                       .Build(),
-                   SetSelectionOptions::Builder()
-                       .SetShouldCloseTyping(true)
-                       .SetShouldClearTypingStyle(true)
-                       .SetGranularity(TextGranularity::kWord)
-                       .Build());
+      SetSelection(
+          SelectionInDOMTree::Builder().Collapse(start).Extend(end).Build(),
+          SetSelectionOptions::Builder()
+              .SetShouldCloseTyping(true)
+              .SetShouldClearTypingStyle(true)
+              .SetGranularity(TextGranularity::kWord)
+              .Build());
       return true;
     }
   }

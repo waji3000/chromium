@@ -8,9 +8,9 @@
 #include "base/macros.h"
 #include "chrome/browser/ui/autofill/local_card_migration_dialog.h"
 #include "chrome/browser/ui/views/autofill/dialog_view_ids.h"
-#include "ui/views/controls/button/button.h"
+#include "components/autofill/core/browser/ui/local_card_migration_dialog_controller.h"
+#include "ui/views/bubble/bubble_dialog_delegate_view.h"
 #include "ui/views/view.h"
-#include "ui/views/widget/widget_observer.h"
 #include "ui/views/window/dialog_delegate.h"
 
 namespace content {
@@ -19,13 +19,11 @@ class WebContents;
 
 namespace autofill {
 
-class LocalCardMigrationDialogController;
+enum class LocalCardMigrationDialogState;
 class LocalCardMigrationOfferView;
 
 class LocalCardMigrationDialogView : public LocalCardMigrationDialog,
-                                     public views::ButtonListener,
-                                     public views::DialogDelegateView,
-                                     public views::WidgetObserver {
+                                     public views::BubbleDialogDelegateView {
  public:
   LocalCardMigrationDialogView(LocalCardMigrationDialogController* controller,
                                content::WebContents* web_contents);
@@ -34,26 +32,25 @@ class LocalCardMigrationDialogView : public LocalCardMigrationDialog,
   // LocalCardMigrationDialog
   void ShowDialog() override;
   void CloseDialog() override;
-  void OnMigrationFinished() override;
 
-  // views::DialogDelegateView
+  // views::BubbleDialogDelegateView
   gfx::Size CalculatePreferredSize() const override;
   ui::ModalType GetModalType() const override;
-  void AddedToWidget() override;
   bool ShouldShowCloseButton() const override;
+  int GetDialogButtons() const override;
   base::string16 GetDialogButtonLabel(ui::DialogButton button) const override;
   bool IsDialogButtonEnabled(ui::DialogButton button) const override;
   bool Accept() override;
   bool Cancel() override;
+  bool Close() override;
+  void WindowClosing() override;
 
-  // views::WidgetObserver
-  void OnWidgetClosing(views::Widget* widget) override;
-
-  // views::ButtonListener
-  void ButtonPressed(views::Button* sender, const ui::Event& event) override;
+  // Called by MigratableCardView when the user clicks the trash can button.
+  // |guid| is the GUID of the credit card to be deleted.
+  void DeleteCard(const std::string& guid);
 
  private:
-  void Init();
+  void ConstructView();
   base::string16 GetOkButtonLabel() const;
   base::string16 GetCancelButtonLabel() const;
 

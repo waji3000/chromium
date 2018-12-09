@@ -95,10 +95,11 @@ class FileSystemEntryURLLoader
       : binding_(this), params_(std::move(params)) {}
 
   // network::mojom::URLLoader:
-  void FollowRedirect(const base::Optional<std::vector<std::string>>&
-                          to_be_removed_request_headers,
-                      const base::Optional<net::HttpRequestHeaders>&
-                          modified_request_headers) override {}
+  void FollowRedirect(
+      const base::Optional<std::vector<std::string>>&
+          to_be_removed_request_headers,
+      const base::Optional<net::HttpRequestHeaders>& modified_request_headers,
+      const base::Optional<GURL>& new_url) override {}
   void ProceedWithResponse() override {}
   void SetPriority(net::RequestPriority priority,
                    int32_t intra_priority_value) override {}
@@ -484,9 +485,10 @@ class FileSystemFileURLLoader : public FileSystemEntryURLLoader {
         static_cast<int64_t>(kDefaultFileSystemUrlPipeSize), remaining_bytes_);
     if (!bytes_to_read) {
       if (consumer_handle_.is_valid()) {
-        // This was an empty file; make sure to call OnReceiveResponse
-        // regardless.
+        // This was an empty file; make sure to call OnReceiveResponse and
+        // OnStartLoadingResponseBody regardless.
         client_->OnReceiveResponse(head_);
+        client_->OnStartLoadingResponseBody(std::move(consumer_handle_));
       }
       OnFileWritten(MOJO_RESULT_OK);
       return;

@@ -67,7 +67,7 @@ class PaymentAppContentUnitTestBase::PaymentAppForWorkerTestHelper
       const GURL& script_url,
       bool pause_after_download,
       mojom::ServiceWorkerRequest service_worker_request,
-      mojom::ControllerServiceWorkerRequest controller_request,
+      blink::mojom::ControllerServiceWorkerRequest controller_request,
       mojom::EmbeddedWorkerInstanceHostAssociatedPtrInfo instance_host,
       mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info,
       blink::mojom::ServiceWorkerInstalledScriptsInfoPtr installed_scripts_info)
@@ -94,8 +94,8 @@ class PaymentAppContentUnitTestBase::PaymentAppForWorkerTestHelper
           std::move(callback));
     } else {
       pending_response_callback_ = std::move(response_callback);
-      std::move(callback).Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED,
-                              base::TimeTicks::Now());
+      std::move(callback).Run(
+          blink::mojom::ServiceWorkerEventStatus::COMPLETED);
     }
   }
 
@@ -227,8 +227,7 @@ void PaymentAppContentUnitTestBase::SetNoPaymentRequestResponseImmediately() {
 void PaymentAppContentUnitTestBase::RespondPendingPaymentRequest() {
   std::move(worker_helper_->pending_response_callback_)
       ->OnResponseForPaymentRequest(
-          payments::mojom::PaymentHandlerResponse::New(),
-          base::TimeTicks::Now());
+          payments::mojom::PaymentHandlerResponse::New());
 }
 
 int64_t PaymentAppContentUnitTestBase::last_sw_registration_id() const {

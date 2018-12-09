@@ -24,6 +24,7 @@
 #include "base/stl_util.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
+#include "build/build_config.h"
 
 namespace base {
 
@@ -157,10 +158,19 @@ void RewritePointersToStackMemory(uintptr_t top,
                                   uintptr_t bottom,
                                   CONTEXT* context,
                                   void* stack_copy) {
-#if defined(_WIN64)
+#if defined(ARCH_CPU_64_BITS)
   DWORD64 CONTEXT::*const nonvolatile_registers[] = {
+#if defined(ARCH_CPU_X86_64)
       &CONTEXT::R12, &CONTEXT::R13, &CONTEXT::R14, &CONTEXT::R15, &CONTEXT::Rdi,
-      &CONTEXT::Rsi, &CONTEXT::Rbx, &CONTEXT::Rbp, &CONTEXT::Rsp};
+      &CONTEXT::Rsi, &CONTEXT::Rbx, &CONTEXT::Rbp, &CONTEXT::Rsp
+#elif defined(ARCH_CPU_ARM64)
+      &CONTEXT::X19, &CONTEXT::X20, &CONTEXT::X21, &CONTEXT::X22, &CONTEXT::X23,
+      &CONTEXT::X24, &CONTEXT::X25, &CONTEXT::X26, &CONTEXT::X27, &CONTEXT::X28,
+      &CONTEXT::Fp, &CONTEXT::Lr
+#else
+#error Unsupported Windows 64-bit Arch
+#endif
+  };
 
   // Rewrite pointers in the context.
   for (size_t i = 0; i < size(nonvolatile_registers); ++i) {
@@ -213,9 +223,9 @@ NativeStackSamplerError RecordStack(CONTEXT* context,
   stack->reserve(128);
 
   Win32StackFrameUnwinder frame_unwinder;
-  while (context->Rip) {
+  while (ContextPC(context)) {
     const void* instruction_pointer =
-        reinterpret_cast<const void*>(context->Rip);
+        reinterpret_cast<const void*>(ContextPC(context));
     ScopedModuleHandle module;
     if (!frame_unwinder.TryUnwind(context, &module))
       return NATIVE_STACK_SAMPLER_TRY_UNWIND_FAILED;
@@ -345,7 +355,8 @@ NativeStackSamplerError SuspendThreadAndRecordStack(
   uintptr_t bottom = 0u;
 
   {
-    TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cpu_profiler"), "SuspendThread");
+    TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cpu_profiler.debug"),
+                 "SuspendThread");
     {
       ScopedSuspendThread suspend_thread(thread_handle);
 
@@ -355,8 +366,10 @@ NativeStackSamplerError SuspendThreadAndRecordStack(
       if (!::GetThreadContext(thread_handle, &thread_context))
         return NATIVE_STACK_SAMPLER_GET_THREAD_CONTEXT_FAILED;
 
-#if defined(_WIN64)
+#if defined(ARCH_CPU_X86_64)
       bottom = thread_context.Rsp;
+#elif defined(ARCH_CPU_ARM64)
+      bottom = thread_context.Sp;
 #else
       bottom = thread_context.Esp;
 #endif
@@ -370,7 +383,7 @@ NativeStackSamplerError SuspendThreadAndRecordStack(
       if (PointsToGuardPage(bottom))
         return NATIVE_STACK_SAMPLER_POINTS_TO_GUARD;
 
-      profile_builder->RecordAnnotations();
+      profile_builder->RecordMetadata();
 
       CopyMemoryFromStack(stack_copy_buffer,
                           reinterpret_cast<const void*>(bottom), top - bottom);
@@ -381,7 +394,8 @@ NativeStackSamplerError SuspendThreadAndRecordStack(
     test_delegate->OnPreStackWalk();
 
   {
-    TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cpu_profiler"), "RecordStack");
+    TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cpu_profiler.debug"),
+                 "RecordStack");
 
     RewritePointersToStackMemory(top, bottom, &thread_context,
                                  stack_copy_buffer);
@@ -440,7 +454,7 @@ void NativeStackSamplerWin::ProfileRecordingStarting() {
 std::vector<Frame> NativeStackSamplerWin::RecordStackFrames(
     StackBuffer* stack_buffer,
     ProfileBuilder* profile_builder) {
-  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cpu_profiler"),
+  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cpu_profiler.debug"),
                "NativeStackSamplerWin::RecordStackFrames");
   DCHECK(stack_buffer);
 
@@ -464,7 +478,7 @@ std::vector<Frame> NativeStackSamplerWin::RecordStackFrames(
 
 std::vector<Frame> NativeStackSamplerWin::CreateFrames(
     const std::vector<RecordedFrame>& stack) {
-  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cpu_profiler"),
+  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cpu_profiler.debug"),
                "NativeStackSamplerWin::CreateFrames");
 
   std::vector<Frame> frames;

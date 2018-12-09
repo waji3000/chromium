@@ -108,7 +108,7 @@ OriginTrialContext* OriginTrialContext::FromOrCreate(
   OriginTrialContext* origin_trials =
       Supplement<ExecutionContext>::From<OriginTrialContext>(context);
   if (!origin_trials) {
-    origin_trials = new OriginTrialContext(
+    origin_trials = MakeGarbageCollected<OriginTrialContext>(
         *context, TrialTokenValidator::Policy()
                       ? std::make_unique<TrialTokenValidator>()
                       : nullptr);
@@ -274,7 +274,7 @@ bool OriginTrialContext::EnableTrialFromToken(const String& token) {
     enabled_trials_.insert(trial_name);
     // Also enable any trials implied by this trial
     Vector<AtomicString> implied_trials =
-        OriginTrials::GetImpliedTrials(trial_name);
+        origin_trials::GetImpliedTrials(trial_name);
     for (const AtomicString& implied_trial_name : implied_trials) {
       enabled_trials_.insert(implied_trial_name);
     }

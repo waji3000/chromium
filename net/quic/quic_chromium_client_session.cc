@@ -42,6 +42,8 @@
 #include "net/ssl/ssl_info.h"
 #include "net/third_party/quic/core/http/quic_client_promised_info.h"
 #include "net/third_party/quic/core/http/spdy_utils.h"
+#include "net/third_party/quic/core/quic_utils.h"
+#include "net/third_party/quic/platform/api/quic_flags.h"
 #include "net/third_party/quic/platform/api/quic_ptr_util.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "third_party/boringssl/src/include/openssl/ssl.h"
@@ -105,12 +107,9 @@ void RecordUnexpectedNotGoingAway(Location location) {
                             NUM_LOCATIONS);
 }
 
-std::unique_ptr<base::Value> NetLogQuicConnectionMigrationTriggerCallback(
-    std::string trigger,
-    NetLogCaptureMode capture_mode) {
-  std::unique_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
-  dict->SetString("trigger", trigger);
-  return std::move(dict);
+NetLogParametersCallback NetLogQuicConnectionMigrationTriggerCallback(
+    const char* trigger) {
+  return NetLog::StringCallback("trigger", trigger);
 }
 
 std::unique_ptr<base::Value> NetLogQuicConnectionMigrationFailureCallback(
@@ -163,7 +162,7 @@ void RecordHandshakeState(HandshakeState state) {
 
 std::string ConnectionMigrationCauseToString(ConnectionMigrationCause cause) {
   switch (cause) {
-    case UNKNOWN:
+    case UNKNOWN_CAUSE:
       return "Unknown";
     case ON_NETWORK_CONNECTED:
       return "OnNetworkConnected";
@@ -735,7 +734,7 @@ QuicChromiumClientSession::QuicChromiumClientSession(
       bytes_pushed_and_unclaimed_count_(0),
       probing_manager_(this, task_runner_),
       retry_migrate_back_count_(0),
-      current_connection_migration_cause_(UNKNOWN),
+      current_connection_migration_cause_(UNKNOWN_CAUSE),
       send_packet_after_migration_(false),
       wait_for_new_network_(false),
       ignore_read_error_(false),
@@ -1010,7 +1009,15 @@ int QuicChromiumClientSession::TryCreateStream(StreamRequest* request) {
     return ERR_CONNECTION_CLOSED;
   }
 
-  if (GetNumOpenOutgoingStreams() < max_open_outgoing_streams()) {
+  bool can_open_next;
+  if (!quic::GetQuicReloadableFlag(quic_use_common_stream_check) &&
+      connection()->transport_version() != quic::QUIC_VERSION_99) {
+    can_open_next = (GetNumOpenOutgoingStreams() <
+                     stream_id_manager().max_open_outgoing_streams());
+  } else {
+    can_open_next = CanOpenNextOutgoingStream();
+  }
+  if (can_open_next) {
     request->stream_ =
         CreateOutgoingReliableStreamImpl(request->traffic_annotation())
             ->CreateHandle();
@@ -1039,10 +1046,20 @@ bool QuicChromiumClientSession::ShouldCreateOutgoingStream() {
     DVLOG(1) << "Encryption not active so no outgoing stream created.";
     return false;
   }
-  if (GetNumOpenOutgoingStreams() >= max_open_outgoing_streams()) {
-    DVLOG(1) << "Failed to create a new outgoing stream. "
-             << "Already " << GetNumOpenOutgoingStreams() << " open.";
-    return false;
+  if (!quic::GetQuicReloadableFlag(quic_use_common_stream_check) &&
+      connection()->transport_version() != quic::QUIC_VERSION_99) {
+    if (GetNumOpenOutgoingStreams() >=
+        stream_id_manager().max_open_outgoing_streams()) {
+      DVLOG(1) << "Failed to create a new outgoing stream. "
+               << "Already " << GetNumOpenOutgoingStreams() << " open.";
+      return false;
+    }
+  } else {
+    if (!CanOpenNextOutgoingStream()) {
+      DVLOG(1) << "Failed to create a new outgoing stream. "
+               << "Already " << GetNumOpenOutgoingStreams() << " open.";
+      return false;
+    }
   }
   if (goaway_received()) {
     DVLOG(1) << "Failed to create a new outgoing stream. "
@@ -1121,15 +1138,12 @@ bool QuicChromiumClientSession::GetSSLInfo(SSLInfo* ssl_info) const {
   // numbers begin with a stray 0x03, so mask them off.
   quic::QuicTag aead = crypto_stream_->crypto_negotiated_params().aead;
   uint16_t cipher_suite;
-  int security_bits;
   switch (aead) {
     case quic::kAESG:
       cipher_suite = TLS1_CK_AES_128_GCM_SHA256 & 0xffff;
-      security_bits = 128;
       break;
     case quic::kCC20:
       cipher_suite = TLS1_CK_CHACHA20_POLY1305_SHA256 & 0xffff;
-      security_bits = 256;
       break;
     default:
       NOTREACHED();
@@ -1182,7 +1196,6 @@ bool QuicChromiumClientSession::GetSSLInfo(SSLInfo* ssl_info) const {
   ssl_info->connection_status = ssl_connection_status;
   ssl_info->client_cert_sent = false;
   ssl_info->channel_id_sent = crypto_stream_->WasChannelIDSent();
-  ssl_info->security_bits = security_bits;
   ssl_info->handshake_type = SSLInfo::HANDSHAKE_FULL;
   ssl_info->pinning_failure_log = pinning_failure_log_;
   ssl_info->is_fatal_cert_error = is_fatal_cert_error_;
@@ -1252,7 +1265,8 @@ bool QuicChromiumClientSession::ShouldCreateIncomingStream(
   if (going_away_) {
     return false;
   }
-  if (id % 2 != 0) {
+  if (quic::QuicUtils::IsClientInitiatedStreamId(
+          connection()->transport_version(), id)) {
     LOG(WARNING) << "Received invalid push stream id " << id;
     connection()->CloseConnection(
         quic::QUIC_INVALID_STREAM_ID, "Server created odd numbered stream",
@@ -1310,13 +1324,12 @@ void QuicChromiumClientSession::CloseStream(quic::QuicStreamId stream_id) {
   if (stream) {
     logger_->UpdateReceivedFrameCounts(stream_id, stream->num_frames_received(),
                                        stream->num_duplicate_frames_received());
-    if (stream_id % 2 == 0) {
-      // Stream with even stream is initiated by server for PUSH.
+    if (quic::QuicUtils::IsServerInitiatedStreamId(
+            connection()->transport_version(), stream_id)) {
       bytes_pushed_count_ += stream->stream_bytes_read();
     }
   }
   quic::QuicSpdySession::CloseStream(stream_id);
-  OnClosedStream();
 }
 
 void QuicChromiumClientSession::SendRstStream(
@@ -1325,19 +1338,19 @@ void QuicChromiumClientSession::SendRstStream(
     quic::QuicStreamOffset bytes_written) {
   quic::QuicStream* stream = GetOrCreateStream(id);
   if (stream) {
-    if (id % 2 == 0) {
+    if (quic::QuicUtils::IsServerInitiatedStreamId(
+            connection()->transport_version(), id)) {
       // Stream with even stream is initiated by server for PUSH.
       bytes_pushed_count_ += stream->stream_bytes_read();
     }
   }
   quic::QuicSpdySession::SendRstStream(id, error, bytes_written);
-  OnClosedStream();
 }
 
-void QuicChromiumClientSession::OnClosedStream() {
-  if (GetNumOpenOutgoingStreams() < max_open_outgoing_streams() &&
-      !stream_requests_.empty() && crypto_stream_->encryption_established() &&
-      !goaway_received() && !going_away_ && connection()->connected()) {
+void QuicChromiumClientSession::OnCanCreateNewOutgoingStream() {
+  if (CanOpenNextOutgoingStream() && !stream_requests_.empty() &&
+      crypto_stream_->encryption_established() && !goaway_received() &&
+      !going_away_ && connection()->connected()) {
     StreamRequest* request = stream_requests_.front();
     // TODO(ckrasic) - analyze data and then add logic to mark QUIC
     // broken if wait times are excessive.
@@ -1465,7 +1478,6 @@ void QuicChromiumClientSession::OnGoAway(const quic::QuicGoAwayFrame& frame) {
 void QuicChromiumClientSession::OnRstStream(
     const quic::QuicRstStreamFrame& frame) {
   quic::QuicSession::OnRstStream(frame);
-  OnClosedStream();
 }
 
 void QuicChromiumClientSession::OnConnectionClosed(
@@ -1733,10 +1745,10 @@ void QuicChromiumClientSession::MigrateSessionOnWriteError(
           max_migrations_to_non_default_network_on_write_error_) {
     HistogramAndLogMigrationFailure(
         net_log_, MIGRATION_STATUS_ON_WRITE_ERROR_DISABLED, connection_id(),
-        "Exceeds maximum number of migrations on write errpr");
+        "Exceeds maximum number of migrations on write error");
     connection()->CloseConnection(
         quic::QUIC_PACKET_WRITE_ERROR,
-        "Too many migration for write error for the same network",
+        "Too many migrations for write error for the same network",
         quic::ConnectionCloseBehavior::SILENT_CLOSE);
     return;
   }
@@ -1746,7 +1758,7 @@ void QuicChromiumClientSession::MigrateSessionOnWriteError(
       net_log_.net_log(), NetLogSourceType::QUIC_CONNECTION_MIGRATION);
   migration_net_log.BeginEvent(
       NetLogEventType::QUIC_CONNECTION_MIGRATION_TRIGGERED,
-      base::Bind(&NetLogQuicConnectionMigrationTriggerCallback, "WriteError"));
+      NetLogQuicConnectionMigrationTriggerCallback("WriteError"));
   MigrationResult result =
       Migrate(new_network, connection()->peer_address().impl().socket_address(),
               /*close_session_on_error=*/false, migration_net_log);
@@ -2146,8 +2158,7 @@ void QuicChromiumClientSession::OnPathDegrading() {
       net_log_.net_log(), NetLogSourceType::QUIC_CONNECTION_MIGRATION);
   migration_net_log.BeginEvent(
       NetLogEventType::QUIC_CONNECTION_MIGRATION_TRIGGERED,
-      base::Bind(&NetLogQuicConnectionMigrationTriggerCallback,
-                 "PathDegrading"));
+      NetLogQuicConnectionMigrationTriggerCallback("PathDegrading"));
   // Probe alternative network, session will migrate to the probed
   // network and decide whether it wants to migrate back to the default
   // network on success.
@@ -2548,7 +2559,7 @@ void QuicChromiumClientSession::LogConnectionMigrationResultToHistogram(
       "Net.QuicSession.ConnectionMigration." +
       ConnectionMigrationCauseToString(current_connection_migration_cause_);
   base::UmaHistogramEnumeration(histogram_name, status, MIGRATION_STATUS_MAX);
-  current_connection_migration_cause_ = UNKNOWN;
+  current_connection_migration_cause_ = UNKNOWN_CAUSE;
 }
 
 void QuicChromiumClientSession::LogHandshakeStatusOnConnectionMigrationSignal()

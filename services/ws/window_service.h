@@ -16,6 +16,8 @@
 #include "base/observer_list.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "services/service_manager/public/cpp/service.h"
+#include "services/service_manager/public/cpp/service_binding.h"
+#include "services/service_manager/public/mojom/service.mojom.h"
 #include "services/ws/ids.h"
 #include "services/ws/ime/ime_driver_bridge.h"
 #include "services/ws/ime/ime_registrar_impl.h"
@@ -87,6 +89,10 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) WindowService
                 aura::Env* env = nullptr);
   ~WindowService() override;
 
+  // Binds this WindowService instance to a ServiceRequest from the Service
+  // Manger.
+  void BindServiceRequest(service_manager::mojom::ServiceRequest request);
+
   // Gets the ServerWindow for |window|, creating if necessary.
   ServerWindow* GetServerWindowForWindowCreateIfNecessary(aura::Window* window);
 
@@ -109,6 +115,19 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) WindowService
 
   // Returns true if |window| hosts a remote client and is a toplevel window.
   static bool IsTopLevelWindow(const aura::Window* window);
+
+  // Returns the window representing the specified id.
+  aura::Window* GetWindowByClientId(Id transport_id);
+
+  // Returns the transport-id for the specified |window|. If |window| was
+  // not created by a client, returns kInvalidTransportId.
+  // NOTE: this function returns an id with the client_id portion set to the
+  // id of the client that created it. The client that created the window
+  // generally uses a client_id of 0 for Windows it creates. If you need to
+  // correlate this with a WindowMus you will most likely need to set the
+  // client_id to 0. See documentation of ClientWindowId in README.md
+  // for more details.
+  Id GetCompleteTransportIdForWindow(aura::Window* window);
 
   struct TreeAndWindowId {
     ClientWindowId id;
@@ -190,6 +209,8 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) WindowService
   friend class WindowServerTestImpl;
   friend class WindowServiceTestHelper;
 
+  WindowTree* GetTreeById(ClientSpecificId id);
+
   // Sets a callback to be called whenever a surface is activated. This
   // corresponds to a client submitting a new CompositorFrame for a Window. This
   // should only be called in a test configuration.
@@ -213,6 +234,8 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) WindowService
   WindowServiceDelegate* delegate_;
 
   aura::Env* env_;
+
+  service_manager::ServiceBinding service_binding_{this};
 
   // GpuInterfaceProvider may be null in tests.
   std::unique_ptr<GpuInterfaceProvider> gpu_interface_provider_;

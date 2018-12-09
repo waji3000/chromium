@@ -69,9 +69,10 @@ TEST_F(RenderWidgetTest, OnSynchronizeVisualProperties) {
   // Setting the bounds to a "real" rect should send the ack.
   render_thread_->sink().ClearMessages();
   viz::ParentLocalSurfaceIdAllocator local_surface_id_allocator;
+  local_surface_id_allocator.GenerateId();
   gfx::Size size(100, 100);
-  visual_properties.local_surface_id =
-      local_surface_id_allocator.GetCurrentLocalSurfaceId();
+  visual_properties.local_surface_id_allocation =
+      local_surface_id_allocator.GetCurrentLocalSurfaceIdAllocation();
   visual_properties.new_size = size;
   visual_properties.compositor_viewport_pixel_size = size;
   OnSynchronizeVisualProperties(visual_properties);
@@ -86,7 +87,7 @@ TEST_F(RenderWidgetTest, OnSynchronizeVisualProperties) {
   // Resetting the rect to empty should not send the ack.
   visual_properties.new_size = gfx::Size();
   visual_properties.compositor_viewport_pixel_size = gfx::Size();
-  visual_properties.local_surface_id = base::nullopt;
+  visual_properties.local_surface_id_allocation = base::nullopt;
   OnSynchronizeVisualProperties(visual_properties);
 
   // Changing the screen info should not send the ack.
@@ -105,8 +106,8 @@ class RenderWidgetInitialSizeTest : public RenderWidgetTest {
         new VisualProperties());
     initial_visual_properties->new_size = initial_size_;
     initial_visual_properties->compositor_viewport_pixel_size = initial_size_;
-    initial_visual_properties->local_surface_id =
-        local_surface_id_allocator_.GetCurrentLocalSurfaceId();
+    initial_visual_properties->local_surface_id_allocation =
+        local_surface_id_allocator_.GetCurrentLocalSurfaceIdAllocation();
     return initial_visual_properties;
   }
 

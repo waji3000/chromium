@@ -59,6 +59,11 @@ class MODULES_EXPORT PaymentRequest final
                                 const PaymentOptions*,
                                 ExceptionState&);
 
+  PaymentRequest(ExecutionContext*,
+                 const HeapVector<Member<PaymentMethodData>>&,
+                 const PaymentDetailsInit*,
+                 const PaymentOptions*,
+                 ExceptionState&);
   ~PaymentRequest() override;
 
   ScriptPromise show(ScriptState*);
@@ -88,7 +93,8 @@ class MODULES_EXPORT PaymentRequest final
   ScriptPromise Retry(ScriptState*, const PaymentValidationErrors*) override;
 
   // PaymentUpdater:
-  void OnUpdatePaymentDetails(const ScriptValue& details_script_value) override;
+  void OnUpdatePaymentDetails(const AtomicString& event_type,
+                              const ScriptValue& details_script_value) override;
   void OnUpdatePaymentDetailsFailure(const String& error) override;
 
   void Trace(blink::Visitor*) override;
@@ -105,12 +111,6 @@ class MODULES_EXPORT PaymentRequest final
   };
 
  private:
-  PaymentRequest(ExecutionContext*,
-                 const HeapVector<Member<PaymentMethodData>>&,
-                 const PaymentDetailsInit*,
-                 const PaymentOptions*,
-                 ExceptionState&);
-
   // LifecycleObserver:
   void ContextDestroyed(ExecutionContext*) override;
 

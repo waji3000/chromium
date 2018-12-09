@@ -41,7 +41,6 @@
 #include "ui/display/screen.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/geometry/insets.h"
-#include "ui/gfx/geometry/vector2d_conversions.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/skia_util.h"
@@ -97,7 +96,7 @@ constexpr int kAppListBackgroundRadius = 28;
 constexpr int kAppListHomeLaucherGesturesThreshold = 32;
 
 // Quality of the shield background blur.
-constexpr float kAppListBlurQuality = 0.25f;
+constexpr float kAppListBlurQuality = 0.33f;
 
 // Set animation durations to 0 for testing.
 static bool short_animations_for_testing;
@@ -291,9 +290,6 @@ AppListView::AppListView(AppListViewDelegate* delegate)
           std::make_unique<TransitionAnimationObserver>(this)),
       state_animation_metrics_reporter_(
           std::make_unique<StateAnimationMetricsReporter>()),
-      is_home_launcher_enabled_(app_list_features::IsHomeLauncherEnabled()),
-      is_new_style_launcher_enabled_(
-          app_list_features::IsNewStyleLauncherEnabled()),
       weak_ptr_factory_(this) {
   CHECK(delegate);
 }
@@ -340,7 +336,7 @@ void AppListView::Initialize(const InitParams& params) {
 
   // Tablet mode is enabled before the app list is shown, so apply the changes
   // that should occur upon entering the tablet mode here.
-  if (IsHomeLauncherEnabledInTabletMode())
+  if (is_tablet_mode())
     OnTabletModeChanged(is_tablet_mode_);
 
   UMA_HISTOGRAM_TIMES(kAppListCreationTimeHistogram,
@@ -405,8 +401,7 @@ bool AppListView::AcceleratorPressed(const ui::Accelerator& accelerator) {
     case ui::VKEY_BROWSER_BACK:
       // If the ContentsView does not handle the back action, then this is the
       // top level, so we close the app list.
-      if (!app_list_main_view_->contents_view()->Back() &&
-          !IsHomeLauncherEnabledInTabletMode()) {
+      if (!app_list_main_view_->contents_view()->Back() && !is_tablet_mode()) {
         Dismiss();
       }
       break;
@@ -441,7 +436,7 @@ void AppListView::Layout() {
   app_list_background_shield_->SetBoundsRect(app_list_background_shield_bounds);
   app_list_background_shield_->UpdateCornerRadius(kAppListBackgroundRadius);
   if (is_background_blur_enabled_ && app_list_background_shield_mask_ &&
-      !IsHomeLauncherEnabledInTabletMode() &&
+      !is_tablet_mode() &&
       app_list_background_shield_->layer()->size() !=
           app_list_background_shield_mask_->layer()->size()) {
     // Update the blur mask for the |app_list_background_shield_| with same
@@ -494,8 +489,7 @@ views::View* AppListView::GetAppListBackgroundShieldForTest() {
 void AppListView::InitContents(int initial_apps_page) {
   // The shield view that colors/blurs the background of the app list and
   // makes it transparent.
-  bool use_background_blur =
-      is_background_blur_enabled_ && !IsHomeLauncherEnabledInTabletMode();
+  bool use_background_blur = is_background_blur_enabled_ && !is_tablet_mode();
   app_list_background_shield_ = new AppListBackgroundShieldView(
       use_background_blur ? ui::LAYER_SOLID_COLOR : ui::LAYER_TEXTURED);
   app_list_background_shield_->layer()->SetOpacity(
@@ -617,7 +611,7 @@ void AppListView::HandleClickOrTap(ui::LocatedEvent* event) {
       (event->IsMouseEvent() &&
        event->AsMouseEvent()->IsOnlyRightMouseButton())) {
     // Don't show menus on empty areas of the AppListView in clamshell mode.
-    if (!IsHomeLauncherEnabledInTabletMode())
+    if (!is_tablet_mode())
       return;
 
     // Home launcher is shown on top of wallpaper with trasparent background. So
@@ -631,7 +625,7 @@ void AppListView::HandleClickOrTap(ui::LocatedEvent* event) {
   }
 
   if (!search_box_view_->is_search_box_active()) {
-    if (!IsHomeLauncherEnabledInTabletMode())
+    if (!is_tablet_mode())
       Dismiss();
     return;
   }
@@ -975,8 +969,10 @@ views::View* AppListView::GetInitiallyFocusedView() {
 }
 
 void AppListView::OnScrollEvent(ui::ScrollEvent* event) {
-  if (!HandleScroll(event->y_offset(), event->type()))
+  if (!HandleScroll(gfx::Vector2d(event->x_offset(), event->y_offset()),
+                    event->type())) {
     return;
+  }
 
   event->SetHandled();
   event->StopPropagation();
@@ -989,8 +985,7 @@ void AppListView::OnMouseEvent(ui::MouseEvent* event) {
       HandleClickOrTap(event);
       break;
     case ui::ET_MOUSEWHEEL:
-      if (HandleScroll(event->AsMouseWheelEvent()->offset().y(),
-                       ui::ET_MOUSEWHEEL))
+      if (HandleScroll(event->AsMouseWheelEvent()->offset(), ui::ET_MOUSEWHEEL))
         event->SetHandled();
       break;
     default:
@@ -1024,7 +1019,7 @@ void AppListView::OnGestureEvent(ui::GestureEvent* event) {
       }
 
       // Avoid scrolling events for the app list in tablet mode.
-      if (is_side_shelf_ || IsHomeLauncherEnabledInTabletMode())
+      if (is_side_shelf_ || is_tablet_mode())
         return;
       // There may be multiple scroll begin events in one drag because the
       // relative location of the finger and widget is almost unchanged and
@@ -1046,7 +1041,7 @@ void AppListView::OnGestureEvent(ui::GestureEvent* event) {
       }
 
       // Avoid scrolling events for the app list in tablet mode.
-      if (is_side_shelf_ || IsHomeLauncherEnabledInTabletMode())
+      if (is_side_shelf_ || is_tablet_mode())
         return;
       SetIsInDrag(true);
       last_fling_velocity_ = event->details().scroll_y();
@@ -1066,7 +1061,7 @@ void AppListView::OnGestureEvent(ui::GestureEvent* event) {
       if (!is_in_drag_)
         break;
       // Avoid scrolling events for the app list in tablet mode.
-      if (is_side_shelf_ || IsHomeLauncherEnabledInTabletMode())
+      if (is_side_shelf_ || is_tablet_mode())
         return;
       SetIsInDrag(false);
       EndDrag(event->location());
@@ -1074,8 +1069,7 @@ void AppListView::OnGestureEvent(ui::GestureEvent* event) {
       break;
     }
     case ui::ET_MOUSEWHEEL: {
-      if (HandleScroll(event->AsMouseWheelEvent()->offset().y(),
-                       ui::ET_MOUSEWHEEL))
+      if (HandleScroll(event->AsMouseWheelEvent()->offset(), ui::ET_MOUSEWHEEL))
         event->SetHandled();
       break;
     }
@@ -1094,49 +1088,38 @@ void AppListView::OnTabletModeChanged(bool started) {
   search_model_->SetTabletMode(started);
   GetAppsContainerView()->OnTabletModeChanged(started);
 
-  if (is_home_launcher_enabled_) {
-    if (!started) {
-      Dismiss();
-      return;
-    }
-
-    if (is_in_drag_) {
-      SetIsInDrag(false);
-      UpdateChildViewsYPositionAndOpacity();
-    }
-
-    // Set fullscreen state. When current state is fullscreen, we still need to
-    // set it again because app list may be in dragging.
-    SetState(app_list_state_ == AppListViewState::HALF ||
-                     app_list_state_ == AppListViewState::FULLSCREEN_SEARCH
-                 ? AppListViewState::FULLSCREEN_SEARCH
-                 : AppListViewState::FULLSCREEN_ALL_APPS);
-
-    // Put app list window in corresponding container based on whether the
-    // tablet mode is enabled.
-    aura::Window* window = GetWidget()->GetNativeWindow();
-    aura::Window* root_window = window->GetRootWindow();
-    aura::Window* parent_window = root_window->GetChildById(
-        ash::kShellWindowId_AppListTabletModeContainer);
-    if (parent_window && !parent_window->Contains(window))
-      parent_window->AddChild(window);
-
-    // Update background opacity.
-    app_list_background_shield_->layer()->SetOpacity(0.f);
-
-    // Update background blur.
-    if (is_background_blur_enabled_)
-      app_list_background_shield_->layer()->SetBackgroundBlur(0);
-
+  if (!started) {
+    Dismiss();
     return;
   }
 
-  if (is_tablet_mode_ && !is_fullscreen()) {
-    // Set |app_list_state_| to a tablet mode friendly state.
-    SetState(app_list_state_ == AppListViewState::PEEKING
-                 ? AppListViewState::FULLSCREEN_ALL_APPS
-                 : AppListViewState::FULLSCREEN_SEARCH);
+  if (is_in_drag_) {
+    SetIsInDrag(false);
+    UpdateChildViewsYPositionAndOpacity();
   }
+
+  // Set fullscreen state. When current state is fullscreen, we still need to
+  // set it again because app list may be in dragging.
+  SetState(app_list_state_ == AppListViewState::HALF ||
+                   app_list_state_ == AppListViewState::FULLSCREEN_SEARCH
+               ? AppListViewState::FULLSCREEN_SEARCH
+               : AppListViewState::FULLSCREEN_ALL_APPS);
+
+  // Put app list window in corresponding container based on whether the
+  // tablet mode is enabled.
+  aura::Window* window = GetWidget()->GetNativeWindow();
+  aura::Window* root_window = window->GetRootWindow();
+  aura::Window* parent_window =
+      root_window->GetChildById(ash::kShellWindowId_AppListTabletModeContainer);
+  if (parent_window && !parent_window->Contains(window))
+    parent_window->AddChild(window);
+
+  // Update background opacity.
+  app_list_background_shield_->layer()->SetOpacity(0.f);
+
+  // Update background blur.
+  if (is_background_blur_enabled_)
+    app_list_background_shield_->layer()->SetBackgroundBlur(0);
 }
 
 void AppListView::OnWallpaperColorsChanged() {
@@ -1144,16 +1127,20 @@ void AppListView::OnWallpaperColorsChanged() {
   search_box_view_->OnWallpaperColorsChanged();
 }
 
-bool AppListView::HandleScroll(int offset, ui::EventType type) {
+bool AppListView::HandleScroll(const gfx::Vector2d& offset,
+                               ui::EventType type) {
   // Ignore 0-offset events to prevent spurious dismissal, see crbug.com/806338
   // The system generates 0-offset ET_SCROLL_FLING_CANCEL events during simple
   // touchpad mouse moves. Those may be passed via mojo APIs and handled here.
-  if (offset == 0 || is_in_drag() || ShouldIgnoreScrollEvents())
+  if ((offset.y() == 0 && offset.x() == 0) || is_in_drag() ||
+      ShouldIgnoreScrollEvents()) {
     return false;
+  }
 
   if (app_list_state_ != AppListViewState::PEEKING &&
-      app_list_state_ != AppListViewState::FULLSCREEN_ALL_APPS)
+      app_list_state_ != AppListViewState::FULLSCREEN_ALL_APPS) {
     return false;
+  }
 
   // Let the Apps grid view handle the event first in FULLSCREEN_ALL_APPS.
   if (app_list_state_ == AppListViewState::FULLSCREEN_ALL_APPS) {
@@ -1167,8 +1154,8 @@ bool AppListView::HandleScroll(int offset, ui::EventType type) {
   // If the event is a mousewheel event, the offset is always large enough,
   // otherwise the offset must be larger than the scroll threshold.
   if (type == ui::ET_MOUSEWHEEL ||
-      abs(offset) > kAppListMinScrollToSwitchStates) {
-    if (offset > 0 && !IsHomeLauncherEnabledInTabletMode()) {
+      abs(offset.y()) > kAppListMinScrollToSwitchStates) {
+    if (offset.y() > 0 && !is_tablet_mode()) {
       Dismiss();
     } else {
       if (app_list_state_ == AppListViewState::FULLSCREEN_ALL_APPS)
@@ -1260,9 +1247,9 @@ void AppListView::StartAnimationForState(AppListViewState target_state) {
   layer->SetTransform(gfx::Transform());
 
   // In transition animation, layout is only performed after it is complete,
-  // which makes the child views jump. So layout in advance here to avoid that.
-  GetAppsContainerView()->InvalidateLayout();
-  Layout();
+  // which makes the child views jump. So update y positions in advance here to
+  // avoid that.
+  app_list_main_view_->contents_view()->UpdateYPositionAndOpacity();
 }
 
 void AppListView::StartCloseAnimation(base::TimeDelta animation_duration) {
@@ -1419,10 +1406,6 @@ int AppListView::GetFullscreenStateHeight() const {
   const display::Display display = GetDisplayNearestView();
   const gfx::Rect display_bounds = display.bounds();
   return display_bounds.height() - display.work_area().y() + display_bounds.y();
-}
-
-bool AppListView::IsHomeLauncherEnabledInTabletMode() const {
-  return is_tablet_mode_ && is_home_launcher_enabled_;
 }
 
 void AppListView::UpdateChildViewsYPositionAndOpacity() {

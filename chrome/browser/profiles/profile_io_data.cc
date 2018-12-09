@@ -57,14 +57,13 @@
 #include "components/cookie_config/cookie_store_util.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_io_data.h"
 #include "components/dom_distiller/core/url_constants.h"
-#include "components/domain_reliability/monitor.h"
 #include "components/metrics/metrics_pref_names.h"
 #include "components/metrics/metrics_service.h"
 #include "components/net_log/chrome_net_log.h"
 #include "components/policy/core/common/cloud/policy_header_service.h"
 #include "components/policy/core/common/cloud/user_cloud_policy_manager.h"
 #include "components/prefs/pref_service.h"
-#include "components/signin/core/browser/profile_management_switches.h"
+#include "components/signin/core/browser/account_consistency_method.h"
 #include "components/signin/core/browser/signin_pref_names.h"
 #include "components/sync/base/pref_names.h"
 #include "components/url_formatter/url_fixer.h"
@@ -162,11 +161,6 @@
 #if defined(OS_MACOSX)
 #include "net/ssl/client_cert_store_mac.h"
 #endif  // defined(OS_MACOSX)
-
-#if BUILDFLAG(ENABLE_REPORTING)
-#include "net/network_error_logging/network_error_logging_service.h"
-#include "net/reporting/reporting_service.h"
-#endif  // BUILDFLAG(ENABLE_REPORTING)
 
 #if (defined(OS_LINUX) && !defined(OS_CHROMEOS)) || defined(OS_MACOSX)
 #include "chrome/browser/net/trial_comparison_cert_verifier.h"
@@ -541,26 +535,7 @@ void ProfileIOData::AppRequestContext::SetJobFactory(
   set_job_factory(job_factory_.get());
 }
 
-#if BUILDFLAG(ENABLE_REPORTING)
-void ProfileIOData::AppRequestContext::SetReportingService(
-    std::unique_ptr<net::ReportingService> reporting_service) {
-  reporting_service_ = std::move(reporting_service);
-  set_reporting_service(reporting_service_.get());
-}
-
-void ProfileIOData::AppRequestContext::SetNetworkErrorLoggingService(
-    std::unique_ptr<net::NetworkErrorLoggingService>
-        network_error_logging_service) {
-  network_error_logging_service_ = std::move(network_error_logging_service);
-  set_network_error_logging_service(network_error_logging_service_.get());
-}
-#endif  // BUILDFLAG(ENABLE_REPORTING)
-
 ProfileIOData::AppRequestContext::~AppRequestContext() {
-#if BUILDFLAG(ENABLE_REPORTING)
-  SetNetworkErrorLoggingService(nullptr);
-  SetReportingService(nullptr);
-#endif  // BUILDFLAG(ENABLE_REPORTING)
   AssertNoURLRequests();
 }
 
@@ -577,7 +552,6 @@ ProfileIOData::ProfileIOData(Profile::ProfileType profile_type)
       main_request_context_(nullptr),
       resource_context_(new ResourceContext(this)),
       chrome_network_delegate_unowned_(nullptr),
-      domain_reliability_monitor_unowned_(nullptr),
       profile_type_(profile_type) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 }
@@ -627,9 +601,6 @@ ProfileIOData::~ProfileIOData() {
     memcpy(&media_context_vtable_cache[current_context],
            static_cast<void*>(it->second), sizeof(void*));
   }
-
-  if (domain_reliability_monitor_unowned_)
-    domain_reliability_monitor_unowned_->Shutdown();
 
   current_context = 0;
   for (auto it = isolated_media_request_context_map_.begin();
@@ -742,7 +713,6 @@ net::URLRequestContext* ProfileIOData::GetMediaRequestContext() const {
 
 net::URLRequestContext* ProfileIOData::GetIsolatedAppRequestContext(
     IOThread* io_thread,
-    net::URLRequestContext* main_context,
     const StoragePartitionDescriptor& partition_descriptor,
     std::unique_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
         protocol_handler_interceptor,
@@ -860,21 +830,6 @@ bool ProfileIOData::IsOffTheRecord() const {
       || profile_type() == Profile::GUEST_PROFILE;
 }
 
-void ProfileIOData::InitializeMetricsEnabledStateOnUIThread() {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  // Prep the PrefMember and send it to the IO thread, since this value will be
-  // read from there.
-  enable_metrics_.Init(metrics::prefs::kMetricsReportingEnabled,
-                       g_browser_process->local_state());
-  enable_metrics_.MoveToThread(
-      base::CreateSingleThreadTaskRunnerWithTraits({BrowserThread::IO}));
-}
-
-bool ProfileIOData::GetMetricsEnabledStateOnIOThread() const {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  return enable_metrics_.GetValue();
-}
-
 chrome_browser_net::Predictor* ProfileIOData::GetPredictor() {
   return nullptr;
 }
@@ -919,18 +874,11 @@ void ProfileIOData::set_data_reduction_proxy_io_data(
 }
 
 ProfileIOData::ResourceContext::ResourceContext(ProfileIOData* io_data)
-    : io_data_(io_data),
-      request_context_(NULL) {
+    : io_data_(io_data) {
   DCHECK(io_data);
 }
 
 ProfileIOData::ResourceContext::~ResourceContext() {}
-
-net::URLRequestContext* ProfileIOData::ResourceContext::GetRequestContext()  {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  DCHECK(io_data_->initialized_);
-  return request_context_;
-}
 
 void ProfileIOData::Init(
     content::ProtocolHandlerMap* protocol_handlers,
@@ -1009,6 +957,8 @@ void ProfileIOData::Init(
     chrome_network_delegate->set_profile_path(profile_params_->path);
     chrome_network_delegate->set_cookie_settings(
         profile_params_->cookie_settings.get());
+    chrome_network_delegate->set_force_google_safe_search(
+        &force_google_safesearch_);
 
     chrome_network_delegate_unowned_ = chrome_network_delegate.get();
 
@@ -1080,21 +1030,6 @@ void ProfileIOData::Init(
             std::move(profile_params_->main_network_context_request),
             std::move(profile_params_->main_network_context_params),
             std::move(builder), &main_request_context_);
-
-    if (chrome_network_delegate_unowned_->domain_reliability_monitor()) {
-      // Save a pointer to shut down Domain Reliability cleanly before the
-      // URLRequestContext is dismantled.
-      domain_reliability_monitor_unowned_ =
-          chrome_network_delegate_unowned_->domain_reliability_monitor();
-
-      domain_reliability_monitor_unowned_->InitURLRequestContext(
-          main_request_context_);
-      domain_reliability_monitor_unowned_->AddBakedInConfigs();
-      domain_reliability_monitor_unowned_->SetDiscardUploads(
-          !GetMetricsEnabledStateOnIOThread());
-    }
-
-    resource_context_->request_context_ = main_request_context_;
   }
 
   OnMainRequestContextCreated(profile_params_.get());
@@ -1235,7 +1170,6 @@ void ProfileIOData::ShutdownOnUIThread(
   force_google_safesearch_.Destroy();
   force_youtube_restrict_.Destroy();
   allowed_domains_for_apps_.Destroy();
-  enable_metrics_.Destroy();
   safe_browsing_enabled_.Destroy();
   safe_browsing_whitelist_domains_.Destroy();
   network_prediction_options_.Destroy();

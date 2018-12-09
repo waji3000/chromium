@@ -15,7 +15,6 @@
 
 namespace blink {
 
-class NGConstraintSpace;
 class NGInlineItem;
 class NGInlineNode;
 
@@ -45,7 +44,7 @@ struct CORE_EXPORT NGInlineItemResult {
 
   // ShapeResult for text items. Maybe different from NGInlineItem if re-shape
   // is needed in the line breaker.
-  scoped_refptr<const ShapeResult> shape_result;
+  scoped_refptr<const ShapeResultView> shape_result;
 
   // NGLayoutResult for atomic inline items.
   scoped_refptr<NGLayoutResult> layout_result;
@@ -76,6 +75,11 @@ struct CORE_EXPORT NGInlineItemResult {
   // characters.
   bool has_only_trailing_spaces = false;
 
+  // The previous value of |break_anywhere_if_overflow| in the
+  // NGInlineItemResults list. Like |should_create_line_box|, this value is used
+  // to rewind properly.
+  bool break_anywhere_if_overflow = false;
+
   // We don't create "certain zero-height line boxes".
   // https://drafts.csswg.org/css2/visuren.html#phantom-line-box
   // Such line boxes do not prevent two margins being "adjoining", and thus
@@ -101,6 +105,7 @@ struct CORE_EXPORT NGInlineItemResult {
                      unsigned index,
                      unsigned start,
                      unsigned end,
+                     bool break_anywhere_if_overflow,
                      bool should_create_line_box);
 
 #if DCHECK_IS_ON()
@@ -132,10 +137,7 @@ class CORE_EXPORT NGLineInfo {
   }
   void SetLineStyle(const NGInlineNode&,
                     const NGInlineItemsData&,
-                    const NGConstraintSpace&,
-                    bool is_first_formatted_line,
-                    bool use_first_line_style,
-                    bool is_after_forced_break);
+                    bool use_first_line_style);
 
   // Use ::first-line style if true.
   // https://drafts.csswg.org/css-pseudo/#selectordef-first-line
@@ -159,6 +161,7 @@ class CORE_EXPORT NGLineInfo {
   NGInlineItemResults* MutableResults() { return &results_; }
   const NGInlineItemResults& Results() const { return results_; }
 
+  void SetTextIndent(LayoutUnit indent) { text_indent_ = indent; }
   LayoutUnit TextIndent() const { return text_indent_; }
 
   NGBfcOffset BfcOffset() const { return bfc_offset_; }

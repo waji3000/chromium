@@ -15,7 +15,6 @@
 #include "base/json/json_reader.h"
 #include "base/macros.h"
 #include "base/path_service.h"
-#include "base/strings/pattern.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "content/public/browser/client_certificate_delegate.h"
@@ -28,6 +27,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/service_names.mojom.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/common/user_agent.h"
 #include "content/public/common/web_preferences.h"
 #include "content/public/test/test_service.h"
 #include "content/shell/browser/shell.h"
@@ -56,7 +56,7 @@
 #if defined(OS_ANDROID)
 #include "base/android/apk_assets.h"
 #include "base/android/path_utils.h"
-#include "components/crash/content/browser/child_exit_observer_android.h"
+#include "components/crash/content/app/crashpad.h"
 #include "content/shell/android/shell_descriptors.h"
 #endif
 
@@ -68,9 +68,8 @@
 #include "services/ws/test_ws/test_ws.mojom.h"                // nogncheck
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_ANDROID)
 #include "base/debug/leak_annotations.h"
-#include "components/crash/content/app/breakpad_linux.h"
 #include "components/crash/content/browser/crash_handler_host_linux.h"
 #include "content/public/common/content_descriptors.h"
 #endif
@@ -91,7 +90,11 @@ namespace {
 
 ShellContentBrowserClient* g_browser_client;
 
-#if defined(OS_LINUX)
+#if defined(OS_ANDROID)
+int GetCrashSignalFD(const base::CommandLine& command_line) {
+  return crashpad::CrashHandlerHost::Get()->GetDeathSignalSocket();
+}
+#elif defined(OS_LINUX)
 breakpad::CrashHandlerHostLinux* CreateCrashHandlerHost(
     const std::string& process_type) {
   base::FilePath dumps_path =
@@ -137,9 +140,17 @@ int GetCrashSignalFD(const base::CommandLine& command_line) {
 
   return -1;
 }
-#endif  // defined(OS_LINUX)
+#endif  // defined(OS_ANDROID)
 
 }  // namespace
+
+std::string GetShellUserAgent() {
+  std::string product = "Chrome/" CONTENT_SHELL_VERSION;
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kUseMobileUserAgent))
+    product += " Mobile";
+  return BuildUserAgentFromProduct(product);
+}
 
 ShellContentBrowserClient* ShellContentBrowserClient::Get() {
   return g_browser_client;
@@ -159,30 +170,6 @@ BrowserMainParts* ShellContentBrowserClient::CreateBrowserMainParts(
     const MainFunctionParams& parameters) {
   shell_browser_main_parts_ = new ShellBrowserMainParts(parameters);
   return shell_browser_main_parts_;
-}
-
-bool ShellContentBrowserClient::DoesSiteRequireDedicatedProcess(
-    BrowserContext* browser_context,
-    const GURL& effective_site_url) {
-  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  if (!command_line->HasSwitch(switches::kIsolateSitesForTesting))
-    return false;
-  std::string pattern =
-      command_line->GetSwitchValueASCII(switches::kIsolateSitesForTesting);
-
-  url::Origin origin = url::Origin::Create(effective_site_url);
-
-  if (!origin.opaque()) {
-    // Schemes like blob or filesystem, which have an embedded origin, should
-    // already have been canonicalized to the origin site.
-    CHECK_EQ(origin.scheme(), effective_site_url.scheme())
-        << "a site url should have the same scheme as its origin.";
-  }
-
-  // Practically |origin.Serialize()| is the same as
-  // |effective_site_url.spec()|, except Origin serialization strips the
-  // trailing "/", which makes for cleaner wildcard patterns.
-  return base::MatchPattern(origin.Serialize(), pattern);
 }
 
 bool ShellContentBrowserClient::IsHandledURL(const GURL& url) {
@@ -219,31 +206,6 @@ void ShellContentBrowserClient::BindInterfaceRequestFromFrame(
                                       render_frame_host);
 }
 
-void ShellContentBrowserClient::RegisterInProcessServices(
-    StaticServiceMap* services,
-    content::ServiceManagerConnection* connection) {
-#if BUILDFLAG(ENABLE_MOJO_MEDIA_IN_BROWSER_PROCESS)
-  {
-    service_manager::EmbeddedServiceInfo info;
-    info.factory = base::Bind(&media::CreateMediaServiceForTesting);
-    services->insert(std::make_pair(media::mojom::kMediaServiceName, info));
-  }
-#endif
-#if defined(OS_CHROMEOS)
-  if (features::IsSingleProcessMash()) {
-    service_manager::EmbeddedServiceInfo info;
-    info.factory =
-        base::BindRepeating([]() -> std::unique_ptr<service_manager::Service> {
-          return ws::test::CreateInProcessWindowService(
-              GetContextFactory(), GetContextFactoryPrivate(),
-              CreateGpuInterfaceProvider());
-        });
-    info.task_runner = base::ThreadTaskRunnerHandle::Get();
-    services->insert(std::make_pair(test_ws::mojom::kServiceName, info));
-  }
-#endif
-}
-
 void ShellContentBrowserClient::RegisterOutOfProcessServices(
     OutOfProcessServiceMap* services) {
   (*services)[kTestServiceUrl] =
@@ -254,6 +216,27 @@ void ShellContentBrowserClient::RegisterOutOfProcessServices(
   if (features::IsMultiProcessMash()) {
     (*services)[test_ws::mojom::kServiceName] =
         base::BindRepeating(&base::ASCIIToUTF16, "Test Window Service");
+  }
+#endif
+}
+
+void ShellContentBrowserClient::HandleServiceRequest(
+    const std::string& service_name,
+    service_manager::mojom::ServiceRequest request) {
+#if BUILDFLAG(ENABLE_MOJO_MEDIA_IN_BROWSER_PROCESS)
+  if (service_name == media::mojom::kMediaServiceName) {
+    service_manager::Service::RunAsyncUntilTermination(
+        media::CreateMediaServiceForTesting(std::move(request)));
+  }
+#endif
+
+#if defined(OS_CHROMEOS)
+  if (features::IsSingleProcessMash() &&
+      service_name == test_ws::mojom::kServiceName) {
+    service_manager::Service::RunAsyncUntilTermination(
+        ws::test::CreateInProcessWindowService(
+            GetContextFactory(), GetContextFactoryPrivate(),
+            CreateGpuInterfaceProvider(), std::move(request)));
   }
 #endif
 }
@@ -304,13 +287,6 @@ void ShellContentBrowserClient::AppendExtraCommandLineSwitches(
         switches::kCrashDumpsDir,
         base::CommandLine::ForCurrentProcess()->GetSwitchValuePath(
             switches::kCrashDumpsDir));
-  }
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kIsolateSitesForTesting)) {
-    command_line->AppendSwitchASCII(
-        switches::kIsolateSitesForTesting,
-        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-            switches::kIsolateSitesForTesting));
   }
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kRegisterFontFiles)) {
@@ -405,13 +381,12 @@ ShellContentBrowserClient::GetDevToolsManagerDelegate() {
 }
 
 void ShellContentBrowserClient::OpenURL(
-    BrowserContext* browser_context,
+    SiteInstance* site_instance,
     const OpenURLParams& params,
     const base::Callback<void(WebContents*)>& callback) {
-  callback.Run(Shell::CreateNewWindow(browser_context,
-                                      params.url,
-                                      nullptr,
-                                      gfx::Size())->web_contents());
+  callback.Run(Shell::CreateNewWindow(site_instance->GetBrowserContext(),
+                                      params.url, nullptr, gfx::Size())
+                   ->web_contents());
 }
 
 scoped_refptr<LoginDelegate> ShellContentBrowserClient::CreateLoginDelegate(
@@ -436,6 +411,10 @@ scoped_refptr<LoginDelegate> ShellContentBrowserClient::CreateLoginDelegate(
 #endif
 }
 
+std::string ShellContentBrowserClient::GetUserAgent() const {
+  return GetShellUserAgent();
+}
+
 #if defined(OS_LINUX) || defined(OS_ANDROID)
 void ShellContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
     const base::CommandLine& command_line,
@@ -446,15 +425,11 @@ void ShellContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
       kShellPakDescriptor,
       base::GlobalDescriptors::GetInstance()->Get(kShellPakDescriptor),
       base::GlobalDescriptors::GetInstance()->GetRegion(kShellPakDescriptor));
-
-  crash_reporter::ChildExitObserver::GetInstance()->BrowserChildProcessStarted(
-      child_process_id, mappings);
-#else
+#endif
   int crash_signal_fd = GetCrashSignalFD(command_line);
   if (crash_signal_fd >= 0) {
     mappings->Share(service_manager::kCrashDumpSignal, crash_signal_fd);
   }
-#endif  // !defined(OS_ANDROID)
 }
 #endif  // defined(OS_LINUX) || defined(OS_ANDROID)
 

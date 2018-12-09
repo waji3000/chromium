@@ -283,11 +283,9 @@ class MockMediaStreamAudioRenderer : public MediaStreamAudioRenderer {
 
   void SwitchOutputDevice(const std::string& device_id,
                           media::OutputDeviceStatusCB callback) override {}
-  base::TimeDelta GetCurrentRenderTime() const override {
-    return base::TimeDelta();
-  }
+  base::TimeDelta GetCurrentRenderTime() override { return base::TimeDelta(); }
 
-  bool IsLocalRenderer() const override { return true; }
+  bool IsLocalRenderer() override { return true; }
 
  protected:
   ~MockMediaStreamAudioRenderer() override {}
@@ -429,12 +427,27 @@ class MockWebVideoFrameSubmitter : public blink::WebVideoFrameSubmitter {
                     blink::WebFrameSinkDestroyedCallback));
   MOCK_METHOD0(StartRendering, void());
   MOCK_METHOD0(StopRendering, void());
-  MOCK_METHOD1(Initialize, void(cc::VideoFrameProvider*));
+  MOCK_METHOD1(MockInitialize, void(cc::VideoFrameProvider*));
   MOCK_METHOD1(SetRotation, void(media::VideoRotation));
-  MOCK_METHOD1(SetIsOpaque, void(bool));
+  MOCK_METHOD1(MockSetIsOpaque, void(bool));
   MOCK_METHOD1(UpdateSubmissionState, void(bool));
   MOCK_METHOD1(SetForceSubmit, void(bool));
   MOCK_CONST_METHOD0(IsDrivingFrameUpdates, bool());
+
+  void Initialize(cc::VideoFrameProvider* provider) override {
+    provider_ = provider;
+    MockInitialize(provider);
+  }
+
+  // This method may try accessing frames, see deadlock case in
+  // https://crbug.com/901744.
+  void SetIsOpaque(bool opaque) override {
+    auto frame = provider_->GetCurrentFrame();
+    MockSetIsOpaque(opaque);
+  }
+
+ private:
+  cc::VideoFrameProvider* provider_;
 };
 
 // The class is used to generate a MockVideoProvider in
@@ -704,7 +717,7 @@ MockMediaStreamVideoRenderer* WebMediaPlayerMSTest::LoadAndGetFrameProvider(
                          blink::WebMediaPlayer::kReadyStateHaveNothing));
   player_->Load(blink::WebMediaPlayer::kLoadTypeURL,
                 blink::WebMediaPlayerSource(),
-                blink::WebMediaPlayer::kCORSModeUnspecified);
+                blink::WebMediaPlayer::kCorsModeUnspecified);
   compositor_ = player_->compositor_.get();
   EXPECT_TRUE(!!compositor_);
   compositor_->SetAlgorithmEnabledForTesting(algorithm_enabled);
@@ -851,7 +864,7 @@ TEST_P(WebMediaPlayerMSTest, NoWaitForFrameForAudio) {
 
   player_->Load(blink::WebMediaPlayer::kLoadTypeURL,
                 blink::WebMediaPlayerSource(),
-                blink::WebMediaPlayer::kCORSModeUnspecified);
+                blink::WebMediaPlayer::kCorsModeUnspecified);
 
   message_loop_controller_.RunAndWaitForStatus(
       media::PipelineStatus::PIPELINE_OK);
@@ -1099,6 +1112,10 @@ TEST_P(WebMediaPlayerMSTest, RotationChange) {
               CheckSizeChanged(gfx::Size(kStandardWidth, kStandardHeight)));
   message_loop_controller_.RunAndWaitForStatus(
       media::PipelineStatus::PIPELINE_OK);
+  // The exact ordering of delayed vs non-delayed tasks is not defined.
+  // Make sure we run all non-delayed tasks (E.G. CheckForFrameChanges) before
+  // testing state.
+  base::RunLoop().RunUntilIdle();
   blink::WebSize natural_size = player_->NaturalSize();
   // Check that height and width are flipped.
   EXPECT_EQ(kStandardHeight, natural_size.width);
@@ -1117,6 +1134,7 @@ TEST_P(WebMediaPlayerMSTest, RotationChange) {
   }
   message_loop_controller_.RunAndWaitForStatus(
       media::PipelineStatus::PIPELINE_OK);
+  base::RunLoop().RunUntilIdle();
   natural_size = player_->NaturalSize();
   EXPECT_EQ(kStandardHeight, natural_size.height);
   EXPECT_EQ(kStandardWidth, natural_size.width);
@@ -1157,6 +1175,9 @@ TEST_P(WebMediaPlayerMSTest, OpacityChange) {
               CheckSizeChanged(gfx::Size(kStandardWidth, kStandardHeight)));
   message_loop_controller_.RunAndWaitForStatus(
       media::PipelineStatus::PIPELINE_OK);
+  // The exact ordering of delayed vs non-delayed tasks is not defined.
+  // Make sure we run all non-delayed tasks before testing state.
+  base::RunLoop().RunUntilIdle();
   if (!enable_surface_layer_for_video_) {
     ASSERT_TRUE(layer_ != nullptr);
     EXPECT_TRUE(layer_->contents_opaque());
@@ -1168,10 +1189,11 @@ TEST_P(WebMediaPlayerMSTest, OpacityChange) {
   provider->QueueFrames(timestamps, false);
   if (enable_surface_layer_for_video_) {
     EXPECT_CALL(*surface_layer_bridge_ptr_, SetContentsOpaque(false));
-    EXPECT_CALL(*submitter_ptr_, SetIsOpaque(false));
+    EXPECT_CALL(*submitter_ptr_, MockSetIsOpaque(false));
   }
   message_loop_controller_.RunAndWaitForStatus(
       media::PipelineStatus::PIPELINE_OK);
+  base::RunLoop().RunUntilIdle();
   if (!enable_surface_layer_for_video_) {
     EXPECT_FALSE(layer_->contents_opaque());
   }
@@ -1182,10 +1204,11 @@ TEST_P(WebMediaPlayerMSTest, OpacityChange) {
   provider->QueueFrames(timestamps, true);
   if (enable_surface_layer_for_video_) {
     EXPECT_CALL(*surface_layer_bridge_ptr_, SetContentsOpaque(true));
-    EXPECT_CALL(*submitter_ptr_, SetIsOpaque(true));
+    EXPECT_CALL(*submitter_ptr_, MockSetIsOpaque(true));
   }
   message_loop_controller_.RunAndWaitForStatus(
       media::PipelineStatus::PIPELINE_OK);
+  base::RunLoop().RunUntilIdle();
   if (!enable_surface_layer_for_video_)
     EXPECT_TRUE(layer_->contents_opaque());
 

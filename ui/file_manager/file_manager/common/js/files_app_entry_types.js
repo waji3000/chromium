@@ -107,6 +107,14 @@ class FilesAppEntry {
    * @return {boolean}
    */
   get isNativeType() {}
+
+  /**
+   * Returns a FileSystemEntry if this instance has one, returns null if it
+   * doesn't have or the entry hasn't been resolved yet. It's used to unwrap a
+   * FilesAppEntry to be able to send to FileSystem API or fileManagerPrivate.
+   * @return {Entry}
+   */
+  getNativeEntry() {}
 }
 
 /**
@@ -272,7 +280,12 @@ class EntryList {
     this.type_name = 'EntryList';
   }
 
-  get children() {
+  /**
+   * @return {!Array<!Entry|!FilesAppEntry>} List of entries that are shown as
+   *     children of this Volume in the UI, but are not actually entries of the
+   *     Volume.  E.g. 'Play files' is shown as a child of 'My files'.
+   */
+  getUIChildren() {
     return this.children_;
   }
 
@@ -352,8 +365,9 @@ class EntryList {
    * @return {number} index of entry on this EntryList or -1 if not found.
    */
   findIndexByVolumeInfo(volumeInfo) {
-    return this.children.findIndex(
-        childEntry => childEntry.volumeInfo === volumeInfo);
+    return this.children_.findIndex(childEntry => {
+      return /** @type {VolumeEntry} */ (childEntry).volumeInfo === volumeInfo;
+    });
   }
 
   /**
@@ -363,11 +377,12 @@ class EntryList {
    * @return {boolean} if entry was removed.
    */
   removeByVolumeType(volumeType) {
-    const childIndex = this.children.findIndex(
-        childEntry => childEntry.volumeInfo &&
-            childEntry.volumeInfo.volumeType === volumeType);
+    const childIndex = this.children_.findIndex(childEntry => {
+      const volumeInfo = /** @type {VolumeEntry} */ (childEntry).volumeInfo;
+      return volumeInfo && volumeInfo.volumeType === volumeType;
+    });
     if (childIndex !== -1) {
-      this.children.splice(childIndex, 1);
+      this.children_.splice(childIndex, 1);
       return true;
     }
     return false;
@@ -380,13 +395,18 @@ class EntryList {
    * @return {boolean} if entry was removed.
    */
   removeByRootType(rootType) {
-    const childIndex =
-        this.children.findIndex(childEntry => childEntry.rootType === rootType);
+    const childIndex = this.children_.findIndex(
+        childEntry => childEntry.rootType === rootType);
     if (childIndex !== -1) {
-      this.children.splice(childIndex, 1);
+      this.children_.splice(childIndex, 1);
       return true;
     }
     return false;
+  }
+
+  /** @override */
+  getNativeEntry() {
+    return null;
   }
 }
 
@@ -435,13 +455,6 @@ class VolumeEntry {
   get volumeInfo() {
     return this.volumeInfo_;
   }
-  /**
-   * @return {DirectoryEntry} for this volume. This method is only valid for
-   * VolumeEntry instances.
-   */
-  get rootEntry() {
-    return this.rootEntry_;
-  }
 
   /**
    * @return {!FileSystem} FileSystem for this volume.
@@ -449,6 +462,16 @@ class VolumeEntry {
    */
   get filesystem() {
     return this.rootEntry_.filesystem;
+  }
+
+  /**
+   * @return {!Array<!Entry|!FilesAppEntry>} List of entries that are shown as
+   *     children of this Volume in the UI, but are not actually entries of the
+   *     Volume.  E.g. 'Play files' is shown as a child of 'My files'.  Use
+   *     createReader to find real child entries of the Volume's filesystem.
+   */
+  getUIChildren() {
+    return this.children_;
   }
 
   /**
@@ -464,6 +487,37 @@ class VolumeEntry {
   }
   get isFile() {
     return this.rootEntry_.isFile;
+  }
+
+  /**
+   * @see https://github.com/google/closure-compiler/blob/master/externs/browser/fileapi.js
+   * @param {string} path Entry fullPath.
+   * @param {!FileSystemFlags=} options
+   * @param {function(!DirectoryEntry)=} success
+   * @param {function(!FileError)=} error
+   */
+  getDirectory(path, options, success, error) {
+    if (!this.rootEntry_) {
+      error && setTimeout(error, 0, new Error('root entry not resolved yet.'));
+      return;
+    }
+    return this.rootEntry_.getDirectory(path, options, success, error);
+  }
+
+  /**
+   * @see https://github.com/google/closure-compiler/blob/master/externs/browser/fileapi.js
+   * @param {string} path
+   * @param {!FileSystemFlags=} options
+   * @param {function(!FileEntry)=} success
+   * @param {function(!FileError)=} error
+   * @return {undefined}
+   */
+  getFile(path, options, success, error) {
+    if (!this.rootEntry_) {
+      error && setTimeout(error, 0, new Error('root entry not resolved yet.'));
+      return;
+    }
+    return this.rootEntry_.getFile(path, options, success, error);
   }
 
   /**
@@ -511,6 +565,11 @@ class VolumeEntry {
   /** @override */
   get isNativeType() {
     return true;
+  }
+
+  /** @override */
+  getNativeEntry() {
+    return this.rootEntry_;
   }
 
   /**
@@ -674,6 +733,11 @@ class FakeEntry {
   /** @override */
   get isNativeType() {
     return false;
+  }
+
+  /** @override */
+  getNativeEntry() {
+    return null;
   }
 
   /**

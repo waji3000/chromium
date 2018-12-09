@@ -36,6 +36,7 @@ interface Element : Node {
     [Affects=Nothing, CEReactions, Reflect=class] attribute DOMString className;
     [Affects=Nothing, SameObject, PerWorldBindings, PutForwards=value] readonly attribute DOMTokenList classList;
     [Unscopable, CEReactions, Reflect] attribute DOMString slot;
+    [RuntimeEnabled=CSSPartPseudoElement, Affects=Nothing, SameObject, PerWorldBindings, PutForwards=value] readonly attribute DOMTokenList part;
 
     // Pointer Events
     // https://w3c.github.io/pointerevents/#extensions-to-the-element-interface
@@ -100,12 +101,12 @@ interface Element : Node {
     // TODO(sunyunjia): Add default value for scrollIntoView() once
     // crbug.com/734599 is fixed.
     void scrollIntoView(optional (ScrollIntoViewOptions or boolean) arg);
-    [RuntimeEnabled=CSSOMSmoothScroll, ImplementedAs=scrollTo] void scroll(optional ScrollToOptions options);
-    [RuntimeEnabled=CSSOMSmoothScroll, ImplementedAs=scrollTo] void scroll(unrestricted double x, unrestricted double y);
-    [RuntimeEnabled=CSSOMSmoothScroll] void scrollTo(optional ScrollToOptions options);
-    [RuntimeEnabled=CSSOMSmoothScroll] void scrollTo(unrestricted double x, unrestricted double y);
-    [RuntimeEnabled=CSSOMSmoothScroll] void scrollBy(optional ScrollToOptions options);
-    [RuntimeEnabled=CSSOMSmoothScroll] void scrollBy(unrestricted double x, unrestricted double y);
+    [ImplementedAs=scrollTo] void scroll(optional ScrollToOptions options);
+    [ImplementedAs=scrollTo] void scroll(unrestricted double x, unrestricted double y);
+    void scrollTo(optional ScrollToOptions options);
+    void scrollTo(unrestricted double x, unrestricted double y);
+    void scrollBy(optional ScrollToOptions options);
+    void scrollBy(unrestricted double x, unrestricted double y);
     [Affects=Nothing] attribute unrestricted double scrollTop;
     [Affects=Nothing] attribute unrestricted double scrollLeft;
     [Affects=Nothing] readonly attribute long scrollWidth;
@@ -121,8 +122,8 @@ interface Element : Node {
 
     // Non-standard API
     [MeasureAs=ElementScrollIntoViewIfNeeded] void scrollIntoViewIfNeeded(optional boolean centerIfNeeded);
-    [RuntimeEnabled=ShadowDOMV0, RaisesException, DeprecateAs=ElementCreateShadowRoot] ShadowRoot createShadowRoot();
-    [RuntimeEnabled=ShadowDOMV0] NodeList getDestinationInsertionPoints();
+    [OriginTrialEnabled=ShadowDOMV0, RaisesException, DeprecateAs=ElementCreateShadowRoot] ShadowRoot createShadowRoot();
+    [OriginTrialEnabled=ShadowDOMV0] NodeList getDestinationInsertionPoints();
 
     // Experimental accessibility API
     [RuntimeEnabled=ComputedAccessibilityInfo] readonly attribute DOMString? computedRole;
@@ -140,7 +141,7 @@ interface Element : Node {
     attribute EventHandler onsearch;
 
     // Display locking.
-    [RuntimeEnabled=DisplayLocking, CallWith=ScriptState] Promise acquireDisplayLock(DisplayLockCallback callback);
+    [RuntimeEnabled=DisplayLocking, CallWith=ScriptState] Promise<any> acquireDisplayLock(DisplayLockCallback callback);
 };
 
 Element implements ParentNode;

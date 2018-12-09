@@ -141,9 +141,6 @@ void AppShimHost::QuitApp() {
     handler->OnShimQuit(this);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// AppShimHost, apps::AppShimHandler::Host
-
 void AppShimHost::OnAppLaunchComplete(apps::AppShimLaunchResult result) {
   DCHECK(!has_sent_on_launch_complete_);
   launch_result_.emplace(result);
@@ -177,4 +174,8 @@ std::string AppShimHost::GetAppId() const {
 
 views::BridgeFactoryHost* AppShimHost::GetViewsBridgeFactoryHost() const {
   return views_bridge_factory_host_.get();
+}
+
+chrome::mojom::AppShim* AppShimHost::GetAppShim() const {
+  return app_shim_.get();
 }

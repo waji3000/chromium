@@ -29,7 +29,7 @@
 #include "third_party/blink/renderer/modules/accessibility/ax_layout_object.h"
 
 #include "third_party/blink/renderer/core/aom/accessible_node.h"
-#include "third_party/blink/renderer/core/css_property_names.h"
+#include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/dom/range.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
@@ -83,6 +83,7 @@
 #include "third_party/blink/renderer/core/layout/layout_text_fragment.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_node.h"
+#include "third_party/blink/renderer/core/layout/ng/list/layout_ng_list_item.h"
 #include "third_party/blink/renderer/core/layout/ng/list/layout_ng_list_marker.h"
 #include "third_party/blink/renderer/core/loader/progress_tracker.h"
 #include "third_party/blink/renderer/core/page/page.h"
@@ -125,7 +126,7 @@ AXLayoutObject::AXLayoutObject(LayoutObject* layout_object,
 
 AXLayoutObject* AXLayoutObject::Create(LayoutObject* layout_object,
                                        AXObjectCacheImpl& ax_object_cache) {
-  return new AXLayoutObject(layout_object, ax_object_cache);
+  return MakeGarbageCollected<AXLayoutObject>(layout_object, ax_object_cache);
 }
 
 AXLayoutObject::~AXLayoutObject() {
@@ -260,10 +261,17 @@ ax::mojom::Role AXLayoutObject::DetermineAccessibilityRole() {
 Node* AXLayoutObject::GetNodeOrContainingBlockNode() const {
   if (IsDetached())
     return nullptr;
-  if (GetLayoutObject()->IsAnonymousBlock() &&
-      GetLayoutObject()->ContainingBlock()) {
-    return GetLayoutObject()->ContainingBlock()->GetNode();
+
+  if (layout_object_->IsListMarker())
+    return ToLayoutListMarker(layout_object_)->ListItem()->GetNode();
+
+  if (layout_object_->IsLayoutNGListMarker())
+    return ToLayoutNGListMarker(layout_object_)->ListItem()->GetNode();
+
+  if (layout_object_->IsAnonymousBlock() && layout_object_->ContainingBlock()) {
+    return layout_object_->ContainingBlock()->GetNode();
   }
+
   return GetNode();
 }
 
@@ -297,6 +305,20 @@ static bool IsLinkable(const AXObject& object) {
          object.GetLayoutObject()->IsText();
 }
 
+bool AXLayoutObject::IsDefault() const {
+  if (IsDetached())
+    return false;
+
+  // Checks for any kind of disabled, including aria-disabled.
+  if (Restriction() == kDisabled)
+    return false;
+
+  const HTMLFormControlElement* control =
+      ToHTMLFormControlElementOrNull(GetNode());
+  // This does not check for disabled or whether it is the first submit button.
+  return control && control->CanBeSuccessfulSubmitButton();
+}
+
 // Requires layoutObject to be present because it relies on style
 // user-modify. Don't move this logic to AXNodeObject.
 bool AXLayoutObject::IsEditable() const {
@@ -325,6 +347,9 @@ bool AXLayoutObject::IsEditable() const {
   if (GetLayoutObject()->IsTextControl())
     return true;
 
+  // Contrary to Firefox, we mark editable all auto-generated content, such as
+  // list bullets and soft line breaks, that are contained within an editable
+  // container.
   if (HasEditableStyle(*node))
     return true;
 
@@ -367,6 +392,9 @@ bool AXLayoutObject::IsRichlyEditable() const {
     return !EqualIgnoringASCIICase("false", editable);
   }
 
+  // Contrary to Firefox, we mark richly editable all auto-generated content,
+  // such as list bullets and soft line breaks, that are contained within a
+  // richly editable container.
   if (HasRichlyEditableStyle(*node))
     return true;
 
@@ -585,9 +613,10 @@ bool AXLayoutObject::ComputeAccessibilityIsIgnored(
   // If this element is within a parent that cannot have children, it should not
   // be exposed.
   if (IsDescendantOfLeafNode()) {
-    if (ignored_reasons)
+    if (ignored_reasons) {
       ignored_reasons->push_back(
           IgnoredReason(kAXAncestorIsLeafNode, LeafNodeAncestor()));
+    }
     return true;
   }
 
@@ -600,11 +629,12 @@ bool AXLayoutObject::ComputeAccessibilityIsIgnored(
   if (HasInheritedPresentationalRole()) {
     if (ignored_reasons) {
       const AXObject* inherits_from = InheritsPresentationalRoleFrom();
-      if (inherits_from == this)
+      if (inherits_from == this) {
         ignored_reasons->push_back(IgnoredReason(kAXPresentational));
-      else
+      } else {
         ignored_reasons->push_back(
             IgnoredReason(kAXInheritsPresentation, inherits_from));
+      }
     }
     return true;
   }
@@ -2611,10 +2641,7 @@ void AXLayoutObject::HandleAriaExpandedChanged() {
 void AXLayoutObject::HandleAutofillStateChanged(bool is_available) {
   if (is_autofill_available_ != is_available) {
     is_autofill_available_ = is_available;
-    // Reusing the value change event in order to invalidate, even though the
-    // value did not necessarily change.
-    // TODO(dmazzoni) change to using a MarkDirty() API.
-    AXObjectCache().PostNotification(this, ax::mojom::Event::kValueChanged);
+    AXObjectCache().MarkAXObjectDirty(this, false);
   }
 }
 

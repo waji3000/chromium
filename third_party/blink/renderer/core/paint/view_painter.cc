@@ -37,8 +37,7 @@ void ViewPainter::PaintBoxDecorationBackground(const PaintInfo& paint_info) {
 
   bool has_touch_action_rect =
       RuntimeEnabledFeatures::PaintTouchActionRectsEnabled() &&
-      (layout_view_.EffectiveWhitelistedTouchAction() !=
-       TouchAction::kTouchActionAuto);
+      (layout_view_.HasEffectiveWhitelistedTouchAction());
   if (!layout_view_.HasBoxDecorationBackground() && !has_touch_action_rect)
     return;
 
@@ -75,8 +74,8 @@ void ViewPainter::PaintBoxDecorationBackground(const PaintInfo& paint_info) {
   }
   if (has_touch_action_rect) {
     BoxPainter(layout_view_)
-        .RecordHitTestData(paint_info, LayoutPoint(),
-                           LayoutRect(background_rect), *background_client);
+        .RecordHitTestData(paint_info, LayoutRect(background_rect),
+                           *background_client);
   }
 }
 
@@ -225,7 +224,7 @@ void ViewPainter::PaintBoxDecorationBackgroundInternal(
 
   if (combined_background_color.Alpha()) {
     if (!combined_background_color.HasAlpha() &&
-        RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+        RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
       recorder.SetKnownToBeOpaque();
     context.FillRect(
         background_rect, combined_background_color,

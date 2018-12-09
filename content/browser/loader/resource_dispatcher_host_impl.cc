@@ -77,11 +77,11 @@
 #include "content/public/browser/resource_throttle.h"
 #include "content/public/browser/site_isolation_policy.h"
 #include "content/public/browser/stream_info.h"
-#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_features.h"
+#include "content/public/common/navigation_policy.h"
 #include "content/public/common/origin_util.h"
 #include "content/public/common/resource_type.h"
 #include "net/base/auth.h"
@@ -532,15 +532,19 @@ bool ResourceDispatcherHostImpl::HandleExternalProtocol(ResourceLoader* loader,
   if (!IsResourceTypeFrame(info->GetResourceType()))
     return false;
 
+  net::URLRequest* url_request = loader->request();
+  DCHECK(url_request);
+
   const net::URLRequestJobFactory* job_factory =
-      info->GetContext()->GetRequestContext()->job_factory();
+      url_request->context()->job_factory();
   if (!url.is_valid() || job_factory->IsHandledProtocol(url.scheme()))
     return false;
 
   return GetContentClient()->browser()->HandleExternalProtocol(
       url, info->GetWebContentsGetterForRequest(), info->GetChildID(),
       info->GetNavigationUIData(), info->IsMainFrame(),
-      info->GetPageTransition(), info->HasUserGesture());
+      info->GetPageTransition(), info->HasUserGesture(), url_request->method(),
+      url_request->extra_request_headers());
 }
 
 void ResourceDispatcherHostImpl::DidStartRequest(ResourceLoader* loader) {
@@ -846,6 +850,7 @@ void ResourceDispatcherHostImpl::ContinuePendingBeginRequest(
 
   new_request->set_method(request_data.method);
   new_request->set_site_for_cookies(request_data.site_for_cookies);
+  new_request->set_top_frame_origin(request_data.top_frame_origin);
   new_request->set_attach_same_site_cookies(
       request_data.attach_same_site_cookies);
   new_request->set_upgrade_if_insecure(request_data.upgrade_if_insecure);
@@ -867,10 +872,16 @@ void ResourceDispatcherHostImpl::ContinuePendingBeginRequest(
   new_request->set_referrer_policy(request_data.referrer_policy);
 
   new_request->SetExtraRequestHeaders(headers);
-  if (!request_data.requested_with.empty()) {
-    // X-Requested-With header must be set here to avoid breaking CORS checks.
-    new_request->SetExtraRequestHeaderByName("X-Requested-With",
-                                             request_data.requested_with, true);
+  // X-Requested-With and X-Client-Data header must be set here to avoid
+  // breaking CORS checks. They are non-empty when the values are given by the
+  // UA code, therefore they should be ignored by CORS checks.
+  if (!request_data.requested_with_header.empty()) {
+    new_request->SetExtraRequestHeaderByName(
+        "X-Requested-With", request_data.requested_with_header, true);
+  }
+  if (!request_data.client_data_header.empty()) {
+    new_request->SetExtraRequestHeaderByName(
+        "X-Client-Data", request_data.client_data_header, true);
   }
 
   std::unique_ptr<network::ScopedThrottlingToken> throttling_token =
@@ -960,6 +971,8 @@ void ResourceDispatcherHostImpl::ContinuePendingBeginRequest(
       -1,  // frame_tree_node_id
       request_data.plugin_child_id, request_id, request_data.render_frame_id,
       request_data.is_main_frame,
+      request_data.fetch_window_id ? *request_data.fetch_window_id
+                                   : base::UnguessableToken(),
       static_cast<ResourceType>(request_data.resource_type),
       static_cast<ui::PageTransition>(request_data.transition_type),
       false,  // is download
@@ -1012,8 +1025,6 @@ void ResourceDispatcherHostImpl::ContinuePendingBeginRequest(
       std::move(url_loader_client));
 
   if (handler) {
-    RecordFetchRequestMode(request_data.url, request_data.method,
-                           request_data.fetch_request_mode);
     const bool is_initiated_by_fetch_api =
         request_data.fetch_request_context_type ==
         static_cast<int>(blink::mojom::RequestContextType::FETCH);
@@ -1129,7 +1140,7 @@ ResourceDispatcherHostImpl::AddStandardHandlers(
     // Add a handler to block cross-site documents from the renderer process.
     bool is_nocors_plugin_request =
         resource_type == RESOURCE_TYPE_PLUGIN_RESOURCE &&
-        fetch_request_mode == network::mojom::FetchRequestMode::kNoCORS;
+        fetch_request_mode == network::mojom::FetchRequestMode::kNoCors;
     handler.reset(new CrossSiteDocumentResourceHandler(
         std::move(handler), request, is_nocors_plugin_request));
   }
@@ -1165,6 +1176,7 @@ ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
       ChildProcessHost::kInvalidUniqueID,  // plugin_child_id
       MakeRequestID(), render_frame_route_id,
       false,  // is_main_frame
+      {},     // fetch_window_id
       RESOURCE_TYPE_SUB_RESOURCE, ui::PAGE_TRANSITION_LINK,
       download,  // is_download
       false,     // is_stream
@@ -1185,24 +1197,38 @@ ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
       false);          // initiated_in_secure_context
 }
 
+// static
 void ResourceDispatcherHostImpl::OnRenderViewHostCreated(
     int child_id,
     int route_id,
     net::URLRequestContextGetter* url_request_context_getter) {
-  scheduler_->OnClientCreated(child_id, route_id,
-                              url_request_context_getter->GetURLRequestContext()
-                                  ->network_quality_estimator());
+  auto* host = ResourceDispatcherHostImpl::Get();
+  if (host && host->scheduler_) {
+    host->scheduler_->OnClientCreated(
+        child_id, route_id,
+        url_request_context_getter->GetURLRequestContext()
+            ->network_quality_estimator());
+  }
 }
 
+// static
 void ResourceDispatcherHostImpl::OnRenderViewHostDeleted(int child_id,
                                                          int route_id) {
-  scheduler_->OnClientDeleted(child_id, route_id);
+  auto* host = ResourceDispatcherHostImpl::Get();
+  if (host && host->scheduler_) {
+    host->scheduler_->OnClientDeleted(child_id, route_id);
+  }
 }
 
+// static
 void ResourceDispatcherHostImpl::OnRenderViewHostSetIsLoading(int child_id,
                                                               int route_id,
                                                               bool is_loading) {
-  scheduler_->DeprecatedOnLoadingStateChanged(child_id, route_id, !is_loading);
+  auto* host = ResourceDispatcherHostImpl::Get();
+  if (host && host->scheduler_) {
+    host->scheduler_->DeprecatedOnLoadingStateChanged(child_id, route_id,
+                                                      !is_loading);
+  }
 }
 
 // The object died, so cancel and detach all requests associated with it except
@@ -1414,6 +1440,7 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
     ServiceWorkerNavigationHandleCore* service_worker_handle_core,
     AppCacheNavigationHandleCore* appcache_handle_core,
     uint32_t url_loader_options,
+    net::RequestPriority net_priority,
     const GlobalRequestID& global_request_id) {
   DCHECK(url_loader_client.is_bound());
   DCHECK(url_loader_request.is_pending());
@@ -1429,7 +1456,7 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
       ChildProcessSecurityPolicyImpl::GetInstance();
   bool is_external_protocol =
       info.common_params.url.is_valid() &&
-      !resource_context->GetRequestContext()->job_factory()->IsHandledProtocol(
+      !request_context->job_factory()->IsHandledProtocol(
           info.common_params.url.scheme());
   bool non_web_url_in_guest =
       info.is_for_guests_only &&
@@ -1442,25 +1469,13 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
     return;
   }
 
-  int load_flags = info.begin_params->load_flags;
-  if (info.is_main_frame)
-    load_flags |= net::LOAD_MAIN_FRAME_DEPRECATED;
-
-  // Sync loads should have maximum priority and should be the only
-  // requests that have the ignore limits flag set.
-  DCHECK(!(load_flags & net::LOAD_IGNORE_LIMITS));
-
   std::unique_ptr<net::URLRequest> new_request;
-  net::RequestPriority net_priority = net::HIGHEST;
-  if (!info.is_main_frame &&
-      base::FeatureList::IsEnabled(features::kLowPriorityIframes)) {
-    net_priority = net::LOWEST;
-  }
   new_request = request_context->CreateRequest(
       info.common_params.url, net_priority, nullptr, GetTrafficAnnotation());
 
   new_request->set_method(info.common_params.method);
   new_request->set_site_for_cookies(info.site_for_cookies);
+  new_request->set_top_frame_origin(info.top_frame_origin);
   new_request->set_initiator(info.begin_params->initiator_origin);
   new_request->set_upgrade_if_insecure(info.upgrade_if_insecure);
   if (info.is_main_frame) {
@@ -1477,18 +1492,9 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
 
   net::HttpRequestHeaders headers;
   headers.AddHeadersFromString(info.begin_params->headers);
-
-  std::string accept_value = network::kFrameAcceptHeader;
-  if (signed_exchange_utils::ShouldAdvertiseAcceptHeader(
-          url::Origin::Create(info.common_params.url))) {
-    DCHECK(!accept_value.empty());
-    accept_value.append(kAcceptHeaderSignedExchangeSuffix);
-  }
-
-  headers.SetHeader(network::kAcceptHeader, accept_value);
   new_request->SetExtraRequestHeaders(headers);
 
-  new_request->SetLoadFlags(load_flags);
+  new_request->SetLoadFlags(info.begin_params->load_flags);
 
   storage::BlobStorageContext* blob_context = GetBlobStorageContext(
       GetChromeBlobStorageContextForResourceContext(resource_context));
@@ -1523,11 +1529,13 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
       info.frame_tree_node_id,
       ChildProcessHost::kInvalidUniqueID,  // plugin_child_id
       global_request_id.request_id,
-      -1,  // request_data.render_frame_id,
-      info.is_main_frame, resource_type, info.common_params.transition,
+      -1,                      // request_data.render_frame_id,
+      info.is_main_frame, {},  // fetch_window_id
+      resource_type, info.common_params.transition,
       false,  // is download
       false,  // is stream
-      info.common_params.allow_download, info.common_params.has_user_gesture,
+      IsNavigationDownloadAllowed(info.common_params.download_policy),
+      info.common_params.has_user_gesture,
       true,   // enable_load_timing
       false,  // enable_upload_progress
       false,  // do_not_prompt_for_login
@@ -1580,12 +1588,12 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
       new_request.get(), this, std::move(url_loader_request),
       std::move(url_loader_client), resource_type, url_loader_options);
 
-  // Safe to consider navigations as kNoCORS.
+  // Safe to consider navigations as kNoCors.
   // TODO(davidben): Fix the dependency on child_id/route_id. Those are used
   // by the ResourceScheduler. currently it's a no-op.
   handler = AddStandardHandlers(
       new_request.get(), resource_type, resource_context,
-      network::mojom::FetchRequestMode::kNoCORS,
+      network::mojom::FetchRequestMode::kNoCors,
       info.begin_params->request_context_type, url_loader_options,
       appcache_handle_core ? appcache_handle_core->GetAppCacheService()
                            : nullptr,
@@ -1593,8 +1601,6 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
       -1,  // route_id
       std::move(handler));
 
-  RecordFetchRequestMode(new_request->url(), new_request->method(),
-                         network::mojom::FetchRequestMode::kNavigate);
   BeginRequestInternal(std::move(new_request), std::move(handler),
                        false /* is_initiated_by_fetch_api */,
                        std::move(throttling_token));
@@ -2178,28 +2184,6 @@ void ResourceDispatcherHostImpl::RunAuthRequiredCallback(
 
   // Clears the LoginDelegate associated with the request.
   loader->ClearLoginDelegate();
-}
-
-// static
-void ResourceDispatcherHostImpl::RecordFetchRequestMode(
-    const GURL& url,
-    base::StringPiece method,
-    network::mojom::FetchRequestMode mode) {
-  if (!url.SchemeIsHTTPOrHTTPS())
-    return;
-
-  std::string lower_method = base::ToLowerASCII(method);
-  if (lower_method == "get") {
-    UMA_HISTOGRAM_ENUMERATION("Net.ResourceDispatcherHost.RequestMode.Get",
-                              mode);
-  } else if (lower_method == "post") {
-    UMA_HISTOGRAM_ENUMERATION("Net.ResourceDispatcherHost.RequestMode.Post",
-                              mode);
-    if (url.has_port()) {
-      UMA_HISTOGRAM_ENUMERATION(
-          "Net.ResourceDispatcherHost.RequestMode.Post.WithPort", mode);
-    }
-  }
 }
 
 // static

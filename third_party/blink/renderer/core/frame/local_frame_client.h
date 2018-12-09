@@ -34,6 +34,7 @@
 #include <memory>
 
 #include "third_party/blink/public/common/feature_policy/feature_policy.h"
+#include "third_party/blink/public/mojom/frame/navigation_initiator.mojom-blink.h"
 #include "third_party/blink/public/platform/web_content_security_policy_struct.h"
 #include "third_party/blink/public/platform/web_content_settings_client.h"
 #include "third_party/blink/public/platform/web_effective_connection_type.h"
@@ -43,6 +44,7 @@
 #include "third_party/blink/public/platform/web_sudden_termination_disabler_type.h"
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/public/platform/web_worker_fetch_context.h"
+#include "third_party/blink/public/web/web_frame_load_type.h"
 #include "third_party/blink/public/web/web_global_object_reuse_policy.h"
 #include "third_party/blink/public/web/web_history_commit_type.h"
 #include "third_party/blink/public/web/web_navigation_params.h"
@@ -94,8 +96,8 @@ class SubstituteData;
 class WebApplicationCacheHost;
 class WebApplicationCacheHostClient;
 class WebCookieJar;
-class WebFrame;
 class WebLayerTreeView;
+class WebLocalFrame;
 class WebMediaPlayer;
 class WebMediaPlayerClient;
 class WebMediaPlayerSource;
@@ -115,7 +117,7 @@ class CORE_EXPORT LocalFrameClient : public FrameClient {
  public:
   ~LocalFrameClient() override = default;
 
-  virtual WebFrame* GetWebFrame() const { return nullptr; }
+  virtual WebLocalFrame* GetWebFrame() const { return nullptr; }
 
   virtual bool HasWebView() const = 0;  // mainly for assertions
 
@@ -131,10 +133,8 @@ class CORE_EXPORT LocalFrameClient : public FrameClient {
                                                WebHistoryCommitType,
                                                bool content_initiated) {}
   virtual void DispatchWillCommitProvisionalLoad() = 0;
-  virtual void DispatchDidStartProvisionalLoad(
-      DocumentLoader*,
-      ResourceRequest&,
-      mojo::ScopedMessagePipeHandle navigation_initiator_handle) = 0;
+  virtual void DispatchDidStartProvisionalLoad(DocumentLoader*,
+                                               const ResourceRequest&) = 0;
   virtual void DispatchDidReceiveTitle(const String&) = 0;
   virtual void DispatchDidChangeIcons(IconType) = 0;
   virtual void DispatchDidCommitLoad(HistoryItem*,
@@ -148,21 +148,23 @@ class CORE_EXPORT LocalFrameClient : public FrameClient {
   virtual void DispatchDidFinishLoad() = 0;
   virtual void DispatchDidChangeThemeColor() = 0;
 
-  virtual NavigationPolicy DecidePolicyForNavigation(
+  virtual void BeginNavigation(
       const ResourceRequest&,
       Document* origin_document,
       DocumentLoader*,
       WebNavigationType,
       NavigationPolicy,
       bool has_transient_activation,
-      bool should_replace_current_entry,
+      WebFrameLoadType,
       bool is_client_redirect,
       WebTriggeringEventInfo,
       HTMLFormElement*,
       ContentSecurityPolicyDisposition
           should_check_main_world_content_security_policy,
       mojom::blink::BlobURLTokenPtr,
-      base::TimeTicks input_start_time) = 0;
+      base::TimeTicks input_start_time,
+      const String& href_translate,
+      mojom::blink::NavigationInitiatorPtr) = 0;
 
   virtual void DispatchWillSendSubmitEvent(HTMLFormElement*) = 0;
 
@@ -207,6 +209,10 @@ class CORE_EXPORT LocalFrameClient : public FrameClient {
   // message (possibly overridden by the embedder) to warn about the
   // certificate.
   virtual void ReportLegacySymantecCert(const KURL&, bool did_fail) {}
+
+  // The frame loaded a resource with a legacy TLS version that will be removed
+  // in the future. Prints a console message to warn about this.
+  virtual void ReportLegacyTLSVersion(const KURL&) {}
 
   // Will be called when |PerformanceTiming| events are updated
   virtual void DidChangePerformanceTiming() {}
@@ -440,7 +446,7 @@ class CORE_EXPORT LocalFrameClient : public FrameClient {
   };
 
   // Returns a new WebWorkerFetchContext for a dedicated worker or worklet.
-  virtual std::unique_ptr<WebWorkerFetchContext> CreateWorkerFetchContext() {
+  virtual scoped_refptr<WebWorkerFetchContext> CreateWorkerFetchContext() {
     return nullptr;
   }
 

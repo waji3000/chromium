@@ -165,8 +165,57 @@ using namespace html_names;
 
 enum class ClassStringContent { kEmpty, kWhiteSpaceOnly, kHasClasses };
 
+namespace {
+
+bool IsRootEditableElementWithCounting(const Element& element) {
+  bool is_editable = IsRootEditableElement(element);
+  Document& doc = element.GetDocument();
+  if (!doc.IsActive())
+    return is_editable;
+  // -webkit-user-modify doesn't affect text control elements.
+  if (element.IsTextControl())
+    return is_editable;
+  const auto* style = element.GetComputedStyle();
+  if (!style)
+    return is_editable;
+  auto user_modify = style->UserModify();
+  const AtomicString& ce_value = element.FastGetAttribute(kContenteditableAttr);
+  if (ce_value.IsNull() || DeprecatedEqualIgnoringCase(ce_value, "false")) {
+    if (user_modify == EUserModify::kReadWritePlaintextOnly) {
+      UseCounter::Count(doc, WebFeature::kPlainTextEditingEffective);
+      UseCounter::Count(doc, WebFeature::kWebKitUserModifyPlainTextEffective);
+      UseCounter::Count(doc, WebFeature::kWebKitUserModifyEffective);
+    } else if (user_modify == EUserModify::kReadWrite) {
+      UseCounter::Count(doc, WebFeature::kWebKitUserModifyReadWriteEffective);
+      UseCounter::Count(doc, WebFeature::kWebKitUserModifyEffective);
+    }
+  } else if (ce_value.IsEmpty() ||
+             DeprecatedEqualIgnoringCase(ce_value, "true")) {
+    if (user_modify == EUserModify::kReadWritePlaintextOnly) {
+      UseCounter::Count(doc, WebFeature::kPlainTextEditingEffective);
+      UseCounter::Count(doc, WebFeature::kWebKitUserModifyPlainTextEffective);
+      UseCounter::Count(doc, WebFeature::kWebKitUserModifyEffective);
+    } else if (user_modify == EUserModify::kReadOnly) {
+      UseCounter::Count(doc, WebFeature::kWebKitUserModifyReadOnlyEffective);
+      UseCounter::Count(doc, WebFeature::kWebKitUserModifyEffective);
+    }
+  } else if (DeprecatedEqualIgnoringCase(ce_value, "plaintext-only")) {
+    UseCounter::Count(doc, WebFeature::kPlainTextEditingEffective);
+    if (user_modify == EUserModify::kReadWrite) {
+      UseCounter::Count(doc, WebFeature::kWebKitUserModifyReadWriteEffective);
+      UseCounter::Count(doc, WebFeature::kWebKitUserModifyEffective);
+    } else if (user_modify == EUserModify::kReadOnly) {
+      UseCounter::Count(doc, WebFeature::kWebKitUserModifyReadOnlyEffective);
+      UseCounter::Count(doc, WebFeature::kWebKitUserModifyEffective);
+    }
+  }
+  return is_editable;
+}
+
+}  // namespace
+
 Element* Element::Create(const QualifiedName& tag_name, Document* document) {
-  return new Element(tag_name, document, kCreateElement);
+  return MakeGarbageCollected<Element>(tag_name, document, kCreateElement);
 }
 
 Element::Element(const QualifiedName& tag_name,
@@ -349,7 +398,7 @@ ElementAnimations* Element::GetElementAnimations() const {
 ElementAnimations& Element::EnsureElementAnimations() {
   ElementRareData& rare_data = EnsureElementRareData();
   if (!rare_data.GetElementAnimations())
-    rare_data.SetElementAnimations(new ElementAnimations());
+    rare_data.SetElementAnimations(MakeGarbageCollected<ElementAnimations>());
   return *rare_data.GetElementAnimations();
 }
 
@@ -461,10 +510,6 @@ void Element::scrollIntoView(ScrollIntoViewOptionsOrBoolean arg) {
     options->setInlinePosition("nearest");
   } else if (arg.IsScrollIntoViewOptions()) {
     options = arg.GetAsScrollIntoViewOptions();
-    if (!RuntimeEnabledFeatures::CSSOMSmoothScrollEnabled() &&
-        options->behavior() == "smooth") {
-      options->setBehavior("instant");
-    }
   }
   scrollIntoViewWithOptions(options);
 }
@@ -1567,7 +1612,7 @@ void Element::AttributeChanged(const AttributeModificationParams& params) {
     SetHasName(!params.new_value.IsNull());
   } else if (name == html_names::kPartAttr) {
     if (RuntimeEnabledFeatures::CSSPartPseudoElementEnabled()) {
-      EnsureElementRareData().SetPart(params.new_value);
+      part().DidUpdateAttributeValue(params.old_value, params.new_value);
       GetDocument().GetStyleEngine().PartChangedForElement(*this);
     }
   } else if (name == html_names::kExportpartsAttr) {
@@ -1852,6 +1897,8 @@ Node::InsertionNotificationRequest Element::InsertedInto(
       if (LocalFrameView* frame_view = GetDocument().View())
         frame_view->SetIntersectionObservationState(LocalFrameView::kRequired);
     }
+    if (rare_data->GetDisplayLockContext())
+      rare_data->GetDisplayLockContext()->NotifyConnectedMayHaveChanged();
   }
 
   if (isConnected()) {
@@ -1889,7 +1936,10 @@ void Element::RemovedFrom(ContainerNode& insertion_point) {
     // AttachLayoutTree again. We don't clear pseudo elements on
     // DetachLayoutTree() if we intend to attach again to avoid recreating the
     // pseudo elements.
-    GetElementRareData()->ClearPseudoElements();
+    ElementRareData* rare_data = GetElementRareData();
+    rare_data->ClearPseudoElements();
+    if (rare_data->GetDisplayLockContext())
+      rare_data->GetDisplayLockContext()->NotifyConnectedMayHaveChanged();
   }
 
   if (Fullscreen::IsFullscreenElement(*this)) {
@@ -1926,13 +1976,6 @@ void Element::RemovedFrom(ContainerNode& insertion_point) {
       CustomElement::EnqueueDisconnectedCallback(this);
     else if (IsUpgradedV0CustomElement())
       V0CustomElement::DidDetach(this, insertion_point.GetDocument());
-
-    if (NeedsStyleInvalidation()) {
-      GetDocument()
-          .GetStyleEngine()
-          .GetPendingNodeInvalidations()
-          .ClearInvalidation(*this);
-    }
   }
 
   GetDocument().GetRootScrollerController().ElementRemoved(*this);
@@ -2033,6 +2076,9 @@ void Element::AttachLayoutTree(AttachContext& context) {
   } else {
     context.previous_in_flow = children_context.previous_in_flow;
   }
+
+  if (auto* display_lock_context = GetDisplayLockContext())
+    display_lock_context->DidAttachLayoutTree();
 }
 
 void Element::DetachLayoutTree(const AttachContext& context) {
@@ -2086,13 +2132,6 @@ void Element::DetachLayoutTree(const AttachContext& context) {
     GetDocument().UserActionElements().DidDetach(*this);
   }
 
-  if (context.clear_invalidation) {
-    GetDocument()
-        .GetStyleEngine()
-        .GetPendingNodeInvalidations()
-        .ClearInvalidation(*this);
-  }
-
   SetNeedsResizeObserverUpdate();
 
   DCHECK(NeedsAttach());
@@ -2109,7 +2148,8 @@ scoped_refptr<ComputedStyle> Element::StyleForLayoutObject() {
 
   if (RuntimeEnabledFeatures::InvisibleDOMEnabled() &&
       hasAttribute(html_names::kInvisibleAttr)) {
-    auto style = ComputedStyle::Create();
+    auto style =
+        GetDocument().GetStyleResolver()->InitialStyleForElement(GetDocument());
     style->SetDisplay(EDisplay::kNone);
     return style;
   }
@@ -2172,6 +2212,10 @@ void Element::RecalcStyleForTraversalRootAncestor() {
 void Element::RecalcStyle(StyleRecalcChange change) {
   DCHECK(GetDocument().InStyleRecalc());
   DCHECK(!GetDocument().Lifecycle().InDetach());
+
+  if (StyleRecalcBlockedByDisplayLock())
+    return;
+
   // If we are re-attaching in a Shadow DOM v0 tree, we recalc down to the
   // distributed nodes to propagate kReattach down the flat tree (See
   // V0InsertionPoint::DidRecalcStyle). That means we may have a shadow-
@@ -2249,7 +2293,6 @@ void Element::RecalcStyle(StyleRecalcChange change) {
   }
 
   if (ShouldCallRecalcStyleForChildren(change)) {
-
     UpdatePseudoElement(kPseudoIdBefore, change);
 
     if (change > kUpdatePseudoElements || ChildNeedsStyleRecalc()) {
@@ -2274,6 +2317,7 @@ void Element::RecalcStyle(StyleRecalcChange change) {
 
   if (HasCustomStyleCallbacks())
     DidRecalcStyle(change);
+  NotifyDisplayLockDidRecalcStyle();
 }
 
 scoped_refptr<ComputedStyle> Element::PropagateInheritedProperties(
@@ -2338,6 +2382,9 @@ StyleRecalcChange Element::RecalcOwnStyle(StyleRecalcChange change) {
       }
     }
   }
+
+  if (GetForceReattachLayoutTree())
+    local_change = kReattach;
 
   if (change == kReattach || local_change == kReattach) {
     SetNonAttachedStyle(new_style);
@@ -2566,6 +2613,8 @@ void Element::ClearAnimationStyleChange() {
 }
 
 void Element::SetNeedsAnimationStyleRecalc() {
+  if (GetDocument().InStyleRecalc())
+    return;
   if (GetStyleChangeType() != kNoStyleChange)
     return;
 
@@ -2624,6 +2673,18 @@ const AtomicString& Element::IsValue() const {
   if (HasRareData())
     return GetElementRareData()->IsValue();
   return g_null_atom;
+}
+
+void Element::SetDidAttachInternals() {
+  EnsureElementRareData().SetDidAttachInternals();
+}
+
+bool Element::DidAttachInternals() const {
+  return HasRareData() && GetElementRareData()->DidAttachInternals();
+}
+
+ElementInternals& Element::EnsureElementInternals() {
+  return EnsureElementRareData().EnsureElementInternals(ToHTMLElement(*this));
 }
 
 ShadowRoot* Element::createShadowRoot(ExceptionState& exception_state) {
@@ -3233,7 +3294,7 @@ bool Element::SupportsFocus() const {
   // it won't be focusable. Furthermore, supportsFocus cannot just return true
   // always or else tabIndex() will change for all HTML elements.
   return HasElementFlag(ElementFlags::kTabIndexWasSetExplicitly) ||
-         IsRootEditableElement(*this) ||
+         IsRootEditableElementWithCounting(*this) ||
          (IsShadowHost(this) && AuthorShadowRoot() &&
           AuthorShadowRoot()->delegatesFocus()) ||
          SupportsSpatialNavigationFocus();
@@ -3263,19 +3324,26 @@ bool Element::SupportsSpatialNavigationFocus() const {
 }
 
 bool Element::IsFocusable() const {
-  // Style cannot be cleared out for non-active documents, so in that case the
-  // needsLayoutTreeUpdateForNode check is invalid.
-  DCHECK(!GetDocument().IsActive() ||
-         !GetDocument().NeedsLayoutTreeUpdateForNode(*this));
-  return isConnected() && SupportsFocus() && !IsInert() && IsFocusableStyle();
+  return Element::IsMouseFocusable() || Element::IsKeyboardFocusable();
 }
 
 bool Element::IsKeyboardFocusable() const {
-  return IsFocusable() && tabIndex() >= 0;
+  // No point in checking NeedsLayoutTreeUpdateForNode when the document
+  // isn't active (style can't be invalidated in a non-active document).
+  DCHECK(!GetDocument().IsActive() ||
+         !GetDocument().NeedsLayoutTreeUpdateForNode(*this));
+  return isConnected() && !IsInert() && IsFocusableStyle() &&
+         ((SupportsFocus() && tabIndex() >= 0) ||
+          (RuntimeEnabledFeatures::KeyboardFocusableScrollersEnabled() &&
+           IsScrollableNode(this)));
 }
 
 bool Element::IsMouseFocusable() const {
-  return IsFocusable();
+  // No point in checking NeedsLayoutTreeUpdateForNode when the document
+  // isn't active (style can't be invalidated in a non-active document).
+  DCHECK(!GetDocument().IsActive() ||
+         !GetDocument().NeedsLayoutTreeUpdateForNode(*this));
+  return isConnected() && !IsInert() && IsFocusableStyle() && SupportsFocus();
 }
 
 bool Element::IsFocusedElementInDocument() const {
@@ -3500,10 +3568,26 @@ void Element::SetNeedsResizeObserverUpdate() {
 
 ScriptPromise Element::acquireDisplayLock(ScriptState* script_state,
                                           V8DisplayLockCallback* callback) {
-  auto* context =
-      EnsureElementRareData().EnsureDisplayLockContext(GetExecutionContext());
-  context->ScheduleTask(callback, script_state);
-  return context->Promise();
+  auto* context = EnsureElementRareData().EnsureDisplayLockContext(
+      this, GetExecutionContext());
+  context->RequestLock(callback, script_state);
+  auto lock_promise = context->Promise();
+
+  // Only support "mode 2" display locking, which requires that the lock is
+  // acquired before the element is connected. Note that we need to call this
+  // after actually getting the promise to avoid ScriptPromiseResolver asserts.
+  // TODO(vmpstr): Implement mode 1.
+  if (isConnected())
+    context->RejectAndCleanUp();
+
+  return lock_promise;
+}
+
+DisplayLockContext* Element::GetDisplayLockContext() const {
+  if (!RuntimeEnabledFeatures::DisplayLockingEnabled())
+    return nullptr;
+  return HasRareData() ? GetElementRareData()->GetDisplayLockContext()
+                       : nullptr;
 }
 
 // Step 1 of http://domparsing.spec.whatwg.org/#insertadjacenthtml()
@@ -3717,7 +3801,14 @@ const ComputedStyle* Element::EnsureComputedStyle(
   // EnsureComputedStyle. In some cases you might be fine using GetComputedStyle
   // without updating the style, but in most cases you want a clean tree for
   // that as well.
-  DCHECK(!GetDocument().NeedsLayoutTreeUpdateForNode(*this));
+  //
+  // Adjacent styling bits may be set and affect NeedsLayoutTreeUpdateForNode as
+  // part of EnsureComputedStyle in an ancestor chain.
+  // (see CSSComputedStyleDeclarationTest::NeedsAdjacentStyleRecalc). It is OK
+  // that it happens, but we need to ignore the effect on
+  // NeedsLayoutTreeUpdateForNode here.
+  DCHECK(!GetDocument().NeedsLayoutTreeUpdateForNode(
+      *this, true /* ignore_adjacent_style */));
 
   // FIXME: Find and use the layoutObject from the pseudo element instead of the
   // actual element so that the 'length' properties, which are only known by the
@@ -3872,13 +3963,6 @@ void Element::UpdateFirstLetterPseudoElement(StyleUpdatePhase phase) {
     return;
   }
 
-  if (phase == StyleUpdatePhase::kRebuildLayoutTree &&
-      element->NeedsReattachLayoutTree()) {
-    // We were already updated in RecalcStyle and ready for reattach.
-    DCHECK(element->GetNonAttachedStyle());
-    return;
-  }
-
   if (!CanGeneratePseudoElement(kPseudoIdFirstLetter)) {
     GetElementRareData()->SetPseudoElement(kPseudoIdFirstLetter, nullptr);
     return;
@@ -3889,6 +3973,13 @@ void Element::UpdateFirstLetterPseudoElement(StyleUpdatePhase phase) {
 
   if (!remaining_text_layout_object) {
     GetElementRareData()->SetPseudoElement(kPseudoIdFirstLetter, nullptr);
+    return;
+  }
+
+  if (phase == StyleUpdatePhase::kRebuildLayoutTree &&
+      element->NeedsReattachLayoutTree()) {
+    // We were already updated in RecalcStyle and ready for reattach.
+    DCHECK(element->GetNonAttachedStyle());
     return;
   }
 
@@ -4267,11 +4358,11 @@ void Element::SetIsInTopLayer(bool in_top_layer) {
   if (IsInTopLayer() == in_top_layer)
     return;
   SetElementFlag(ElementFlags::kIsInTopLayer, in_top_layer);
-
-  // We must ensure a reattach occurs so the layoutObject is inserted in the
-  // correct sibling order under LayoutView according to its top layer position,
-  // or in its usual place if not in the top layer.
-  LazyReattachIfAttached();
+  if (!isConnected())
+    return;
+  SetForceReattachLayoutTree();
+  SetNeedsStyleRecalc(kLocalStyleChange, StyleChangeReasonForTracing::Create(
+                                             style_change_reason::kFullscreen));
 }
 
 void Element::requestPointerLock() {
@@ -5011,21 +5102,31 @@ void Element::Trace(blink::Visitor* visitor) {
   ContainerNode::Trace(visitor);
 }
 
-bool Element::HasPartName() const {
+bool Element::HasPart() const {
   if (!RuntimeEnabledFeatures::CSSPartPseudoElementEnabled())
     return false;
   if (HasRareData()) {
-    if (auto* part_names = GetElementRareData()->PartNames()) {
-      return part_names->size() > 0;
+    if (auto* part = GetElementRareData()->GetPart()) {
+      return part->length() > 0;
     }
   }
   return false;
 }
 
-const SpaceSplitString* Element::PartNames() const {
+DOMTokenList* Element::GetPart() const {
   return RuntimeEnabledFeatures::CSSPartPseudoElementEnabled() && HasRareData()
-             ? GetElementRareData()->PartNames()
+             ? GetElementRareData()->GetPart()
              : nullptr;
+}
+
+DOMTokenList& Element::part() {
+  ElementRareData& rare_data = EnsureElementRareData();
+  DOMTokenList* part = rare_data.GetPart();
+  if (!part) {
+    part = DOMTokenList::Create(*this, kPartAttr);
+    rare_data.SetPart(part);
+  }
+  return *part;
 }
 
 bool Element::HasPartNamesMap() const {
@@ -5037,6 +5138,16 @@ const NamesMap* Element::PartNamesMap() const {
   return RuntimeEnabledFeatures::CSSPartPseudoElementEnabled() && HasRareData()
              ? GetElementRareData()->PartNamesMap()
              : nullptr;
+}
+
+bool Element::StyleRecalcBlockedByDisplayLock() const {
+  auto* context = GetDisplayLockContext();
+  return context && !context->ShouldStyle();
+}
+
+void Element::NotifyDisplayLockDidRecalcStyle() {
+  if (auto* context = GetDisplayLockContext())
+    context->DidStyle();
 }
 
 }  // namespace blink

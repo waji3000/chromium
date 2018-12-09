@@ -8,7 +8,9 @@
 #include <string>
 
 #include "base/metrics/histogram_macros.h"
+#include "build/build_config.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
+#include "chrome/browser/ui/android/content_settings/popup_blocked_infobar_delegate.h"
 #include "chrome/browser/ui/blocked_content/blocked_window_params.h"
 #include "chrome/browser/ui/blocked_content/list_item_position.h"
 #include "chrome/browser/ui/blocked_content/popup_tracker.h"
@@ -52,14 +54,6 @@ PopupBlockerTabHelper::PopupBlockerTabHelper(content::WebContents* web_contents)
 PopupBlockerTabHelper::~PopupBlockerTabHelper() {
 }
 
-void PopupBlockerTabHelper::AddObserver(Observer* observer) {
-  observers_.AddObserver(observer);
-}
-
-void PopupBlockerTabHelper::RemoveObserver(Observer* observer) {
-  observers_.RemoveObserver(observer);
-}
-
 void PopupBlockerTabHelper::DidFinishNavigation(
     content::NavigationHandle* navigation_handle) {
   // Clear all page actions, blocked content notifications and browser actions
@@ -74,15 +68,14 @@ void PopupBlockerTabHelper::DidFinishNavigation(
   // Close blocked popups.
   if (!blocked_popups_.empty()) {
     blocked_popups_.clear();
-    PopupNotificationVisibilityChanged(false);
+    HidePopupNotification();
   }
 }
 
-void PopupBlockerTabHelper::PopupNotificationVisibilityChanged(
-    bool visible) {
+void PopupBlockerTabHelper::HidePopupNotification() {
   if (!web_contents()->IsBeingDestroyed()) {
-    TabSpecificContentSettings::FromWebContents(web_contents())->
-        SetPopupsBlocked(visible);
+    TabSpecificContentSettings::FromWebContents(web_contents())
+        ->ClearPopupsBlocked();
   }
 }
 
@@ -100,8 +93,13 @@ void PopupBlockerTabHelper::AddBlockedPopup(
       std::move(*params), window_features, block_type);
   TabSpecificContentSettings::FromWebContents(web_contents())->
       OnContentBlocked(CONTENT_SETTINGS_TYPE_POPUPS);
-  for (auto& observer : observers_)
-    observer.BlockedPopupAdded(id, blocked_popups_[id]->params.url);
+  manager_.NotifyObservers(id, blocked_popups_[id]->params.url);
+
+#if defined(OS_ANDROID)
+  // Should replace existing popup infobars, with an updated count of how many
+  // popups have been blocked.
+  PopupBlockedInfoBarDelegate::Create(web_contents(), GetBlockedPopupsCount());
+#endif
 }
 
 void PopupBlockerTabHelper::ShowBlockedPopup(
@@ -130,8 +128,9 @@ void PopupBlockerTabHelper::ShowBlockedPopup(
   Navigate(&popup->params);
 #endif
   if (popup->params.navigated_or_inserted_contents) {
-    PopupTracker::CreateForWebContents(
+    auto* tracker = PopupTracker::CreateForWebContents(
         popup->params.navigated_or_inserted_contents, web_contents());
+    tracker->set_is_trusted(true);
 
     if (popup->params.disposition == WindowOpenDisposition::NEW_POPUP) {
       content::RenderFrameHost* host =
@@ -157,7 +156,7 @@ void PopupBlockerTabHelper::ShowBlockedPopup(
 
   blocked_popups_.erase(id);
   if (blocked_popups_.empty())
-    PopupNotificationVisibilityChanged(false);
+    HidePopupNotification();
 }
 
 size_t PopupBlockerTabHelper::GetBlockedPopupsCount() const {
@@ -177,3 +176,5 @@ PopupBlockerTabHelper::PopupIdMap
 void PopupBlockerTabHelper::LogAction(Action action) {
   UMA_HISTOGRAM_ENUMERATION("ContentSettings.Popups.BlockerActions", action);
 }
+
+WEB_CONTENTS_USER_DATA_KEY_IMPL(PopupBlockerTabHelper)

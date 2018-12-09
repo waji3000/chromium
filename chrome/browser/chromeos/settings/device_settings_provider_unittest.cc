@@ -76,8 +76,6 @@ class DeviceSettingsProviderTest : public DeviceSettingsTestBase {
     Mock::VerifyAndClearExpectations(this);
   }
 
-  void TearDown() override { DeviceSettingsTestBase::TearDown(); }
-
   void BuildAndInstallDevicePolicy() {
     EXPECT_CALL(*this, SettingChanged(_)).Times(AtLeast(1));
     device_policy_.Build();
@@ -248,6 +246,13 @@ class DeviceSettingsProviderTest : public DeviceSettingsTestBase {
     em::AutoUpdateSettingsProto* proto =
         device_policy_.payload().mutable_auto_update_settings();
     proto->set_disallowed_time_intervals(json_string);
+    BuildAndInstallDevicePolicy();
+  }
+
+  void SetPluginVmAllowedSetting(bool plugin_vm_allowed) {
+    em::PluginVmAllowedProto* proto =
+        device_policy_.payload().mutable_plugin_vm_allowed();
+    proto->set_plugin_vm_allowed(plugin_vm_allowed);
     BuildAndInstallDevicePolicy();
   }
 
@@ -668,6 +673,14 @@ TEST_F(DeviceSettingsProviderTest, DeviceAutoUpdateTimeRestrictionsExtra) {
   test_list.GetList().push_back(std::move(interval));
   SetDeviceAutoUpdateTimeRestrictions(extra_field);
   VerifyPolicyValue(kDeviceAutoUpdateTimeRestrictions, &test_list);
+}
+
+TEST_F(DeviceSettingsProviderTest, DecodePluginVmAllowedSetting) {
+  SetPluginVmAllowedSetting(true);
+  EXPECT_EQ(base::Value(true), *provider_->Get(kPluginVmAllowed));
+
+  SetPluginVmAllowedSetting(false);
+  EXPECT_EQ(base::Value(false), *provider_->Get(kPluginVmAllowed));
 }
 
 }  // namespace chromeos

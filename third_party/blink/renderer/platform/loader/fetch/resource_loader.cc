@@ -38,14 +38,12 @@
 #include "third_party/blink/public/mojom/blob/blob_registry.mojom-blink.h"
 #include "third_party/blink/public/platform/code_cache_loader.h"
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/public/platform/web_cors.h"
 #include "third_party/blink/public/platform/web_data.h"
 #include "third_party/blink/public/platform/web_security_origin.h"
 #include "third_party/blink/public/platform/web_url_error.h"
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/public/platform/web_url_response.h"
 #include "third_party/blink/renderer/platform/exported/wrapped_resource_request.h"
-#include "third_party/blink/renderer/platform/exported/wrapped_resource_response.h"
 #include "third_party/blink/renderer/platform/loader/cors/cors.h"
 #include "third_party/blink/renderer/platform/loader/cors/cors_error_string.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_context.h"
@@ -63,6 +61,7 @@
 #include "third_party/blink/renderer/platform/weborigin/scheme_registry.h"
 #include "third_party/blink/renderer/platform/weborigin/security_violation_reporting_policy.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
+#include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
 
@@ -293,8 +292,8 @@ ResourceLoader* ResourceLoader::Create(ResourceFetcher* fetcher,
                                        ResourceLoadScheduler* scheduler,
                                        Resource* resource,
                                        uint32_t inflight_keepalive_bytes) {
-  return new ResourceLoader(fetcher, scheduler, resource,
-                            inflight_keepalive_bytes);
+  return MakeGarbageCollected<ResourceLoader>(fetcher, scheduler, resource,
+                                              inflight_keepalive_bytes);
 }
 
 ResourceLoader::ResourceLoader(ResourceFetcher* fetcher,
@@ -328,6 +327,9 @@ void ResourceLoader::Trace(blink::Visitor* visitor) {
 
 bool ResourceLoader::ShouldFetchCodeCache() {
   if (!RuntimeEnabledFeatures::IsolatedCodeCacheEnabled())
+    return false;
+  if (resource_->GetType() == ResourceType::kRaw &&
+      !RuntimeEnabledFeatures::WasmCodeCacheEnabled())
     return false;
 
   // TODO(crbug.com/867347): Enable fetching of code caches on non-main threads
@@ -391,11 +393,11 @@ void ResourceLoader::Start() {
     throttle_option = ResourceLoadScheduler::ThrottleOption::kStoppable;
   }
 
-  if (ShouldCheckCORSInResourceLoader()) {
+  if (ShouldCheckCorsInResourceLoader()) {
     const auto origin = resource_->GetOrigin();
-    response_tainting_ = CORS::CalculateResponseTainting(
+    response_tainting_ = cors::CalculateResponseTainting(
         request.Url(), request.GetFetchRequestMode(), origin.get(),
-        GetCORSFlag() ? CORSFlag::Set : CORSFlag::Unset);
+        GetCorsFlag() ? CorsFlag::Set : CorsFlag::Unset);
   }
 
   if (request.IsAutomaticUpgrade()) {
@@ -545,6 +547,7 @@ static bool IsManualRedirectFetchRequest(const ResourceRequest& request) {
 bool ResourceLoader::WillFollowRedirect(
     const WebURL& new_url,
     const WebURL& new_site_for_cookies,
+    const base::Optional<WebSecurityOrigin>& new_top_frame_origin,
     const WebString& new_referrer,
     network::mojom::ReferrerPolicy new_referrer_policy,
     const WebString& new_method,
@@ -559,10 +562,15 @@ bool ResourceLoader::WillFollowRedirect(
     return false;
   }
 
+  scoped_refptr<const SecurityOrigin> top_frame_origin =
+      new_top_frame_origin
+          ? base::WrapRefCounted(new_top_frame_origin.value().Get())
+          : scoped_refptr<SecurityOrigin>();
   std::unique_ptr<ResourceRequest> new_request =
       resource_->LastResourceRequest().CreateRedirectRequest(
-          new_url, new_method, new_site_for_cookies, new_referrer,
-          static_cast<ReferrerPolicy>(new_referrer_policy),
+          new_url, new_method, new_site_for_cookies, top_frame_origin,
+          new_referrer, new_referrer_policy,
+
           !passed_redirect_response.WasFetchedViaServiceWorker());
 
   ResourceType resource_type = resource_->GetType();
@@ -612,20 +620,21 @@ bool ResourceLoader::WillFollowRedirect(
       return false;
     }
 
-    if (ShouldCheckCORSInResourceLoader()) {
+    if (ShouldCheckCorsInResourceLoader()) {
       scoped_refptr<const SecurityOrigin> origin = resource_->GetOrigin();
-      base::Optional<network::CORSErrorStatus> cors_error =
-          CORS::CheckRedirectLocation(
+      base::Optional<network::CorsErrorStatus> cors_error =
+          cors::CheckRedirectLocation(
               new_url, fetch_request_mode, origin.get(),
-              GetCORSFlag() ? CORSFlag::Set : CORSFlag::Unset);
-      if (!cors_error && GetCORSFlag()) {
+              GetCorsFlag() ? CorsFlag::Set : CorsFlag::Unset);
+      if (!cors_error && GetCorsFlag()) {
         cors_error =
-            CORS::CheckAccess(new_url, redirect_response.HttpStatusCode(),
+            cors::CheckAccess(new_url, redirect_response.HttpStatusCode(),
                               redirect_response.HttpHeaderFields(),
                               fetch_credentials_mode, *origin);
       }
       if (cors_error) {
-        HandleError(ResourceError(redirect_response.Url(), *cors_error));
+        HandleError(
+            ResourceError(redirect_response.CurrentRequestUrl(), *cors_error));
         return false;
       }
       // If |actualResponse|’s location URL’s origin is not same origin with
@@ -633,9 +642,9 @@ bool ResourceLoader::WillFollowRedirect(
       // origin with |request|’s current url’s origin, then set |request|’s
       // tainted origin flag.
       if (origin &&
-          !SecurityOrigin::AreSameSchemeHostPort(new_url,
-                                                 redirect_response.Url()) &&
-          !origin->CanRequest(redirect_response.Url())) {
+          !SecurityOrigin::AreSameSchemeHostPort(
+              new_url, redirect_response.CurrentRequestUrl()) &&
+          !origin->CanRequest(redirect_response.CurrentRequestUrl())) {
         origin = SecurityOrigin::CreateUniqueOpaque();
         new_request->SetRequestorOrigin(origin);
       }
@@ -648,14 +657,14 @@ bool ResourceLoader::WillFollowRedirect(
     }
   }
 
-  bool cross_origin =
-      !SecurityOrigin::AreSameSchemeHostPort(redirect_response.Url(), new_url);
+  bool cross_origin = !SecurityOrigin::AreSameSchemeHostPort(
+      redirect_response.CurrentRequestUrl(), new_url);
   fetcher_->RecordResourceTimingOnRedirect(resource_.Get(), redirect_response,
                                            cross_origin);
 
   base::Optional<ResourceResponse> redirect_response_with_type;
-  if (ShouldCheckCORSInResourceLoader()) {
-    new_request->SetAllowStoredCredentials(CORS::CalculateCredentialsFlag(
+  if (ShouldCheckCorsInResourceLoader()) {
+    new_request->SetAllowStoredCredentials(cors::CalculateCredentialsFlag(
         fetch_credentials_mode, response_tainting_));
     if (!redirect_response.WasFetchedViaServiceWorker()) {
       auto response_type = response_tainting_;
@@ -719,24 +728,24 @@ bool ResourceLoader::WillFollowRedirect(
     return false;
   }
 
-  if (ShouldCheckCORSInResourceLoader()) {
+  if (ShouldCheckCorsInResourceLoader()) {
     bool new_cors_flag =
-        GetCORSFlag() || CORS::CalculateCORSFlag(new_request->Url(),
+        GetCorsFlag() || cors::CalculateCorsFlag(new_request->Url(),
                                                  resource_->GetOrigin().get(),
                                                  fetch_request_mode);
     resource_->MutableOptions().cors_flag = new_cors_flag;
     // Cross-origin requests are only allowed certain registered schemes.
-    if (GetCORSFlag() && !SchemeRegistry::ShouldTreatURLSchemeAsCORSEnabled(
+    if (GetCorsFlag() && !SchemeRegistry::ShouldTreatURLSchemeAsCorsEnabled(
                              new_request->Url().Protocol())) {
       HandleError(
           ResourceError(new_request->Url(),
-                        network::CORSErrorStatus(
-                            network::mojom::CORSError::kCORSDisabledScheme)));
+                        network::CorsErrorStatus(
+                            network::mojom::CorsError::kCorsDisabledScheme)));
       return false;
     }
-    response_tainting_ = CORS::CalculateResponseTainting(
+    response_tainting_ = cors::CalculateResponseTainting(
         new_request->Url(), fetch_request_mode, resource_->GetOrigin().get(),
-        GetCORSFlag() ? CORSFlag::Set : CORSFlag::Unset);
+        GetCorsFlag() ? CorsFlag::Set : CorsFlag::Unset);
   }
 
   report_raw_headers = new_request->ReportRawHeaders();
@@ -788,7 +797,8 @@ void ResourceLoader::DidReceiveResponse(
   if (Context().IsDetached()) {
     // If the fetch context is already detached, we don't need further signals,
     // so let's cancel the request.
-    HandleError(ResourceError::CancelledError(web_url_response.Url()));
+    HandleError(
+        ResourceError::CancelledError(web_url_response.CurrentRequestUrl()));
     return;
   }
 
@@ -823,14 +833,14 @@ void ResourceLoader::DidReceiveResponse(
       CheckResponseNosniff(request_context, nosniffed_response);
   if (blocked_reason) {
     HandleError(ResourceError::CancelledDueToAccessCheckError(
-        response.Url(), blocked_reason.value()));
+        response.CurrentRequestUrl(), blocked_reason.value()));
     return;
   }
 
   if (response.WasFetchedViaServiceWorker()) {
     if (options.cors_handling_by_resource_fetcher ==
-            kEnableCORSHandlingByResourceFetcher &&
-        fetch_request_mode == network::mojom::FetchRequestMode::kCORS &&
+            kEnableCorsHandlingByResourceFetcher &&
+        fetch_request_mode == network::mojom::FetchRequestMode::kCors &&
         response.WasFallbackRequiredByServiceWorker()) {
       ResourceRequest last_request = resource_->LastResourceRequest();
       DCHECK(!last_request.GetSkipServiceWorker());
@@ -838,7 +848,8 @@ void ResourceLoader::DidReceiveResponse(
       // handle a cross origin request.
       if (!Context().ShouldLoadNewResource(resource_type)) {
         // Cancel the request if we should not trigger a reload now.
-        HandleError(ResourceError::CancelledError(response.Url()));
+        HandleError(
+            ResourceError::CancelledError(response.CurrentRequestUrl()));
         return;
       }
       last_request.SetSkipServiceWorker(true);
@@ -846,43 +857,43 @@ void ResourceLoader::DidReceiveResponse(
       return;
     }
 
-    // If the response is fetched via ServiceWorker, the original URL of the
-    // response could be different from the URL of the request. We check the URL
-    // not to load the resources which are forbidden by the page CSP.
+    // If the response is fetched via ServiceWorker, the URL of the response
+    // could be different from the URL of the request. We check the URL not to
+    // load the resources which are forbidden by the page CSP.
     // https://w3c.github.io/webappsec-csp/#should-block-response
-    const KURL& original_url = response.OriginalURLViaServiceWorker();
-    if (!original_url.IsEmpty()) {
+    const KURL& response_url = response.ResponseUrl();
+    if (!response_url.IsEmpty()) {
       // CanRequest() below only checks enforced policies: check report-only
       // here to ensure violations are sent.
       Context().CheckCSPForRequest(
-          request_context, original_url, options,
+          request_context, response_url, options,
           SecurityViolationReportingPolicy::kReport,
           ResourceRequest::RedirectStatus::kFollowedRedirect);
 
       base::Optional<ResourceRequestBlockedReason> blocked_reason =
           Context().CanRequest(
-              resource_type, initial_request, original_url, options,
+              resource_type, initial_request, response_url, options,
               SecurityViolationReportingPolicy::kReport,
               ResourceRequest::RedirectStatus::kFollowedRedirect);
       if (blocked_reason) {
         HandleError(ResourceError::CancelledDueToAccessCheckError(
-            original_url, blocked_reason.value()));
+            response_url, blocked_reason.value()));
         return;
       }
     }
   }
 
   base::Optional<ResourceResponse> response_with_type;
-  if (ShouldCheckCORSInResourceLoader() &&
+  if (ShouldCheckCorsInResourceLoader() &&
       !response.WasFetchedViaServiceWorker() &&
       !(resource_->IsCacheValidator() && response.HttpStatusCode() == 304)) {
-    if (GetCORSFlag()) {
-      base::Optional<network::CORSErrorStatus> cors_error = CORS::CheckAccess(
-          response.Url(), response.HttpStatusCode(),
+    if (GetCorsFlag()) {
+      base::Optional<network::CorsErrorStatus> cors_error = cors::CheckAccess(
+          response.CurrentRequestUrl(), response.HttpStatusCode(),
           response.HttpHeaderFields(),
           initial_request.GetFetchCredentialsMode(), *resource_->GetOrigin());
       if (cors_error) {
-        HandleError(ResourceError(response.Url(), *cors_error));
+        HandleError(ResourceError(response.CurrentRequestUrl(), *cors_error));
         return;
       }
     }
@@ -901,6 +912,11 @@ void ResourceLoader::DidReceiveResponse(
       request_context, resource_,
       FetchContext::ResourceResponseType::kNotFromMemoryCache);
 
+  // When streaming, unpause virtual time early to prevent deadlocking
+  // against stream consumer in case stream has backpressure enabled.
+  if (handle)
+    resource_->VirtualTimePauser().UnpauseVirtualTime();
+
   resource_->ResponseReceived(response_to_pass, std::move(handle));
 
   // Send the cached code after we notify that the response is received.
@@ -915,8 +931,10 @@ void ResourceLoader::DidReceiveResponse(
     return;
 
   if (response_to_pass.HttpStatusCode() >= 400 &&
-      !resource_->ShouldIgnoreHTTPStatusCodeErrors())
-    HandleError(ResourceError::CancelledError(response_to_pass.Url()));
+      !resource_->ShouldIgnoreHTTPStatusCodeErrors()) {
+    HandleError(
+        ResourceError::CancelledError(response_to_pass.CurrentRequestUrl()));
+  }
 }
 
 void ResourceLoader::DidReceiveResponse(const WebURLResponse& response) {
@@ -940,8 +958,8 @@ void ResourceLoader::DidStartLoadingResponseBody(
   mojom::blink::BlobRegistry* blob_registry = BlobDataHandle::GetBlobRegistry();
   blob_registry->RegisterFromStream(
       mime_type.IsNull() ? g_empty_string : mime_type.LowerASCII(), "",
-      std::max(0ll, response.ExpectedContentLength()), std::move(body),
-      std::move(progress_client_ptr),
+      std::max(static_cast<int64_t>(0), response.ExpectedContentLength()),
+      std::move(body), std::move(progress_client_ptr),
       WTF::Bind(&ResourceLoader::FinishedCreatingBlob,
                 WrapWeakPersistent(this)));
 }
@@ -1031,10 +1049,10 @@ void ResourceLoader::HandleError(const ResourceError& error) {
     Restart(resource_->GetResourceRequest());
     return;
   }
-  if (error.CORSErrorStatus()) {
+  if (error.CorsErrorStatus()) {
     Context().AddErrorConsoleMessage(
-        CORS::GetErrorString(
-            *error.CORSErrorStatus(), resource_->GetResourceRequest().Url(),
+        cors::GetErrorString(
+            *error.CorsErrorStatus(), resource_->GetResourceRequest().Url(),
             resource_->LastResourceRequest().Url(), *resource_->GetOrigin(),
             resource_->GetType(), resource_->Options().initiator_info.name),
         FetchContext::kJSSource);
@@ -1093,7 +1111,7 @@ void ResourceLoader::RequestSynchronously(const ResourceRequest& request) {
   if (data_out.size()) {
     data_out.ForEachSegment([this](const char* segment, size_t segment_size,
                                    size_t segment_offset) {
-      DidReceiveData(segment, segment_size);
+      DidReceiveData(segment, SafeCast<int>(segment_size));
       return true;
     });
   }
@@ -1170,7 +1188,7 @@ void ResourceLoader::OnProgress(uint64_t delta) {
     return;
 
   Context().DispatchDidReceiveData(resource_->Identifier(), nullptr, delta);
-  resource_->DidDownloadData(delta);
+  resource_->DidDownloadData(SafeCast<int>(delta));
 }
 
 void ResourceLoader::FinishedCreatingBlob(
@@ -1207,7 +1225,8 @@ ResourceLoader::CheckResponseNosniff(mojom::RequestContextType request_context,
   if (request_context == mojom::RequestContextType::STYLE &&
       !MIMETypeRegistry::IsSupportedStyleSheetMIMEType(mime_type)) {
     Context().AddErrorConsoleMessage(
-        "Refused to apply style from '" + response.Url().ElidedString() +
+        "Refused to apply style from '" +
+            response.CurrentRequestUrl().ElidedString() +
             "' because its MIME type ('" + mime_type + "') " +
             "is not a supported stylesheet MIME type, and strict MIME checking "
             "is enabled.",
@@ -1220,10 +1239,10 @@ ResourceLoader::CheckResponseNosniff(mojom::RequestContextType request_context,
   return base::nullopt;
 }
 
-bool ResourceLoader::ShouldCheckCORSInResourceLoader() const {
-  return !RuntimeEnabledFeatures::OutOfBlinkCORSEnabled() &&
+bool ResourceLoader::ShouldCheckCorsInResourceLoader() const {
+  return !RuntimeEnabledFeatures::OutOfBlinkCorsEnabled() &&
          resource_->Options().cors_handling_by_resource_fetcher ==
-             kEnableCORSHandlingByResourceFetcher;
+             kEnableCorsHandlingByResourceFetcher;
 }
 
 }  // namespace blink

@@ -48,7 +48,7 @@ AnalyserHandler::~AnalyserHandler() {
   Uninitialize();
 }
 
-void AnalyserHandler::Process(size_t frames_to_process) {
+void AnalyserHandler::Process(uint32_t frames_to_process) {
   AudioBus* output_bus = Output(0).Bus();
 
   if (!IsInitialized()) {
@@ -201,7 +201,7 @@ AnalyserNode* AnalyserNode::Create(BaseAudioContext& context,
     return nullptr;
   }
 
-  return new AnalyserNode(context);
+  return MakeGarbageCollected<AnalyserNode>(context);
 }
 
 AnalyserNode* AnalyserNode::Create(BaseAudioContext* context,

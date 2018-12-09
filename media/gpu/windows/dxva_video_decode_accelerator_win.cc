@@ -66,6 +66,7 @@
 
 namespace {
 
+#if defined(ARCH_CPU_X86_FAMILY)
 // AMD
 // Path is appended on to the PROGRAM_FILES base path.
 const wchar_t kAMDVPXDecoderDLLPath[] =
@@ -85,6 +86,7 @@ const CLSID CLSID_AMDWebmMfVp9Dec = {
     0x67d6,
     0x48ab,
     {0x89, 0xfb, 0xa6, 0xec, 0x65, 0x55, 0x49, 0x70}};
+#endif
 
 const wchar_t kMSVP9DecoderDLLName[] = L"MSVP9DEC.dll";
 
@@ -617,9 +619,10 @@ class VP9ConfigChangeDetector : public ConfigChangeDetector {
   // Detects stream configuration changes.
   // Returns false on failure.
   bool DetectConfig(const uint8_t* stream, unsigned int size) override {
-    parser_.SetStream(stream, size);
+    parser_.SetStream(stream, size, nullptr);
     Vp9FrameHeader fhdr;
-    while (parser_.ParseNextFrame(&fhdr) == Vp9Parser::kOk) {
+    std::unique_ptr<DecryptConfig> null_config;
+    while (parser_.ParseNextFrame(&fhdr, &null_config) == Vp9Parser::kOk) {
       visible_rect_ = gfx::Rect(fhdr.render_width, fhdr.render_height);
       color_space_ = fhdr.GetColorSpace();
 
@@ -770,11 +773,8 @@ bool DXVAVideoDecodeAccelerator::Initialize(const Config& config,
       break;
     }
   }
-  if (!profile_supported) {
-    RETURN_AND_NOTIFY_ON_FAILURE(false,
-                                 "Unsupported h.264, vp8, or vp9 profile",
-                                 PLATFORM_FAILURE, false);
-  }
+  RETURN_ON_FAILURE(profile_supported, "Unsupported h.264, vp8, or vp9 profile",
+                    false);
 
   if (config.profile == VP9PROFILE_PROFILE2 ||
       config.profile == VP9PROFILE_PROFILE3 ||
@@ -819,47 +819,38 @@ bool DXVAVideoDecodeAccelerator::Initialize(const Config& config,
         ::GetProcAddress(dxgi_manager_dll, "MFCreateDXGIDeviceManager"));
   }
 
-  RETURN_AND_NOTIFY_ON_FAILURE(make_context_current_cb_.Run(),
-                               "Failed to make context current",
-                               PLATFORM_FAILURE, false);
+  RETURN_ON_FAILURE(make_context_current_cb_.Run(),
+                    "Failed to make context current", false);
 
-  RETURN_AND_NOTIFY_ON_FAILURE(
+  RETURN_ON_FAILURE(
       gl::g_driver_egl.ext.b_EGL_ANGLE_surface_d3d_texture_2d_share_handle,
-      "EGL_ANGLE_surface_d3d_texture_2d_share_handle unavailable",
-      PLATFORM_FAILURE, false);
+      "EGL_ANGLE_surface_d3d_texture_2d_share_handle unavailable", false);
 
-  RETURN_AND_NOTIFY_ON_FAILURE(gl::GLFence::IsSupported(),
-                               "GL fences are unsupported", PLATFORM_FAILURE,
-                               false);
+  RETURN_ON_FAILURE(gl::GLFence::IsSupported(), "GL fences are unsupported",
+                    false);
 
   State state = GetState();
-  RETURN_AND_NOTIFY_ON_FAILURE((state == kUninitialized),
-                               "Initialize: invalid state: " << state,
-                               ILLEGAL_STATE, false);
+  RETURN_ON_FAILURE((state == kUninitialized),
+                    "Initialize: invalid state: " << state, false);
 
-  RETURN_AND_NOTIFY_ON_FAILURE(InitializeMediaFoundation(),
-                               "Could not initialize Media Foundartion",
-                               PLATFORM_FAILURE, false);
+  RETURN_ON_FAILURE(InitializeMediaFoundation(),
+                    "Could not initialize Media Foundartion", false);
 
   config_ = config;
 
-  RETURN_AND_NOTIFY_ON_FAILURE(InitDecoder(config.profile),
-                               "Failed to initialize decoder", PLATFORM_FAILURE,
-                               false);
+  RETURN_ON_FAILURE(InitDecoder(config.profile), "Failed to initialize decoder",
+                    false);
 
-  RETURN_AND_NOTIFY_ON_FAILURE(GetStreamsInfoAndBufferReqs(),
-                               "Failed to get input/output stream info.",
-                               PLATFORM_FAILURE, false);
+  RETURN_ON_FAILURE(GetStreamsInfoAndBufferReqs(),
+                    "Failed to get input/output stream info.", false);
 
-  RETURN_AND_NOTIFY_ON_FAILURE(
+  RETURN_ON_FAILURE(
       SendMFTMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, 0),
-      "Send MFT_MESSAGE_NOTIFY_BEGIN_STREAMING notification failed",
-      PLATFORM_FAILURE, false);
+      "Send MFT_MESSAGE_NOTIFY_BEGIN_STREAMING notification failed", false);
 
-  RETURN_AND_NOTIFY_ON_FAILURE(
+  RETURN_ON_FAILURE(
       SendMFTMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, 0),
-      "Send MFT_MESSAGE_NOTIFY_START_OF_STREAM notification failed",
-      PLATFORM_FAILURE, false);
+      "Send MFT_MESSAGE_NOTIFY_START_OF_STREAM notification failed", false);
 
   if (codec_ == kCodecH264)
     config_change_detector_.reset(new H264ConfigChangeDetector);
@@ -1196,7 +1187,7 @@ void DXVAVideoDecodeAccelerator::AssignPictureBuffers(
   // Copy the picture buffers provided by the client to the available list,
   // and mark these buffers as available for use.
   for (size_t buffer_index = 0; buffer_index < buffers.size(); ++buffer_index) {
-    linked_ptr<DXVAPictureBuffer> picture_buffer =
+    std::unique_ptr<DXVAPictureBuffer> picture_buffer =
         DXVAPictureBuffer::Create(*this, buffers[buffer_index], egl_config_);
     RETURN_AND_NOTIFY_ON_FAILURE(picture_buffer.get(),
                                  "Failed to allocate picture buffer",
@@ -1211,10 +1202,10 @@ void DXVAVideoDecodeAccelerator::AssignPictureBuffers(
       }
     }
 
-    bool inserted =
-        output_picture_buffers_
-            .insert(std::make_pair(buffers[buffer_index].id(), picture_buffer))
-            .second;
+    bool inserted = output_picture_buffers_
+                        .insert(std::make_pair(buffers[buffer_index].id(),
+                                               std::move(picture_buffer)))
+                        .second;
     DCHECK(inserted);
   }
 
@@ -1598,6 +1589,8 @@ bool DXVAVideoDecodeAccelerator::InitDecoder(VideoCodecProfile profile) {
       program_files_key = base::DIR_PROGRAM_FILES6432;
     }
 
+// Avoid loading AMD VP9 decoder on Windows ARM64.
+#if defined(ARCH_CPU_X86_FAMILY)
     // AMD
     if (!decoder_dll &&
         enable_accelerated_vpx_decode_ & gpu::GpuPreferences::VPX_VENDOR_AMD &&
@@ -1612,6 +1605,7 @@ bool DXVAVideoDecodeAccelerator::InitDecoder(VideoCodecProfile profile) {
                                       LOAD_WITH_ALTERED_SEARCH_PATH);
       }
     }
+#endif
   }
 
   if (!decoder_dll) {
@@ -2487,7 +2481,7 @@ void DXVAVideoDecodeAccelerator::DismissStaleBuffers(bool force) {
     } else {
       // Move to |stale_output_picture_buffers_| for deferred deletion.
       stale_output_picture_buffers_.insert(
-          std::make_pair(index->first, index->second));
+          std::make_pair(index->first, std::move(index->second)));
     }
   }
 

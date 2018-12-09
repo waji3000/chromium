@@ -25,10 +25,13 @@
 #include "components/invalidation/impl/fake_invalidation_service.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
+#include "net/base/mock_network_change_notifier.h"
+#include "services/identity/public/mojom/constants.mojom.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "services/service_manager/public/cpp/service.h"
+#include "services/service_manager/public/cpp/service_binding.h"
 #include "services/service_manager/public/cpp/test/test_connector_factory.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -55,69 +58,11 @@ class TestingMojoConnectionDelegate
   mojom::DriveFsBootstrapPtrInfo pending_bootstrap_;
 };
 
-class ForwardingOAuth2MintTokenFlow;
-
-ACTION_P(SucceedMintToken, token) {
-  base::SequencedTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::BindLambdaForTesting([=] {
-        arg0->OnMintTokenSuccess(token,
-                                 base::TimeDelta::FromHours(1).InSeconds());
-      }));
-}
-
-ACTION_P(FailMintToken, error) {
-  base::SequencedTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::BindLambdaForTesting([=] {
-        arg0->OnMintTokenFailure(GoogleServiceAuthError(error));
-      }));
-}
-
-class MockOAuth2MintTokenFlow {
+class MockDriveFs : public mojom::DriveFsInterceptorForTesting,
+                    public mojom::SearchQuery {
  public:
-  MockOAuth2MintTokenFlow() = default;
+  MockDriveFs() : search_binding_(this) {}
 
-  void ExpectStartAndSucceed(const std::string& expected_token,
-                             const std::string& token_to_return) {
-    EXPECT_CALL(*this, Start(_, expected_token))
-        .WillOnce(SucceedMintToken(token_to_return));
-  }
-
-  void ExpectStartAndFail(const std::string& expected_token,
-                          GoogleServiceAuthError::State error) {
-    EXPECT_CALL(*this, Start(_, expected_token)).WillOnce(FailMintToken(error));
-  }
-
-  void ExpectNoStartCalls() { EXPECT_CALL(*this, Start(_, _)).Times(0); }
-
-  MOCK_METHOD2(Start,
-               void(OAuth2MintTokenFlow::Delegate* delegate,
-                    const std::string& access_token));
-
- private:
-  friend class ForwardingOAuth2MintTokenFlow;
-
-  DISALLOW_COPY_AND_ASSIGN(MockOAuth2MintTokenFlow);
-};
-
-class ForwardingOAuth2MintTokenFlow : public OAuth2MintTokenFlow {
- public:
-  ForwardingOAuth2MintTokenFlow(OAuth2MintTokenFlow::Delegate* delegate,
-                                MockOAuth2MintTokenFlow* mock)
-      : OAuth2MintTokenFlow(delegate, {}), delegate_(delegate), mock_(mock) {}
-
-  void Start(scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
-             const std::string& access_token) override {
-    EXPECT_EQ(nullptr, url_loader_factory);
-    mock_->Start(delegate_, access_token);
-  }
-
- private:
-  Delegate* const delegate_;
-  MockOAuth2MintTokenFlow* mock_;
-};
-
-class MockDriveFs : public mojom::DriveFsInterceptorForTesting {
- public:
   DriveFs* GetForwardingInterface() override {
     NOTREACHED();
     return nullptr;
@@ -136,6 +81,28 @@ class MockDriveFs : public mojom::DriveFsInterceptorForTesting {
       FetchChangeLogImpl,
       void(const std::vector<std::pair<int64_t, std::string>>& options));
   MOCK_METHOD0(FetchAllChangeLogs, void());
+
+  MOCK_CONST_METHOD1(OnStartSearchQuery, void(const mojom::QueryParameters&));
+  void StartSearchQuery(mojom::SearchQueryRequest query,
+                        mojom::QueryParametersPtr query_params) override {
+    if (search_binding_.is_bound())
+      search_binding_.Unbind();
+    OnStartSearchQuery(*query_params);
+    search_binding_.Bind(std::move(query));
+  }
+
+  MOCK_METHOD1(OnGetNextPage,
+               drive::FileError(
+                   base::Optional<std::vector<mojom::QueryItemPtr>>* items));
+
+  void GetNextPage(GetNextPageCallback callback) override {
+    base::Optional<std::vector<mojom::QueryItemPtr>> items;
+    auto error = OnGetNextPage(&items);
+    std::move(callback).Run(error, std::move(items));
+  }
+
+ private:
+  mojo::Binding<mojom::SearchQuery> search_binding_;
 };
 
 class TestingDriveFsHostDelegate : public DriveFsHost::Delegate,
@@ -151,8 +118,6 @@ class TestingDriveFsHostDelegate : public DriveFsHost::Delegate,
   ~TestingDriveFsHostDelegate() override {
     drive_notification_manager_.Shutdown();
   }
-
-  MockOAuth2MintTokenFlow& mock_flow() { return mock_flow_; }
 
   void set_pending_bootstrap(mojom::DriveFsBootstrapPtrInfo pending_bootstrap) {
     pending_bootstrap_ = std::move(pending_bootstrap);
@@ -182,18 +147,6 @@ class TestingDriveFsHostDelegate : public DriveFsHost::Delegate,
     return "salt-" + account_id_.GetAccountIdKey();
   }
 
-  std::unique_ptr<OAuth2MintTokenFlow> CreateMintTokenFlow(
-      OAuth2MintTokenFlow::Delegate* delegate,
-      const std::string& client_id,
-      const std::string& app_id,
-      const std::vector<std::string>& scopes) override {
-    EXPECT_EQ("client ID", client_id);
-    EXPECT_EQ("app ID", app_id);
-    EXPECT_EQ((std::vector<std::string>{"scope1", "scope2"}), scopes);
-    return std::make_unique<ForwardingOAuth2MintTokenFlow>(delegate,
-                                                           &mock_flow_);
-  }
-
   std::unique_ptr<DriveFsHost::MojoConnectionDelegate>
   CreateMojoConnectionDelegate() override {
     DCHECK(pending_bootstrap_);
@@ -203,7 +156,6 @@ class TestingDriveFsHostDelegate : public DriveFsHost::Delegate,
 
   const std::unique_ptr<service_manager::Connector> connector_;
   const AccountId account_id_;
-  MockOAuth2MintTokenFlow mock_flow_;
   mojom::DriveFsBootstrapPtrInfo pending_bootstrap_;
   invalidation::FakeInvalidationService invalidation_service_;
   drive::DriveNotificationManager drive_notification_manager_;
@@ -213,6 +165,7 @@ class TestingDriveFsHostDelegate : public DriveFsHost::Delegate,
 
 class MockIdentityManager {
  public:
+  explicit MockIdentityManager(const base::Clock* clock) : clock_(clock) {}
   MOCK_METHOD3(
       GetAccessToken,
       std::pair<base::Optional<std::string>, GoogleServiceAuthError::State>(
@@ -220,6 +173,32 @@ class MockIdentityManager {
           const ::identity::ScopeSet& scopes,
           const std::string& consumer_id));
 
+  void OnGetAccessToken(
+      const std::string& account_id,
+      const ::identity::ScopeSet& scopes,
+      const std::string& consumer_id,
+      identity::mojom::IdentityManager::GetAccessTokenCallback callback) {
+    if (pause_requests_) {
+      callbacks_.push_back(std::move(callback));
+      return;
+    }
+    auto result = GetAccessToken(account_id, scopes, consumer_id);
+    std::move(callback).Run(std::move(result.first),
+                            clock_->Now() + base::TimeDelta::FromHours(1),
+                            GoogleServiceAuthError(result.second));
+  }
+
+  std::vector<identity::mojom::IdentityManager::GetAccessTokenCallback>&
+  callbacks() {
+    return callbacks_;
+  }
+
+  void set_pause_requests(bool pause) { pause_requests_ = pause; }
+
+  const base::Clock* const clock_;
+  bool pause_requests_ = false;
+  std::vector<identity::mojom::IdentityManager::GetAccessTokenCallback>
+      callbacks_;
   mojo::BindingSet<identity::mojom::IdentityManager>* bindings_ = nullptr;
 };
 
@@ -227,9 +206,9 @@ class FakeIdentityService
     : public identity::mojom::IdentityManagerInterceptorForTesting,
       public service_manager::Service {
  public:
-  explicit FakeIdentityService(MockIdentityManager* mock,
-                               const base::Clock* clock)
-      : mock_(mock), clock_(clock) {
+  FakeIdentityService(MockIdentityManager* mock,
+                      service_manager::mojom::ServiceRequest request)
+      : service_binding_(this, std::move(request)), mock_(mock) {
     binder_registry_.AddInterface(
         base::BindRepeating(&FakeIdentityService::BindIdentityManagerRequest,
                             base::Unretained(this)));
@@ -265,9 +244,8 @@ class FakeIdentityService
                       const ::identity::ScopeSet& scopes,
                       const std::string& consumer_id,
                       GetAccessTokenCallback callback) override {
-    auto result = mock_->GetAccessToken(account_id, scopes, consumer_id);
-    std::move(callback).Run(std::move(result.first), clock_->Now(),
-                            GoogleServiceAuthError(result.second));
+    mock_->OnGetAccessToken(account_id, scopes, consumer_id,
+                            std::move(callback));
   }
 
   IdentityManager* GetForwardingInterface() override {
@@ -275,8 +253,8 @@ class FakeIdentityService
     return nullptr;
   }
 
+  service_manager::ServiceBinding service_binding_;
   MockIdentityManager* const mock_;
-  const base::Clock* const clock_;
   service_manager::BinderRegistry binder_registry_;
   mojo::BindingSet<identity::mojom::IdentityManager> bindings_;
 
@@ -298,7 +276,12 @@ ACTION_P(RunQuitClosure, quit) {
 
 class DriveFsHostTest : public ::testing::Test, public mojom::DriveFsBootstrap {
  public:
-  DriveFsHostTest() : bootstrap_binding_(this), binding_(&mock_drivefs_) {}
+  DriveFsHostTest()
+      : mock_identity_manager_(&clock_),
+        bootstrap_binding_(this),
+        binding_(&mock_drivefs_) {
+    clock_.SetNow(base::Time::Now());
+  }
 
  protected:
   void SetUp() override {
@@ -307,12 +290,11 @@ class DriveFsHostTest : public ::testing::Test, public mojom::DriveFsBootstrap {
     account_id_ = AccountId::FromUserEmailGaiaId("test@example.com", "ID");
 
     disk_manager_ = std::make_unique<chromeos::disks::MockDiskMountManager>();
-    connector_factory_ =
-        service_manager::TestConnectorFactory::CreateForUniqueService(
-            std::make_unique<FakeIdentityService>(&mock_identity_manager_,
-                                                  &clock_));
+    identity_service_ = std::make_unique<FakeIdentityService>(
+        &mock_identity_manager_,
+        connector_factory_.RegisterInstance(identity::mojom::kServiceName));
     host_delegate_ = std::make_unique<TestingDriveFsHostDelegate>(
-        connector_factory_->CreateConnector(), account_id_);
+        connector_factory_.CreateConnector(), account_id_);
     auto timer = std::make_unique<base::MockOneShotTimer>();
     timer_ = timer.get();
     host_ = std::make_unique<DriveFsHost>(
@@ -427,6 +409,7 @@ class DriveFsHostTest : public ::testing::Test, public mojom::DriveFsBootstrap {
             mojom::DriveFsRequest drive_fs_request,
             mojom::DriveFsDelegatePtr delegate) override {
     EXPECT_EQ("test@example.com", config->user_email);
+    init_access_token_ = std::move(config->access_token);
     binding_.Bind(std::move(drive_fs_request));
     mojo::FuseInterface(std::move(pending_delegate_request_),
                         delegate.PassInterface());
@@ -438,10 +421,12 @@ class DriveFsHostTest : public ::testing::Test, public mojom::DriveFsBootstrap {
   std::unique_ptr<chromeos::disks::MockDiskMountManager> disk_manager_;
   base::SimpleTestClock clock_;
   MockIdentityManager mock_identity_manager_;
-  std::unique_ptr<service_manager::TestConnectorFactory> connector_factory_;
+  service_manager::TestConnectorFactory connector_factory_;
+  std::unique_ptr<FakeIdentityService> identity_service_;
   std::unique_ptr<TestingDriveFsHostDelegate> host_delegate_;
   std::unique_ptr<DriveFsHost> host_;
   base::MockOneShotTimer* timer_;
+  net::test::MockNetworkChangeNotifier network_;
 
   mojo::Binding<mojom::DriveFsBootstrap> bootstrap_binding_;
   MockDriveFs mock_drivefs_;
@@ -449,6 +434,7 @@ class DriveFsHostTest : public ::testing::Test, public mojom::DriveFsBootstrap {
   mojom::DriveFsDelegatePtr delegate_ptr_;
   mojom::DriveFsDelegateRequest pending_delegate_request_;
   std::string token_;
+  base::Optional<std::string> init_access_token_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DriveFsHostTest);
@@ -461,6 +447,7 @@ TEST_F(DriveFsHostTest, Basic) {
             host_->GetDataPath());
 
   ASSERT_NO_FATAL_FAILURE(DoMount());
+  EXPECT_FALSE(init_access_token_);
 
   EXPECT_EQ(base::FilePath("/media/drivefsroot/salt-g-ID"),
             host_->GetMountPath());
@@ -712,7 +699,7 @@ TEST_F(DriveFsHostTest, UnsupportedAccountTypes) {
   };
   for (auto& account : unsupported_accounts) {
     host_delegate_ = std::make_unique<TestingDriveFsHostDelegate>(
-        connector_factory_->CreateConnector(), account);
+        connector_factory_.CreateConnector(), account);
     host_ = std::make_unique<DriveFsHost>(
         profile_path_, host_delegate_.get(), host_delegate_.get(), &clock_,
         disk_manager_.get(), std::make_unique<base::MockOneShotTimer>());
@@ -727,9 +714,7 @@ TEST_F(DriveFsHostTest, GetAccessToken_Success) {
   EXPECT_CALL(mock_identity_manager_,
               GetAccessToken("test@example.com", _, "drivefs"))
       .WillOnce(testing::Return(
-          std::make_pair("chrome token", GoogleServiceAuthError::NONE)));
-  host_delegate_->mock_flow().ExpectStartAndSucceed("chrome token",
-                                                    "auth token");
+          std::make_pair("auth token", GoogleServiceAuthError::NONE)));
 
   ExpectAccessToken(mojom::AccessTokenStatus::kSuccess, "auth token");
 }
@@ -763,9 +748,7 @@ TEST_F(DriveFsHostTest, GetAccessToken_SequentialRequests) {
     EXPECT_CALL(mock_identity_manager_,
                 GetAccessToken("test@example.com", _, "drivefs"))
         .WillOnce(testing::Return(
-            std::make_pair("chrome token", GoogleServiceAuthError::NONE)));
-    host_delegate_->mock_flow().ExpectStartAndSucceed("chrome token",
-                                                      "auth token");
+            std::make_pair("auth token", GoogleServiceAuthError::NONE)));
     ExpectAccessToken(mojom::AccessTokenStatus::kSuccess, "auth token");
   }
   for (int i = 0; i < 3; ++i) {
@@ -773,7 +756,6 @@ TEST_F(DriveFsHostTest, GetAccessToken_SequentialRequests) {
                 GetAccessToken("test@example.com", _, "drivefs"))
         .WillOnce(testing::Return(std::make_pair(
             base::nullopt, GoogleServiceAuthError::ACCOUNT_DISABLED)));
-    host_delegate_->mock_flow().ExpectNoStartCalls();
     ExpectAccessToken(mojom::AccessTokenStatus::kAuthError, "");
   }
 }
@@ -785,7 +767,6 @@ TEST_F(DriveFsHostTest, GetAccessToken_GetAccessTokenFailure_Permanent) {
               GetAccessToken("test@example.com", _, "drivefs"))
       .WillOnce(testing::Return(std::make_pair(
           base::nullopt, GoogleServiceAuthError::ACCOUNT_DISABLED)));
-  host_delegate_->mock_flow().ExpectNoStartCalls();
   ExpectAccessToken(mojom::AccessTokenStatus::kAuthError, "");
 }
 
@@ -796,31 +777,6 @@ TEST_F(DriveFsHostTest, GetAccessToken_GetAccessTokenFailure_Transient) {
               GetAccessToken("test@example.com", _, "drivefs"))
       .WillOnce(testing::Return(std::make_pair(
           base::nullopt, GoogleServiceAuthError::SERVICE_UNAVAILABLE)));
-  host_delegate_->mock_flow().ExpectNoStartCalls();
-  ExpectAccessToken(mojom::AccessTokenStatus::kTransientError, "");
-}
-
-TEST_F(DriveFsHostTest, GetAccessToken_MintTokenFailure_Permanent) {
-  ASSERT_NO_FATAL_FAILURE(DoMount());
-
-  EXPECT_CALL(mock_identity_manager_,
-              GetAccessToken("test@example.com", _, "drivefs"))
-      .WillOnce(testing::Return(
-          std::make_pair("chrome token", GoogleServiceAuthError::NONE)));
-  host_delegate_->mock_flow().ExpectStartAndFail(
-      "chrome token", GoogleServiceAuthError::ACCOUNT_DISABLED);
-  ExpectAccessToken(mojom::AccessTokenStatus::kAuthError, "");
-}
-
-TEST_F(DriveFsHostTest, GetAccessToken_MintTokenFailure_Transient) {
-  ASSERT_NO_FATAL_FAILURE(DoMount());
-
-  EXPECT_CALL(mock_identity_manager_,
-              GetAccessToken("test@example.com", _, "drivefs"))
-      .WillOnce(testing::Return(
-          std::make_pair("chrome token", GoogleServiceAuthError::NONE)));
-  host_delegate_->mock_flow().ExpectStartAndFail(
-      "chrome token", GoogleServiceAuthError::SERVICE_UNAVAILABLE);
   ExpectAccessToken(mojom::AccessTokenStatus::kTransientError, "");
 }
 
@@ -833,7 +789,6 @@ TEST_F(DriveFsHostTest, GetAccessToken_UnmountDuringMojoRequest) {
           testing::InvokeWithoutArgs([&]() { host_->Unmount(); }),
           testing::Return(std::make_pair(
               base::nullopt, GoogleServiceAuthError::ACCOUNT_DISABLED))));
-  host_delegate_->mock_flow().ExpectNoStartCalls();
 
   base::RunLoop run_loop;
   delegate_ptr_.set_connection_error_handler(run_loop.QuitClosure());
@@ -1008,10 +963,7 @@ TEST_F(DriveFsHostTest, Remount_Cached) {
   EXPECT_CALL(mock_identity_manager_,
               GetAccessToken("test@example.com", _, "drivefs"))
       .WillOnce(testing::Return(
-          std::make_pair("chrome token", GoogleServiceAuthError::NONE)));
-
-  host_delegate_->mock_flow().ExpectStartAndSucceed("chrome token",
-                                                    "auth token");
+          std::make_pair("auth token", GoogleServiceAuthError::NONE)));
 
   ExpectAccessToken(mojom::AccessTokenStatus::kSuccess, "auth token");
 
@@ -1023,7 +975,7 @@ TEST_F(DriveFsHostTest, Remount_Cached) {
 
   // Second mount attempt should reuse already available token.
   ASSERT_NO_FATAL_FAILURE(DoMount());
-  ExpectAccessToken(mojom::AccessTokenStatus::kSuccess, "auth token");
+  EXPECT_EQ("auth token", init_access_token_.value_or(""));
 }
 
 TEST_F(DriveFsHostTest, Remount_CachedOnceOnly) {
@@ -1032,12 +984,9 @@ TEST_F(DriveFsHostTest, Remount_CachedOnceOnly) {
   EXPECT_CALL(mock_identity_manager_,
               GetAccessToken("test@example.com", _, "drivefs"))
       .WillOnce(testing::Return(
-          std::make_pair("chrome token", GoogleServiceAuthError::NONE)))
+          std::make_pair("auth token", GoogleServiceAuthError::NONE)))
       .WillOnce(testing::Return(
-          std::make_pair("chrome token 2", GoogleServiceAuthError::NONE)));
-
-  host_delegate_->mock_flow().ExpectStartAndSucceed("chrome token",
-                                                    "auth token");
+          std::make_pair("auth token 2", GoogleServiceAuthError::NONE)));
 
   ExpectAccessToken(mojom::AccessTokenStatus::kSuccess, "auth token");
 
@@ -1049,12 +998,9 @@ TEST_F(DriveFsHostTest, Remount_CachedOnceOnly) {
 
   // Second mount attempt should reuse already available token.
   ASSERT_NO_FATAL_FAILURE(DoMount());
-  ExpectAccessToken(mojom::AccessTokenStatus::kSuccess, "auth token");
+  EXPECT_EQ("auth token", init_access_token_.value_or(""));
 
-  // But if it asks for token more than once it goes straight to identity.
-  host_delegate_->mock_flow().ExpectStartAndSucceed("chrome token 2",
-                                                    "auth token 2");
-
+  // But if it asks for token it goes straight to identity.
   ExpectAccessToken(mojom::AccessTokenStatus::kSuccess, "auth token 2");
 }
 
@@ -1064,12 +1010,9 @@ TEST_F(DriveFsHostTest, Remount_CacheExpired) {
   EXPECT_CALL(mock_identity_manager_,
               GetAccessToken("test@example.com", _, "drivefs"))
       .WillOnce(testing::Return(
-          std::make_pair("chrome token", GoogleServiceAuthError::NONE)))
+          std::make_pair("auth token", GoogleServiceAuthError::NONE)))
       .WillOnce(testing::Return(
-          std::make_pair("chrome token 2", GoogleServiceAuthError::NONE)));
-
-  host_delegate_->mock_flow().ExpectStartAndSucceed("chrome token",
-                                                    "auth token");
+          std::make_pair("auth token 2", GoogleServiceAuthError::NONE)));
 
   ExpectAccessToken(mojom::AccessTokenStatus::kSuccess, "auth token");
 
@@ -1083,22 +1026,12 @@ TEST_F(DriveFsHostTest, Remount_CacheExpired) {
 
   // As the token expired second mount should go to identity.
   ASSERT_NO_FATAL_FAILURE(DoMount());
-  host_delegate_->mock_flow().ExpectStartAndSucceed("chrome token 2",
-                                                    "auth token 2");
-
   ExpectAccessToken(mojom::AccessTokenStatus::kSuccess, "auth token 2");
 }
 
 TEST_F(DriveFsHostTest, Remount_RequestInflight) {
   ASSERT_NO_FATAL_FAILURE(DoMount());
-
-  EXPECT_CALL(mock_identity_manager_,
-              GetAccessToken("test@example.com", _, "drivefs"))
-      .WillOnce(testing::Return(
-          std::make_pair("chrome token", GoogleServiceAuthError::NONE)));
-  OAuth2MintTokenFlow::Delegate* delegate = nullptr;
-  EXPECT_CALL(host_delegate_->mock_flow(), Start(_, "chrome token"))
-      .WillOnce(testing::SaveArg<0>(&delegate));
+  mock_identity_manager_.set_pause_requests(true);
 
   delegate_ptr_->GetAccessToken(
       "client ID", "app ID", {"scope1", "scope2"},
@@ -1112,13 +1045,272 @@ TEST_F(DriveFsHostTest, Remount_RequestInflight) {
   ASSERT_NO_FATAL_FAILURE(DoUnmount());
 
   // Now the response is ready.
-  delegate->OnMintTokenSuccess("auth token",
-                               base::TimeDelta::FromHours(1).InSeconds());
+  ASSERT_EQ(1u, mock_identity_manager_.callbacks().size());
+  std::move(mock_identity_manager_.callbacks().front())
+      .Run("auth token", clock_.Now() + base::TimeDelta::FromHours(1),
+           GoogleServiceAuthError(GoogleServiceAuthError::NONE));
+  mock_identity_manager_.bindings_->FlushForTesting();
 
   // Second mount will reuse previous token.
   ASSERT_NO_FATAL_FAILURE(DoMount());
+  EXPECT_EQ("auth token", init_access_token_.value_or(""));
+}
 
+TEST_F(DriveFsHostTest, Remount_RequestInflightCompleteAfterMount) {
+  ASSERT_NO_FATAL_FAILURE(DoMount());
+  mock_identity_manager_.set_pause_requests(true);
+
+  delegate_ptr_->GetAccessToken(
+      "client ID", "app ID", {"scope1", "scope2"},
+      base::BindLambdaForTesting([&](mojom::AccessTokenStatus status,
+                                     const std::string& token) { FAIL(); }));
+
+  base::Optional<base::TimeDelta> delay = base::TimeDelta::FromSeconds(5);
+  EXPECT_CALL(*host_delegate_, OnUnmounted(delay));
+  SendOnUnmounted(delay);
+  base::RunLoop().RunUntilIdle();
+  ASSERT_NO_FATAL_FAILURE(DoUnmount());
+
+  // Second mount will reuse previous token.
+  ASSERT_NO_FATAL_FAILURE(DoMount());
+  EXPECT_FALSE(init_access_token_);
+
+  // Now the response is ready.
+  ASSERT_EQ(1u, mock_identity_manager_.callbacks().size());
+  std::move(mock_identity_manager_.callbacks().front())
+      .Run("auth token", clock_.Now() + base::TimeDelta::FromHours(1),
+           GoogleServiceAuthError(GoogleServiceAuthError::NONE));
+  mock_identity_manager_.bindings_->FlushForTesting();
+
+  // A new request will reuse the cached token.
   ExpectAccessToken(mojom::AccessTokenStatus::kSuccess, "auth token");
+}
+
+ACTION_P(PopulateSearch, count) {
+  if (count < 0)
+    return;
+  std::vector<mojom::QueryItemPtr> items;
+  for (int i = 0; i < count; ++i) {
+    items.emplace_back(mojom::QueryItem::New());
+    items.back()->metadata = mojom::FileMetadata::New();
+    items.back()->metadata->capabilities = mojom::Capabilities::New();
+  }
+  *arg0 = std::move(items);
+}
+
+MATCHER_P5(MatchQuery, source, text, title, shared, offline, "") {
+  if (arg.query_source != source)
+    return false;
+  if (text != nullptr) {
+    if (!arg.text_content || *arg.text_content != base::StringPiece(text))
+      return false;
+  } else {
+    if (arg.text_content)
+      return false;
+  }
+  if (title != nullptr) {
+    if (!arg.title || *arg.title != base::StringPiece(title))
+      return false;
+  } else {
+    if (arg.title)
+      return false;
+  }
+  return arg.shared_with_me == shared && arg.available_offline == offline;
+};
+
+TEST_F(DriveFsHostTest, Search) {
+  ASSERT_NO_FATAL_FAILURE(DoMount());
+
+  EXPECT_CALL(mock_drivefs_, OnStartSearchQuery(_));
+  EXPECT_CALL(mock_drivefs_, OnGetNextPage(_))
+      .WillOnce(testing::DoAll(
+          PopulateSearch(3), testing::Return(drive::FileError::FILE_ERROR_OK)));
+
+  mojom::QueryParametersPtr params = mojom::QueryParameters::New();
+  params->query_source = mojom::QueryParameters::QuerySource::kLocalOnly;
+
+  bool called = false;
+  mojom::QueryParameters::QuerySource source = host_->PerformSearch(
+      std::move(params),
+      base::BindLambdaForTesting(
+          [&called](drive::FileError err,
+                    base::Optional<std::vector<mojom::QueryItemPtr>> items) {
+            called = true;
+            EXPECT_EQ(drive::FileError::FILE_ERROR_OK, err);
+            EXPECT_EQ(3u, items->size());
+          }));
+  EXPECT_EQ(mojom::QueryParameters::QuerySource::kLocalOnly, source);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(called);
+}
+
+TEST_F(DriveFsHostTest, Search_Fail) {
+  ASSERT_NO_FATAL_FAILURE(DoMount());
+
+  EXPECT_CALL(mock_drivefs_, OnStartSearchQuery(_));
+  EXPECT_CALL(mock_drivefs_, OnGetNextPage(_))
+      .WillOnce(testing::Return(drive::FileError::FILE_ERROR_ACCESS_DENIED));
+
+  mojom::QueryParametersPtr params = mojom::QueryParameters::New();
+  params->query_source = mojom::QueryParameters::QuerySource::kCloudOnly;
+
+  bool called = false;
+  mojom::QueryParameters::QuerySource source = host_->PerformSearch(
+      std::move(params),
+      base::BindLambdaForTesting(
+          [&called](drive::FileError err,
+                    base::Optional<std::vector<mojom::QueryItemPtr>> items) {
+            called = true;
+            EXPECT_EQ(drive::FileError::FILE_ERROR_ACCESS_DENIED, err);
+          }));
+  EXPECT_EQ(mojom::QueryParameters::QuerySource::kCloudOnly, source);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(called);
+}
+
+TEST_F(DriveFsHostTest, Search_OnlineToOffline) {
+  ASSERT_NO_FATAL_FAILURE(DoMount());
+
+  network_.SetConnectionType(
+      net::NetworkChangeNotifier::ConnectionType::CONNECTION_NONE);
+
+  EXPECT_CALL(mock_drivefs_, OnStartSearchQuery(_));
+  EXPECT_CALL(mock_drivefs_, OnGetNextPage(_))
+      .WillOnce(testing::DoAll(
+          PopulateSearch(3), testing::Return(drive::FileError::FILE_ERROR_OK)));
+
+  mojom::QueryParametersPtr params = mojom::QueryParameters::New();
+  params->query_source = mojom::QueryParameters::QuerySource::kCloudOnly;
+
+  bool called = false;
+  mojom::QueryParameters::QuerySource source = host_->PerformSearch(
+      std::move(params),
+      base::BindLambdaForTesting(
+          [&called](drive::FileError err,
+                    base::Optional<std::vector<mojom::QueryItemPtr>> items) {
+            called = true;
+            EXPECT_EQ(drive::FileError::FILE_ERROR_OK, err);
+            EXPECT_EQ(3u, items->size());
+          }));
+  EXPECT_EQ(mojom::QueryParameters::QuerySource::kLocalOnly, source);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(called);
+}
+
+TEST_F(DriveFsHostTest, Search_OnlineToOfflineFallback) {
+  ASSERT_NO_FATAL_FAILURE(DoMount());
+
+  EXPECT_CALL(mock_drivefs_,
+              OnStartSearchQuery(
+                  MatchQuery(mojom::QueryParameters::QuerySource::kCloudOnly,
+                             "foobar", nullptr, false, false)));
+  EXPECT_CALL(mock_drivefs_,
+              OnStartSearchQuery(
+                  MatchQuery(mojom::QueryParameters::QuerySource::kLocalOnly,
+                             nullptr, "foobar", false, false)));
+
+  EXPECT_CALL(mock_drivefs_, OnGetNextPage(_))
+      .WillOnce(testing::Return(drive::FileError::FILE_ERROR_NO_CONNECTION))
+      .WillOnce(testing::DoAll(
+          PopulateSearch(3), testing::Return(drive::FileError::FILE_ERROR_OK)));
+
+  mojom::QueryParametersPtr params = mojom::QueryParameters::New();
+  params->query_source = mojom::QueryParameters::QuerySource::kCloudOnly;
+  params->text_content = "foobar";
+
+  bool called = false;
+  mojom::QueryParameters::QuerySource source = host_->PerformSearch(
+      std::move(params),
+      base::BindLambdaForTesting(
+          [&called](drive::FileError err,
+                    base::Optional<std::vector<mojom::QueryItemPtr>> items) {
+            called = true;
+            EXPECT_EQ(drive::FileError::FILE_ERROR_OK, err);
+            EXPECT_EQ(3u, items->size());
+          }));
+  EXPECT_EQ(mojom::QueryParameters::QuerySource::kCloudOnly, source);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(called);
+}
+
+TEST_F(DriveFsHostTest, Search_SharedWithMeCaching) {
+  ASSERT_NO_FATAL_FAILURE(DoMount());
+
+  EXPECT_CALL(mock_drivefs_,
+              OnStartSearchQuery(
+                  MatchQuery(mojom::QueryParameters::QuerySource::kCloudOnly,
+                             nullptr, nullptr, true, false)))
+      .Times(2);
+  EXPECT_CALL(mock_drivefs_,
+              OnStartSearchQuery(
+                  MatchQuery(mojom::QueryParameters::QuerySource::kLocalOnly,
+                             nullptr, nullptr, true, false)))
+      .Times(1);
+
+  EXPECT_CALL(mock_drivefs_, OnGetNextPage(_))
+      .WillOnce(testing::DoAll(
+          PopulateSearch(3), testing::Return(drive::FileError::FILE_ERROR_OK)))
+      .WillOnce(testing::DoAll(
+          PopulateSearch(3), testing::Return(drive::FileError::FILE_ERROR_OK)))
+      .WillOnce(testing::DoAll(
+          PopulateSearch(3), testing::Return(drive::FileError::FILE_ERROR_OK)));
+
+  mojom::QueryParametersPtr params = mojom::QueryParameters::New();
+  params->query_source = mojom::QueryParameters::QuerySource::kCloudOnly;
+  params->shared_with_me = true;
+
+  bool called = false;
+  mojom::QueryParameters::QuerySource source = host_->PerformSearch(
+      std::move(params),
+      base::BindLambdaForTesting(
+          [&called](drive::FileError err,
+                    base::Optional<std::vector<mojom::QueryItemPtr>> items) {
+            called = true;
+            EXPECT_EQ(drive::FileError::FILE_ERROR_OK, err);
+            EXPECT_EQ(3u, items->size());
+          }));
+  EXPECT_EQ(mojom::QueryParameters::QuerySource::kCloudOnly, source);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(called);
+
+  params = mojom::QueryParameters::New();
+  params->query_source = mojom::QueryParameters::QuerySource::kCloudOnly;
+  params->shared_with_me = true;
+
+  called = false;
+  source = host_->PerformSearch(
+      std::move(params),
+      base::BindLambdaForTesting(
+          [&called](drive::FileError err,
+                    base::Optional<std::vector<mojom::QueryItemPtr>> items) {
+            called = true;
+            EXPECT_EQ(drive::FileError::FILE_ERROR_OK, err);
+            EXPECT_EQ(3u, items->size());
+          }));
+  EXPECT_EQ(mojom::QueryParameters::QuerySource::kLocalOnly, source);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(called);
+
+  // Time has passed...
+  clock_.Advance(base::TimeDelta::FromHours(1));
+
+  params = mojom::QueryParameters::New();
+  params->query_source = mojom::QueryParameters::QuerySource::kCloudOnly;
+  params->shared_with_me = true;
+
+  called = false;
+  source = host_->PerformSearch(
+      std::move(params),
+      base::BindLambdaForTesting(
+          [&called](drive::FileError err,
+                    base::Optional<std::vector<mojom::QueryItemPtr>> items) {
+            called = true;
+            EXPECT_EQ(drive::FileError::FILE_ERROR_OK, err);
+            EXPECT_EQ(3u, items->size());
+          }));
+  EXPECT_EQ(mojom::QueryParameters::QuerySource::kCloudOnly, source);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(called);
 }
 
 }  // namespace

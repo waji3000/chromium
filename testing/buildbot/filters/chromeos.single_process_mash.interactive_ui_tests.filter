@@ -37,20 +37,8 @@
 -TestAsNormalAndGuestUser/SpokenFeedbackTest.OverviewMode/0
 -TestAsNormalAndGuestUser/SpokenFeedbackTest.OverviewMode/1
 
-# TabDragging: crbug.com/890071
--TabDragging/DetachToBrowserInSeparateDisplayTabDragControllerTest.DragBrowserWindowWhenMajorityOfBoundsInSecondDisplay/0
--TabDragging/DetachToBrowserTabDragControllerTest.DeferredTargetTabStripTest/1
--TabDragging/DetachToBrowserTabDragControllerTest.DetachToOwnWindowFromMaximizedWindow/1
--TabDragging/DetachToBrowserTabDragControllerTest.DetachToOwnWindowWhileInImmersiveFullscreenMode/1
--TabDragging/DetachToBrowserTabDragControllerTest.DoNotAttachToOtherWindowTest/1
--TabDragging/DetachToBrowserTabDragControllerTest.DoNotObserveDraggedWidgetAfterDragEnds/1
--TabDragging/DetachToBrowserTabDragControllerTest.DragToOverviewNewWindowItem/1
--TabDragging/DetachToBrowserTabDragControllerTest.DragToOverviewWindow/1
--TabDragging/DetachToBrowserTabDragControllerTest.DragToSeparateWindow/1
--TabDragging/DetachToBrowserTabDragControllerTest.DragWithMaskedWindows/0
--TabDragging/DetachToBrowserTabDragControllerTest.DragWithMaskedWindows/1
--TabDragging/DetachToBrowserTabDragControllerTestTouch.PressSecondFingerWhileDetached/0
--TabDragging/DetachToBrowserTabDragControllerTestTouch.SecondFingerPressTest/0
-
 # This test is flaky. https://crbug.com/897879
 -ExtensionApiTest.DisplayModeWindowIsInFullscreen
+
+# This test is flaky. https://crbug.com/905789
+-PasswordManagerInteractiveTest.PromptForXHRWithoutOnSubmit

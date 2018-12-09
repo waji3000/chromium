@@ -41,11 +41,14 @@ OffscreenCanvas::OffscreenCanvas(const IntSize& size) : size_(size) {
 
 OffscreenCanvas* OffscreenCanvas::Create(unsigned width, unsigned height) {
   UMA_HISTOGRAM_BOOLEAN("Blink.OffscreenCanvas.NewOffscreenCanvas", true);
-  return new OffscreenCanvas(
+  return MakeGarbageCollected<OffscreenCanvas>(
       IntSize(clampTo<int>(width), clampTo<int>(height)));
 }
 
 OffscreenCanvas::~OffscreenCanvas() {
+  CanvasRenderingContextHost::RecordCanvasSizeToUMA(
+      Size().Width(), Size().Height(),
+      CanvasRenderingContextHost::HostType::kOffscreenCanvasHost);
   v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(
       -memory_usage_);
 }
@@ -215,7 +218,7 @@ CanvasRenderingContext* OffscreenCanvas::GetCanvasRenderingContext(
   // Unknown type.
   if (context_type == CanvasRenderingContext::kContextTypeUnknown ||
       (context_type == CanvasRenderingContext::kContextXRPresent &&
-       !OriginTrials::WebXREnabled(execution_context))) {
+       !origin_trials::WebXREnabled(execution_context))) {
     return nullptr;
   }
 
@@ -423,9 +426,6 @@ FontSelector* OffscreenCanvas::GetFontSelector() {
 }
 
 void OffscreenCanvas::UpdateMemoryUsage() {
-  CanvasRenderingContextHost::RecordCanvasSizeToUMA(
-      Size().Width(), Size().Height(), true /* OffscreenCanvas */);
-
   int bytes_per_pixel = ColorParams().BytesPerPixel();
 
   base::CheckedNumeric<int32_t> memory_usage_checked = bytes_per_pixel;

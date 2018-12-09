@@ -15,6 +15,7 @@
 #include "base/callback.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
+#include "components/autofill_assistant/browser/selector.h"
 
 namespace autofill_assistant {
 class WebController;
@@ -50,32 +51,36 @@ class BatchElementChecker {
   virtual ~BatchElementChecker();
 
   // Callback for AddElementCheck. Argument is true if the check passed.
+  //
+  // An ElementCheckCallback must not delete its calling BatchElementChecker.
   using ElementCheckCallback = base::OnceCallback<void(bool)>;
 
   // Callback for AddFieldValueCheck. Argument is true is the element exists.
   // The string contains the field value, or an empty string if accessing the
   // value failed.
+  //
+  // An ElementCheckCallback must not delete its calling BatchElementChecker.
   using GetFieldValueCallback =
       base::OnceCallback<void(bool, const std::string&)>;
 
   // Checks an an element.
   //
-  // kElementCheck checks whether at least one element given by |selectors|
+  // kElementCheck checks whether at least one element given by |selector|
   // exists on the web page.
   //
-  // kVisibilityCheck checks whether at least one element given by |selectors|
+  // kVisibilityCheck checks whether at least one element given by |selector|
   // is visible on the page.
   //
   // New element checks cannot be added once Run has been called.
   void AddElementCheck(ElementCheckType check_type,
-                       const std::vector<std::string>& selectors,
+                       const Selector& selector,
                        ElementCheckCallback callback);
 
-  // Gets the value of |selectors| and return the result through |callback|. The
+  // Gets the value of |selector| and return the result through |callback|. The
   // returned value will be the empty string in case of error or empty value.
   //
   // New field checks cannot be added once Run has been called.
-  void AddFieldValueCheck(const std::vector<std::string>& selectors,
+  void AddFieldValueCheck(const Selector& selector,
                           GetFieldValueCallback callback);
 
   // Runs the checks until all elements exist or for |duration|, whichever one
@@ -84,16 +89,21 @@ class BatchElementChecker {
   //
   // |duration| can be 0. In this case the checks are run once, without waiting.
   // |try_done| is run at the end of each try.
+  //
+  // |try_done| or |all_done| can delete their calling BatchElementChecker to
+  // interrupt any future checks. If |try_done| deletes BatchElementChecker,
+  // |all_done| will never be called.
+  //
+  // Sync |try_done| and |all_done| can be called after the element checker has
+  // been deleted, they should always be called with callbacks that use a weak
+  // ptr instead of Unretained(this), even from objects that own the checker.
   void Run(const base::TimeDelta& duration,
            base::RepeatingCallback<void()> try_done,
            base::OnceCallback<void()> all_done);
 
-  // Makes any pending Run stop after the end of the current try.
-  void StopTrying() { stopped_ = true; }
-
   // Returns true if all element that were asked for have been found. Can be
   // called while Run is progress or afterwards.
-  bool all_found() { return all_found_; }
+  bool all_found();
 
  private:
   // Tries running the checks, reporting only successes.
@@ -124,19 +134,21 @@ class BatchElementChecker {
 
   WebController* const web_controller_;
 
-  // A map of ElementCheck arguments (check_type, selectors) to callbacks that
+  // A map of ElementCheck arguments (check_type, selector) to callbacks that
   // take the result of the check.
-  std::map<std::pair<ElementCheckType, std::vector<std::string>>,
+  std::map<std::pair<ElementCheckType, Selector>,
            std::vector<ElementCheckCallback>>
       element_check_callbacks_;
 
-  // A map of GetFieldValue arguments (selectors) to callbacks that take the
+  // A map of GetFieldValue arguments (selector) to callbacks that take the
   // field value.
-  std::map<std::vector<std::string>, std::vector<GetFieldValueCallback>>
+  std::map<Selector, std::vector<GetFieldValueCallback>>
       get_field_value_callbacks_;
   int pending_checks_count_;
   bool all_found_;
-  bool stopped_;
+
+  // Run() was called. Checking elements might or might not have finished yet.
+  bool started_;
 
   // The callback built for Try(). It is kept around while going through the
   // maps and called once all selectors in that map have been looked up once,

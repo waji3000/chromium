@@ -57,6 +57,10 @@ const char kAccessibilityAutoclickEventType[] =
 // another event type action, or whether it should stay as the other event type.
 const char kAccessibilityAutoclickRevertToLeftClick[] =
     "settings.a11y.autoclick_revert_to_left_click";
+// The default threshold of mouse movement, measured in DIP, that will initiate
+// a new autoclick.
+const char kAccessibilityAutoclickMovementThreshold[] =
+    "settings.a11y.autoclick_movement_threshold";
 // A boolean pref which determines whether caret highlighting is enabled.
 const char kAccessibilityCaretHighlightEnabled[] =
     "settings.a11y.caret_highlight";
@@ -325,6 +329,10 @@ const char kQuickUnlockPinSalt[] = "quick_unlock.pin.salt";
 // Dictionary prefs in local state that keeps information about detachable
 // bases - for exmaple the last used base per user.
 const char kDetachableBaseDevices[] = "ash.detachable_base.devices";
+
+// Integer pref storing the number of Assistant warmer welcome triggered times.
+const char kAssistantNumWarmerWelcomeTriggered[] =
+    "ash.assistant.num_warmer_welcome_triggered";
 
 // NOTE: New prefs should start with the "ash." prefix. Existing prefs moved
 // into this file should not be renamed, since they may be synced.

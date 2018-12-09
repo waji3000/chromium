@@ -19,6 +19,7 @@
 #include "chromeos/assistant/internal/internal_util.h"
 #include "chromeos/services/assistant/assistant_manager_service.h"
 #include "chromeos/services/assistant/assistant_settings_manager_impl.h"
+#include "chromeos/services/assistant/chromium_api_delegate.h"
 #include "chromeos/services/assistant/platform_api_impl.h"
 #include "chromeos/services/assistant/public/mojom/assistant.mojom.h"
 #include "libassistant/shared/internal_api/assistant_manager_delegate.h"
@@ -44,6 +45,29 @@ namespace chromeos {
 namespace assistant {
 
 class Service;
+
+// Enumeration of Assistant query response type, also recorded in histograms.
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused. Only append to this enum is allowed
+// if the possible type grows.
+enum class AssistantQueryResponseType {
+  // Query without response.
+  kUnspecified = 0,
+  // Query results in device actions (e.g. turn on bluetooth/WiFi).
+  kDeviceAction = 1,
+  // Query results in answer cards with contents rendered inside the
+  // Assistant UI.
+  kInlineElement = 2,
+  // Query results in searching on Google, indicating that Assistant
+  // doesn't know what to do.
+  kSearchFallback = 3,
+  // Query results in specific actions (e.g. opening a web app such as YouTube
+  // or Facebook, some deeplink actions such as taking a screenshot or opening
+  // chrome settings page), indicating that Assistant knows what to do.
+  kTargetedAction = 4,
+  // Special enumerator value used by histogram macros.
+  kMaxValue = kTargetedAction
+};
 
 // Implementation of AssistantManagerService based on LibAssistant.
 // This is the main class that ineracts with LibAssistant.
@@ -92,9 +116,11 @@ class AssistantManagerServiceImpl
   // mojom::Assistant overrides:
   void StartCachedScreenContextInteraction() override;
   void StartMetalayerInteraction(const gfx::Rect& region) override;
+  void StartTextInteraction(const std::string& query, bool allow_tts) override;
   void StartVoiceInteraction() override;
+  void StartWarmerWelcomeInteraction(int num_warmer_welcome_triggered,
+                                     bool allow_tts) override;
   void StopActiveInteraction(bool cancel_conversation) override;
-  void SendTextQuery(const std::string& query) override;
   void AddAssistantInteractionSubscriber(
       mojom::AssistantInteractionSubscriberPtr subscriber) override;
   void AddAssistantNotificationSubscriber(
@@ -115,6 +141,10 @@ class AssistantManagerServiceImpl
   void OnShowText(const std::string& text) override;
   void OnOpenUrl(const std::string& url) override;
   void OnShowNotification(const action::Notification& notification) override;
+  void OnOpenAndroidApp(const action::AndroidAppInfo& app_info,
+                        const action::InteractionInfo& interaction) override;
+  void OnVerifyAndroidApp(const std::vector<action::AndroidAppInfo>& apps_info,
+                          const action::InteractionInfo& interaction) override;
 
   // AssistantEventObserver overrides:
   void OnSpeechLevelUpdated(float speech_level) override;
@@ -159,6 +189,9 @@ class AssistantManagerServiceImpl
   // Update device id, type and locale
   void UpdateDeviceSettings();
 
+  // Sync speaker id enrollment status.
+  void SyncSpeakerIdEnrollmentStatus();
+
   void HandleGetSettingsResponse(
       base::RepeatingCallback<void(const std::string&)> callback,
       const std::string& settings);
@@ -168,6 +201,14 @@ class AssistantManagerServiceImpl
   void HandleSpeakerIdEnrollmentUpdate(
       const assistant_client::SpeakerIdEnrollmentUpdate& update);
   void HandleStopSpeakerIdEnrollment(base::RepeatingCallback<void()> callback);
+  void HandleSpeakerIdEnrollmentStatusSync(
+      const assistant_client::SpeakerIdEnrollmentUpdate& update);
+
+  void HandleOpenAndroidAppResponse(const action::InteractionInfo& interaction,
+                                    bool app_opened);
+  void HandleVerifyAndroidAppResponse(
+      const action::InteractionInfo& interaction,
+      std::vector<mojom::AndroidAppInfoPtr> apps_info);
 
   void OnConversationTurnStartedOnMainThread(bool is_mic_open);
   void OnConversationTurnFinishedOnMainThread(
@@ -208,10 +249,20 @@ class AssistantManagerServiceImpl
 
   void FillServerExperimentIds(std::vector<std::string>* server_experiment_ids);
 
+  // Record the response type for each query. Note that query on device
+  // actions (e.g. turn on Bluetooth, turn on WiFi) will cause duplicate
+  // record because it interacts with server twice on on the same query.
+  // The first round interaction checks IsSettingSupported with no responses
+  // sent back and ends normally (will be recorded as kUnspecified), and
+  // settings modification proto along with any text/voice responses would
+  // be sent back in the second round (recorded as kDeviceAction).
+  void RecordQueryResponseTypeUMA();
+
   State state_ = State::STOPPED;
   std::unique_ptr<PlatformApiImpl> platform_api_;
   std::unique_ptr<action::CrosActionModule> action_module_;
   scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_;
+  ChromiumApiDelegate chromium_api_delegate_;
   std::unique_ptr<assistant_client::AssistantManager> assistant_manager_;
   std::unique_ptr<AssistantSettingsManagerImpl> assistant_settings_manager_;
   // same ownership as assistant_manager_.
@@ -229,6 +280,9 @@ class AssistantManagerServiceImpl
 
   bool spoken_feedback_enabled_ = false;
 
+  // Whether the speaker id enrollment has complete for the user.
+  bool speaker_id_enrollment_done_ = false;
+
   ax::mojom::AssistantExtraPtr assistant_extra_;
   std::unique_ptr<ui::AssistantTree> assistant_tree_;
   std::vector<uint8_t> assistant_screenshot_;
@@ -237,6 +291,10 @@ class AssistantManagerServiceImpl
   base::TimeTicks started_time_;
 
   base::Thread background_thread_;
+
+  bool receive_modify_settings_proto_response_ = false;
+  bool receive_inline_response_ = false;
+  std::string receive_url_response_;
 
   base::WeakPtrFactory<AssistantManagerServiceImpl> weak_factory_;
 

@@ -20,6 +20,7 @@
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
+#include "services/metrics/public/cpp/ukm_source_id.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "third_party/blink/public/mojom/loader/previews_resource_loading_hints.mojom.h"
 #include "url/gurl.h"
@@ -59,11 +60,13 @@ void ResourceLoadingHintsWebContentsObserver::DidFinishNavigation(
   }
 
   DCHECK(previews::params::IsResourceLoadingHintsEnabled());
-  SendResourceLoadingHints(navigation_handle);
+  SendResourceLoadingHints(navigation_handle,
+                           previews_user_data->is_redirect());
 }
 
 void ResourceLoadingHintsWebContentsObserver::SendResourceLoadingHints(
-    content::NavigationHandle* navigation_handle) const {
+    content::NavigationHandle* navigation_handle,
+    bool is_redirect) const {
   // Hints should be sent only after the renderer frame has committed.
   DCHECK(navigation_handle->HasCommitted());
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
@@ -81,9 +84,17 @@ void ResourceLoadingHintsWebContentsObserver::SendResourceLoadingHints(
 
   UMA_HISTOGRAM_BOOLEAN(
       "ResourceLoadingHints.ResourcePatternsAvailableAtCommit", !hints.empty());
+  if (is_redirect) {
+    UMA_HISTOGRAM_BOOLEAN(
+        "ResourceLoadingHints.ResourcePatternsAvailableAtCommitForRedirect",
+        !hints.empty());
+  }
 
   if (hints.empty())
     return;
+
+  hints_ptr->ukm_source_id = ukm::ConvertToSourceId(
+      navigation_handle->GetNavigationId(), ukm::SourceIdType::NAVIGATION_ID);
   for (const std::string& hint : hints)
     hints_ptr->subresources_to_block.push_back(hint);
 
@@ -103,3 +114,5 @@ const std::vector<std::string> ResourceLoadingHintsWebContentsObserver::
   return previews_ui_service->GetResourceLoadingHintsResourcePatternsToBlock(
       document_gurl);
 }
+
+WEB_CONTENTS_USER_DATA_KEY_IMPL(ResourceLoadingHintsWebContentsObserver)

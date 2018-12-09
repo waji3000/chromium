@@ -96,8 +96,31 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
   bool HasWebUIBindings(int child_id) override;
   void GrantSendMidiSysExMessage(int child_id) override;
   bool CanAccessDataForOrigin(int child_id, const GURL& url) override;
+
+  // This function will check whether |origin| requires process isolation, and
+  // if so, it will return true and put the most specific matching isolated
+  // origin into |result|.
+  //
+  // Such origins may be registered with the --isolate-origins command-line
+  // flag, via features::IsolateOrigins, via an IsolateOrigins enterprise
+  // policy, or by a content/ embedder using
+  // ContentBrowserClient::GetOriginsRequiringDedicatedProcess().
+  //
+  // If |origin| does not require process isolation, this function will return
+  // false, and |result| will be a unique origin. This means that neither
+  // |origin|, nor any origins for which |origin| is a subdomain, have been
+  // registered as isolated origins.
+  //
+  // For example, if both https://isolated.com/ and
+  // https://bar.foo.isolated.com/ are registered as isolated origins, then the
+  // values returned in |result| are:
+  //   https://isolated.com/             -->  https://isolated.com/
+  //   https://foo.isolated.com/         -->  https://isolated.com/
+  //   https://bar.foo.isolated.com/     -->  https://bar.foo.isolated.com/
+  //   https://baz.bar.foo.isolated.com/ -->  https://bar.foo.isolated.com/
+  //   https://unisolated.com/           -->  (unique origin)
   bool GetMatchingIsolatedOrigin(const url::Origin& origin,
-                                 url::Origin* result) override;
+                                 url::Origin* result);
 
   // A version of GetMatchingIsolatedOrigin that takes in both the |origin| and
   // the |site_url| that |origin| corresponds to.  |site_url| is the key by
@@ -136,12 +159,6 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
   // Upon creation, child processes should register themselves by calling this
   // this method exactly once.
   void Add(int child_id);
-
-  // Upon creation, worker thread child processes should register themselves by
-  // calling this this method exactly once. Workers that are not shared will
-  // inherit permissions from their parent renderer process identified with
-  // |main_render_process_id|.
-  void AddWorker(int worker_child_id, int main_render_process_id);
 
   // Upon destruction, child processess should unregister themselves by caling
   // this method exactly once.
@@ -303,7 +320,6 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
 
   typedef std::set<std::string> SchemeSet;
   typedef std::map<int, std::unique_ptr<SecurityState>> SecurityStateMap;
-  typedef std::map<int, int> WorkerToMainProcessMap;
   typedef std::map<storage::FileSystemType, int> FileSystemPermissionPolicyMap;
 
   // Obtain an instance of ChildProcessSecurityPolicyImpl via GetInstance().
@@ -335,9 +351,7 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
       int permission);
 
   // Determines if certain permissions were granted for a file. |permissions|
-  // is an internally defined bit-set. If |child_id| is a worker process,
-  // this returns true if either the worker process or its parent renderer
-  // has permissions for the file.
+  // is an internally defined bit-set.
   bool HasPermissionsForFile(int child_id,
                              const base::FilePath& file,
                              int permissions);
@@ -376,10 +390,6 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
   // owned by this object and are protected by |lock_|.  References to them must
   // not escape this class.
   SecurityStateMap security_state_ GUARDED_BY(lock_);
-
-  // This maps keeps the record of which js worker thread child process
-  // corresponds to which main js thread child process.
-  WorkerToMainProcessMap worker_map_ GUARDED_BY(lock_);
 
   FileSystemPermissionPolicyMap file_system_policy_map_ GUARDED_BY(lock_);
 

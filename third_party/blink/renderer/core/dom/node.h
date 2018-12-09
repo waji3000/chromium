@@ -51,6 +51,7 @@ class Element;
 class Event;
 class EventDispatchHandlingState;
 class ExceptionState;
+class FlatTreeNodeData;
 class GetRootNodeOptions;
 class HTMLQualifiedName;
 class HTMLSlotElement;
@@ -74,6 +75,7 @@ class ShadowRoot;
 template <typename NodeType>
 class StaticNodeTypeList;
 using StaticNodeList = StaticNodeTypeList<Node>;
+class StringOrTrustedScript;
 class StyleChangeReasonForTracing;
 class V8ScrollStateCallback;
 class WebPluginContainerImpl;
@@ -207,7 +209,7 @@ class CORE_EXPORT Node : public EventTarget {
   void NativeApplyScroll(ScrollState&);
   void CallDistributeScroll(ScrollState&);
   void CallApplyScroll(ScrollState&);
-  void WillBeginCustomizedScrollPhase(ScrollCustomization::ScrollDirection);
+  void WillBeginCustomizedScrollPhase(scroll_customization::ScrollDirection);
   void DidEndCustomizedScrollPhase();
 
   Node& TreeRoot() const;
@@ -256,6 +258,8 @@ class CORE_EXPORT Node : public EventTarget {
 
   String textContent(bool convert_brs_to_newlines = false) const;
   void setTextContent(const String&);
+  void textContent(StringOrTrustedScript& result);
+  virtual void setTextContent(const StringOrTrustedScript&, ExceptionState&);
 
   bool SupportsAltText();
 
@@ -462,6 +466,9 @@ class CORE_EXPORT Node : public EventTarget {
   void SetNeedsStyleRecalc(StyleChangeType, const StyleChangeReasonForTracing&);
   void ClearNeedsStyleRecalc();
 
+  // Propagates a dirty bit breadcrumb for this element up the ancestor chain.
+  void MarkAncestorsWithChildNeedsStyleRecalc();
+
   bool NeedsReattachLayoutTree() const {
     return GetFlag(kNeedsReattachLayoutTree);
   }
@@ -480,6 +487,11 @@ class CORE_EXPORT Node : public EventTarget {
   }
 
   void MarkAncestorsWithChildNeedsReattachLayoutTree();
+
+  void SetForceReattachLayoutTree() { SetFlag(kForceReattachLayoutTree); }
+  bool GetForceReattachLayoutTree() {
+    return GetFlag(kForceReattachLayoutTree);
+  }
 
   bool NeedsDistributionRecalc() const;
 
@@ -631,7 +643,7 @@ class CORE_EXPORT Node : public EventTarget {
   // Whether or not a selection can be started in this object
   virtual bool CanStartSelection() const;
 
-  // -----------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
   // Integration with layout tree
 
   // As layoutObject() includes a branch you should avoid calling it repeatedly
@@ -657,7 +669,6 @@ class CORE_EXPORT Node : public EventTarget {
     // objects when we need to do whitespace re-attachment.
     LayoutObject* previous_in_flow = nullptr;
     bool performing_reattach = false;
-    bool clear_invalidation = false;
     // True if the previous_in_flow member is up-to-date, even if it is nullptr.
     bool use_previous_in_flow = false;
 
@@ -686,20 +697,26 @@ class CORE_EXPORT Node : public EventTarget {
   // such a method (on Document and Element).
   bool ShouldCallRecalcStyle(StyleRecalcChange);
 
+  // ---------------------------------------------------------------------------
+  // Inline ComputedStyle accessors
+  //
+  // Note that the following 'inline' functions are not defined in this header,
+  // but in node_computed_style.h. Please include that file if you want to use
+  // these functions.
+
   // Wrapper for nodes that don't have a layoutObject, but still cache the style
   // (like HTMLOptionElement).
-  ComputedStyle* MutableComputedStyle() const;
-  const ComputedStyle* GetComputedStyle() const;
-  const ComputedStyle* ParentComputedStyle() const;
-
-  const ComputedStyle& ComputedStyleRef() const;
+  inline ComputedStyle* MutableComputedStyle() const;
+  inline const ComputedStyle* GetComputedStyle() const;
+  inline const ComputedStyle* ParentComputedStyle() const;
+  inline const ComputedStyle& ComputedStyleRef() const;
 
   const ComputedStyle* EnsureComputedStyle(
       PseudoId pseudo_element_specifier = kPseudoIdNone) {
     return VirtualEnsureComputedStyle(pseudo_element_specifier);
   }
 
-  // -----------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
   // Notification of document structure changes (see container_node.h for more
   // notification methods)
   //
@@ -763,6 +780,10 @@ class CORE_EXPORT Node : public EventTarget {
   NodeListsNodeData* NodeLists();
   void ClearNodeLists();
 
+  FlatTreeNodeData* GetFlatTreeNodeData() const;
+  FlatTreeNodeData& EnsureFlatTreeNodeData();
+  void ClearFlatTreeNodeData();
+
   virtual bool WillRespondToMouseMoveEvents();
   virtual bool WillRespondToMouseClickEvents();
   virtual bool WillRespondToTouchEvents();
@@ -775,8 +796,6 @@ class CORE_EXPORT Node : public EventTarget {
   unsigned short compareDocumentPosition(
       const Node*,
       ShadowTreesTreatment = kTreatShadowTreesAsDisconnected) const;
-
-  Node* ToNode() final;
 
   const AtomicString& InterfaceName() const override;
   ExecutionContext* GetExecutionContext() const final;
@@ -862,6 +881,8 @@ class CORE_EXPORT Node : public EventTarget {
     return GetFlag(kInDOMNodeRemovedHandler);
   }
 
+  bool IsEffectiveRootScroller() const;
+
   // If the node is a plugin, then this returns its WebPluginContainer.
   WebPluginContainerImpl* GetWebPluginContainer() const;
 
@@ -920,11 +941,13 @@ class CORE_EXPORT Node : public EventTarget {
     // Temporary flag for some UseCounter items. crbug.com/859391.
     kInDOMNodeRemovedHandler = 1 << 29,
 
+    kForceReattachLayoutTree = 1 << 30,
+
     kDefaultNodeFlags =
         kIsFinishedParsingChildrenFlag | kNeedsReattachStyleChange
   };
 
-  // 3 bits remaining.
+  // 1 bit remaining.
 
   bool GetFlag(NodeFlags mask) const { return node_flags_ & mask; }
   void SetFlag(bool f, NodeFlags mask) {
@@ -981,7 +1004,6 @@ class CORE_EXPORT Node : public EventTarget {
 
   void SetTreeScope(TreeScope* scope) { tree_scope_ = scope; }
 
-  void MarkAncestorsWithChildNeedsStyleRecalc();
   static void MarkAncestorsWithChildNeedsStyleRecalc(Node* child) {
     child->MarkAncestorsWithChildNeedsStyleRecalc();
   }
@@ -997,6 +1019,8 @@ class CORE_EXPORT Node : public EventTarget {
   // it is not safe to cache AtomicStrings because those are
   // per-thread.
   virtual String DebugNodeName() const;
+
+  Node* ToNode() final;
 
   bool IsUserActionElementActive() const;
   bool IsUserActionElementInActiveChain() const;
@@ -1082,7 +1106,7 @@ DEFINE_COMPARISON_OPERATORS_WITH_REFERENCES(Node)
 
 #define DECLARE_NODE_FACTORY(T) static T* Create(Document&)
 #define DEFINE_NODE_FACTORY(T) \
-  T* T::Create(Document& document) { return new T(document); }
+  T* T::Create(Document& document) { return MakeGarbageCollected<T>(document); }
 
 CORE_EXPORT std::ostream& operator<<(std::ostream&, const Node&);
 CORE_EXPORT std::ostream& operator<<(std::ostream&, const Node*);

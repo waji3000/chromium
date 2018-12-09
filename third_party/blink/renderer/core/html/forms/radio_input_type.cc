@@ -46,7 +46,7 @@ HTMLInputElement* NextInputElement(const HTMLInputElement& element,
 }  // namespace
 
 InputType* RadioInputType::Create(HTMLInputElement& element) {
-  return new RadioInputType(element);
+  return MakeGarbageCollected<RadioInputType>(element);
 }
 
 const AtomicString& RadioInputType::FormControlType() const {
@@ -187,7 +187,7 @@ ClickHandlingState* RadioInputType::WillDispatchClick() {
   // upcoming action to be "undone", since we want some object in the radio
   // group to actually get selected.
 
-  ClickHandlingState* state = new ClickHandlingState;
+  ClickHandlingState* state = MakeGarbageCollected<ClickHandlingState>();
 
   state->checked = GetElement().checked();
   state->checked_radio_button = GetElement().CheckedRadioButtonForGroup();

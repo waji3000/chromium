@@ -30,7 +30,6 @@
 #include "net/socket/client_socket_pool_manager_impl.h"
 #include "net/socket/next_proto.h"
 #include "net/socket/ssl_client_socket.h"
-#include "net/socket/websocket_endpoint_lock_manager.h"
 #include "net/spdy/spdy_session_pool.h"
 #include "net/third_party/quic/core/crypto/quic_random.h"
 #include "net/third_party/quic/core/quic_packets.h"
@@ -166,10 +165,15 @@ HttpNetworkSession::Context::Context()
       net_log(nullptr),
       socket_performance_watcher_factory(nullptr),
       network_quality_estimator(nullptr),
+#if BUILDFLAG(ENABLE_REPORTING)
+      reporting_service(nullptr),
+      network_error_logging_service(nullptr),
+#endif
       quic_clock(nullptr),
       quic_random(nullptr),
       quic_crypto_client_stream_factory(
-          QuicCryptoClientStreamFactory::GetDefaultFactory()) {}
+          QuicCryptoClientStreamFactory::GetDefaultFactory()) {
+}
 
 HttpNetworkSession::Context::Context(const Context& other) = default;
 
@@ -182,10 +186,12 @@ HttpNetworkSession::HttpNetworkSession(const Params& params,
       http_server_properties_(context.http_server_properties),
       cert_verifier_(context.cert_verifier),
       http_auth_handler_factory_(context.http_auth_handler_factory),
+#if BUILDFLAG(ENABLE_REPORTING)
+      reporting_service_(context.reporting_service),
+      network_error_logging_service_(context.network_error_logging_service),
+#endif
       proxy_resolution_service_(context.proxy_resolution_service),
       ssl_config_service_(context.ssl_config_service),
-      websocket_endpoint_lock_manager_(
-          std::make_unique<WebSocketEndpointLockManager>()),
       push_delegate_(nullptr),
       quic_stream_factory_(
           context.net_log,
@@ -253,10 +259,10 @@ HttpNetworkSession::HttpNetworkSession(const Params& params,
       "http_network_session/" + base::IntToString(g_next_shard_id.GetNext());
   normal_socket_pool_manager_ = CreateSocketPoolManager(
       NORMAL_SOCKET_POOL, context, ssl_session_cache_shard,
-      websocket_endpoint_lock_manager_.get());
+      &websocket_endpoint_lock_manager_);
   websocket_socket_pool_manager_ = CreateSocketPoolManager(
       WEBSOCKET_SOCKET_POOL, context, ssl_session_cache_shard,
-      websocket_endpoint_lock_manager_.get());
+      &websocket_endpoint_lock_manager_);
 
   if (params_.enable_http2) {
     next_protos_.push_back(kProtoHTTP2);
@@ -452,6 +458,7 @@ void HttpNetworkSession::GetSSLConfig(const HttpRequestInfo& request,
                                       SSLConfig* proxy_config) const {
   ssl_config_service_->GetSSLConfig(server_config);
   GetAlpnProtos(&server_config->alpn_protos);
+  server_config->ignore_certificate_errors = params_.ignore_certificate_errors;
   *proxy_config = *server_config;
   if (request.privacy_mode == PRIVACY_MODE_ENABLED) {
     server_config->channel_id_enabled = false;

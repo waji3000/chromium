@@ -25,7 +25,7 @@
 #include "third_party/blink/renderer/core/html/html_table_col_element.h"
 
 #include <algorithm>
-#include "third_party/blink/renderer/core/css_property_names.h"
+#include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/html/html_table_cell_element.h"
 #include "third_party/blink/renderer/core/html/html_table_element.h"
 #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
@@ -77,9 +77,10 @@ void HTMLTableColElement::ParseAttribute(
       if (GetLayoutObject() && GetLayoutObject()->IsLayoutTableCol()) {
         LayoutTableCol* col = ToLayoutTableCol(GetLayoutObject());
         int new_width = Width().ToInt();
-        if (new_width != col->Size().Width())
+        if (new_width != col->Size().Width()) {
           col->SetNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(
-              LayoutInvalidationReason::kAttributeChanged);
+              layout_invalidation_reason::kAttributeChanged);
+        }
       }
     }
   } else {

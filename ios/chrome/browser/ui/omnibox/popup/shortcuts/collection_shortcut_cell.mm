@@ -20,8 +20,15 @@
     _tile.translatesAutoresizingMaskIntoConstraints = NO;
     [self.contentView addSubview:_tile];
     AddSameConstraints(self.contentView, _tile);
+    self.isAccessibilityElement = YES;
   }
   return self;
+}
+
+- (void)prepareForReuse {
+  [super prepareForReuse];
+  self.tile.countLabel.text = nil;
+  self.tile.countContainer.hidden = YES;
 }
 
 @end

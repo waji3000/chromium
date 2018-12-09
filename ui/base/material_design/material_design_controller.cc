@@ -65,7 +65,8 @@ void MaterialDesignController::Initialize() {
 
   // When the mode is not explicitly forced, platforms vary as to the default
   // behavior.
-  if (!touch && (switch_value != switches::kTopChromeTouchUiDisabled)) {
+  if (!touch && (switch_value != switches::kTopChromeTouchUiDisabled) &&
+      features::IsAutomaticUiAdjustmentsForTouchEnabled()) {
 #if defined(OS_CHROMEOS)
     // TabletModeClient's default state is in non-tablet mode.
     automatic_touch_ui_ = true;
@@ -74,7 +75,7 @@ void MaterialDesignController::Initialize() {
       // Win 10+ uses dynamic mode by default and checks the current tablet mode
       // state to determine whether to start in touch mode.
       automatic_touch_ui_ = true;
-      if (base::MessageLoopForUI::IsCurrent() &&
+      if (base::MessageLoopCurrentForUI::IsSet() &&
           !GetInstance()->singleton_hwnd_observer_) {
         GetInstance()->singleton_hwnd_observer_ =
             std::make_unique<gfx::SingletonHwndObserver>(

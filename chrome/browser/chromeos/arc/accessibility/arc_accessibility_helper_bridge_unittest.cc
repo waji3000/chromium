@@ -24,6 +24,7 @@
 #include "components/arc/arc_bridge_service.h"
 #include "components/arc/common/accessibility_helper.mojom.h"
 #include "components/exo/shell_surface.h"
+#include "components/exo/shell_surface_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/window.h"
@@ -62,7 +63,7 @@ class ArcAccessibilityHelperBridgeTest : public ChromeViewsTestBase {
     ~TestArcAccessibilityHelperBridge() override { window_.reset(); }
 
     void SetActiveWindowId(const std::string& id) {
-      exo::ShellSurface::SetApplicationId(window_.get(), id);
+      exo::SetShellApplicationId(window_.get(), id);
     }
 
    protected:
@@ -158,8 +159,8 @@ class ArcAccessibilityHelperBridgeTest : public ChromeViewsTestBase {
         message_center::NOTIFICATION_TYPE_CUSTOM, kNotificationKey,
         base::UTF8ToUTF16("title"), base::UTF8ToUTF16("message"), gfx::Image(),
         base::UTF8ToUTF16("display_source"), GURL(),
-        message_center::NotifierId(message_center::NotifierId::ARC_APPLICATION,
-                                   "test_app_id"),
+        message_center::NotifierId(
+            message_center::NotifierType::ARC_APPLICATION, "test_app_id"),
         message_center::RichNotificationData(), nullptr);
     notification->set_custom_view_type(ash::kArcNotificationCustomViewType);
     return notification;
@@ -239,6 +240,7 @@ TEST_F(ArcAccessibilityHelperBridgeTest, TaskAndAXTreeLifecycle) {
   // Same task id, different package name.
   event2->node_data.clear();
   event2->node_data.push_back(arc::mojom::AccessibilityNodeInfoData::New());
+  event2->source_id = 3;
   event2->node_data[0]->id = 3;
   event2->node_data[0]->string_properties =
       base::flat_map<arc::mojom::AccessibilityStringProperty, std::string>();

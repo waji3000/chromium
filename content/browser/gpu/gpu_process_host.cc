@@ -92,6 +92,7 @@
 
 #if defined(OS_WIN)
 #include "sandbox/win/src/sandbox_policy.h"
+#include "sandbox/win/src/window.h"
 #include "services/service_manager/sandbox/win/sandbox_win.h"
 #include "ui/gfx/win/rendering_window_manager.h"
 #endif
@@ -220,6 +221,9 @@ static const char* const kSwitchNames[] = {
     switches::kLoggingLevel,
     switches::kEnableLowEndDeviceMode,
     switches::kDisableLowEndDeviceMode,
+    switches::kProfilingAtStart,
+    switches::kProfilingFile,
+    switches::kProfilingFlush,
     switches::kRunAllCompositorStagesBeforeDraw,
     switches::kSkiaFontCacheLimitMb,
     switches::kSkiaResourceCacheLimitMb,
@@ -304,9 +308,7 @@ class GpuSandboxedProcessLauncherDelegate
   ~GpuSandboxedProcessLauncherDelegate() override {}
 
 #if defined(OS_WIN)
-  bool DisableDefaultPolicy() override {
-    return true;
-  }
+  bool DisableDefaultPolicy() override { return true; }
 
   enum GPUAppContainerEnableState{
       AC_ENABLED = 0, AC_DISABLED_GL = 1, AC_DISABLED_FORCE = 2,
@@ -361,6 +363,21 @@ class GpuSandboxedProcessLauncherDelegate
               JOB_OBJECT_UILIMIT_DISPLAYSETTINGS,
           policy);
       policy->SetIntegrityLevel(sandbox::INTEGRITY_LEVEL_LOW);
+    }
+
+    // Check if we are running on the winlogon desktop and use an alternative
+    // desktop in this case as a low integrity gpu process will not be allowed
+    // to access the winlogon desktop (gpu process integrity has to be at least
+    // medium in order to be able to access the winlogon desktop normally).
+    // NOTE: This will effectively disable all video rendering to the screen
+    // unless Chrome is run with the --disable-gpu switch.
+    HDESK thread_desktop = ::GetThreadDesktop(::GetCurrentThreadId());
+    if (thread_desktop) {
+      base::string16 desktop_name =
+          sandbox::GetWindowObjectName(thread_desktop);
+      if (!lstrcmpi(desktop_name.c_str(), L"winlogon"))
+        policy->SetAlternateDesktop(false);
+      ::CloseDesktop(thread_desktop);
     }
 
     // Block this DLL even if it is not loaded by the browser process.
@@ -663,8 +680,8 @@ GpuProcessHost::GpuProcessHost(int host_id, GpuProcessKind kind)
 
   g_gpu_process_hosts[kind] = this;
 
-  process_.reset(new BrowserChildProcessHostImpl(
-      PROCESS_TYPE_GPU, this, mojom::kGpuServiceName));
+  process_.reset(new BrowserChildProcessHostImpl(PROCESS_TYPE_GPU, this,
+                                                 mojom::kGpuServiceName));
 }
 
 GpuProcessHost::~GpuProcessHost() {
@@ -823,7 +840,7 @@ bool GpuProcessHost::Init() {
   params.disable_gpu_shader_disk_cache =
       base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableGpuShaderDiskCache);
-  params.product = GetContentClient()->GetProduct();
+  params.product = GetContentClient()->browser()->GetProduct();
   params.deadline_to_synchronize_surfaces =
       switches::GetDeadlineToSynchronizeSurfaces();
   params.main_thread_task_runner =
@@ -831,6 +848,16 @@ bool GpuProcessHost::Init() {
   gpu_host_ = std::make_unique<viz::GpuHostImpl>(
       this, std::make_unique<viz::VizMainWrapper>(std::move(viz_main_ptr)),
       std::move(params));
+
+#if defined(USE_VIZ_DEVTOOLS)
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableVizDevTools)) {
+    // Start creating a socket for the Viz DevTools server. If it is created
+    // before the FrameSinkManager, the socket will be stashed.
+    devtools_connector_ = std::make_unique<VizDevToolsConnector>();
+    devtools_connector_->ConnectVizDevTools();
+  }
+#endif
 
 #if defined(OS_MACOSX)
   ca_transaction_gpu_coordinator_ = CATransactionGPUCoordinator::Create(this);
@@ -874,7 +901,6 @@ void GpuProcessHost::OnChannelConnected(int32_t peer_pid) {
     queued_messages_.pop();
   }
 }
-
 
 void GpuProcessHost::OnProcessLaunched() {
   UMA_HISTOGRAM_TIMES("GPU.GPUProcessLaunchTime",
@@ -937,6 +963,7 @@ void GpuProcessHost::DidInitialize(
 }
 
 void GpuProcessHost::DidFailInitialize() {
+  did_fail_initialize_ = true;
   if (kind_ == GPU_PROCESS_KIND_SANDBOXED)
     GpuDataManagerImpl::GetInstance()->FallBackToNextGpuMode();
 }
@@ -1016,8 +1043,8 @@ bool GpuProcessHost::LaunchGpuProcess() {
       std::make_unique<base::CommandLine>(base::CommandLine::NO_PROGRAM);
 #else
 #if defined(OS_LINUX)
-  int child_flags = gpu_launcher.empty() ? ChildProcessHost::CHILD_ALLOW_SELF :
-                                           ChildProcessHost::CHILD_NORMAL;
+  int child_flags = gpu_launcher.empty() ? ChildProcessHost::CHILD_ALLOW_SELF
+                                         : ChildProcessHost::CHILD_NORMAL;
 #else
   int child_flags = ChildProcessHost::CHILD_NORMAL;
 #endif
@@ -1063,18 +1090,15 @@ bool GpuProcessHost::LaunchGpuProcess() {
   cmd_line->CopySwitchesFrom(browser_command_line, gpu_workarounds.data(),
                              gpu_workarounds.size());
 
+  // Because AppendExtraCommandLineSwitches is called here, we should call
+  // LaunchWithoutExtraCommandLineSwitches() instead of Launch for gpu process
+  // launch below.
   GetContentClient()->browser()->AppendExtraCommandLineSwitches(
       cmd_line.get(), process_->GetData().id);
 
   // TODO(kylechar): The command line flags added here should be based on
   // |mode_|.
   GpuDataManagerImpl::GetInstance()->AppendGpuCommandLine(cmd_line.get());
-  bool swiftshader_rendering =
-      (cmd_line->GetSwitchValueASCII(switches::kUseGL) ==
-       gl::kGLImplementationSwiftShaderForWebGLName);
-
-  UMA_HISTOGRAM_BOOLEAN("GPU.GPUProcessSoftwareRendering",
-                        swiftshader_rendering);
 
   // If specified, prepend a launcher program to the command line.
   if (!gpu_launcher.empty())
@@ -1086,7 +1110,13 @@ bool GpuProcessHost::LaunchGpuProcess() {
   if (crashed_before_)
     delegate->DisableAppContainer();
 #endif  // defined(OS_WIN)
-  process_->Launch(std::move(delegate), std::move(cmd_line), true);
+
+  // Do not call process_->Launch() here.
+  // AppendExtraCommandLineSwitches will be called again in process_->Launch(),
+  // Call LaunchWithoutExtraCommandLineSwitches() so the command line switches
+  // will not be appended twice.
+  process_->LaunchWithoutExtraCommandLineSwitches(std::move(delegate),
+                                                  std::move(cmd_line), true);
   process_launched_ = true;
 
   if (kind_ == GPU_PROCESS_KIND_SANDBOXED) {
@@ -1161,7 +1191,7 @@ void GpuProcessHost::RecordProcessCrash() {
   }
 
   // GPU process initialization failed and fallback already happened.
-  if (!gpu_host_ || !gpu_host_->initialized())
+  if (did_fail_initialize_)
     return;
 
   bool disable_crash_limit = base::CommandLine::ForCurrentProcess()->HasSwitch(

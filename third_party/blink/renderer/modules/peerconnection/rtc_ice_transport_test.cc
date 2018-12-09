@@ -27,7 +27,6 @@ using testing::DoDefault;
 using testing::ElementsAre;
 using testing::Field;
 using testing::InSequence;
-using testing::Invoke;
 using testing::InvokeWithoutArgs;
 using testing::Mock;
 using testing::StrEq;
@@ -134,7 +133,7 @@ RTCIceTransport* RTCIceTransportTest::CreateIceTransport(
 }
 
 MockEventListener* RTCIceTransportTest::CreateMockEventListener() {
-  MockEventListener* event_listener = new MockEventListener();
+  MockEventListener* event_listener = MakeGarbageCollected<MockEventListener>();
   mock_event_listeners_.push_back(event_listener);
   return event_listener;
 }
@@ -212,19 +211,20 @@ TEST_F(RTCIceTransportTest, StopDeletesIceTransportAdapter) {
 
 // Test that the IceTransportAdapter is deleted on ContextDestroyed.
 TEST_F(RTCIceTransportTest, ContextDestroyedDeletesIceTransportAdapter) {
-  V8TestingScope scope;
-
   bool mock_deleted = false;
-  auto mock = std::make_unique<MockIceTransportAdapter>();
-  EXPECT_CALL(*mock, Die()).WillOnce(Assign(&mock_deleted, true));
+  {
+    V8TestingScope scope;
 
-  Persistent<RTCIceTransport> ice_transport =
-      CreateIceTransport(scope, std::move(mock));
-  RTCIceGatherOptions* options = RTCIceGatherOptions::Create();
-  options->setGatherPolicy("all");
-  ice_transport->gather(options, ASSERT_NO_EXCEPTION);
+    auto mock = std::make_unique<MockIceTransportAdapter>();
+    EXPECT_CALL(*mock, Die()).WillOnce(Assign(&mock_deleted, true));
 
-  ice_transport->ContextDestroyed(scope.GetExecutionContext());
+    Persistent<RTCIceTransport> ice_transport =
+        CreateIceTransport(scope, std::move(mock));
+    RTCIceGatherOptions* options = RTCIceGatherOptions::Create();
+    options->setGatherPolicy("all");
+    ice_transport->gather(options, ASSERT_NO_EXCEPTION);
+  }  // ContextDestroyed when V8TestingScope goes out of scope.
+
   RunUntilIdle();
 
   EXPECT_TRUE(mock_deleted);
@@ -250,12 +250,13 @@ TEST_F(RTCIceTransportTest, OnGatheringStateChangedCompleteFiresEvents) {
       CreateMockEventListener();
   {
     InSequence dummy;
-    EXPECT_CALL(*ice_candidate_listener, handleEvent(_, _))
-        .WillOnce(Invoke([ice_transport](ExecutionContext*, Event* event) {
-          auto* ice_event = static_cast<RTCPeerConnectionIceEvent*>(event);
-          EXPECT_EQ(nullptr, ice_event->candidate());
-        }));
-    EXPECT_CALL(*gathering_state_change_listener, handleEvent(_, _))
+    EXPECT_CALL(*ice_candidate_listener, Invoke(_, _))
+        .WillOnce(
+            testing::Invoke([ice_transport](ExecutionContext*, Event* event) {
+              auto* ice_event = static_cast<RTCPeerConnectionIceEvent*>(event);
+              EXPECT_EQ(nullptr, ice_event->candidate());
+            }));
+    EXPECT_CALL(*gathering_state_change_listener, Invoke(_, _))
         .WillOnce(InvokeWithoutArgs([ice_transport] {
           EXPECT_EQ("complete", ice_transport->gatheringState());
         }));
@@ -333,7 +334,7 @@ TEST_F(RTCIceTransportTest, OnStateChangedCompletedUpdatesStateAndFiresEvent) {
   ASSERT_TRUE(delegate);
 
   Persistent<MockEventListener> event_listener = CreateMockEventListener();
-  EXPECT_CALL(*event_listener, handleEvent(_, _))
+  EXPECT_CALL(*event_listener, Invoke(_, _))
       .WillOnce(InvokeWithoutArgs(
           [ice_transport] { EXPECT_EQ("connected", ice_transport->state()); }));
   ice_transport->addEventListener(event_type_names::kStatechange,
@@ -364,7 +365,7 @@ TEST_F(RTCIceTransportTest, OnStateChangedFailedUpdatesStateAndFiresEvent) {
   ASSERT_TRUE(delegate);
 
   Persistent<MockEventListener> event_listener = CreateMockEventListener();
-  EXPECT_CALL(*event_listener, handleEvent(_, _))
+  EXPECT_CALL(*event_listener, Invoke(_, _))
       .WillOnce(InvokeWithoutArgs(
           [ice_transport] { EXPECT_EQ("failed", ice_transport->state()); }));
   ice_transport->addEventListener(event_type_names::kStatechange,
@@ -395,7 +396,7 @@ TEST_F(RTCIceTransportTest, InitialOnSelectedCandidatePairChangedFiresEvent) {
   ASSERT_TRUE(delegate);
 
   Persistent<MockEventListener> event_listener = CreateMockEventListener();
-  EXPECT_CALL(*event_listener, handleEvent(_, _))
+  EXPECT_CALL(*event_listener, Invoke(_, _))
       .WillOnce(InvokeWithoutArgs([ice_transport] {
         RTCIceCandidatePair* selected_candidate_pair =
             ice_transport->getSelectedCandidatePair();
@@ -435,7 +436,7 @@ TEST_F(RTCIceTransportTest,
   ASSERT_TRUE(delegate);
 
   Persistent<MockEventListener> event_listener = CreateMockEventListener();
-  EXPECT_CALL(*event_listener, handleEvent(_, _))
+  EXPECT_CALL(*event_listener, Invoke(_, _))
       .WillOnce(DoDefault())  // First event is already tested above.
       .WillOnce(InvokeWithoutArgs([ice_transport] {
         RTCIceCandidatePair* selected_candidate_pair =
@@ -486,7 +487,7 @@ TEST_F(RTCIceTransportTest,
 
   Persistent<MockEventListener> state_change_event_listener =
       CreateMockEventListener();
-  EXPECT_CALL(*state_change_event_listener, handleEvent(_, _))
+  EXPECT_CALL(*state_change_event_listener, Invoke(_, _))
       .WillOnce(DoDefault())  // First event is for 'connected'.
       .WillOnce(InvokeWithoutArgs([ice_transport] {
         EXPECT_EQ("failed", ice_transport->state());
@@ -499,7 +500,7 @@ TEST_F(RTCIceTransportTest,
 
   Persistent<MockEventListener> selected_candidate_pair_change_event_listener =
       CreateMockEventListener();
-  EXPECT_CALL(*selected_candidate_pair_change_event_listener, handleEvent(_, _))
+  EXPECT_CALL(*selected_candidate_pair_change_event_listener, Invoke(_, _))
       .Times(1);  // First event is for the connected pair.
   ice_transport->addEventListener(
       event_type_names::kSelectedcandidatepairchange,
@@ -537,7 +538,7 @@ TEST_F(RTCIceTransportTest,
   ASSERT_TRUE(delegate);
 
   Persistent<MockEventListener> event_listener = CreateMockEventListener();
-  EXPECT_CALL(*event_listener, handleEvent(_, _))
+  EXPECT_CALL(*event_listener, Invoke(_, _))
       .WillOnce(InvokeWithoutArgs([ice_transport] {
         RTCIceCandidatePair* selected_candidate_pair =
             ice_transport->getSelectedCandidatePair();

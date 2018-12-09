@@ -15,7 +15,6 @@
 #include "content/browser/storage_partition_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/site_instance.h"
-#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/child_process_host.h"
 #include "url/gurl.h"
 
@@ -193,6 +192,15 @@ void ServiceWorkerProcessManager::ReleaseWorkerProcess(int embedded_worker_id) {
           RenderProcessHost::KeepAliveClientType::kServiceWorker);
   }
   worker_process_map_.erase(it);
+}
+
+SiteInstance* ServiceWorkerProcessManager::GetSiteInstanceForWorker(
+    int embedded_worker_id) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  auto it = worker_process_map_.find(embedded_worker_id);
+  if (it == worker_process_map_.end())
+    return nullptr;
+  return it->second.get();
 }
 
 }  // namespace content

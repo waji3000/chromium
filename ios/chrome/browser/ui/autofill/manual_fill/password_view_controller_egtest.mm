@@ -249,6 +249,7 @@ BOOL WaitForJavaScriptCondition(NSString* java_script_condition) {
   const GURL URL = self.testServer->GetURL(kFormHTMLFile);
   [ChromeEarlGrey loadURL:URL];
   [ChromeEarlGrey waitForWebViewContainingText:"hello!"];
+  SaveExamplePasswordForm();
 }
 
 - (void)tearDown {
@@ -339,6 +340,11 @@ BOOL WaitForJavaScriptCondition(NSString* java_script_condition) {
 // Tests that the Password View Controller is resumed after selecting other
 // password.
 - (void)testPasswordControllerResumes {
+  if (([UIDevice currentDevice].systemVersion.doubleValue < 11.3)) {
+    // TODO(crbug.com/908776): OtherPasswordsMatcher is disabled in <11.3.
+    return;
+  }
+
   // For this test one password is needed.
   SaveExamplePasswordForm();
 
@@ -381,6 +387,11 @@ BOOL WaitForJavaScriptCondition(NSString* java_script_condition) {
 // Tests that the Password View Controller is resumed after dismissing "Other
 // Passwords".
 - (void)testPasswordControllerResumesWhenOtherPasswordsDismiss {
+  if (([UIDevice currentDevice].systemVersion.doubleValue < 11.3)) {
+    // TODO(crbug.com/908776): OtherPasswordsMatcher is disabled in <11.3.
+    return;
+  }
+
   // Bring up the keyboard.
   [[EarlGrey selectElementWithMatcher:chrome_test_util::WebViewMatcher()]
       performAction:chrome_test_util::TapWebElement(kFormElementUsername)];
@@ -477,7 +488,9 @@ BOOL WaitForJavaScriptCondition(NSString* java_script_condition) {
 
 // Tests that the Password View Controller is dismissed when tapping the
 // keyboard.
-- (void)testTappingKeyboardDismissPasswordControllerPopOver {
+// TODO(crbug.com/909629): started to be flaky and sometimes opens full list
+// when typing text.
+- (void)DISABLED_testTappingKeyboardDismissPasswordControllerPopOver {
   if (!IsIPadIdiom()) {
     return;
   }
@@ -507,6 +520,11 @@ BOOL WaitForJavaScriptCondition(NSString* java_script_condition) {
 // Tests that after switching fields the content size of the table view didn't
 // grow.
 - (void)testPasswordControllerKeepsRightSize {
+  if (([UIDevice currentDevice].systemVersion.doubleValue < 11.3)) {
+    // TODO(crbug.com/908776): OtherPasswordsMatcher is disabled in <11.3.
+    return;
+  }
+
   // Bring up the keyboard.
   [[EarlGrey selectElementWithMatcher:chrome_test_util::WebViewMatcher()]
       performAction:chrome_test_util::TapWebElement(kFormElementUsername)];
@@ -595,6 +613,33 @@ BOOL WaitForJavaScriptCondition(NSString* java_script_condition) {
           @"window.frames[0].document.getElementById('%s').value === '%s'",
           kFormElementUsername, kExampleUsername];
   XCTAssertTrue(WaitForJavaScriptCondition(javaScriptCondition));
+}
+
+// Tests that the password icon is hidden when no passwords are available.
+- (void)testPasswordIconIsNotVisibleWhenPasswordStoreEmpty {
+  ClearPasswordStore();
+
+  // Bring up the keyboard.
+  [[EarlGrey selectElementWithMatcher:chrome_test_util::WebViewMatcher()]
+      performAction:chrome_test_util::TapWebElement(kFormElementUsername)];
+
+  // Wait for the keyboard to appear.
+  [GREYKeyboard waitForKeyboardToAppear];
+
+  // Assert the password icon is not visible.
+  [[EarlGrey selectElementWithMatcher:PasswordIconMatcher()]
+      assertWithMatcher:grey_notVisible()];
+
+  // Store one password.
+  SaveExamplePasswordForm();
+
+  // Tap another field to trigger form activity.
+  [[EarlGrey selectElementWithMatcher:chrome_test_util::WebViewMatcher()]
+      performAction:chrome_test_util::TapWebElement(kFormElementPassword)];
+
+  // Assert the password icon is visible now.
+  [[EarlGrey selectElementWithMatcher:PasswordIconMatcher()]
+      assertWithMatcher:grey_sufficientlyVisible()];
 }
 
 @end

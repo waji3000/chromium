@@ -75,7 +75,7 @@ LIBOBJ+= vdbe.o parse.o \
          update.o upsert.o userauth.o util.o vacuum.o \
          vdbeapi.o vdbeaux.o vdbeblob.o vdbemem.o vdbesort.o \
 	 vdbetrace.o wal.o walker.o where.o wherecode.o whereexpr.o \
-         utf.o vtab.o
+         utf.o vtab.o window.o
 
 LIBOBJ += recover.o recover_varint.o
 
@@ -184,7 +184,8 @@ SRC = \
   $(TOP)/src/where.c \
   $(TOP)/src/wherecode.c \
   $(TOP)/src/whereexpr.c \
-  $(TOP)/src/whereInt.h
+  $(TOP)/src/whereInt.h \
+  $(TOP)/src/window.c
 
 # Source code for extensions
 #
@@ -230,7 +231,8 @@ SRC += \
 SRC += \
   $(TOP)/ext/rtree/sqlite3rtree.h \
   $(TOP)/ext/rtree/rtree.h \
-  $(TOP)/ext/rtree/rtree.c
+  $(TOP)/ext/rtree/rtree.c \
+  $(TOP)/ext/rtree/geopoly.c
 SRC += \
   $(TOP)/ext/session/sqlite3session.c \
   $(TOP)/ext/session/sqlite3session.h
@@ -350,6 +352,7 @@ TESTSRC = \
   $(TOP)/src/test_thread.c \
   $(TOP)/src/test_vfs.c \
   $(TOP)/src/test_windirent.c \
+  $(TOP)/src/test_window.c \
   $(TOP)/src/test_wsd.c
 
 # Extensions to be statically loaded.
@@ -360,6 +363,7 @@ TESTSRC += \
   $(TOP)/ext/misc/closure.c \
   $(TOP)/ext/misc/csv.c \
   $(TOP)/ext/misc/eval.c \
+  $(TOP)/ext/misc/explain.c \
   $(TOP)/ext/misc/fileio.c \
   $(TOP)/ext/misc/fuzzer.c \
   $(TOP)/ext/misc/ieee754.c \
@@ -394,6 +398,7 @@ TESTSRC2 = \
   $(TOP)/src/dbstat.c \
   $(TOP)/src/expr.c \
   $(TOP)/src/func.c \
+  $(TOP)/src/global.c \
   $(TOP)/src/insert.c \
   $(TOP)/src/wal.c \
   $(TOP)/src/main.c \
@@ -477,7 +482,8 @@ EXTHDR += \
   $(TOP)/ext/fts3/fts3_hash.h \
   $(TOP)/ext/fts3/fts3_tokenizer.h
 EXTHDR += \
-  $(TOP)/ext/rtree/rtree.h
+  $(TOP)/ext/rtree/rtree.h \
+  $(TOP)/ext/rtree/geopoly.c
 EXTHDR += \
   $(TOP)/ext/icu/sqliteicu.h
 EXTHDR += \
@@ -506,7 +512,8 @@ FUZZDATA = \
   $(TOP)/test/fuzzdata3.db \
   $(TOP)/test/fuzzdata4.db \
   $(TOP)/test/fuzzdata5.db \
-  $(TOP)/test/fuzzdata6.db
+  $(TOP)/test/fuzzdata6.db \
+  $(TOP)/test/fuzzdata7.db
 
 # Standard options to testfixture
 #
@@ -893,6 +900,10 @@ fts3-testfixture$(EXE): sqlite3.c fts3amal.c $(TESTSRC) $(TOP)/src/tclsqlite.c
 		$(TESTSRC) $(TOP)/src/tclsqlite.c sqlite3.c fts3amal.c       \
 		-o testfixture$(EXE) $(LIBTCL) $(THREADLIB)
 
+coretestprogs:	$(TESTPROGS)
+
+testprogs:	coretestprogs srcck1$(EXE) fuzzcheck$(EXE) sessionfuzz$(EXE)
+
 fulltest:	$(TESTPROGS) fuzztest
 	./testfixture$(EXE) $(TOP)/test/all.test $(TESTOPTS)
 
@@ -993,6 +1004,10 @@ changeset$(EXE):	$(TOP)/ext/session/changeset.c sqlite3.o
 	$(TCC) -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -o changeset$(EXE) \
 		$(TOP)/ext/session/changeset.c sqlite3.o $(THREADLIB)
 
+changesetfuzz$(EXE):	$(TOP)/ext/session/changesetfuzz.c sqlite3.o
+	$(TCC) -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -o changesetfuzz$(EXE) \
+		$(TOP)/ext/session/changesetfuzz.c sqlite3.o $(THREADLIB)
+
 fts3view$(EXE):	$(TOP)/ext/fts3/tool/fts3view.c sqlite3.o
 	$(TCC) -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -o fts3view$(EXE) \
 		$(TOP)/ext/fts3/tool/fts3view.c sqlite3.o $(THREADLIB)
@@ -1000,6 +1015,10 @@ fts3view$(EXE):	$(TOP)/ext/fts3/tool/fts3view.c sqlite3.o
 rollback-test$(EXE):	$(TOP)/tool/rollback-test.c sqlite3.o
 	$(TCC) -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -o rollback-test$(EXE) \
 		$(TOP)/tool/rollback-test.c sqlite3.o $(THREADLIB)
+
+atrc$(EXE):	$(TOP)/test/atrc.c sqlite3.o
+	$(TCC) -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -o atrc$(EXE) \
+		$(TOP)/test/atrc.c sqlite3.o $(THREADLIB)
 
 LogEst$(EXE):	$(TOP)/tool/logest.c sqlite3.h
 	$(TCC) -o LogEst$(EXE) $(TOP)/tool/logest.c

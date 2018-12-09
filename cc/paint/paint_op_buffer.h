@@ -39,6 +39,8 @@ class SkStrikeServer;
 // PaintOpBuffer is a reimplementation of SkLiteDL.
 // See: third_party/skia/src/core/SkLiteDL.h.
 namespace cc {
+class ClientPaintCache;
+class ServicePaintCache;
 
 class CC_PAINT_EXPORT ThreadsafeMatrix : public SkMatrix {
  public:
@@ -145,6 +147,7 @@ class CC_PAINT_EXPORT PaintOp {
   struct CC_PAINT_EXPORT SerializeOptions {
     SerializeOptions(ImageProvider* image_provider,
                      TransferCacheSerializeHelper* transfer_cache,
+                     ClientPaintCache* paint_cache,
                      SkCanvas* canvas,
                      SkStrikeServer* strike_server,
                      SkColorSpace* color_space,
@@ -159,14 +162,12 @@ class CC_PAINT_EXPORT PaintOp {
     // Required.
     ImageProvider* image_provider = nullptr;
     TransferCacheSerializeHelper* transfer_cache = nullptr;
+    ClientPaintCache* paint_cache = nullptr;
     SkCanvas* canvas = nullptr;
     SkStrikeServer* strike_server = nullptr;
     SkColorSpace* color_space = nullptr;
     bool can_use_lcd_text = false;
     bool context_supports_distance_field_text = true;
-    // If true, will calculate a fixed scale for PaintRecord-backed PaintShaders
-    // based on the current canvas scale.  May be turned off for tests.
-    bool scale_paint_record_shaders = true;
     int max_texture_size = 0;
     size_t max_texture_bytes = 0.f;
     SkMatrix original_ctm = SkMatrix::I();
@@ -179,10 +180,14 @@ class CC_PAINT_EXPORT PaintOp {
 
   struct CC_PAINT_EXPORT DeserializeOptions {
     DeserializeOptions(TransferCacheDeserializeHelper* transfer_cache,
+                       ServicePaintCache* paint_cache,
                        SkStrikeClient* strike_client);
     TransferCacheDeserializeHelper* transfer_cache = nullptr;
-    uint32_t raster_color_space_id = gfx::ColorSpace::kInvalidId;
+    ServicePaintCache* paint_cache = nullptr;
     SkStrikeClient* strike_client = nullptr;
+    uint32_t raster_color_space_id = gfx::ColorSpace::kInvalidId;
+    // Do a DumpWithoutCrashing when serialization fails.
+    bool crash_dump_on_failure = false;
   };
 
   // Indicates how PaintImages are serialized.

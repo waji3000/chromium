@@ -26,17 +26,15 @@
 #include "media/base/media_switches.h"
 #include "media/base/scopedfd_helper.h"
 #include "media/base/unaligned_shared_memory.h"
+#include "media/base/video_frame_layout.h"
 #include "media/base/video_types.h"
+#include "media/gpu/macros.h"
 #include "media/gpu/v4l2/v4l2_image_processor.h"
 #include "media/video/h264_parser.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_fence_egl.h"
 #include "ui/gl/scoped_binders.h"
-
-#define DVLOGF(level) DVLOG(level) << __func__ << "(): "
-#define VLOGF(level) VLOG(level) << __func__ << "(): "
-#define VPLOGF(level) VPLOG(level) << __func__ << "(): "
 
 #define NOTIFY_ERROR(x)                      \
   do {                                       \
@@ -66,6 +64,18 @@
   } while (0)
 
 namespace media {
+
+namespace {
+
+size_t GetNumPlanesOfV4L2PixFmt(uint32_t pix_fmt) {
+  if (V4L2Device::IsMultiPlanarV4L2PixFmt(pix_fmt)) {
+    return VideoFrame::NumPlanes(
+        V4L2Device::V4L2PixFmtToVideoPixelFormat(pix_fmt));
+  }
+  return 1u;
+}
+
+}  // namespace
 
 // static
 const uint32_t V4L2VideoDecodeAccelerator::supported_input_fourccs_[] = {
@@ -515,16 +525,8 @@ void V4L2VideoDecodeAccelerator::AssignEGLImage(size_t buffer_index,
   OutputRecord& output_record = output_buffer_map_[buffer_index];
   DCHECK_EQ(output_record.egl_image, EGL_NO_IMAGE_KHR);
   DCHECK(!output_record.egl_fence);
-  DCHECK_EQ(output_record.state, kFree);
 
   output_record.egl_image = egl_image;
-  // Drop our reference so the buffer returns to the queue and can be reused.
-  output_wait_map_.erase(picture_buffer_id);
-
-  if (decoder_state_ != kChangingResolution) {
-    Enqueue();
-    ScheduleDecodeBufferTaskIfNeeded();
-  }
 }
 
 void V4L2VideoDecodeAccelerator::ImportBufferForPicture(
@@ -654,19 +656,25 @@ void V4L2VideoDecodeAccelerator::ImportBufferForPictureTask(
     }
 
     size_t index = iter - output_buffer_map_.begin();
-    child_task_runner_->PostTask(
-        FROM_HERE,
-        base::BindOnce(&V4L2VideoDecodeAccelerator::CreateEGLImageFor,
-                       weak_this_, index, picture_buffer_id,
-                       base::Passed(&dmabuf_fds), iter->texture_id,
-                       egl_image_size_, egl_image_format_fourcc_));
-  } else {
-    // No need for an EGLImage, start using this buffer now.
-    output_wait_map_.erase(picture_buffer_id);
-    if (decoder_state_ != kChangingResolution) {
-      Enqueue();
-      ScheduleDecodeBufferTaskIfNeeded();
+    // If we are not using an image processor, create the EGL image ahead of
+    // time since we already have its DMABUF fds. It is guaranteed that
+    // CreateEGLImageFor will run before the picture is passed to the client
+    // because the picture will need to be cleared on the child thread first.
+    if (!image_processor_) {
+      child_task_runner_->PostTask(
+          FROM_HERE,
+          base::BindOnce(&V4L2VideoDecodeAccelerator::CreateEGLImageFor,
+                         weak_this_, index, picture_buffer_id,
+                         base::Passed(&dmabuf_fds), iter->texture_id,
+                         egl_image_size_, egl_image_format_fourcc_));
     }
+  }
+
+  // The buffer can now be used for decoding
+  output_wait_map_.erase(picture_buffer_id);
+  if (decoder_state_ != kChangingResolution) {
+    Enqueue();
+    ScheduleDecodeBufferTaskIfNeeded();
   }
 }
 
@@ -2228,6 +2236,7 @@ bool V4L2VideoDecodeAccelerator::SetupFormats() {
   format.fmt.pix_mp.plane_fmt[0].sizeimage = input_size;
   format.fmt.pix_mp.num_planes = 1;
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_S_FMT, &format);
+  DCHECK_EQ(format.fmt.pix_mp.pixelformat, input_format_fourcc_);
 
   // We have to set up the format for output, because the driver may not allow
   // changing it once we start streaming; whether it can support our chosen
@@ -2277,6 +2286,7 @@ bool V4L2VideoDecodeAccelerator::SetupFormats() {
   format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
   format.fmt.pix_mp.pixelformat = output_format_fourcc_;
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_S_FMT, &format);
+  DCHECK_EQ(format.fmt.pix_mp.pixelformat, output_format_fourcc_);
 
   return true;
 }
@@ -2354,20 +2364,43 @@ bool V4L2VideoDecodeAccelerator::ResetImageProcessor() {
 bool V4L2VideoDecodeAccelerator::CreateImageProcessor() {
   VLOGF(2);
   DCHECK(!image_processor_);
-  v4l2_memory output_memory_type =
-      (output_mode_ == Config::OutputMode::ALLOCATE ? V4L2_MEMORY_MMAP
-                                                    : V4L2_MEMORY_DMABUF);
-  image_processor_.reset(new V4L2ImageProcessor(
-      image_processor_device_, V4L2_MEMORY_DMABUF, output_memory_type));
+  const ImageProcessor::OutputMode image_processor_output_mode =
+      (output_mode_ == Config::OutputMode::ALLOCATE
+           ? ImageProcessor::OutputMode::ALLOCATE
+           : ImageProcessor::OutputMode::IMPORT);
+  size_t num_planes = GetNumPlanesOfV4L2PixFmt(output_format_fourcc_);
+  // It is necessary to set strides and buffers even with dummy values,
+  // because VideoFrameLayout::num_buffers() specifies if
+  // |output_format_fourcc_| is single- or multi-planar.
+  auto input_layout = VideoFrameLayout::CreateWithStrides(
+      V4L2Device::V4L2PixFmtToVideoPixelFormat(output_format_fourcc_),
+      coded_size_, std::vector<int32_t>(num_planes) /* strides */,
+      std::vector<size_t>(num_planes) /* buffers */);
+  if (!input_layout) {
+    VLOGF(1) << "Invalid input layout";
+    return false;
+  }
+
+  num_planes = GetNumPlanesOfV4L2PixFmt(egl_image_format_fourcc_);
+  auto output_layout = VideoFrameLayout::CreateWithStrides(
+      V4L2Device::V4L2PixFmtToVideoPixelFormat(egl_image_format_fourcc_),
+      egl_image_size_, std::vector<int32_t>(num_planes) /* strides */,
+      std::vector<size_t>(num_planes) /* buffers */);
+  if (!output_layout) {
+    VLOGF(1) << "Invalid output layout";
+    return false;
+  }
+
   // Unretained is safe because |this| owns image processor and there will be
   // no callbacks after processor destroys.
-  if (!image_processor_->Initialize(
-          V4L2Device::V4L2PixFmtToVideoPixelFormat(output_format_fourcc_),
-          V4L2Device::V4L2PixFmtToVideoPixelFormat(egl_image_format_fourcc_),
-          visible_size_, coded_size_, visible_size_, egl_image_size_,
-          output_buffer_map_.size(),
-          base::Bind(&V4L2VideoDecodeAccelerator::ImageProcessorError,
-                     base::Unretained(this)))) {
+  image_processor_ = V4L2ImageProcessor::Create(
+      image_processor_device_, VideoFrame::STORAGE_DMABUFS,
+      VideoFrame::STORAGE_DMABUFS, image_processor_output_mode, *input_layout,
+      *output_layout, visible_size_, visible_size_, output_buffer_map_.size(),
+      base::Bind(&V4L2VideoDecodeAccelerator::ImageProcessorError,
+                 base::Unretained(this)));
+
+  if (!image_processor_) {
     VLOGF(1) << "Initialize image processor failed";
     NOTIFY_ERROR(PLATFORM_FAILURE);
     return false;
@@ -2621,9 +2654,26 @@ void V4L2VideoDecodeAccelerator::FrameProcessed(
   DCHECK_EQ(output_record.state, kAtProcessor);
   DCHECK_NE(output_record.picture_id, -1);
 
-  image_processor_bitstream_buffer_ids_.pop();
+  // If the picture has not been cleared yet, this means it is the first time
+  // we are seeing this buffer from the image processor. Schedule a call to
+  // CreateEGLImageFor before the picture is sent to the client. It is
+  // guaranteed that CreateEGLImageFor will complete before the picture is sent
+  // to the client as both events happen on the child thread due to the picture
+  // uncleared status.
+  if (output_record.texture_id != 0 && !output_record.cleared) {
+    DCHECK(frame->HasDmaBufs());
+    child_task_runner_->PostTask(
+        FROM_HERE,
+        base::BindOnce(
+            &V4L2VideoDecodeAccelerator::CreateEGLImageFor, weak_this_,
+            output_buffer_index, output_record.picture_id,
+            media::DuplicateFDs(frame->DmabufFds()), output_record.texture_id,
+            egl_image_size_, egl_image_format_fourcc_));
+  }
+
   SendBufferToClient(output_buffer_index, bitstream_buffer_id);
   // Flush or resolution change may be waiting image processor to finish.
+  image_processor_bitstream_buffer_ids_.pop();
   if (image_processor_bitstream_buffer_ids_.empty()) {
     NotifyFlushDoneIfNeeded();
     if (decoder_state_ == kChangingResolution)

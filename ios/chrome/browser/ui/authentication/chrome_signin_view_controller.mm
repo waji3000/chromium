@@ -18,8 +18,8 @@
 #import "base/strings/sys_string_conversions.h"
 #include "base/timer/elapsed_timer.h"
 #include "components/consent_auditor/consent_auditor.h"
+#include "components/signin/core/browser/account_consistency_method.h"
 #include "components/signin/core/browser/account_tracker_service.h"
-#include "components/signin/core/browser/profile_management_switches.h"
 #include "components/signin/core/browser/signin_metrics.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/unified_consent/feature.h"
@@ -300,7 +300,7 @@ enum AuthenticationState {
         UnifiedConsentServiceFactory::GetForBrowserState(_browserState);
     // |unifiedConsentService| may be null in unit tests.
     if (unifiedConsentService)
-      unifiedConsentService->SetUnifiedConsentGiven(true);
+      unifiedConsentService->EnableGoogleServices();
   }
   SyncSetupServiceFactory::GetForBrowserState(_browserState)->CommitChanges();
   [self acceptSignInAndShowAccountsSettings:_unifiedConsentCoordinator
@@ -659,7 +659,6 @@ enum AuthenticationState {
       // returns to "IdentityPicker". In that case, there is no need to create a
       // new UnifiedConsentCoordinator. The current one should be used.
       _unifiedConsentCoordinator = [[UnifiedConsentCoordinator alloc] init];
-      _unifiedConsentCoordinator.interactable = YES;
       _unifiedConsentCoordinator.delegate = self;
       if (_selectedIdentity)
         _unifiedConsentCoordinator.selectedIdentity = _selectedIdentity;
@@ -1048,9 +1047,7 @@ enum AuthenticationState {
   primaryButtonLayout.position.originY = CGRectGetHeight(self.view.bounds) -
                                          constants.ButtonBottomPadding -
                                          constants.ButtonHeight;
-  if (@available(iOS 11.0, *)) {
-    primaryButtonLayout.position.originY -= self.view.safeAreaInsets.bottom;
-  }
+  primaryButtonLayout.position.originY -= self.view.safeAreaInsets.bottom;
   primaryButtonLayout.size.height = constants.ButtonHeight;
   [_primaryButton setFrame:LayoutRectGetRect(primaryButtonLayout)];
 

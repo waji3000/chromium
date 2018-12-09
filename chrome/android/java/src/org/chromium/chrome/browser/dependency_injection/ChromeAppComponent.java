@@ -5,10 +5,14 @@
 package org.chromium.chrome.browser.dependency_injection;
 
 import org.chromium.chrome.browser.AppHooksModule;
+import org.chromium.chrome.browser.browserservices.ClearDataDialogResultRecorder;
 import org.chromium.chrome.browser.contextual_suggestions.ContextualSuggestionsModule;
 import org.chromium.chrome.browser.contextual_suggestions.EnabledStateMonitor;
+import org.chromium.chrome.browser.customtabs.CustomTabsConnection;
 import org.chromium.chrome.browser.customtabs.dependency_injection.CustomTabActivityComponent;
 import org.chromium.chrome.browser.customtabs.dependency_injection.CustomTabActivityModule;
+import org.chromium.chrome.browser.externalauth.ExternalAuthUtils;
+import org.chromium.chrome.browser.preferences.ChromePreferenceManager;
 
 import javax.inject.Singleton;
 
@@ -27,7 +31,13 @@ public interface ChromeAppComponent {
             ContextualSuggestionsModule contextualSuggestionsModule,
             CustomTabActivityModule customTabActivityModule);
 
+    CustomTabsConnection resolveCustomTabsConnection();
+    ChromePreferenceManager resolvePreferenceManager();
+    ClearDataDialogResultRecorder resolveTwaClearDataDialogRecorder();
+
     // Temporary getters for DI migration process. All of these getters
     // should eventually be replaced with constructor injection.
     EnabledStateMonitor resolveContextualSuggestionsEnabledStateMonitor();
+
+    ExternalAuthUtils resolveExternalAuthUtils();
 }

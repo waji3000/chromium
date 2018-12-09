@@ -65,6 +65,8 @@ Supports Android and Linux (although Linux
    * Map files contain some unique pieces of information compared to `nm`
       output, such as `** merge strings` entries, and some unnamed symbols
       (which although unnamed, contain the `.o` path).
+   * Generated in `is_official_build=true` builds if `generate_linker_map` is
+     true. In official builds on Android generate_linker_map is true by default.
 1. `.o` files are mapped to `.cc` files by parsing `.ninja` files.
    * This means that `.h` files are never listed as sources. No information
      about inlined symbols is gathered.
@@ -166,6 +168,11 @@ as `size=0, padding=$size` (padding-only symbols) to de-emphasize them in diffs.
      * `name`: Name without template and argument parameters
      * `template_name`: Name without argument parameters.
      * `full_name`: Name with all parameters.
+
+1. Special cases:
+   * LLVM function outlining creates many OUTLINED_FUNCTION_* symbols. These
+     renamed to '** outlined functions' or '** outlined functions * (count)',
+     and are deduped so an address can have at most one such symbol.
 
 1. Clustering:
    * Compiler & linker optimizations can cause symbols to be broken into

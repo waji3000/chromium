@@ -5,6 +5,7 @@
 #include "ui/views/controls/table/table_view.h"
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include <algorithm>
 #include <map>
@@ -12,24 +13,32 @@
 
 #include "base/auto_reset.h"
 #include "base/i18n/rtl.h"
-#include "base/strings/string_util.h"
+#include "base/memory/ptr_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 #include "cc/paint/paint_flags.h"
+#include "ui/accessibility/ax_action_data.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/events/event.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/text_utils.h"
 #include "ui/native_theme/native_theme.h"
+#include "ui/views/accessibility/ax_virtual_view.h"
+#include "ui/views/accessibility/view_accessibility.h"
+#include "ui/views/controls/focus_ring.h"
 #include "ui/views/controls/scroll_view.h"
 #include "ui/views/controls/table/table_grouper.h"
 #include "ui/views/controls/table/table_header.h"
 #include "ui/views/controls/table/table_utils.h"
 #include "ui/views/controls/table/table_view_observer.h"
 #include "ui/views/layout/layout_provider.h"
+#include "ui/views/style/platform_style.h"
 #include "ui/views/style/typography.h"
+#include "ui/views/view_properties.h"
 
 namespace views {
 
@@ -135,7 +144,8 @@ TableView::TableView(ui::TableModel* model,
                      bool single_selection)
     : model_(NULL),
       columns_(columns),
-      header_(NULL),
+      active_visible_column_index_(-1),
+      header_(nullptr),
       table_type_(table_type),
       single_selection_(single_selection),
       select_on_remove_(true),
@@ -155,6 +165,7 @@ TableView::TableView(ui::TableModel* model,
     visible_column.column = columns[i];
     visible_columns_.push_back(visible_column);
   }
+
   // Always focusable, even on Mac (consistent with NSTableView).
   SetFocusBehavior(FocusBehavior::ALWAYS);
   SetModel(model);
@@ -220,6 +231,11 @@ void TableView::SetColumnVisibility(int id, bool is_visible) {
     for (size_t i = 0; i < visible_columns_.size(); ++i) {
       if (visible_columns_[i].column.id == id) {
         visible_columns_.erase(visible_columns_.begin() + i);
+        if (active_visible_column_index_ >=
+            static_cast<int>(visible_columns_.size())) {
+          SetActiveVisibleColumnIndex(
+              static_cast<int>(visible_columns_.size()) - 1);
+        }
         break;
       }
     }
@@ -284,6 +300,37 @@ bool TableView::HasColumn(int id) const {
   return false;
 }
 
+bool TableView::HasFocusIndicator() const {
+  int active_row = selection_model_.active();
+  return active_row != ui::ListSelectionModel::kUnselectedIndex &&
+         active_visible_column_index_ !=
+             ui::ListSelectionModel::kUnselectedIndex;
+}
+
+void TableView::ResetFocusIndicator() {
+  if (!PlatformStyle::kTableViewSupportsKeyboardNavigationByCell)
+    return;
+
+  if (HasFocusIndicator()) {
+    // Draw a focus indicator around the active column.
+    focus_ring_ = FocusRing::Install(this);
+    const gfx::Rect cell_bounds(GetCellBounds(
+        ModelToView(selection_model_.active()), active_visible_column_index_));
+    auto path = std::make_unique<SkPath>();
+    path->addRect(gfx::RectToSkRect(cell_bounds));
+    SetProperty(views::kHighlightPathKey, path.release());
+    focus_ring_->SchedulePaint();
+  } else {
+    ClearProperty(views::kHighlightPathKey);
+    focus_ring_.reset();
+  }
+
+  // Notify assistive technology that the active cell has changed. Without this,
+  // some screen readers will not announce the active cell.
+  if (HasFocus())
+    NotifyAccessibilityEvent(ax::mojom::Event::kFocus, true);
+}
+
 const TableView::VisibleColumn& TableView::GetVisibleColumn(int index) {
   DCHECK(index >= 0 && index < static_cast<int>(visible_columns_.size()));
   return visible_columns_[index];
@@ -344,6 +391,9 @@ void TableView::Layout() {
     height = std::max(parent()->height(), height);
   }
   SetBounds(x(), y(), width, height);
+
+  if (focus_ring_)
+    focus_ring_->Layout();
 }
 
 const char* TableView::GetClassName() const {
@@ -385,16 +435,75 @@ bool TableView::OnKeyPressed(const ui::KeyEvent& event) {
       return true;
 
     case ui::VKEY_UP:
+#if defined(OS_MACOSX)
+      if (event.IsAltDown()) {
+        if (RowCount())
+          SelectByViewIndex(0);
+      } else {
+        AdvanceSelection(ADVANCE_DECREMENT);
+      }
+#else
       AdvanceSelection(ADVANCE_DECREMENT);
+#endif
       return true;
 
     case ui::VKEY_DOWN:
+#if defined(OS_MACOSX)
+      if (event.IsAltDown()) {
+        if (RowCount())
+          SelectByViewIndex(RowCount() - 1);
+      } else {
+        AdvanceSelection(ADVANCE_INCREMENT);
+      }
+#else
       AdvanceSelection(ADVANCE_INCREMENT);
+#endif
       return true;
+
+    case ui::VKEY_LEFT:
+      if (PlatformStyle::kTableViewSupportsKeyboardNavigationByCell) {
+        if (IsCmdOrCtrl(event)) {
+          if (active_visible_column_index_ != -1 && header_) {
+            const AdvanceDirection direction =
+                base::i18n::IsRTL() ? ADVANCE_INCREMENT : ADVANCE_DECREMENT;
+            header_->ResizeColumnViaKeyboard(active_visible_column_index_,
+                                             direction);
+          }
+        } else {
+          AdvanceActiveVisibleColumn(ADVANCE_DECREMENT);
+        }
+        return true;
+      }
+      break;
+
+    case ui::VKEY_RIGHT:
+      if (PlatformStyle::kTableViewSupportsKeyboardNavigationByCell) {
+        if (IsCmdOrCtrl(event)) {
+          if (active_visible_column_index_ != -1 && header_) {
+            const AdvanceDirection direction =
+                base::i18n::IsRTL() ? ADVANCE_DECREMENT : ADVANCE_INCREMENT;
+            header_->ResizeColumnViaKeyboard(active_visible_column_index_,
+                                             direction);
+          }
+        } else {
+          AdvanceActiveVisibleColumn(ADVANCE_INCREMENT);
+        }
+        return true;
+      }
+      break;
+
+    case ui::VKEY_SPACE:
+      if (PlatformStyle::kTableViewSupportsKeyboardNavigationByCell &&
+          active_visible_column_index_ != -1) {
+        ToggleSortOrder(active_visible_column_index_);
+        return true;
+      }
+      break;
 
     default:
       break;
   }
+
   if (observer_)
     observer_->OnKeyDown(event.key_code());
   return false;
@@ -481,6 +590,65 @@ void TableView::GetAccessibleNodeData(ui::AXNodeData* node_data) {
   }
 }
 
+bool TableView::HandleAccessibleAction(const ui::AXActionData& action_data) {
+  if (!RowCount())
+    return false;
+
+  int active_row = selection_model_.active();
+  if (active_row == ui::ListSelectionModel::kUnselectedIndex)
+    active_row = ModelToView(0);
+
+  switch (action_data.action) {
+    case ax::mojom::Action::kDoDefault:
+      RequestFocus();
+      SelectByViewIndex(ModelToView(active_row));
+      if (observer_)
+        observer_->OnDoubleClick();
+      break;
+
+    case ax::mojom::Action::kFocus:
+      RequestFocus();
+      // Setting focus should not affect the current selection.
+      if (selection_model_.empty())
+        SelectByViewIndex(0);
+      break;
+
+    case ax::mojom::Action::kScrollRight: {
+      const AdvanceDirection direction =
+          base::i18n::IsRTL() ? ADVANCE_DECREMENT : ADVANCE_INCREMENT;
+      AdvanceActiveVisibleColumn(direction);
+      break;
+    }
+
+    case ax::mojom::Action::kScrollLeft: {
+      const AdvanceDirection direction =
+          base::i18n::IsRTL() ? ADVANCE_INCREMENT : ADVANCE_DECREMENT;
+      AdvanceActiveVisibleColumn(direction);
+      break;
+    }
+
+    case ax::mojom::Action::kScrollToMakeVisible:
+      ScrollRectToVisible(GetRowBounds(ModelToView(active_row)));
+      break;
+
+    case ax::mojom::Action::kSetSelection:
+      // TODO(nektar): Retrieve the anchor and focus nodes once AXVirtualView is
+      // implemented in this class.
+      SelectByViewIndex(active_row);
+      break;
+
+    case ax::mojom::Action::kShowContextMenu:
+      ShowContextMenu(GetBoundsInScreen().CenterPoint(),
+                      ui::MENU_SOURCE_KEYBOARD);
+      break;
+
+    default:
+      return false;
+  }
+
+  return true;
+}
+
 void TableView::OnModelChanged() {
   selection_model_.Clear();
   NumRowsChanged();
@@ -525,6 +693,7 @@ void TableView::OnItemsRemoved(int start, int length) {
     selection_model_.set_active(FirstSelectedRow());
   if (!selection_model_.empty() && selection_model_.anchor() == -1)
     selection_model_.set_anchor(FirstSelectedRow());
+  NotifyAccessibilityEvent(ax::mojom::Event::kSelection, true);
   if (observer_)
     observer_->OnSelectionChanged();
 }
@@ -655,7 +824,7 @@ void TableView::OnFocus() {
     scroll_view->SetHasFocusIndicator(true);
 
   SchedulePaintForSelection();
-  NotifyAccessibilityEvent(ax::mojom::Event::kFocus, true);
+  ResetFocusIndicator();
 }
 
 void TableView::OnBlur() {
@@ -663,6 +832,7 @@ void TableView::OnBlur() {
   if (scroll_view)
     scroll_view->SetHasFocusIndicator(false);
   SchedulePaintForSelection();
+  ResetFocusIndicator();
 }
 
 int TableView::GetCellMargin() const {
@@ -846,6 +1016,46 @@ ui::TableColumn TableView::FindColumnByID(int id) const {
   return ui::TableColumn();
 }
 
+void TableView::AdvanceActiveVisibleColumn(AdvanceDirection direction) {
+  if (visible_columns_.empty()) {
+    SetActiveVisibleColumnIndex(-1);
+    return;
+  }
+
+  if (active_visible_column_index_ == -1) {
+    if (selection_model_.active() == -1)
+      SelectByViewIndex(0);
+    SetActiveVisibleColumnIndex(0);
+    return;
+  }
+
+  if (direction == ADVANCE_DECREMENT) {
+    SetActiveVisibleColumnIndex(std::max(0, active_visible_column_index_ - 1));
+  } else {
+    SetActiveVisibleColumnIndex(
+        std::min(static_cast<int>(visible_columns_.size()) - 1,
+                 active_visible_column_index_ + 1));
+  }
+}
+
+int TableView::GetActiveVisibleColumnIndex() const {
+  return active_visible_column_index_;
+}
+
+void TableView::SetActiveVisibleColumnIndex(int index) {
+  if (active_visible_column_index_ == index)
+    return;
+  active_visible_column_index_ = index;
+
+  if (selection_model_.active() != ui::ListSelectionModel::kUnselectedIndex &&
+      active_visible_column_index_ != -1) {
+    ScrollRectToVisible(GetCellBounds(ModelToView(selection_model_.active()),
+                                      active_visible_column_index_));
+  }
+
+  ResetFocusIndicator();
+}
+
 void TableView::SelectByViewIndex(int view_index) {
   ui::ListSelectionModel new_selection;
   if (view_index != -1) {
@@ -875,12 +1085,17 @@ void TableView::SetSelectionModel(ui::ListSelectionModel new_selection) {
     vis_rect.set_y(start_y);
     vis_rect.set_height(end_y - start_y);
     ScrollRectToVisible(vis_rect);
+
+    if (active_visible_column_index_ == -1)
+      SetActiveVisibleColumnIndex(0);
+  } else {
+    SetActiveVisibleColumnIndex(-1);
   }
 
+  ResetFocusIndicator();
+  NotifyAccessibilityEvent(ax::mojom::Event::kSelection, true);
   if (observer_)
     observer_->OnSelectionChanged();
-
-  NotifyAccessibilityEvent(ax::mojom::Event::kFocus, true);
 }
 
 void TableView::AdvanceSelection(AdvanceDirection direction) {

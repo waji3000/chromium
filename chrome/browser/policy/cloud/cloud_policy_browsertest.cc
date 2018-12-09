@@ -39,7 +39,6 @@
 #include "components/policy/core/common/cloud/cloud_policy_client.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
 #include "components/policy/core/common/cloud/cloud_policy_refresh_scheduler.h"
-#include "components/policy/core/common/cloud/dm_auth.h"
 #include "components/policy/core/common/cloud/mock_cloud_policy_client.h"
 #include "components/policy/core/common/external_data_fetcher.h"
 #include "components/policy/core/common/policy_map.h"
@@ -71,9 +70,10 @@
 #else
 #include "chrome/browser/net/system_network_context_manager.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
-#include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/signin/identity_manager_factory.h"
 #include "components/policy/core/common/cloud/user_cloud_policy_manager.h"
-#include "components/signin/core/browser/signin_manager.h"
+#include "services/identity/public/cpp/identity_manager.h"
+#include "services/identity/public/cpp/identity_test_utils.h"
 #endif
 
 using testing::AnyNumber;
@@ -100,12 +100,6 @@ std::unique_ptr<KeyedService> BuildFakeProfileInvalidationProvider(
       std::make_unique<invalidation::ProfileIdentityProvider>(
           IdentityManagerFactory::GetForProfile(profile)));
 }
-
-#if !defined(OS_CHROMEOS)
-const char* GetTestGaiaId() {
-  return "gaia-id-user@example.com";
-}
-#endif
 
 const char* GetTestUser() {
 #if defined(OS_CHROMEOS)
@@ -223,10 +217,10 @@ class CloudPolicyTest : public InProcessBrowserTest,
 #else
     // Mock a signed-in user. This is used by the UserCloudPolicyStore to pass
     // the username to the UserCloudPolicyValidator.
-    SigninManager* signin_manager =
-        SigninManagerFactory::GetForProfile(browser()->profile());
-    ASSERT_TRUE(signin_manager);
-    signin_manager->SetAuthenticatedAccountInfo(GetTestGaiaId(), GetTestUser());
+    auto* identity_manager =
+        IdentityManagerFactory::GetForProfile(browser()->profile());
+    ASSERT_TRUE(identity_manager);
+    identity::SetPrimaryAccount(identity_manager, GetTestUser());
 
     UserCloudPolicyManager* policy_manager =
         UserCloudPolicyManagerFactory::GetForBrowserContext(
@@ -271,8 +265,9 @@ class CloudPolicyTest : public InProcessBrowserTest,
     policy_manager->core()->client()->Register(
         registration_type, em::DeviceRegisterRequest::FLAVOR_USER_REGISTRATION,
         em::DeviceRegisterRequest::LIFETIME_INDEFINITE,
-        em::LicenseType::UNDEFINED, DMAuth::FromOAuthToken("bogus"),
-        std::string(), std::string(), std::string());
+        em::LicenseType::UNDEFINED, "oauth_token_unused" /* oauth_token */,
+        std::string() /* client_id */, std::string() /* requisition */,
+        std::string() /* current_state_key */);
     run_loop.Run();
     Mock::VerifyAndClearExpectations(&observer);
     policy_manager->core()->client()->RemoveObserver(&observer);

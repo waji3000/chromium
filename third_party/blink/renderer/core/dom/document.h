@@ -65,9 +65,9 @@
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_member.h"
+#include "third_party/blink/renderer/platform/scheduler/public/post_cancellable_task.h"
 #include "third_party/blink/renderer/platform/scroll/scroll_types.h"
 #include "third_party/blink/renderer/platform/timer.h"
-#include "third_party/blink/renderer/platform/web_task_runner.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/bit_vector.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
@@ -82,10 +82,6 @@ class UkmRecorder;
 }  // namespace ukm
 
 namespace blink {
-
-namespace mojom {
-enum class PageVisibilityState : int32_t;
-}  // namespace mojom
 
 class AnimationClock;
 class AXContext;
@@ -180,7 +176,7 @@ class SerializedScriptValue;
 class Settings;
 class SlotAssignmentEngine;
 class SnapCoordinator;
-class StringOrDictionary;
+class StringOrElementCreationOptions;
 class StyleEngine;
 class StyleResolver;
 class StylePropertyMapReadOnly;
@@ -250,7 +246,7 @@ class CORE_EXPORT Document : public ContainerNode,
 
  public:
   static Document* Create(const DocumentInit& init) {
-    return new Document(init);
+    return MakeGarbageCollected<Document>(init);
   }
   static Document* CreateForTest();
   // Factory for web-exposed Document constructor. The argument document must be
@@ -258,7 +254,10 @@ class CORE_EXPORT Document : public ContainerNode,
   // source of ExecutionContext and security origin of the new document.
   // https://dom.spec.whatwg.org/#dom-document-document
   static Document* Create(Document&);
+
+  Document(const DocumentInit&, DocumentClassFlags = kDefaultDocumentClass);
   ~Document() override;
+
   static Range* CreateRangeAdjustedToTreeScope(const TreeScope&,
                                                const Position&);
 
@@ -269,9 +268,9 @@ class CORE_EXPORT Document : public ContainerNode,
 
   void MediaQueryAffectingValueChanged();
 
-  using SecurityContext::GetSecurityOrigin;
-  using SecurityContext::GetMutableSecurityOrigin;
   using SecurityContext::GetContentSecurityPolicy;
+  using SecurityContext::GetMutableSecurityOrigin;
+  using SecurityContext::GetSecurityOrigin;
   using TreeScope::getElementById;
 
   // ExecutionContext overrides:
@@ -304,7 +303,7 @@ class CORE_EXPORT Document : public ContainerNode,
   ViewportData& GetViewportData() const { return *viewport_data_; }
 
   String OutgoingReferrer() const override;
-  ReferrerPolicy GetReferrerPolicy() const override;
+  network::mojom::ReferrerPolicy GetReferrerPolicy() const override;
 
   void SetDoctype(DocumentType*);
   DocumentType* doctype() const { return doc_type_.Get(); }
@@ -318,14 +317,14 @@ class CORE_EXPORT Document : public ContainerNode,
   Element* CreateElementForBinding(const AtomicString& local_name,
                                    ExceptionState& = ASSERT_NO_EXCEPTION);
   Element* CreateElementForBinding(const AtomicString& local_name,
-                                   const StringOrDictionary&,
+                                   const StringOrElementCreationOptions&,
                                    ExceptionState&);
   Element* createElementNS(const AtomicString& namespace_uri,
                            const AtomicString& qualified_name,
                            ExceptionState&);
   Element* createElementNS(const AtomicString& namespace_uri,
                            const AtomicString& qualified_name,
-                           const StringOrDictionary&,
+                           const StringOrElementCreationOptions&,
                            ExceptionState&);
   DocumentFragment* createDocumentFragment();
   Text* createTextNode(const String& data);
@@ -416,7 +415,7 @@ class CORE_EXPORT Document : public ContainerNode,
   }
 
   String visibilityState() const;
-  mojom::PageVisibilityState GetPageVisibilityState() const;
+  bool IsPageVisible() const;
   bool hidden() const;
   void DidChangeVisibilityState();
 
@@ -508,8 +507,8 @@ class CORE_EXPORT Document : public ContainerNode,
   // document's frame_, if any.  Can be null.
   // TODO(kochi): Audit usage of this interface (crbug.com/746150).
   LocalFrame* GetFrameOfMasterDocument() const;
-  Page* GetPage() const;                           // can be null
-  Settings* GetSettings() const;                   // can be null
+  Page* GetPage() const;          // can be null
+  Settings* GetSettings() const;  // can be null
 
   float DevicePixelRatio() const;
 
@@ -528,7 +527,9 @@ class CORE_EXPORT Document : public ContainerNode,
   void SetupFontBuilder(ComputedStyle& document_style);
 
   bool NeedsLayoutTreeUpdate() const;
-  bool NeedsLayoutTreeUpdateForNode(const Node&) const;
+  bool NeedsLayoutTreeUpdateForNode(const Node&,
+                                    bool ignore_adjacent_style = false) const;
+
   // Update ComputedStyles and attach LayoutObjects if necessary, but don't
   // lay out.
   void UpdateStyleAndLayoutTree();
@@ -639,24 +640,21 @@ class CORE_EXPORT Document : public ContainerNode,
   //
   // |chrome_client| is used to synchronously get user consent (via a modal
   // javascript dialog) to allow the unload to proceed if the beforeunload
-  // handler returns a non-null value, indicating unsaved state.
+  // handler returns a non-null value, indicating unsaved state. If a
+  // null |chrome_client| is provided and the beforeunload returns a non-null
+  // value this function will automatically return false, indicating that the
+  // unload should not proceed. A null chrome client is set to by the freezing
+  // logic, which uses this to determine if a non-empty beforeunload handler
+  // is present before allowing discarding to proceed.
   //
   // |is_reload| indicates if the beforeunload is being triggered because of a
   // reload operation, otherwise it is assumed to be a page close or navigation.
   //
-  // If |auto_cancel| is true and the beforeunload returns a non-null value then
-  // the |chrome_client| will not be invoked, and this function will
-  // automatically return false, indicating that the unload should not proceed.
-  // This is set to true by the freezing logic, which uses this to determine if
-  // a non-empty beforeunload handler is present before allowing discarding to
-  // proceed.
-  //
   // |did_allow_navigation| is set to reflect the choice made by the user via
   // the modal dialog. The value is meaningless if |auto_cancel|
   // is true, in which case it will always be set to false.
-  bool DispatchBeforeUnloadEvent(ChromeClient& chrome_client,
+  bool DispatchBeforeUnloadEvent(ChromeClient* chrome_client,
                                  bool is_reload,
-                                 bool auto_cancel,
                                  bool& did_allow_navigation);
   void DispatchUnloadEvents();
 
@@ -942,6 +940,9 @@ class CORE_EXPORT Document : public ContainerNode,
   String domain() const;
   void setDomain(const String& new_domain, ExceptionState&);
 
+  void OverrideLastModified(const AtomicString& modified) {
+    override_last_modified_ = modified;
+  }
   String lastModified() const;
 
   // The cookieURL is used to query the cookie database for this document's
@@ -956,6 +957,8 @@ class CORE_EXPORT Document : public ContainerNode,
   //
   const KURL& CookieURL() const { return cookie_url_; }
   void SetCookieURL(const KURL& url) { cookie_url_ = url; }
+
+  scoped_refptr<const SecurityOrigin> TopFrameOrigin() const;
 
   const KURL SiteForCookies() const;
 
@@ -1110,10 +1113,8 @@ class CORE_EXPORT Document : public ContainerNode,
   // the document will take ownership of the policy
   // the second parameter specifies a policy to inherit meaning the document
   // will attempt to copy over the policy
-  void InitContentSecurityPolicy(
-      ContentSecurityPolicy* = nullptr,
-      const ContentSecurityPolicy* policy_to_inherit = nullptr,
-      const ContentSecurityPolicy* previous_document_csp = nullptr);
+  void InitContentSecurityPolicy(ContentSecurityPolicy* = nullptr,
+                                 const ContentSecurityPolicy* = nullptr);
 
   bool IsSecureTransitionTo(const KURL&) const;
 
@@ -1166,6 +1167,10 @@ class CORE_EXPORT Document : public ContainerNode,
 
   void EnqueueResizeEvent();
   void EnqueueScrollEventForNode(Node*);
+  void EnqueueScrollEndEventForNode(Node*);
+  void EnqueueOverscrollEventForNode(Node* target,
+                                     double delta_x,
+                                     double delta_y);
   void EnqueueAnimationFrameTask(base::OnceClosure);
   void EnqueueAnimationFrameEvent(Event*);
   // Only one event for a target/event type combination will be dispatched per
@@ -1458,6 +1463,15 @@ class CORE_EXPORT Document : public ContainerNode,
 #else
   bool IsSlotAssignmentRecalcForbidden() { return false; }
 #endif
+  unsigned& SlotAssignmentRecalcDepth() {
+    return slot_assignment_recalc_depth_;
+  }
+  bool IsInSlotAssignmentRecalc() const {
+    // Since we forbid recursive slot assignement recalc, the depth should be
+    // <= 1.
+    DCHECK_LE(slot_assignment_recalc_depth_, 1u);
+    return slot_assignment_recalc_depth_ == 1;
+  }
 
   bool IsVerticalScrollEnforced() const { return is_vertical_scroll_enforced_; }
   bool IsLazyLoadPolicyEnforced() const;
@@ -1485,6 +1499,7 @@ class CORE_EXPORT Document : public ContainerNode,
 
   void ReportFeaturePolicyViolation(
       mojom::FeaturePolicyFeature,
+      mojom::FeaturePolicyDisposition,
       const String& message = g_empty_string) const override;
 
   bool IsParsedFeaturePolicy(mojom::FeaturePolicyFeature feature) const {
@@ -1498,8 +1513,6 @@ class CORE_EXPORT Document : public ContainerNode,
   void IncrementNumberOfCanvases();
 
  protected:
-  Document(const DocumentInit&, DocumentClassFlags = kDefaultDocumentClass);
-
   void DidUpdateSecurityOrigin() final;
 
   void ClearXMLVersion() { xml_version_ = String(); }
@@ -1669,9 +1682,8 @@ class CORE_EXPORT Document : public ContainerNode,
   // Document URLs.
   KURL url_;  // Document.URL: The URL from which this document was retrieved.
   KURL base_url_;  // Node.baseURI: The URL to use when resolving relative URLs.
-  // An alternative base URL that takes precedence over base_url_ (but
-  // not base_element_url_).
-  KURL base_url_override_;
+  KURL base_url_override_;  // An alternative base URL that takes precedence
+                            // over base_url_ (but not base_element_url_).
   KURL base_element_url_;  // The URL set by the <base> element.
   KURL cookie_url_;        // The URL to use for cookie access.
   std::unique_ptr<OriginAccessEntry> access_entry_from_url_;
@@ -1908,6 +1920,7 @@ class CORE_EXPORT Document : public ContainerNode,
 #if DCHECK_IS_ON()
   unsigned slot_assignment_recalc_forbidden_recursion_depth_;
 #endif
+  unsigned slot_assignment_recalc_depth_ = 0;
 
   bool needs_to_record_ukm_outlive_time_;
 
@@ -1943,6 +1956,8 @@ class CORE_EXPORT Document : public ContainerNode,
   // Tracks which feature policies have already been parsed, so as not to count
   // them multiple times.
   BitVector parsed_feature_policies_;
+
+  AtomicString override_last_modified_;
 };
 
 extern template class CORE_EXTERN_TEMPLATE_EXPORT Supplement<Document>;

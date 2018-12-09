@@ -106,13 +106,13 @@ gfx::NativeViewAccessible TestAXNodeWrapper::ChildAtIndex(int index) {
 
 gfx::Rect TestAXNodeWrapper::GetClippedScreenBoundsRect() const {
   // We could add clipping here if needed.
-  gfx::RectF bounds = GetData().location;
+  gfx::RectF bounds = GetData().relative_bounds.bounds;
   bounds.Offset(g_offset);
   return gfx::ToEnclosingRect(bounds);
 }
 
 gfx::Rect TestAXNodeWrapper::GetUnclippedScreenBoundsRect() const {
-  gfx::RectF bounds = GetData().location;
+  gfx::RectF bounds = GetData().relative_bounds.bounds;
   bounds.Offset(g_offset);
   return gfx::ToEnclosingRect(bounds);
 }
@@ -194,6 +194,19 @@ void TestAXNodeWrapper::ReplaceIntAttribute(int32_t node_id,
   node->SetData(new_data);
 }
 
+void TestAXNodeWrapper::ReplaceBoolAttribute(ax::mojom::BoolAttribute attribute,
+                                             bool value) {
+  AXNodeData new_data = GetData();
+  std::vector<std::pair<ax::mojom::BoolAttribute, bool>>& attributes =
+      new_data.bool_attributes;
+
+  base::EraseIf(attributes,
+                [attribute](auto& pair) { return pair.first == attribute; });
+
+  new_data.AddBoolAttribute(attribute, value);
+  node_->SetData(new_data);
+}
+
 int TestAXNodeWrapper::GetTableRowCount() const {
   return node_->GetTableRowCount();
 }
@@ -256,9 +269,16 @@ bool TestAXNodeWrapper::AccessibilityPerformAction(
   }
 
   if (data.action == ax::mojom::Action::kScrollToMakeVisible) {
-    auto offset = node_->data().location.OffsetFromOrigin();
+    auto offset = node_->data().relative_bounds.bounds.OffsetFromOrigin();
     g_offset = gfx::Vector2d(-offset.x(), -offset.y());
     return true;
+  }
+
+  if (GetData().role == ax::mojom::Role::kListBoxOption &&
+      data.action == ax::mojom::Action::kDoDefault) {
+    bool current_value =
+        GetData().GetBoolAttribute(ax::mojom::BoolAttribute::kSelected);
+    ReplaceBoolAttribute(ax::mojom::BoolAttribute::kSelected, !current_value);
   }
 
   if (data.action == ax::mojom::Action::kSetSelection) {

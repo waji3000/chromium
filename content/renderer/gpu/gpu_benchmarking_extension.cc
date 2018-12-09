@@ -308,9 +308,10 @@ bool BeginSmoothScroll(GpuBenchmarkingContext* context,
                                    blink::WebInputEvent::kNoModifiers,
                                    ui::EventTimeForNow());
     mouseMove.SetPositionInWidget(start_x, start_y);
-    context->web_view()->HandleInputEvent(
+    context->web_view()->MainFrameWidget()->HandleInputEvent(
         blink::WebCoalescedInputEvent(mouseMove));
-    context->web_view()->SetCursorVisibilityState(cursor_visible);
+    context->web_view()->MainFrameWidget()->SetCursorVisibilityState(
+        cursor_visible);
   }
 
   scoped_refptr<CallbackAndContext> callback_and_context =
@@ -527,8 +528,9 @@ GpuBenchmarking::~GpuBenchmarking() {
 
 void GpuBenchmarking::EnsureRemoteInterface() {
   if (!input_injector_) {
-    render_frame_->GetRemoteInterfaces()->GetInterface(
-        mojo::MakeRequest(&input_injector_));
+    render_frame_->GetRemoteInterfaces()->GetInterface(mojo::MakeRequest(
+        &input_injector_,
+        render_frame_->GetTaskRunner(blink::TaskType::kInternalDefault)));
   }
 }
 
@@ -1198,8 +1200,8 @@ void GpuBenchmarking::Freeze() {
     return;
   // TODO(fmeawad): Instead of forcing a visibility change, only allow
   // freezing a page if it was already hidden.
-  context.web_view()->SetVisibilityState(
-      blink::mojom::PageVisibilityState::kHidden, false);
+  context.web_view()->SetIsHidden(/*hidden=*/true,
+                                  /*is_initial_state=*/false);
   context.web_view()->SetPageFrozen(true);
 }
 

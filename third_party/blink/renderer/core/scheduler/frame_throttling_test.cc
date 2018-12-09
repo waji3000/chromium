@@ -7,6 +7,7 @@
 #include "third_party/blink/public/web/web_frame_content_dumper.h"
 #include "third_party/blink/public/web/web_hit_test_result.h"
 #include "third_party/blink/public/web/web_settings.h"
+#include "third_party/blink/renderer/bindings/core/v8/sanitize_script_errors.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_source_code.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -26,7 +27,6 @@
 #include "third_party/blink/renderer/core/testing/sim/sim_request.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_test.h"
 #include "third_party/blink/renderer/platform/graphics/paint/transform_paint_property_node.h"
-#include "third_party/blink/renderer/platform/loader/fetch/access_control_status.h"
 #include "third_party/blink/renderer/platform/testing/paint_test_configurations.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 #include "third_party/blink/renderer/platform/testing/url_test_helpers.h"
@@ -43,7 +43,7 @@ class FrameThrottlingTest : public PaintTestConfigurations, public SimTest {
  protected:
   void SetUp() override {
     SimTest::SetUp();
-    WebView().Resize(WebSize(640, 480));
+    WebView().MainFrameWidget()->Resize(WebSize(640, 480));
   }
 
   SimCanvas::Commands CompositeFrame() {
@@ -74,6 +74,11 @@ class FrameThrottlingTest : public PaintTestConfigurations, public SimTest {
                     .GetRegionComplexity();
     }
     return result;
+  }
+
+  void UpdateAllLifecyclePhases() {
+    GetDocument().View()->UpdateAllLifecyclePhases(
+        DocumentLifecycle::LifecycleUpdateReason::kTest);
   }
 };
 
@@ -285,7 +290,7 @@ TEST_P(FrameThrottlingTest, ThrottledLifecycleUpdate) {
             frame_document->Lifecycle().GetState());
 
   // A hit test will not force a complete lifecycle update.
-  WebView().HitTestResultAt(WebPoint(0, 0));
+  WebView().HitTestResultAt(gfx::Point());
   EXPECT_EQ(DocumentLifecycle::kPaintClean,
             frame_document->Lifecycle().GetState());
 }
@@ -558,8 +563,8 @@ TEST_P(FrameThrottlingTest, ThrottledFrameWithFocus) {
 }
 
 TEST_P(FrameThrottlingTest, ScrollingCoordinatorShouldSkipThrottledFrame) {
-  // TODO(crbug.com/809638): Make this test pass for SPv2.
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+  // TODO(crbug.com/809638): Make this test pass for CAP.
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
     return;
 
   // Create a hidden frame which is throttled.
@@ -596,7 +601,7 @@ TEST_P(FrameThrottlingTest, ScrollingCoordinatorShouldSkipThrottledFrame) {
   // This will call ScrollingCoordinator::UpdateAfterPaint() and should not
   // cause assert failure about isAllowedToQueryCompositingState() in the
   // throttled frame.
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhases();
   test::RunPendingTasks();
   EXPECT_EQ(DocumentLifecycle::kVisualUpdatePending,
             frame_element->contentDocument()->Lifecycle().GetState());
@@ -660,7 +665,7 @@ TEST_P(FrameThrottlingTest, ScrollingCoordinatorShouldSkipThrottledLayer) {
   // This will call ScrollingCoordinator::UpdateAfterPaint() and should not
   // cause an assert failure about isAllowedToQueryCompositingState() in the
   // throttled frame.
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhases();
   test::RunPendingTasks();
   EXPECT_EQ(DocumentLifecycle::kVisualUpdatePending,
             frame_element->contentDocument()->Lifecycle().GetState());
@@ -717,9 +722,9 @@ TEST_P(FrameThrottlingTest,
                      // frame.
   EXPECT_EQ(DocumentLifecycle::kPaintClean,
             frame_element->contentDocument()->Lifecycle().GetState());
-  // TODO(szager): Re-enable this check for SPv2 when it properly sets the
+  // TODO(szager): Re-enable this check for CAP when it properly sets the
   // bits for composited scrolling.
-  if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+  if (!RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
     EXPECT_TRUE(frame_element->contentDocument()
                     ->View()
                     ->LayoutViewport()
@@ -754,8 +759,8 @@ TEST_P(FrameThrottlingTest, UnthrottleByTransformingWithoutLayout) {
 }
 
 TEST_P(FrameThrottlingTest, ThrottledTopLevelEventHandlerIgnored) {
-  // TODO(crbug.com/809638): Make this test pass for SPv2.
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+  // TODO(crbug.com/809638): Make this test pass for CAP.
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
     return;
 
   WebView().GetSettings()->SetJavaScriptEnabled(true);
@@ -814,8 +819,8 @@ TEST_P(FrameThrottlingTest, ThrottledTopLevelEventHandlerIgnored) {
 }
 
 TEST_P(FrameThrottlingTest, ThrottledEventHandlerIgnored) {
-  // TODO(crbug.com/809638): Make this test pass for SPv2.
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+  // TODO(crbug.com/809638): Make this test pass for CAP.
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
     return;
 
   WebView().GetSettings()->SetJavaScriptEnabled(true);
@@ -903,7 +908,7 @@ TEST_P(FrameThrottlingTest, DumpThrottledFrame) {
 }
 
 TEST_P(FrameThrottlingTest, PaintingViaGraphicsLayerIsThrottled) {
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
     return;
 
   WebView().GetSettings()->SetPreferCompositingToLCDTextEnabled(true);
@@ -939,7 +944,7 @@ TEST_P(FrameThrottlingTest, PaintingViaGraphicsLayerIsThrottled) {
 }
 
 TEST_P(FrameThrottlingTest, ThrottleInnerCompositedLayer) {
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
     return;
 
   WebView().GetSettings()->SetPreferCompositingToLCDTextEnabled(true);
@@ -988,7 +993,7 @@ TEST_P(FrameThrottlingTest, ThrottleInnerCompositedLayer) {
     // And a throttled full lifecycle update.
     DocumentLifecycle::AllowThrottlingScope throttling_scope(
         GetDocument().Lifecycle());
-    GetDocument().View()->UpdateAllLifecyclePhases();
+    UpdateAllLifecyclePhases();
   }
   // The inner div should still be composited because compositing update is
   // throttled, though the inner_div's self-painting status has been updated.
@@ -1197,7 +1202,8 @@ TEST_P(FrameThrottlingTest, AllowOneAnimationFrame) {
   v8::HandleScope scope(v8::Isolate::GetCurrent());
   v8::Local<v8::Value> result =
       local_frame->GetScriptController().ExecuteScriptInMainWorldAndReturnValue(
-          ScriptSourceCode("window.didRaf;"), KURL(), kOpaqueResource);
+          ScriptSourceCode("window.didRaf;"), KURL(),
+          SanitizeScriptErrors::kSanitize);
   EXPECT_TRUE(result->IsTrue());
 }
 
@@ -1231,7 +1237,7 @@ TEST_P(FrameThrottlingTest, UpdatePaintPropertiesOnUnthrottling) {
   {
     DocumentLifecycle::AllowThrottlingScope throttling_scope(
         GetDocument().Lifecycle());
-    GetDocument().View()->UpdateAllLifecyclePhases();
+    UpdateAllLifecyclePhases();
   }
   EXPECT_FALSE(inner_div_object->FirstFragment().PaintProperties());
 
@@ -1307,7 +1313,7 @@ TEST_P(FrameThrottlingTest, DisplayNoneChildrenRemainThrottled) {
 }
 
 TEST_P(FrameThrottlingTest, RebuildCompositedLayerTreeOnLayerRemoval) {
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
     return;
 
   // This test verifies removal of PaintLayer due to style change will force
@@ -1412,7 +1418,7 @@ TEST_P(FrameThrottlingTest, LifecycleUpdateAfterUnthrottledCompositingUpdate) {
     DocumentLifecycle::AllowThrottlingScope throttling_scope(
         GetDocument().Lifecycle());
     EXPECT_TRUE(frame_document->View()->ShouldThrottleRendering());
-    GetDocument().View()->UpdateAllLifecyclePhases();
+    UpdateAllLifecyclePhases();
   }
 }
 

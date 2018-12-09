@@ -31,6 +31,7 @@
 #include "ash/new_window_controller.h"
 #include "ash/public/cpp/app_list/app_list_constants.h"
 #include "ash/public/cpp/ash_features.h"
+#include "ash/public/cpp/notification_utils.h"
 #include "ash/public/interfaces/accessibility_controller.mojom.h"
 #include "ash/resources/vector_icons/vector_icons.h"
 #include "ash/root_window_controller.h"
@@ -63,13 +64,14 @@
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "ash/wm/wm_event.h"
+#include "base/bind.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
 #include "base/optional.h"
 #include "base/stl_util.h"
 #include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_manager_client.h"
@@ -159,16 +161,14 @@ void ShowDeprecatedAcceleratorNotification(const char* const notification_id,
               Shell::Get()->shell_delegate()->OpenKeyboardShortcutHelpPage();
           }));
 
-  std::unique_ptr<Notification> notification =
-      message_center::Notification::CreateSystemNotification(
-          message_center::NOTIFICATION_TYPE_SIMPLE, notification_id,
-          l10n_util::GetStringUTF16(IDS_DEPRECATED_SHORTCUT_TITLE), message,
-          base::string16(), GURL(),
-          message_center::NotifierId(
-              message_center::NotifierId::SYSTEM_COMPONENT,
-              kNotifierAccelerator),
-          message_center::RichNotificationData(), std::move(delegate),
-          kNotificationKeyboardIcon, SystemNotificationWarningLevel::NORMAL);
+  std::unique_ptr<Notification> notification = ash::CreateSystemNotification(
+      message_center::NOTIFICATION_TYPE_SIMPLE, notification_id,
+      l10n_util::GetStringUTF16(IDS_DEPRECATED_SHORTCUT_TITLE), message,
+      base::string16(), GURL(),
+      message_center::NotifierId(message_center::NotifierType::SYSTEM_COMPONENT,
+                                 kNotifierAccelerator),
+      message_center::RichNotificationData(), std::move(delegate),
+      kNotificationKeyboardIcon, SystemNotificationWarningLevel::NORMAL);
   notification->set_priority(message_center::SYSTEM_PRIORITY);
   message_center::MessageCenter::Get()->AddNotification(
       std::move(notification));
@@ -238,6 +238,20 @@ void HandleFocusShelf() {
   // TODO(jamescook): Should this be GetRootWindowForNewWindows()?
   Shelf* shelf = Shelf::ForWindow(Shell::GetPrimaryRootWindow());
   Shell::Get()->focus_cycler()->FocusWidget(shelf->shelf_widget());
+}
+
+views::Widget* FindPipWidget() {
+  return Shell::Get()->focus_cycler()->FindWidget(
+      base::BindRepeating([](views::Widget* widget) {
+        return wm::GetWindowState(widget->GetNativeWindow())->IsPip();
+      }));
+}
+
+void HandleFocusPip() {
+  base::RecordAction(UserMetricsAction("Accel_Focus_Pip"));
+  auto* widget = FindPipWidget();
+  if (widget)
+    Shell::Get()->focus_cycler()->FocusWidget(widget);
 }
 
 void HandleLaunchAppN(int n) {
@@ -311,7 +325,7 @@ bool CanHandleCycleMru(const ui::Accelerator& accelerator) {
   return !keyboard::KeyboardController::Get()->IsKeyboardVisible();
 }
 
-void HandleNextIme() {
+void HandleSwitchToNextIme() {
   base::RecordAction(UserMetricsAction("Accel_Next_Ime"));
   RecordImeSwitchByAccelerator();
   Shell::Get()->ime_controller()->SwitchToNextIme();
@@ -322,11 +336,11 @@ void HandleOpenFeedbackPage() {
   Shell::Get()->new_window_controller()->OpenFeedbackPage();
 }
 
-void HandlePreviousIme(const ui::Accelerator& accelerator) {
+void HandleSwitchToLastUsedIme(const ui::Accelerator& accelerator) {
   base::RecordAction(UserMetricsAction("Accel_Previous_Ime"));
   if (accelerator.key_state() == ui::Accelerator::KeyState::PRESSED) {
     RecordImeSwitchByAccelerator();
-    Shell::Get()->ime_controller()->SwitchToPreviousIme();
+    Shell::Get()->ime_controller()->SwitchToLastUsedIme();
   }
   // Else: consume the Ctrl+Space ET_KEY_RELEASED event but do not do anything.
 }
@@ -490,22 +504,17 @@ bool CanHandleToggleAppList(const ui::Accelerator& accelerator,
     // When spoken feedback is enabled, we should neither toggle the list nor
     // consume the key since Search+Shift is one of the shortcuts the a11y
     // feature uses. crbug.com/132296
-    if (Shell::Get()->accessibility_controller()->IsSpokenFeedbackEnabled())
+    if (Shell::Get()->accessibility_controller()->spoken_feedback_enabled())
       return false;
   }
   return true;
 }
 
 void HandleToggleAppList(const ui::Accelerator& accelerator) {
-  if (Shell::Get()
-          ->app_list_controller()
-          ->IsHomeLauncherEnabledInTabletMode()) {
-    return;
-  }
   if (accelerator.key_code() == ui::VKEY_LWIN)
     base::RecordAction(UserMetricsAction("Accel_Search_LWin"));
 
-  Shell::Get()->app_list_controller()->ToggleAppList(
+  Shell::Get()->app_list_controller()->OnAppListButtonPressed(
       display::Screen::GetScreen()
           ->GetDisplayNearestWindow(Shell::GetRootWindowForNewWindows())
           .id(),
@@ -700,7 +709,6 @@ void HandleToggleVoiceInteraction(const ui::Accelerator& accelerator) {
     case mojom::AssistantAllowedState::DISALLOWED_BY_ARC_DISALLOWED:
     case mojom::AssistantAllowedState::DISALLOWED_BY_FLAG:
     case mojom::AssistantAllowedState::DISALLOWED_BY_SUPERVISED_USER:
-    case mojom::AssistantAllowedState::DISALLOWED_BY_CHILD_USER:
     case mojom::AssistantAllowedState::DISALLOWED_BY_INCOGNITO:
       // TODO(xiaohuic): show a specific toast.
       return;
@@ -713,7 +721,8 @@ void HandleToggleVoiceInteraction(const ui::Accelerator& accelerator) {
     Shell::Get()->app_list_controller()->ToggleVoiceInteractionSession();
   } else {
     Shell::Get()->assistant_controller()->ui_controller()->ToggleUi(
-        AssistantSource::kHotkey);
+        /*entry_point=*/AssistantEntryPoint::kHotkey,
+        /*exit_point=*/AssistantExitPoint::kHotkey);
   }
 }
 
@@ -791,7 +800,7 @@ void HandleToggleCapsLock() {
 }
 
 bool CanHandleToggleDictation() {
-  return Shell::Get()->accessibility_controller()->IsDictationEnabled();
+  return Shell::Get()->accessibility_controller()->dictation_enabled();
 }
 
 void HandleToggleDictation() {
@@ -804,21 +813,28 @@ bool CanHandleToggleDockedMagnifier() {
   return features::IsDockedMagnifierEnabled();
 }
 
+bool CanHandleToggleOverview() {
+  auto windows = Shell::Get()->mru_window_tracker()->BuildMruWindowList();
+  // Do not toggle overview if there is a window being dragged.
+  for (auto* window : windows) {
+    if (wm::GetWindowState(window)->is_dragged())
+      return false;
+  }
+  return true;
+}
+
 void CreateAndShowStickyNotification(const int title_id,
                                      const int message_id,
                                      const std::string& notification_id) {
-  std::unique_ptr<Notification> notification =
-      Notification::CreateSystemNotification(
-          message_center::NOTIFICATION_TYPE_SIMPLE, notification_id,
-          l10n_util::GetStringUTF16(title_id),
-          l10n_util::GetStringUTF16(message_id),
-          base::string16() /* display source */, GURL(),
-          message_center::NotifierId(
-              message_center::NotifierId::SYSTEM_COMPONENT,
-              kNotifierAccelerator),
-          message_center::RichNotificationData(), nullptr,
-          kNotificationAccessibilityIcon,
-          SystemNotificationWarningLevel::NORMAL);
+  std::unique_ptr<Notification> notification = ash::CreateSystemNotification(
+      message_center::NOTIFICATION_TYPE_SIMPLE, notification_id,
+      l10n_util::GetStringUTF16(title_id),
+      l10n_util::GetStringUTF16(message_id),
+      base::string16() /* display source */, GURL(),
+      message_center::NotifierId(message_center::NotifierType::SYSTEM_COMPONENT,
+                                 kNotifierAccelerator),
+      message_center::RichNotificationData(), nullptr,
+      kNotificationAccessibilityIcon, SystemNotificationWarningLevel::NORMAL);
   notification->set_priority(message_center::SYSTEM_PRIORITY);
   message_center::MessageCenter::Get()->AddNotification(
       std::move(notification));
@@ -900,7 +916,7 @@ void HandleToggleHighContrast() {
 
   AccessibilityController* controller =
       Shell::Get()->accessibility_controller();
-  const bool current_enabled = controller->IsHighContrastEnabled();
+  const bool current_enabled = controller->high_contrast_enabled();
   const bool dialog_ever_accepted =
       controller->HasHighContrastAcceleratorDialogBeenAccepted();
 
@@ -947,7 +963,7 @@ void HandleToggleSpokenFeedback() {
 
   AccessibilityController* controller =
       Shell::Get()->accessibility_controller();
-  controller->SetSpokenFeedbackEnabled(!controller->IsSpokenFeedbackEnabled(),
+  controller->SetSpokenFeedbackEnabled(!controller->spoken_feedback_enabled(),
                                        A11Y_NOTIFICATION_SHOW);
 }
 
@@ -1282,10 +1298,6 @@ bool AcceleratorController::CanPerformAction(
           CanHandleMoveActiveWindowBetweenDisplays();
     case NEW_INCOGNITO_WINDOW:
       return CanHandleNewIncognitoWindow();
-    case NEXT_IME:
-      return CanCycleInputMethod();
-    case PREVIOUS_IME:
-      return CanCycleInputMethod();
     case ROTATE_SCREEN:
       return true;
     case SCALE_UI_DOWN:
@@ -1300,6 +1312,10 @@ bool AcceleratorController::CanPerformAction(
       return display::Screen::GetScreen()->GetNumDisplays() > 1;
     case SWITCH_IME:
       return CanHandleSwitchIme(accelerator);
+    case SWITCH_TO_NEXT_IME:
+      return CanCycleInputMethod();
+    case SWITCH_TO_LAST_USED_IME:
+      return CanCycleInputMethod();
     case SWITCH_TO_PREVIOUS_USER:
     case SWITCH_TO_NEXT_USER:
       return CanHandleCycleUser();
@@ -1319,6 +1335,8 @@ bool AcceleratorController::CanPerformAction(
       return true;
     case TOGGLE_MIRROR_MODE:
       return true;
+    case TOGGLE_OVERVIEW:
+      return CanHandleToggleOverview();
     case TOUCH_HUD_CLEAR:
     case TOUCH_HUD_MODE_CHANGE:
       return CanHandleTouchHud();
@@ -1329,6 +1347,8 @@ bool AcceleratorController::CanPerformAction(
       return CanHandleWindowSnap();
     case WINDOW_POSITION_CENTER:
       return CanHandlePositionCenter();
+    case FOCUS_PIP:
+      return !!FindPipWidget();
 
     // The following are always enabled.
     case BRIGHTNESS_DOWN:
@@ -1374,7 +1394,6 @@ bool AcceleratorController::CanPerformAction(
     case TOGGLE_FULLSCREEN:
     case TOGGLE_HIGH_CONTRAST:
     case TOGGLE_MAXIMIZED:
-    case TOGGLE_OVERVIEW:
     case TOGGLE_SPOKEN_FEEDBACK:
     case TOGGLE_SYSTEM_TRAY_BUBBLE:
     case TOGGLE_WIFI:
@@ -1463,6 +1482,9 @@ void AcceleratorController::PerformAction(AcceleratorAction action,
     case FOCUS_SHELF:
       HandleFocusShelf();
       break;
+    case FOCUS_PIP:
+      HandleFocusPip();
+      break;
     case KEYBOARD_BRIGHTNESS_DOWN: {
       KeyboardBrightnessControlDelegate* delegate =
           Shell::Get()->keyboard_brightness_control_delegate();
@@ -1539,9 +1561,6 @@ void AcceleratorController::PerformAction(AcceleratorAction action,
     case NEW_WINDOW:
       HandleNewWindow();
       break;
-    case NEXT_IME:
-      HandleNextIme();
-      break;
     case OPEN_CROSH:
       HandleCrosh();
       break;
@@ -1566,9 +1585,6 @@ void AcceleratorController::PerformAction(AcceleratorAction action,
       // (power button events are reported to us from powerm via
       // D-BUS), but we consume them to prevent them from getting
       // passed to apps -- see http://crbug.com/146609.
-      break;
-    case PREVIOUS_IME:
-      HandlePreviousIme(accelerator);
       break;
     case PRINT_UI_HIERARCHIES:
       debug::PrintUIHierarchies();
@@ -1614,6 +1630,12 @@ void AcceleratorController::PerformAction(AcceleratorAction action,
       break;
     case SWITCH_IME:
       HandleSwitchIme(accelerator);
+      break;
+    case SWITCH_TO_LAST_USED_IME:
+      HandleSwitchToLastUsedIme(accelerator);
+      break;
+    case SWITCH_TO_NEXT_IME:
+      HandleSwitchToNextIme();
       break;
     case SWITCH_TO_NEXT_USER:
       HandleCycleUser(CycleUserDirection::NEXT);

@@ -45,19 +45,20 @@ namespace blink {
 
 CSSDefaultStyleSheets& CSSDefaultStyleSheets::Instance() {
   DEFINE_STATIC_LOCAL(Persistent<CSSDefaultStyleSheets>,
-                      css_default_style_sheets, (new CSSDefaultStyleSheets));
+                      css_default_style_sheets,
+                      (MakeGarbageCollected<CSSDefaultStyleSheets>()));
   return *css_default_style_sheets;
 }
 
 static const MediaQueryEvaluator& ScreenEval() {
   DEFINE_STATIC_LOCAL(Persistent<MediaQueryEvaluator>, static_screen_eval,
-                      (new MediaQueryEvaluator("screen")));
+                      (MakeGarbageCollected<MediaQueryEvaluator>("screen")));
   return *static_screen_eval;
 }
 
 static const MediaQueryEvaluator& PrintEval() {
   DEFINE_STATIC_LOCAL(Persistent<MediaQueryEvaluator>, static_print_eval,
-                      (new MediaQueryEvaluator("print")));
+                      (MakeGarbageCollected<MediaQueryEvaluator>("print")));
   return *static_print_eval;
 }
 

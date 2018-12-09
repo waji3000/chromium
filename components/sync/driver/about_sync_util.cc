@@ -16,6 +16,7 @@
 #include "base/values.h"
 #include "components/sync/driver/sync_service.h"
 #include "components/sync/driver/sync_token_status.h"
+#include "components/sync/driver/sync_user_settings.h"
 #include "components/sync/engine/cycle/sync_cycle_snapshot.h"
 #include "components/sync/engine/sync_status.h"
 #include "components/sync/engine/sync_string_conversions.h"
@@ -483,7 +484,7 @@ std::unique_ptr<base::DictionaryValue> ConstructAboutInformation(
   // Local State.
   server_connection->Set(GetConnectionStatus(token_status));
   last_synced->Set(GetLastSyncedTimeString(service->GetLastSyncedTime()));
-  is_setup_complete->Set(service->IsFirstSetupComplete());
+  is_setup_complete->Set(service->GetUserSettings()->IsFirstSetupComplete());
   if (is_status_valid)
     is_syncing->Set(full_status.syncing);
   is_local_sync_enabled->Set(service->IsLocalSyncEnabled());
@@ -522,12 +523,11 @@ std::unique_ptr<base::DictionaryValue> ConstructAboutInformation(
     if (snapshot.get_updates_origin() != sync_pb::SyncEnums::UNKNOWN_ORIGIN) {
       session_source->Set(ProtoEnumToString(snapshot.get_updates_origin()));
     }
-    get_key_result->Set(GetSyncerErrorString(
-        snapshot.model_neutral_state().last_get_key_result));
-    download_result->Set(GetSyncerErrorString(
-        snapshot.model_neutral_state().last_download_updates_result));
-    commit_result->Set(
-        GetSyncerErrorString(snapshot.model_neutral_state().commit_result));
+    get_key_result->Set(
+        snapshot.model_neutral_state().last_get_key_result.ToString());
+    download_result->Set(
+        snapshot.model_neutral_state().last_download_updates_result.ToString());
+    commit_result->Set(snapshot.model_neutral_state().commit_result.ToString());
   }
 
   // Running Totals.

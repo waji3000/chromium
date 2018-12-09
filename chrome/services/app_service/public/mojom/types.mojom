@@ -1,0 +1,86 @@
+// Copyright 2018 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+module apps.mojom;
+
+import "ui/gfx/image/mojo/image.mojom";
+
+// Information about an app. See chrome/services/app_service/README.md.
+struct App {
+  AppType app_type;
+  string app_id;
+
+  // The fields above are mandatory. Everything else below is optional.
+
+  Readiness readiness;
+  string? name;
+  IconKey? icon_key;
+
+  // TODO(nigeltao): be more principled, instead of ad hoc show_in_xxx and
+  // show_in_yyy fields?
+  OptionalBool show_in_launcher;
+  OptionalBool show_in_search;
+
+  // When adding new fields, also update the Merge method and other helpers in
+  // chrome/services/app_service/public/cpp/app_update.*
+};
+
+// The types of apps available in the registry.
+enum AppType {
+  kUnknown = 0,
+  kArc,        // Android app.
+  kBuiltIn,    // Built-in app.
+  kCrostini,   // Linux app.
+  kExtension,  // Extension-backed app.
+  kWeb,        // Web app.
+};
+
+// Whether an app is ready to launch, i.e. installed.
+enum Readiness {
+  kUnknown = 0,
+  kReady,                // Installed and launchable.
+  kDisabledByBlacklist,  // Disabled by SafeBrowsing.
+  kDisabledByPolicy,     // Disabled by admin policy.
+  kDisabledByUser,       // Disabled by explicit user action.
+  kUninstalledByUser,
+};
+
+// Augments a bool to include an 'unknown' value.
+enum OptionalBool {
+  kUnknown = 0,
+  kFalse,
+  kTrue,
+};
+
+enum IconType {
+  kUnknown,
+  kExtension,
+  kResource,
+};
+
+struct IconKey {
+  IconType icon_type;
+  // The semantics of u_key and s_key depend on the icon_type.
+  uint64 u_key;
+  string s_key;
+};
+
+enum IconCompression {
+  kUnknown,
+  kUncompressed,
+  kCompressed,
+};
+
+struct IconValue {
+  IconCompression icon_compression;
+  gfx.mojom.ImageSkia? uncompressed;
+  array<uint8>? compressed;
+};
+
+enum LaunchSource {
+  kUnknown,
+  kFromAppListGrid,            // Grid of apps, not the search box.
+  kFromAppListRecommendation,  // Query-less recommendations (smaller icons).
+  kFromAppListQueryResult,     // Query-dependent results (larger icons).
+};

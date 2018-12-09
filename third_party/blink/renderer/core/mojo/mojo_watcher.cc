@@ -10,7 +10,7 @@
 #include "third_party/blink/renderer/core/mojo/mojo_handle_signals.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
-#include "third_party/blink/renderer/platform/web_task_runner.h"
+#include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 
 namespace blink {
 
@@ -19,7 +19,7 @@ MojoWatcher* MojoWatcher::Create(mojo::Handle handle,
                                  const MojoHandleSignals* signals_dict,
                                  V8MojoWatchCallback* callback,
                                  ExecutionContext* context) {
-  MojoWatcher* watcher = new MojoWatcher(context, callback);
+  MojoWatcher* watcher = MakeGarbageCollected<MojoWatcher>(context, callback);
   MojoResult result = watcher->Watch(handle, signals_dict);
   // TODO(alokp): Consider raising an exception.
   // Current clients expect to recieve the initial error returned by MojoWatch

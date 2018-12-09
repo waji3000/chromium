@@ -20,7 +20,7 @@
 #include "base/macros.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/values.h"
 #include "chrome/common/extensions/api/cast_streaming_receiver_session.h"
@@ -43,6 +43,7 @@
 #include "third_party/blink/public/platform/web_media_stream_track.h"
 #include "third_party/blink/public/platform/web_url.h"
 #include "third_party/blink/public/web/web_dom_media_stream_track.h"
+#include "third_party/blink/public/web/web_local_frame.h"
 #include "url/gurl.h"
 
 using content::V8ValueConverter;
@@ -440,11 +441,14 @@ void CastStreamingNativeHandler::CreateCastSession(
 
   create_callback_.Reset(isolate, args[2].As<v8::Function>());
 
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE,
-      base::Bind(&CastStreamingNativeHandler::CallCreateCallback,
-                 weak_factory_.GetWeakPtr(), base::Passed(&stream1),
-                 base::Passed(&stream2), base::Passed(&udp_transport)));
+  context()
+      ->web_frame()
+      ->GetTaskRunner(blink::TaskType::kInternalMedia)
+      ->PostTask(
+          FROM_HERE,
+          base::BindOnce(&CastStreamingNativeHandler::CallCreateCallback,
+                         weak_factory_.GetWeakPtr(), base::Passed(&stream1),
+                         base::Passed(&stream2), base::Passed(&udp_transport)));
 }
 
 void CastStreamingNativeHandler::CallCreateCallback(
@@ -507,7 +511,7 @@ void CastStreamingNativeHandler::DestroyCastRtpStream(
   CHECK_EQ(1, args.Length());
   CHECK(args[0]->IsInt32());
 
-  const int transport_id = args[0]->ToInt32(args.GetIsolate())->Value();
+  const int transport_id = args[0].As<v8::Int32>()->Value();
   if (!GetRtpStreamOrThrow(transport_id))
     return;
   rtp_stream_map_.erase(transport_id);
@@ -518,7 +522,7 @@ void CastStreamingNativeHandler::GetSupportedParamsCastRtpStream(
   CHECK_EQ(1, args.Length());
   CHECK(args[0]->IsInt32());
 
-  const int transport_id = args[0]->ToInt32(args.GetIsolate())->Value();
+  const int transport_id = args[0].As<v8::Int32>()->Value();
   CastRtpStream* transport = GetRtpStreamOrThrow(transport_id);
   if (!transport)
     return;
@@ -544,7 +548,7 @@ void CastStreamingNativeHandler::StartCastRtpStream(
   CHECK(args[0]->IsInt32());
   CHECK(args[1]->IsObject());
 
-  const int transport_id = args[0]->ToInt32(args.GetIsolate())->Value();
+  const int transport_id = args[0].As<v8::Int32>()->Value();
   CastRtpStream* transport = GetRtpStreamOrThrow(transport_id);
   if (!transport)
     return;
@@ -595,7 +599,7 @@ void CastStreamingNativeHandler::StopCastRtpStream(
   CHECK_EQ(1, args.Length());
   CHECK(args[0]->IsInt32());
 
-  const int transport_id = args[0]->ToInt32(args.GetIsolate())->Value();
+  const int transport_id = args[0].As<v8::Int32>()->Value();
   CastRtpStream* transport = GetRtpStreamOrThrow(transport_id);
   if (!transport)
     return;
@@ -607,7 +611,7 @@ void CastStreamingNativeHandler::DestroyCastUdpTransport(
   CHECK_EQ(1, args.Length());
   CHECK(args[0]->IsInt32());
 
-  const int transport_id = args[0]->ToInt32(args.GetIsolate())->Value();
+  const int transport_id = args[0].As<v8::Int32>()->Value();
   if (!GetUdpTransportOrThrow(transport_id))
     return;
   udp_transport_map_.erase(transport_id);
@@ -619,7 +623,7 @@ void CastStreamingNativeHandler::SetDestinationCastUdpTransport(
   CHECK(args[0]->IsInt32());
   CHECK(args[1]->IsObject());
 
-  const int transport_id = args[0]->ToInt32(args.GetIsolate())->Value();
+  const int transport_id = args[0].As<v8::Int32>()->Value();
   CastUdpTransport* transport = GetUdpTransportOrThrow(transport_id);
   if (!transport)
     return;
@@ -643,7 +647,7 @@ void CastStreamingNativeHandler::SetOptionsCastUdpTransport(
   CHECK(args[0]->IsInt32());
   CHECK(args[1]->IsObject());
 
-  const int transport_id = args[0]->ToInt32(args.GetIsolate())->Value();
+  const int transport_id = args[0].As<v8::Int32>()->Value();
   CastUdpTransport* transport = GetUdpTransportOrThrow(transport_id);
   if (!transport)
     return;
@@ -667,7 +671,7 @@ void CastStreamingNativeHandler::ToggleLogging(
   CHECK(args[0]->IsInt32());
   CHECK(args[1]->IsBoolean());
 
-  const int stream_id = args[0]->ToInt32(args.GetIsolate())->Value();
+  const int stream_id = args[0].As<v8::Int32>()->Value();
   CastRtpStream* stream = GetRtpStreamOrThrow(stream_id);
   if (!stream)
     return;
@@ -683,7 +687,7 @@ void CastStreamingNativeHandler::GetRawEvents(
   CHECK(args[1]->IsNull() || args[1]->IsString());
   CHECK(args[2]->IsFunction());
 
-  const int transport_id = args[0]->ToInt32(args.GetIsolate())->Value();
+  const int transport_id = args[0].As<v8::Int32>()->Value();
   v8::Isolate* isolate = args.GetIsolate();
   v8::Global<v8::Function> callback(isolate, args[2].As<v8::Function>());
   std::string extra_data;
@@ -710,7 +714,7 @@ void CastStreamingNativeHandler::GetStats(
   CHECK_EQ(2, args.Length());
   CHECK(args[0]->IsInt32());
   CHECK(args[1]->IsFunction());
-  const int transport_id = args[0]->ToInt32(args.GetIsolate())->Value();
+  const int transport_id = args[0].As<v8::Int32>()->Value();
   CastRtpStream* transport = GetRtpStreamOrThrow(transport_id);
   if (!transport)
     return;

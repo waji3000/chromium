@@ -71,11 +71,8 @@ class LocationIconView : public IconLabelBubbleView {
   gfx::Size GetMinimumSize() const override;
   bool OnMousePressed(const ui::MouseEvent& event) override;
   bool OnMouseDragged(const ui::MouseEvent& event) override;
-  bool GetTooltipText(const gfx::Point& p,
-                      base::string16* tooltip) const override;
   SkColor GetTextColor() const override;
   bool ShouldShowSeparator() const override;
-  bool ShouldShowExtraEndSpace() const override;
   bool ShowBubble(const ui::Event& event) override;
   void GetAccessibleNodeData(ui::AXNodeData* node_data) override;
   bool IsBubbleShowing() const override;
@@ -84,8 +81,10 @@ class LocationIconView : public IconLabelBubbleView {
   // Returns what the minimum width for the label text.
   int GetMinimumLabelTextWidth() const;
 
-  // Updates the icon's ink drop mode and focusable behavior.
-  void Update();
+  // Updates the icon's ink drop mode, focusable behavior, text and security
+  // status. |suppress_animations| indicates whether this update should suppress
+  // the text change animation (e.g. when swapping tabs).
+  void Update(bool suppress_animations);
 
   // Returns text to be placed in the view.
   // - For secure/insecure pages, returns text describing the URL's security
@@ -101,6 +100,8 @@ class LocationIconView : public IconLabelBubbleView {
   // - the current page URL is a chrome-extension:// URL.
   bool ShouldShowText() const;
 
+  const views::InkDrop* get_ink_drop_for_testing();
+
  protected:
   // IconLabelBubbleView:
   bool IsTriggerableEvent(const ui::Event& event) override;
@@ -112,13 +113,14 @@ class LocationIconView : public IconLabelBubbleView {
   security_state::SecurityLevel last_update_security_level_ =
       security_state::NONE;
 
+  // Whether the delegate's editing or empty flag was set the last time the
+  // location icon was updated.
+  bool was_editing_or_empty_ = false;
+
   // Returns what the minimum size would be if the preferred size were |size|.
   gfx::Size GetMinimumSizeForPreferredSize(gfx::Size size) const;
 
   int GetSlideDurationTime() const override;
-
-  // True if hovering this view should display a tooltip.
-  bool show_tooltip_;
 
   Delegate* delegate_;
 
@@ -133,7 +135,8 @@ class LocationIconView : public IconLabelBubbleView {
 
   // Updates visibility of the text and determines whether the transition
   // (if any) should be animated.
-  void UpdateTextVisibility();
+  // If |suppress_animations| is true, the text change will not be animated.
+  void UpdateTextVisibility(bool suppress_animations);
 
   // Updates Icon based on the current state and theme.
   void UpdateIcon();

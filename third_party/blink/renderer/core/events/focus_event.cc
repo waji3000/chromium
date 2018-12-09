@@ -28,11 +28,12 @@
 #include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/dom/events/event_dispatcher.h"
 #include "third_party/blink/renderer/core/dom/events/event_path.h"
+#include "third_party/blink/renderer/core/event_interface_names.h"
 
 namespace blink {
 
 const AtomicString& FocusEvent::InterfaceName() const {
-  return EventNames::FocusEvent;
+  return event_interface_names::kFocusEvent;
 }
 
 bool FocusEvent::IsFocusEvent() const {

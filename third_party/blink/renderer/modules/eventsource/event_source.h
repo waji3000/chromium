@@ -53,7 +53,7 @@ class ResourceResponse;
 
 class MODULES_EXPORT EventSource final
     : public EventTargetWithInlineData,
-      private ThreadableLoaderClient,
+      public ThreadableLoaderClient,
       public ActiveScriptWrappable<EventSource>,
       public ContextLifecycleObserver,
       public EventSourceParser::Client {
@@ -65,6 +65,8 @@ class MODULES_EXPORT EventSource final
                              const String& url,
                              const EventSourceInit*,
                              ExceptionState&);
+
+  EventSource(ExecutionContext*, const KURL&, const EventSourceInit*);
   ~EventSource() override;
 
   static const unsigned long long kDefaultReconnectDelay;
@@ -100,8 +102,6 @@ class MODULES_EXPORT EventSource final
   void Trace(blink::Visitor*) override;
 
  private:
-  EventSource(ExecutionContext*, const KURL&, const EventSourceInit*);
-
   void DidReceiveResponse(unsigned long,
                           const ResourceResponse&,
                           std::unique_ptr<WebDataConsumerHandle>) override;

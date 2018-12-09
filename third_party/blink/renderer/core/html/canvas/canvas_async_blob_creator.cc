@@ -21,9 +21,9 @@
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/image-encoders/image_encoder_utils.h"
 #include "third_party/blink/renderer/platform/scheduler/public/background_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
-#include "third_party/blink/renderer/platform/web_task_runner.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
 #include "third_party/skia/include/core/SkSurface.h"
@@ -102,20 +102,27 @@ void RecordCompleteEncodingTimeHistogram(ImageEncodingMimeType mime_type,
 
 void RecordScaledDurationHistogram(ImageEncodingMimeType mime_type,
                                    TimeDelta elapsed_time,
-                                   int width,
-                                   int height) {
-  float sqrt_pixels = std::sqrt(width * height);
-  int scaled_time =
-      elapsed_time.InMicrosecondsF() / (sqrt_pixels == 0 ? 1 : sqrt_pixels);
+                                   float width,
+                                   float height) {
+  float sqrt_pixels = std::sqrt(width) * std::sqrt(height);
+  float scaled_time_float =
+      elapsed_time.InMicrosecondsF() / (sqrt_pixels == 0 ? 1.0f : sqrt_pixels);
+
+  // If scaled_time_float overflows as integer, CheckedNumeric will store it
+  // as invalid, then ValueOrDefault will return the maximum int.
+  base::CheckedNumeric<int> checked_scaled_time = scaled_time_float;
+  int scaled_time_int =
+      checked_scaled_time.ValueOrDefault(std::numeric_limits<int>::max());
+
   if (mime_type == kMimeTypePng) {
     UMA_HISTOGRAM_COUNTS_100000("Blink.Canvas.ToBlob.ScaledDuration.PNG",
-                                scaled_time);
+                                scaled_time_int);
   } else if (mime_type == kMimeTypeJpeg) {
     UMA_HISTOGRAM_COUNTS_100000("Blink.Canvas.ToBlob.ScaledDuration.JPEG",
-                                scaled_time);
+                                scaled_time_int);
   } else if (mime_type == kMimeTypeWebp) {
     UMA_HISTOGRAM_COUNTS_100000("Blink.Canvas.ToBlob.ScaledDuration.WEBP",
-                                scaled_time);
+                                scaled_time_int);
   }
 }
 
@@ -130,8 +137,8 @@ CanvasAsyncBlobCreator* CanvasAsyncBlobCreator::Create(
     ExecutionContext* context) {
   ImageEncodeOptions* options = ImageEncodeOptions::Create();
   options->setType(ImageEncodingMimeTypeName(mime_type));
-  return new CanvasAsyncBlobCreator(image, options, function_type, callback,
-                                    start_time, context, nullptr);
+  return MakeGarbageCollected<CanvasAsyncBlobCreator>(
+      image, options, function_type, callback, start_time, context, nullptr);
 }
 
 CanvasAsyncBlobCreator* CanvasAsyncBlobCreator::Create(
@@ -141,8 +148,8 @@ CanvasAsyncBlobCreator* CanvasAsyncBlobCreator::Create(
     TimeTicks start_time,
     ExecutionContext* context,
     ScriptPromiseResolver* resolver) {
-  return new CanvasAsyncBlobCreator(image, options, function_type, nullptr,
-                                    start_time, context, resolver);
+  return MakeGarbageCollected<CanvasAsyncBlobCreator>(
+      image, options, function_type, nullptr, start_time, context, resolver);
 }
 
 CanvasAsyncBlobCreator::CanvasAsyncBlobCreator(

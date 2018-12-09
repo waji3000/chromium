@@ -2399,6 +2399,75 @@ TEST_F(BluetoothBlueZTest, DeviceMTUChanged) {
   EXPECT_EQ(2, observer.device_mtu_changed_count());
   EXPECT_EQ(128, observer.last_mtu_value());
 }
+
+TEST_F(BluetoothBlueZTest, DeviceAdvertisementReceived) {
+  // Simulate reception of advertisement from a device.
+  GetAdapter();
+
+  fake_bluetooth_device_client_->CreateDevice(
+      dbus::ObjectPath(bluez::FakeBluetoothAdapterClient::kAdapterPath),
+      dbus::ObjectPath(bluez::FakeBluetoothDeviceClient::kLowEnergyPath));
+  BluetoothDevice* device =
+      adapter_->GetDevice(bluez::FakeBluetoothDeviceClient::kLowEnergyAddress);
+  ASSERT_TRUE(device);
+
+  // Install an observer; expect DeviceAdvertisementReceived method to be called
+  // with the EIR and RSSI.
+  TestBluetoothAdapterObserver observer(adapter_);
+
+  bluez::FakeBluetoothDeviceClient::Properties* properties =
+      fake_bluetooth_device_client_->GetProperties(
+          dbus::ObjectPath(bluez::FakeBluetoothDeviceClient::kLowEnergyPath));
+  ASSERT_EQ(0, observer.device_advertisement_received_count());
+
+  std::vector<uint8_t> eir = {0x01, 0x02, 0x03};
+  properties->eir.ReplaceValue(eir);
+  properties->rssi.ReplaceValue(-73);
+
+  properties->rssi.set_valid(true);
+  properties->NotifyPropertyChanged(properties->rssi.name());
+  EXPECT_EQ(0, observer.device_advertisement_received_count());  // EIR invalid
+
+  properties->eir.set_valid(true);
+  properties->rssi.set_valid(false);
+  properties->NotifyPropertyChanged(properties->rssi.name());
+  EXPECT_EQ(0, observer.device_advertisement_received_count());  // RSSI invalid
+
+  properties->rssi.set_valid(true);
+  properties->NotifyPropertyChanged(properties->rssi.name());
+  EXPECT_EQ(1, observer.device_advertisement_received_count());
+  EXPECT_EQ(eir, observer.device_eir());
+}
+
+TEST_F(BluetoothBlueZTest, DeviceConnectedStateChanged) {
+  GetAdapter();
+
+  fake_bluetooth_device_client_->CreateDevice(
+      dbus::ObjectPath(bluez::FakeBluetoothAdapterClient::kAdapterPath),
+      dbus::ObjectPath(bluez::FakeBluetoothDeviceClient::kLowEnergyPath));
+  BluetoothDevice* device =
+      adapter_->GetDevice(bluez::FakeBluetoothDeviceClient::kLowEnergyAddress);
+  ASSERT_TRUE(device);
+
+  // Install an observer; expect DeviceConnectedStateChanged method to be
+  // called.
+  TestBluetoothAdapterObserver observer(adapter_);
+
+  bluez::FakeBluetoothDeviceClient::Properties* properties =
+      fake_bluetooth_device_client_->GetProperties(
+          dbus::ObjectPath(bluez::FakeBluetoothDeviceClient::kLowEnergyPath));
+
+  // The device starts out disconnected.
+  EXPECT_FALSE(device->IsConnected());
+
+  properties->connected.ReplaceValue(true);
+  EXPECT_EQ(1u, observer.device_connected_state_changed_values().size());
+  EXPECT_TRUE(observer.device_connected_state_changed_values()[0]);
+
+  properties->connected.ReplaceValue(false);
+  EXPECT_EQ(2u, observer.device_connected_state_changed_values().size());
+  EXPECT_FALSE(observer.device_connected_state_changed_values()[1]);
+}
 #endif
 
 TEST_F(BluetoothBlueZTest, DeviceUuidsChanged) {

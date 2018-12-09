@@ -77,7 +77,8 @@ void ImeOnFocusTest::SendGestureTap(WebView* web_view, IntPoint client_point) {
   web_gesture_event.data.tap.width = 10;
   web_gesture_event.data.tap.height = 10;
 
-  web_view->HandleInputEvent(WebCoalescedInputEvent(web_gesture_event));
+  web_view->MainFrameWidget()->HandleInputEvent(
+      WebCoalescedInputEvent(web_gesture_event));
   RunPendingTasks();
 }
 
@@ -97,7 +98,7 @@ void ImeOnFocusTest::RunImeOnFocusTest(
                                 WebString::FromUTF8(file_name));
   WebViewImpl* web_view =
       web_view_helper_.Initialize(nullptr, nullptr, &client);
-  web_view->Resize(WebSize(800, 1200));
+  web_view->MainFrameWidget()->Resize(WebSize(800, 1200));
   LoadFrame(web_view->MainFrameImpl(), base_url_ + file_name);
   document_ = web_view_helper_.GetWebView()
                   ->MainFrameImpl()

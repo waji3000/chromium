@@ -15,7 +15,6 @@ bool IsOpaqueUiMode(UiMode mode) {
     case kModeWebVr:
     case kModeVoiceSearch:
     case kModeEditingOmnibox:
-    case kModeTabsView:
       return true;
     case kModeRepositionWindow:
     case kModeModalPrompt:
@@ -124,6 +123,14 @@ bool Model::reposition_window_permitted() const {
   return !editing_input && !editing_web_input &&
          active_modal_prompt_type == kModalPromptTypeNone &&
          !hosted_platform_ui.hosted_ui_enabled;
+}
+
+const ControllerModel& Model::primary_controller() const {
+  return controllers[0];
+}
+
+ControllerModel& Model::mutable_primary_controller() {
+  return controllers[0];
 }
 
 }  // namespace vr

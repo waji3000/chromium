@@ -45,6 +45,7 @@
 #include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
 #include "services/network/test/test_network_connection_tracker.h"
 #include "services/network/test/test_url_loader_factory.h"
+#include "services/network/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace variations {
@@ -129,8 +130,8 @@ class TestVariationsService : public VariationsService {
         delta_compressed_seed_(false),
         gzip_compressed_seed_(false),
         insecurely_fetched_seed_(false) {
-    interception_url_ = GetVariationsServerURL(
-        local_state, std::string(), use_secure_url ? USE_HTTPS : USE_HTTP);
+    interception_url_ =
+        GetVariationsServerURL(use_secure_url ? USE_HTTPS : USE_HTTP);
     set_variations_server_url(interception_url_);
   }
 
@@ -140,12 +141,20 @@ class TestVariationsService : public VariationsService {
   void set_intercepts_fetch(bool value) {
     intercepts_fetch_ = value;
   }
+  void set_insecure_url(const GURL& url) {
+    set_insecure_variations_server_url(url);
+  }
+  void set_last_request_was_retry(bool was_retry) {
+    set_last_request_was_http_retry(was_retry);
+  }
   bool fetch_attempted() const { return fetch_attempted_; }
   bool seed_stored() const { return seed_stored_; }
   const std::string& stored_country() const { return stored_country_; }
   bool delta_compressed_seed() const { return delta_compressed_seed_; }
   bool gzip_compressed_seed() const { return gzip_compressed_seed_; }
   bool insecurely_fetched_seed() const { return insecurely_fetched_seed_; }
+
+  bool CallMaybeRetryOverHTTP() { return CallMaybeRetryOverHTTPForTesting(); }
 
   void DoActualFetch() override {
     if (intercepts_fetch_) {
@@ -155,6 +164,15 @@ class TestVariationsService : public VariationsService {
 
     VariationsService::DoActualFetch();
     base::RunLoop().RunUntilIdle();
+  }
+
+  bool DoFetchFromURL(const GURL& url, bool is_http_retry) override {
+    if (intercepts_fetch_) {
+      fetch_attempted_ = true;
+      return true;
+    }
+
+    return VariationsService::DoFetchFromURL(url, is_http_retry);
   }
 
   bool StoreSeed(const std::string& seed_data,
@@ -324,37 +342,46 @@ TEST_F(VariationsServiceTest, GetVariationsServerURL) {
       std::make_unique<web_resource::TestRequestAllowedNotifier>(
           &prefs_, network_tracker_),
       &prefs_, GetMetricsStateManager(), UIStringOverrider());
-  GURL url = service.GetVariationsServerURL(&prefs_, std::string(),
-                                            TestVariationsService::USE_HTTPS);
+  GURL url = service.GetVariationsServerURL(TestVariationsService::USE_HTTPS);
   EXPECT_TRUE(base::StartsWith(url.spec(), default_variations_url,
                                base::CompareCase::SENSITIVE));
   EXPECT_FALSE(net::GetValueForKeyInQuery(url, "restrict", &value));
+  // There should be a fallback URL since restrict mode is not set.
+  EXPECT_NE(GURL(),
+            service.GetVariationsServerURL(TestVariationsService::USE_HTTP));
 
   prefs_.SetString(prefs::kVariationsRestrictParameter, "restricted");
-  url = service.GetVariationsServerURL(&prefs_, std::string(),
-                                       TestVariationsService::USE_HTTPS);
+  url = service.GetVariationsServerURL(TestVariationsService::USE_HTTPS);
   EXPECT_TRUE(base::StartsWith(url.spec(), default_variations_url,
                                base::CompareCase::SENSITIVE));
   EXPECT_TRUE(net::GetValueForKeyInQuery(url, "restrict", &value));
   EXPECT_EQ("restricted", value);
+  // No fallback URL because restrict mode is set.
+  EXPECT_EQ(GURL(),
+            service.GetVariationsServerURL(TestVariationsService::USE_HTTP));
 
   // A client override should take precedence over what's in prefs_.
   raw_client->set_restrict_parameter("client");
-  url = service.GetVariationsServerURL(&prefs_, std::string(),
-                                       TestVariationsService::USE_HTTPS);
+  url = service.GetVariationsServerURL(TestVariationsService::USE_HTTPS);
   EXPECT_TRUE(base::StartsWith(url.spec(), default_variations_url,
                                base::CompareCase::SENSITIVE));
   EXPECT_TRUE(net::GetValueForKeyInQuery(url, "restrict", &value));
   EXPECT_EQ("client", value);
+  // No fallback URL because restrict mode is set.
+  EXPECT_EQ(GURL(),
+            service.GetVariationsServerURL(TestVariationsService::USE_HTTP));
 
-  // The override value passed to the method should take precedence over
-  // what's in prefs_ and a client override.
-  url = service.GetVariationsServerURL(&prefs_, "override",
-                                       TestVariationsService::USE_HTTPS);
+  // The value set via SetRestrictMode() should take precedence over what's
+  // in prefs_ and a client override.
+  service.SetRestrictMode("override");
+  url = service.GetVariationsServerURL(TestVariationsService::USE_HTTPS);
   EXPECT_TRUE(base::StartsWith(url.spec(), default_variations_url,
                                base::CompareCase::SENSITIVE));
   EXPECT_TRUE(net::GetValueForKeyInQuery(url, "restrict", &value));
   EXPECT_EQ("override", value);
+  // No fallback URL because restrict mode is set.
+  EXPECT_EQ(GURL(),
+            service.GetVariationsServerURL(TestVariationsService::USE_HTTP));
 }
 
 TEST_F(VariationsServiceTest, VariationsURLHasParams) {
@@ -367,8 +394,7 @@ TEST_F(VariationsServiceTest, VariationsURLHasParams) {
           &prefs_, network_tracker_),
       &prefs_, GetMetricsStateManager(), UIStringOverrider());
   raw_client->set_channel(version_info::Channel::UNKNOWN);
-  GURL url = service.GetVariationsServerURL(&prefs_, std::string(),
-                                            TestVariationsService::USE_HTTPS);
+  GURL url = service.GetVariationsServerURL(TestVariationsService::USE_HTTPS);
 
   std::string value;
   EXPECT_TRUE(net::GetValueForKeyInQuery(url, "osname", &value));
@@ -384,8 +410,7 @@ TEST_F(VariationsServiceTest, VariationsURLHasParams) {
   EXPECT_TRUE(channel.empty());
 
   raw_client->set_channel(version_info::Channel::STABLE);
-  url = service.GetVariationsServerURL(&prefs_, std::string(),
-                                       TestVariationsService::USE_HTTPS);
+  url = service.GetVariationsServerURL(TestVariationsService::USE_HTTPS);
   EXPECT_TRUE(net::GetValueForKeyInQuery(url, "channel", &channel));
   EXPECT_FALSE(channel.empty());
 }
@@ -903,6 +928,70 @@ TEST_F(VariationsServiceTest, InsecurelyFetchedNotSetWhenHTTPS) {
       service.interception_url().spec(), serialized_seed);
   service.DoActualFetch();
   EXPECT_FALSE(service.insecurely_fetched_seed());
+}
+
+TEST_F(VariationsServiceTest, RetryOverHTTPIfURLisSet) {
+  TestVariationsService service(
+      std::make_unique<web_resource::TestRequestAllowedNotifier>(
+          &prefs_, network_tracker_),
+      &prefs_, GetMetricsStateManager(), true);
+  service.set_intercepts_fetch(true);
+  service.set_last_request_was_retry(false);
+  service.set_insecure_url(GURL("http://example.test"));
+  EXPECT_TRUE(service.CallMaybeRetryOverHTTP());
+  EXPECT_TRUE(service.fetch_attempted());
+}
+
+TEST_F(VariationsServiceTest, DoNotRetryAfterARetry) {
+  TestVariationsService service(
+      std::make_unique<web_resource::TestRequestAllowedNotifier>(
+          &prefs_, network_tracker_),
+      &prefs_, GetMetricsStateManager(), true);
+  service.set_intercepts_fetch(true);
+  service.set_last_request_was_retry(true);
+  service.set_insecure_url(GURL("http://example.test"));
+  EXPECT_FALSE(service.CallMaybeRetryOverHTTP());
+  EXPECT_FALSE(service.fetch_attempted());
+}
+
+TEST_F(VariationsServiceTest, DoNotRetryIfInsecureURLIsHTTPS) {
+  TestVariationsService service(
+      std::make_unique<web_resource::TestRequestAllowedNotifier>(
+          &prefs_, network_tracker_),
+      &prefs_, GetMetricsStateManager(), true);
+  service.set_intercepts_fetch(true);
+  service.set_last_request_was_retry(false);
+  service.set_insecure_url(GURL("https://example.test"));
+  EXPECT_FALSE(service.CallMaybeRetryOverHTTP());
+  EXPECT_FALSE(service.fetch_attempted());
+}
+
+TEST_F(VariationsServiceTest, SeedNotStoredWhenRedirected) {
+  VariationsService::EnableFetchForTesting();
+
+  TestVariationsService service(
+      std::make_unique<web_resource::TestRequestAllowedNotifier>(
+          &prefs_, network_tracker_),
+      &prefs_, GetMetricsStateManager(), true);
+
+  EXPECT_FALSE(service.seed_stored());
+
+  net::RedirectInfo redirect_info;
+  redirect_info.status_code = 301;
+  redirect_info.new_url = service.interception_url();
+  network::TestURLLoaderFactory::Redirects redirects{
+      {redirect_info, network::ResourceResponseHead()}};
+
+  network::ResourceResponseHead head =
+      network::CreateResourceResponseHead(net::HTTP_OK);
+
+  service.test_url_loader_factory()->AddResponse(
+      service.interception_url(), head, SerializeSeed(CreateTestSeed()),
+      network::URLLoaderCompletionStatus(), redirects);
+
+  service.set_intercepts_fetch(false);
+  service.DoActualFetch();
+  EXPECT_FALSE(service.seed_stored());
 }
 
 // TODO(isherman): Add an integration test for saving and loading a safe seed,

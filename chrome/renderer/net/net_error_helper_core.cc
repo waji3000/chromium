@@ -802,6 +802,15 @@ void NetErrorHelperCore::OnSetNavigationCorrectionInfo(
   navigation_correction_params_.search_url = search_url;
 }
 
+void NetErrorHelperCore::OnEasterEggHighScoreReceived(int high_score) {
+  if (!committed_error_page_info_ ||
+      !committed_error_page_info_->is_finished_loading) {
+    return;
+  }
+
+  delegate_->InitializeErrorPageEasterEggHighScore(high_score);
+}
+
 void NetErrorHelperCore::PrepareErrorPageForMainFrame(
     ErrorPageInfo* pending_error_page_info,
     std::string* error_html) {
@@ -1061,6 +1070,7 @@ void NetErrorHelperCore::ExecuteButtonPress(Button button) {
       return;
     case EASTER_EGG:
       RecordEvent(error_page::NETWORK_ERROR_EASTER_EGG_ACTIVATED);
+      delegate_->RequestEasterEggHighScore();
       return;
     case SHOW_CACHED_COPY_BUTTON:
       RecordEvent(error_page::NETWORK_ERROR_PAGE_CACHED_COPY_BUTTON_CLICKED);
@@ -1126,5 +1136,25 @@ void NetErrorHelperCore::LaunchOfflineItem(const std::string& id,
 void NetErrorHelperCore::LaunchDownloadsPage() {
 #if defined(OS_ANDROID)
   available_content_helper_.LaunchDownloadsPage();
+#endif
+}
+
+void NetErrorHelperCore::SavePageForLater() {
+#if defined(OS_ANDROID)
+  page_auto_fetcher_helper_->TrySchedule(
+      /*user_requested=*/true, base::BindOnce(&Delegate::SetAutoFetchState,
+                                              base::Unretained(delegate_)));
+#endif
+}
+
+void NetErrorHelperCore::CancelSavePage() {
+#if defined(OS_ANDROID)
+  page_auto_fetcher_helper_->CancelSchedule();
+#endif
+}
+
+void NetErrorHelperCore::ListVisibilityChanged(bool is_visible) {
+#if defined(OS_ANDROID)
+  available_content_helper_.ListVisibilityChanged(is_visible);
 #endif
 }

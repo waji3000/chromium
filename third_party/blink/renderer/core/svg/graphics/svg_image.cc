@@ -78,6 +78,10 @@ class SVGImage::SVGImageLocalFrameClient : public EmptyLocalFrameClient {
   void ClearImage() { image_ = nullptr; }
 
  private:
+  std::unique_ptr<WebURLLoaderFactory> CreateURLLoaderFactory() override {
+    return Platform::Current()->CreateDefaultURLLoaderFactory();
+  }
+
   void DispatchDidHandleOnloadEvents() override {
     // The SVGImage was destructed before SVG load completion.
     if (!image_)
@@ -646,9 +650,9 @@ void SVGImage::ServiceAnimations(
   LocalFrameView* frame_view = ToLocalFrame(page_->MainFrame())->View();
   frame_view->UpdateAllLifecyclePhasesExceptPaint();
 
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled() ||
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled() ||
       RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled()) {
-    // For SPv2/BGPT we run UpdateAnimations after the paint phase, but per the
+    // For CAP/BGPT we run UpdateAnimations after the paint phase, but per the
     // above comment, we don't want to run lifecycle through to paint for SVG
     // images. Since we know SVG images never have composited animations we can
     // update animations directly without worrying about including
@@ -790,7 +794,7 @@ Image::SizeAvailability SVGImage::DataChanged(bool all_data_received) {
   {
     TRACE_EVENT0("blink", "SVGImage::dataChanged::createFrame");
     DCHECK(!frame_client_);
-    frame_client_ = new SVGImageLocalFrameClient(this);
+    frame_client_ = MakeGarbageCollected<SVGImageLocalFrameClient>(this);
     frame = LocalFrame::Create(frame_client_, *page, nullptr);
     frame->SetView(LocalFrameView::Create(*frame));
     frame->Init();

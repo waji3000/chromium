@@ -26,6 +26,7 @@ class Rect;
 }
 
 namespace ash {
+class ImmersiveGestureDragHandler;
 class LockWindowState;
 class TabletModeWindowState;
 
@@ -34,6 +35,7 @@ enum class WindowPinType;
 }
 
 namespace wm {
+class InitialStateTestState;
 class WindowState;
 class WindowStateDelegate;
 class WindowStateObserver;
@@ -334,6 +336,9 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
   void OnCompleteDrag(const gfx::Point& location);
   void OnRevertDrag(const gfx::Point& location);
 
+  // Notifies that the window lost the activation.
+  void OnActivationLost();
+
   // Returns a pointer to DragDetails during drag operations.
   const DragDetails* drag_details() const { return drag_details_.get(); }
   DragDetails* drag_details() { return drag_details_.get(); }
@@ -351,6 +356,7 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
  private:
   friend class BaseState;
   friend class DefaultState;
+  friend class InitialStateTestState;
   friend class ash::wm::ClientControlledState;
   friend class ash::LockWindowState;
   friend class ash::TabletModeWindowState;
@@ -358,6 +364,8 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
   FRIEND_TEST_ALL_PREFIXES(WindowAnimationsTest, CrossFadeToBounds);
   FRIEND_TEST_ALL_PREFIXES(WindowAnimationsTest,
                            CrossFadeToBoundsFromTransform);
+  FRIEND_TEST_ALL_PREFIXES(WindowStateTest, PipWindowMaskRecreated);
+  FRIEND_TEST_ALL_PREFIXES(WindowStateTest, PipWindowHasMaskLayer);
 
   explicit WindowState(aura::Window* window);
 
@@ -409,10 +417,6 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
       const gfx::Rect& bounds,
       gfx::Tween::Type animation_type = gfx::Tween::EASE_OUT);
 
-  // Updates rounded corners for PIP window states. Removes rounded corners
-  // for non-PIP window states.
-  void UpdatePipRoundedCorners();
-
   // Update PIP related state, such as next window animation type, upon
   // state change.
   void UpdatePipState(bool was_pip);
@@ -445,9 +449,6 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
   bool cached_always_on_top_;
   bool allow_set_bounds_direct_ = false;
 
-  // Mask layer for PIP windows.
-  std::unique_ptr<ui::LayerOwner> pip_mask_ = nullptr;
-
   // A property to save the ratio between snapped window width and display
   // workarea width. It is used to update snapped window width on
   // AdjustSnappedBounds() when handling workspace events.
@@ -474,6 +475,10 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
   bool ignore_property_change_;
 
   std::unique_ptr<State> current_state_;
+
+  // An object that assists with dragging immersive mode windows in tablet mode.
+  // Only non-null when immersive mode is active.
+  std::unique_ptr<ImmersiveGestureDragHandler> immersive_gesture_drag_handler_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowState);
 };

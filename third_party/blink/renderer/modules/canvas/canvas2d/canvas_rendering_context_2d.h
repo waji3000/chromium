@@ -81,14 +81,16 @@ class MODULES_EXPORT CanvasRenderingContext2D final
         CanvasRenderingContextHost* host,
         const CanvasContextCreationAttributesCore& attrs) override {
       DCHECK(!host->IsOffscreenCanvas());
-      return new CanvasRenderingContext2D(static_cast<HTMLCanvasElement*>(host),
-                                          attrs);
+      return MakeGarbageCollected<CanvasRenderingContext2D>(
+          static_cast<HTMLCanvasElement*>(host), attrs);
     }
     CanvasRenderingContext::ContextType GetContextType() const override {
       return CanvasRenderingContext::kContext2d;
     }
   };
 
+  CanvasRenderingContext2D(HTMLCanvasElement*,
+                           const CanvasContextCreationAttributesCore&);
   ~CanvasRenderingContext2D() override;
 
   HTMLCanvasElement* canvas() const {
@@ -159,10 +161,8 @@ class MODULES_EXPORT CanvasRenderingContext2D final
   // BaseRenderingContext2D implementation
   bool OriginClean() const final;
   void SetOriginTainted() final;
-  bool WouldTaintOrigin(CanvasImageSource* source,
-                        ExecutionContext* execution_context) final {
-    return CanvasRenderingContext::WouldTaintOrigin(
-        source, execution_context->GetSecurityOrigin());
+  bool WouldTaintOrigin(CanvasImageSource* source) final {
+    return CanvasRenderingContext::WouldTaintOrigin(source);
   }
   void DisableAcceleration() override;
   void DidInvokeGPUReadbackInCurrentFrame() override;
@@ -213,8 +213,6 @@ class MODULES_EXPORT CanvasRenderingContext2D final
  private:
   friend class CanvasRenderingContext2DAutoRestoreSkCanvas;
 
-  CanvasRenderingContext2D(HTMLCanvasElement*,
-                           const CanvasContextCreationAttributesCore&);
   void DispatchContextLostEvent(TimerBase*);
   void DispatchContextRestoredEvent(TimerBase*);
   void TryRestoreContextEvent(TimerBase*);

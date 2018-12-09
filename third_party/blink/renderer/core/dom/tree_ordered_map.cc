@@ -42,7 +42,7 @@
 namespace blink {
 
 TreeOrderedMap* TreeOrderedMap::Create() {
-  return new TreeOrderedMap;
+  return MakeGarbageCollected<TreeOrderedMap>();
 }
 
 TreeOrderedMap::TreeOrderedMap() = default;
@@ -78,7 +78,8 @@ inline bool KeyMatchesSlotName(const AtomicString& key,
 void TreeOrderedMap::Add(const AtomicString& key, Element& element) {
   DCHECK(key);
 
-  Map::AddResult add_result = map_.insert(key, new MapEntry(element));
+  Map::AddResult add_result =
+      map_.insert(key, MakeGarbageCollected<MapEntry>(element));
   if (add_result.is_new_entry)
     return;
 

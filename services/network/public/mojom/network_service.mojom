@@ -8,6 +8,7 @@ import "mojo/public/mojom/base/file.mojom";
 import "mojo/public/mojom/base/file_path.mojom";
 import "mojo/public/mojom/base/read_only_buffer.mojom";
 import "mojo/public/mojom/base/string16.mojom";
+import "mojo/public/mojom/base/unguessable_token.mojom";
 import "mojo/public/mojom/base/values.mojom";
 import "services/network/public/mojom/cookie_manager.mojom";
 import "services/network/public/mojom/host_resolver.mojom";
@@ -74,6 +75,8 @@ interface NetworkServiceClient {
                  AuthChallengeResponder auth_challenge_responder);
   // Called when an SSL certificate requested message is received for client
   // authentication.
+  // The |provider_name| parameter corresponses to the return value of
+  // net::SSLPrivateKey::GetProviderName().
   // The |algorithm_preferences| parameter corresponds to the return value
   // of net::SSLPrivateKey::GetAlgorithmPreferences().
   // The |cancel_certificate_selection| parameter is used to distinguish
@@ -84,11 +87,17 @@ interface NetworkServiceClient {
   // called.
   // 2. The request is aborted, net::URLRequest::CancelWithError() needs to be
   // called.
-  OnCertificateRequested(uint32 process_id,
+  //
+  // |window_id| or else |process_id| and |routing_id| indicates
+  // the frame making the request, see
+  // network::ResourceRequest::fetch_window_id.
+  OnCertificateRequested(mojo_base.mojom.UnguessableToken? window_id,
+                         uint32 process_id,
                          uint32 routing_id,
                          uint32 request_id,
                          network.mojom.SSLCertRequestInfo cert_info) => (
                              network.mojom.X509Certificate x509_certificate,
+                             string provider_name,
                              array<uint16> algorithm_preferences,
                              SSLPrivateKey ssl_private_key,
                              bool cancel_certificate_selection);
@@ -104,8 +113,9 @@ interface NetworkServiceClient {
                         bool fatal) => (int32 net_error);
 
   // Notification that a trust anchor was used for the given user.
+  // |username_hash| was the parameter passed in NetworkContextParams.
   [EnableIf=is_chromeos]
-  OnUsedTrustAnchor(string username_hash);
+  OnTrustAnchorUsed(string username_hash);
 
   // Called when file uploading was requested.
   // If the process that requested the uploads has permission to read all of
@@ -281,10 +291,15 @@ interface NetworkService {
   ConfigureHttpAuthPrefs(HttpAuthDynamicParams http_auth_dynamic_params);
 
   // Specifies whether requests for raw headers coming through URLLoaderFactory
-  // associated with the specified process will be granted. Granting such a
-  // permission increases risks in case the child process becomes compromised,
-  // so this should be done only in specific cases (e.g. DevTools attached).
-  SetRawHeadersAccess(uint32 process_id, bool allow);
+  // associated with the specified process will be granted. Only raw headers
+  // for requests with URLs matching a listed origin will be reported (this
+  // permission has no effect on the network request itself).
+  // The list overwrites the list set for given process with a previous call
+  // to this method.
+  // Granting a permission increases risks in case the child process becomes
+  // compromised, so this should be done only in specific cases
+  // (e.g. DevTools attached).
+  SetRawHeadersAccess(uint32 process_id, array<url.mojom.Origin> origins);
 
   // Gets the NetworkChangeManager.
   GetNetworkChangeManager(
@@ -293,6 +308,9 @@ interface NetworkService {
   // Gets the NetworkQualityEstimatorManager.
   GetNetworkQualityEstimatorManager(
       NetworkQualityEstimatorManager& network_quality_estimator_manager);
+
+  // Gets the DnsConfigChangeManager.
+  GetDnsConfigChangeManager(DnsConfigChangeManager& dns_config_change_manager);
 
   // Gets the accumulated network usage since the start/restart of the service.
   GetTotalNetworkUsages() => (array<NetworkUsage> total_network_usages);

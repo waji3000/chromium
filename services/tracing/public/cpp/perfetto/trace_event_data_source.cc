@@ -4,6 +4,7 @@
 
 #include "services/tracing/public/cpp/perfetto/trace_event_data_source.h"
 
+#include <atomic>
 #include <map>
 #include <utility>
 
@@ -11,7 +12,9 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/no_destructor.h"
 #include "base/process/process_handle.h"
+#include "base/trace_event/trace_buffer.h"
 #include "base/trace_event/trace_event.h"
+#include "build/build_config.h"
 #include "services/tracing/public/cpp/perfetto/traced_value_proto_writer.h"
 #include "services/tracing/public/mojom/constants.mojom.h"
 #include "third_party/perfetto/include/perfetto/tracing/core/shared_memory_arbiter.h"
@@ -22,6 +25,18 @@
 using TraceLog = base::trace_event::TraceLog;
 using TraceEvent = base::trace_event::TraceEvent;
 using TraceConfig = base::trace_event::TraceConfig;
+
+namespace {
+static const size_t kMaxEventsPerMessage = 100;
+static const size_t kMaxCompleteEventDepth = 20;
+
+// To mark TraceEvent handles that have been added by Perfetto,
+// we use the chunk index so high that TraceLog would've asserted
+// at this point anyway.
+static const uint32_t kMagicChunkIndex =
+    base::trace_event::TraceBufferChunk::kMaxChunkIndex;
+
+}  // namespace
 
 namespace tracing {
 
@@ -104,7 +119,12 @@ class TraceEventDataSource::ThreadLocalEventSink {
   ThreadLocalEventSink(std::unique_ptr<perfetto::TraceWriter> trace_writer,
                        bool thread_will_flush)
       : trace_writer_(std::move(trace_writer)),
-        thread_will_flush_(thread_will_flush) {}
+        thread_will_flush_(thread_will_flush) {
+#if DCHECK_IS_ON()
+    static std::atomic<int32_t> id_counter(1);
+    sink_id_ = id_counter.fetch_add(1, std::memory_order_relaxed);
+#endif  // DCHECK_IS_ON()
+  }
 
   ~ThreadLocalEventSink() {
     // Finalize the current message before posting the |trace_writer_| for
@@ -131,6 +151,7 @@ class TraceEventDataSource::ThreadLocalEventSink {
         ChromeEventBundleHandle(trace_packet_handle_->set_chrome_events());
     string_table_.clear();
     next_string_table_index_ = 0;
+    current_eventcount_for_message_ = 0;
   }
 
   int GetStringTableIndexForString(const char* str_value) {
@@ -166,7 +187,8 @@ class TraceEventDataSource::ThreadLocalEventSink {
     arg->set_json_value(json.c_str());
   }
 
-  void AddTraceEvent(TraceEvent* trace_event) {
+  void AddTraceEvent(TraceEvent* trace_event,
+                     base::trace_event::TraceEventHandle* handle) {
     // TODO(oysteine): Adding trace events to Perfetto will
     // stall in some situations, specifically when we overflow
     // the buffer and need to make a sync call to flush it, and we're
@@ -178,6 +200,30 @@ class TraceEventDataSource::ThreadLocalEventSink {
     // which is added while a scheduler lock is held, and will deadlock
     // if Perfetto does a PostTask to commit a finished chunk.
     if (strcmp(trace_event->name(), "RealTimeDomain::DelayTillNextTask") == 0) {
+      return;
+    }
+
+    if (handle && trace_event->phase() == TRACE_EVENT_PHASE_COMPLETE) {
+      // 'X' phase events are added through a scoped object and
+      // will have its duration updated when said object drops off
+      // the stack; keep a copy of the event around instead of
+      // writing it into SHM, until we have the duration.
+      // We can't keep the TraceEvent around in the scoped object
+      // itself as that causes a lot more codegen in the callsites
+      // and bloats the binary size too much (due to the increased
+      // sizeof() of the scoped object itself).
+      DCHECK_LT(current_stack_depth_, kMaxCompleteEventDepth);
+      if (current_stack_depth_ >= kMaxCompleteEventDepth) {
+        return;
+      }
+
+#if DCHECK_IS_ON()
+      handle->chunk_seq = sink_id_;
+#endif  // DCHECK_IS_ON()
+
+      complete_event_stack_[current_stack_depth_] = std::move(*trace_event);
+      handle->event_index = ++current_stack_depth_;
+      handle->chunk_index = kMagicChunkIndex;
       return;
     }
 
@@ -294,15 +340,7 @@ class TraceEventDataSource::ThreadLocalEventSink {
     }
 
     if (phase == TRACE_EVENT_PHASE_COMPLETE) {
-      int64_t duration = trace_event->duration().InMicroseconds();
-      if (duration != -1) {
-        new_trace_event->set_duration(duration);
-      } else {
-        // TODO(oysteine): Workaround until TRACE_EVENT_PHASE_COMPLETE can be
-        // split into begin/end pairs. If the duration is -1 and the
-        // trace-viewer will spend forever generating a warning for each event.
-        new_trace_event->set_duration(0);
-      }
+      new_trace_event->set_duration(trace_event->duration().InMicroseconds());
 
       if (!trace_event->thread_timestamp().is_null()) {
         int64_t thread_duration =
@@ -336,13 +374,46 @@ class TraceEventDataSource::ThreadLocalEventSink {
     // If we know that the current thread will never send a Flush message
     // (meaning it's a thread without a messageloop that TraceLog knows about),
     // we need to finalize the packet right away so Perfetto can recover it.
-    if (!thread_will_flush_) {
+    // We also enforce an upper bound on how many submessages we'll add
+    // for a given TracePacket so they won't grow infinitely.
+    if (!thread_will_flush_ ||
+        current_eventcount_for_message_++ > kMaxEventsPerMessage) {
       event_bundle_ = ChromeEventBundleHandle();
       trace_packet_handle_ = perfetto::TraceWriter::TracePacketHandle();
     }
   }
 
+  void UpdateDuration(base::trace_event::TraceEventHandle handle,
+                      const base::TimeTicks& now,
+                      const base::ThreadTicks& thread_now) {
+    if (!handle.event_index || handle.chunk_index != kMagicChunkIndex) {
+      return;
+    }
+
+#if DCHECK_IS_ON()
+    DCHECK_EQ(handle.chunk_seq, sink_id_);
+#endif  // DCHECK_IS_ON()
+
+    DCHECK_EQ(handle.event_index, current_stack_depth_);
+    DCHECK_GE(current_stack_depth_, 1u);
+    current_stack_depth_--;
+    complete_event_stack_[current_stack_depth_].UpdateDuration(now, thread_now);
+    AddTraceEvent(&complete_event_stack_[current_stack_depth_], nullptr);
+
+#if defined(OS_ANDROID)
+    complete_event_stack_[current_stack_depth_].SendToATrace();
+#endif
+  }
+
   void Flush() {
+    // TODO(oysteine): This will break events if we flush
+    // while recording. This can't be done on destruction
+    // as this can trigger PostTasks which may not be possible
+    // if the thread is being shut down.
+    while (current_stack_depth_--) {
+      AddTraceEvent(&complete_event_stack_[current_stack_depth_], nullptr);
+    }
+
     event_bundle_ = ChromeEventBundleHandle();
     trace_packet_handle_ = perfetto::TraceWriter::TracePacketHandle();
     trace_writer_->Flush();
@@ -355,6 +426,12 @@ class TraceEventDataSource::ThreadLocalEventSink {
   perfetto::TraceWriter::TracePacketHandle trace_packet_handle_;
   std::map<intptr_t, int> string_table_;
   int next_string_table_index_ = 0;
+  size_t current_eventcount_for_message_ = 0;
+  TraceEvent complete_event_stack_[kMaxCompleteEventDepth];
+  uint32_t current_stack_depth_ = 0;
+#if DCHECK_IS_ON()
+  uint32_t sink_id_;
+#endif  // DCHECK_IS_ON()
 };
 
 namespace {
@@ -379,7 +456,6 @@ TraceEventDataSource* TraceEventDataSource::GetInstance() {
 
 TraceEventDataSource::TraceEventDataSource()
     : DataSourceBase(mojom::kTraceEventDataSourceName) {
-  RegisterTracedValueProtoWriter();
 }
 
 TraceEventDataSource::~TraceEventDataSource() = default;
@@ -395,9 +471,12 @@ void TraceEventDataSource::StartTracing(
     target_buffer_ = data_source_config.target_buffer;
   }
 
-  TraceLog::GetInstance()->SetAddTraceEventOverride(
+  RegisterTracedValueProtoWriter(true);
+
+  TraceLog::GetInstance()->SetAddTraceEventOverrides(
       &TraceEventDataSource::OnAddTraceEvent,
-      &TraceEventDataSource::FlushCurrentThread);
+      &TraceEventDataSource::FlushCurrentThread,
+      &TraceEventDataSource::OnUpdateDuration);
 
   TraceLog::GetInstance()->SetEnabled(
       TraceConfig(data_source_config.trace_config), TraceLog::RECORDING_MODE);
@@ -414,36 +493,47 @@ void TraceEventDataSource::StopTracing(
           return;
         }
 
-        TraceLog::GetInstance()->SetAddTraceEventOverride(nullptr, nullptr);
-
-        // TraceLog::CancelTracing will cause metadata events to be written;
-        // make sure we flush the TraceWriter for this thread (TraceLog will
-        // only call TraceEventDataSource::FlushCurrentThread for threads with
-        // a MessageLoop).
-        // TODO(oysteine): The perfetto service itself should be able to recover
-        // unreturned chunks so technically this can go away
-        // at some point, but seems needed for now.
-        FlushCurrentThread();
+        RegisterTracedValueProtoWriter(false);
+        TraceLog::GetInstance()->SetAddTraceEventOverrides(nullptr, nullptr,
+                                                           nullptr);
 
         if (data_source->stop_complete_callback_) {
           std::move(data_source->stop_complete_callback_).Run();
         }
       };
 
-  if (TraceLog::GetInstance()->IsEnabled()) {
-    // We call CancelTracing because we don't want/need TraceLog to do any of
-    // its own JSON serialization on its own.
+  bool was_enabled = TraceLog::GetInstance()->IsEnabled();
+  if (was_enabled) {
+    // Write metadata events etc.
+    TraceLog::GetInstance()->SetDisabled();
+  }
+
+  {
+    // Prevent recreation of ThreadLocalEventSinks after flush.
+    base::AutoLock lock(lock_);
+    DCHECK(producer_client_);
+    producer_client_ = nullptr;
+    target_buffer_ = 0;
+  }
+
+  if (was_enabled) {
+    // TraceLog::SetDisabled will cause metadata events to be written; make
+    // sure we flush the TraceWriter for this thread (TraceLog will only call
+    // TraceEventDataSource::FlushCurrentThread for threads with a MessageLoop).
+    // TODO(eseckler): Flush all worker threads.
+    // TODO(oysteine): The perfetto service itself should be able to recover
+    // unreturned chunks so technically this can go away at some point, but
+    // seems needed for now.
+    FlushCurrentThread();
+
+    // Flush the remaining threads via TraceLog. We call CancelTracing because
+    // we don't want/need TraceLog to do any of its own JSON serialization.
     TraceLog::GetInstance()->CancelTracing(base::BindRepeating(
         on_tracing_stopped_callback, base::Unretained(this)));
   } else {
     on_tracing_stopped_callback(this, scoped_refptr<base::RefCountedString>(),
                                 false);
   }
-
-  base::AutoLock lock(lock_);
-  DCHECK(producer_client_);
-  producer_client_ = nullptr;
-  target_buffer_ = 0;
 }
 
 void TraceEventDataSource::Flush(
@@ -474,8 +564,10 @@ TraceEventDataSource::CreateThreadLocalEventSink(bool thread_will_flush) {
 }
 
 // static
-void TraceEventDataSource::OnAddTraceEvent(TraceEvent* trace_event,
-                                           bool thread_will_flush) {
+void TraceEventDataSource::OnAddTraceEvent(
+    TraceEvent* trace_event,
+    bool thread_will_flush,
+    base::trace_event::TraceEventHandle* handle) {
   auto* thread_local_event_sink =
       static_cast<ThreadLocalEventSink*>(ThreadLocalEventSinkSlot()->Get());
 
@@ -486,7 +578,19 @@ void TraceEventDataSource::OnAddTraceEvent(TraceEvent* trace_event,
   }
 
   if (thread_local_event_sink) {
-    thread_local_event_sink->AddTraceEvent(trace_event);
+    thread_local_event_sink->AddTraceEvent(trace_event, handle);
+  }
+}
+
+// static
+void TraceEventDataSource::OnUpdateDuration(
+    base::trace_event::TraceEventHandle handle,
+    const base::TimeTicks& now,
+    const base::ThreadTicks& thread_now) {
+  auto* thread_local_event_sink =
+      static_cast<ThreadLocalEventSink*>(ThreadLocalEventSinkSlot()->Get());
+  if (thread_local_event_sink) {
+    thread_local_event_sink->UpdateDuration(handle, now, thread_now);
   }
 }
 
@@ -496,6 +600,9 @@ void TraceEventDataSource::FlushCurrentThread() {
       static_cast<ThreadLocalEventSink*>(ThreadLocalEventSinkSlot()->Get());
   if (thread_local_event_sink) {
     thread_local_event_sink->Flush();
+    // TODO(oysteine): To support flushing while still recording, this needs to
+    // be changed to not destruct the TLS object as that will emit any
+    // uncompleted _COMPLETE events on the stack.
     delete thread_local_event_sink;
     ThreadLocalEventSinkSlot()->Set(nullptr);
   }

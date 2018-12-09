@@ -427,6 +427,10 @@ void CompositedLayerMapping::UpdateBackgroundPaintsOntoScrollingContentsLayer(
 }
 
 void CompositedLayerMapping::UpdateContentsOpaque() {
+  // If there is a foreground layer, children paint into that layer and
+  // not graphics_layer_, and so don't contribute to the opaqueness of the
+  // latter.
+  bool should_check_children = !foreground_layer_.get();
   if (IsTextureLayerCanvas(GetLayoutObject())) {
     CanvasRenderingContext* context =
         ToHTMLCanvasElement(GetLayoutObject().GetNode())->RenderingContext();
@@ -463,13 +467,14 @@ void CompositedLayerMapping::UpdateContentsOpaque() {
       // this for solid color backgrounds the answer will be the same.
       scrolling_contents_layer_->SetContentsOpaque(
           owning_layer_.BackgroundIsKnownToBeOpaqueInRect(
-              ToLayoutBox(GetLayoutObject()).PhysicalPaddingBoxRect()));
+              ToLayoutBox(GetLayoutObject()).PhysicalPaddingBoxRect(),
+              should_check_children));
 
       if (GetLayoutObject().GetBackgroundPaintLocation() &
           kBackgroundPaintInGraphicsLayer) {
         graphics_layer_->SetContentsOpaque(
             owning_layer_.BackgroundIsKnownToBeOpaqueInRect(
-                CompositedBounds()));
+                CompositedBounds(), should_check_children));
       } else {
         // If we only paint the background onto the scrolling contents layer we
         // are going to leave a hole in the m_graphicsLayer where the background
@@ -480,7 +485,8 @@ void CompositedLayerMapping::UpdateContentsOpaque() {
       if (HasScrollingLayer())
         scrolling_contents_layer_->SetContentsOpaque(false);
       graphics_layer_->SetContentsOpaque(
-          owning_layer_.BackgroundIsKnownToBeOpaqueInRect(CompositedBounds()));
+          owning_layer_.BackgroundIsKnownToBeOpaqueInRect(
+              CompositedBounds(), should_check_children));
     }
   }
 }
@@ -489,10 +495,10 @@ void CompositedLayerMapping::UpdateRasterizationPolicy() {
   bool transformed_rasterization_allowed =
       !(owning_layer_.GetCompositingReasons() &
         CompositingReason::kComboAllDirectReasons);
-  graphics_layer_->ContentLayer()->SetTransformedRasterizationAllowed(
+  graphics_layer_->CcLayer()->SetTransformedRasterizationAllowed(
       transformed_rasterization_allowed);
   if (squashing_layer_)
-    squashing_layer_->ContentLayer()->SetTransformedRasterizationAllowed(true);
+    squashing_layer_->CcLayer()->SetTransformedRasterizationAllowed(true);
 }
 
 void CompositedLayerMapping::UpdateCompositedBounds() {
@@ -1114,7 +1120,7 @@ void CompositedLayerMapping::UpdateSquashingLayerGeometry(
           .InvalidatePaintIncludingNonCompositingDescendants();
 
       TRACE_LAYER_INVALIDATION(layers[i].paint_layer,
-                               InspectorLayerInvalidationTrackingEvent::
+                               inspector_layer_invalidation_tracking_event::
                                    kSquashingLayerGeometryWasUpdated);
       layers_needing_paint_invalidation.push_back(layers[i].paint_layer);
     }
@@ -1827,7 +1833,7 @@ void CompositedLayerMapping::UpdateInternalHierarchy() {
   // TODO(pdr): Ensure painting uses the correct GraphicsLayer when root layer
   // scrolls is enabled.  crbug.com/638719
   if (is_main_frame_layout_view_layer_ &&
-      !RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+      !RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
     bottom_layer = GetLayoutObject()
                        .GetFrame()
                        ->GetPage()
@@ -3107,7 +3113,7 @@ void CompositedLayerMapping::DoPaintTask(
       kPaintsIntoGroupedBacking) {
     // FIXME: GraphicsLayers need a way to split for multicol.
     PaintLayerPaintingInfo painting_info(
-        paint_info.paint_layer, LayoutRect(dirty_rect), kGlobalPaintNormalPhase,
+        paint_info.paint_layer, CullRect(dirty_rect), kGlobalPaintNormalPhase,
         paint_info.paint_layer->SubpixelAccumulation());
     PaintLayerPainter(*paint_info.paint_layer)
         .PaintLayerContents(context, painting_info, paint_layer_flags);
@@ -3120,7 +3126,7 @@ void CompositedLayerMapping::DoPaintTask(
     }
   } else {
     PaintLayerPaintingInfo painting_info(
-        paint_info.paint_layer, LayoutRect(dirty_rect), kGlobalPaintNormalPhase,
+        paint_info.paint_layer, CullRect(dirty_rect), kGlobalPaintNormalPhase,
         paint_info.paint_layer->SubpixelAccumulation());
     PaintLayerPainter(*paint_info.paint_layer)
         .Paint(context, painting_info, paint_layer_flags);
@@ -3367,8 +3373,8 @@ void CompositedLayerMapping::PaintContents(
 
   TRACE_EVENT1(
       "devtools.timeline,rail", "Paint", "data",
-      InspectorPaintEvent::Data(&owning_layer_.GetLayoutObject(),
-                                LayoutRect(interest_rect), graphics_layer));
+      inspector_paint_event::Data(&owning_layer_.GetLayoutObject(),
+                                  LayoutRect(interest_rect), graphics_layer));
 
   PaintLayerFlags paint_layer_flags = 0;
   if (graphics_layer_painting_phase & kGraphicsLayerPaintBackground)
@@ -3438,8 +3444,8 @@ void CompositedLayerMapping::PaintScrollableArea(
     const IntRect& interest_rect) const {
   // cull_rect is in the space of the containing scrollable area in which
   // Scrollbar::Paint() will paint the scrollbar.
-  CullRect cull_rect(CullRect(interest_rect),
-                     graphics_layer->OffsetFromLayoutObject());
+  CullRect cull_rect(interest_rect);
+  cull_rect.Move(graphics_layer->OffsetFromLayoutObject());
   PaintLayerScrollableArea* scrollable_area = owning_layer_.GetScrollableArea();
   if (graphics_layer == LayerForHorizontalScrollbar()) {
     if (const Scrollbar* scrollbar = scrollable_area->HorizontalScrollbar())

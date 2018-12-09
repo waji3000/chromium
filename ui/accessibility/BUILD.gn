@@ -2,9 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/linux/pkg_config.gni")
 import("//build/config/features.gni")
 import("//build/config/jumbo.gni")
+import("//build/config/linux/pkg_config.gni")
 import("//build/config/ui.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
 import("//services/service_manager/public/service_manifest.gni")
@@ -31,17 +31,21 @@ mojom("ax_enums_mojo") {
 
 jumbo_component("accessibility") {
   sources = [
+    "accessibility_switches.cc",
+    "accessibility_switches.h",
     "ax_action_data.cc",
     "ax_action_data.h",
     "ax_enum_util.cc",
     "ax_enum_util.h",
     "ax_event.cc",
     "ax_event.h",
+    "ax_event_bundle_sink.h",
     "ax_event_generator.cc",
     "ax_event_generator.h",
     "ax_export.h",
     "ax_host_delegate.cc",
     "ax_host_delegate.h",
+    "ax_language_info.h",
     "ax_mode.h",
     "ax_mode_observer.h",
     "ax_node.cc",
@@ -145,6 +149,16 @@ jumbo_component("accessibility") {
     if (use_glib) {
       configs += [ "//build/config/linux:glib" ]
     }
+
+    if (use_x11) {
+      sources += [ "platform/atk_util_auralinux_x11.cc" ]
+
+      configs += [ "//build/config/linux:x11" ]
+      public_deps += [
+        "//ui/events/x",
+        "//ui/gfx/x",
+      ]
+    }
   }
 
   if (use_aura) {
@@ -196,6 +210,7 @@ test("accessibility_unittests") {
   sources = [
     "ax_event_generator_unittest.cc",
     "ax_generated_tree_unittest.cc",
+    "ax_language_info_unittest.cc",
     "ax_node_data_unittest.cc",
     "ax_node_position_unittest.cc",
     "ax_table_info_unittest.cc",
@@ -206,6 +221,7 @@ test("accessibility_unittests") {
     "mojom/ax_action_data_mojom_traits_unittest.cc",
     "mojom/ax_event_mojom_traits_unittest.cc",
     "mojom/ax_node_data_mojom_traits_unittest.cc",
+    "mojom/ax_relative_bounds_mojom_traits_unittest.cc",
     "mojom/ax_tree_data_mojom_traits_unittest.cc",
     "mojom/ax_tree_id_mojom_traits_unittest.cc",
     "mojom/ax_tree_update_mojom_traits_unittest.cc",
@@ -239,7 +255,10 @@ test("accessibility_unittests") {
     libs = [ "oleacc.lib" ]
   }
   if (use_atk) {
-    sources += [ "platform/ax_platform_node_auralinux_unittest.cc" ]
+    sources += [
+      "platform/atk_util_auralinux_unittest.cc",
+      "platform/ax_platform_node_auralinux_unittest.cc",
+    ]
     configs += [ "//build/config/linux/atk" ]
   }
 }
@@ -252,4 +271,16 @@ fuzzer_test("ax_tree_fuzzer") {
   deps = [
     ":accessibility",
   ]
+}
+
+fuzzer_test("ax_table_fuzzer") {
+  sources = [
+    "ax_table_fuzzer.cc",
+  ]
+
+  deps = [
+    ":accessibility",
+  ]
+
+  seed_corpus = "fuzz_corpus"
 }

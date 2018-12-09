@@ -32,13 +32,13 @@ namespace blink {
 
 RTCPeerConnectionIceEvent* RTCPeerConnectionIceEvent::Create(
     RTCIceCandidate* candidate) {
-  return new RTCPeerConnectionIceEvent(candidate);
+  return MakeGarbageCollected<RTCPeerConnectionIceEvent>(candidate);
 }
 
 RTCPeerConnectionIceEvent* RTCPeerConnectionIceEvent::Create(
     const AtomicString& type,
     const RTCPeerConnectionIceEventInit* initializer) {
-  return new RTCPeerConnectionIceEvent(type, initializer);
+  return MakeGarbageCollected<RTCPeerConnectionIceEvent>(type, initializer);
 }
 
 RTCPeerConnectionIceEvent::RTCPeerConnectionIceEvent(RTCIceCandidate* candidate)
@@ -57,7 +57,7 @@ RTCIceCandidate* RTCPeerConnectionIceEvent::candidate() const {
 }
 
 const AtomicString& RTCPeerConnectionIceEvent::InterfaceName() const {
-  return EventNames::RTCPeerConnectionIceEvent;
+  return event_interface_names::kRTCPeerConnectionIceEvent;
 }
 
 void RTCPeerConnectionIceEvent::Trace(blink::Visitor* visitor) {

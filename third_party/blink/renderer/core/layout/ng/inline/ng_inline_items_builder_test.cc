@@ -57,6 +57,7 @@ class NGInlineItemsBuilderTest : public NGLayoutTest {
       }
       builder.Append(input.text, input.layout_text->Style(), input.layout_text);
     }
+    builder.ExitBlock();
     text_ = builder.ToString();
     ValidateItems();
     CheckReuseItemsProducesSameResult(inputs);
@@ -111,6 +112,7 @@ class NGInlineItemsBuilderTest : public NGLayoutTest {
       }
     }
 
+    reuse_builder.ExitBlock();
     String reuse_text = reuse_builder.ToString();
     EXPECT_EQ(text_, reuse_text);
   }
@@ -403,6 +405,7 @@ static std::unique_ptr<LayoutInline> CreateLayoutInline(
   initialize_style(style.get());
   std::unique_ptr<LayoutInline> node = std::make_unique<LayoutInline>(nullptr);
   node->SetStyleInternal(std::move(style));
+  node->SetIsInLayoutNGInlineFormattingContext(true);
   return node;
 }
 

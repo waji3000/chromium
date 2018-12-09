@@ -27,17 +27,21 @@
 
 #include "base/stl_util.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_event_listener.h"
+#include "third_party/blink/renderer/bindings/core/v8/string_or_trusted_script.h"
+#include "third_party/blink/renderer/bindings/core/v8/string_treat_null_as_empty_string_or_trusted_script.h"
 #include "third_party/blink/renderer/core/css/css_color_value.h"
 #include "third_party/blink/renderer/core/css/css_markup.h"
+#include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/css/css_property_value_set.h"
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
-#include "third_party/blink/renderer/core/css_property_names.h"
 #include "third_party/blink/renderer/core/css_value_keywords.h"
 #include "third_party/blink/renderer/core/dom/document_fragment.h"
+#include "third_party/blink/renderer/core/dom/element_rare_data.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/dom/events/event_listener.h"
 #include "third_party/blink/renderer/core/dom/flat_tree_traversal.h"
 #include "third_party/blink/renderer/core/dom/node_computed_style.h"
+#include "third_party/blink/renderer/core/dom/node_lists_node_data.h"
 #include "third_party/blink/renderer/core/dom/node_traversal.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/dom/text.h"
@@ -49,8 +53,12 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
+#include "third_party/blink/renderer/core/html/custom/custom_element.h"
+#include "third_party/blink/renderer/core/html/custom/custom_element_registry.h"
+#include "third_party/blink/renderer/core/html/custom/element_internals.h"
 #include "third_party/blink/renderer/core/html/forms/html_form_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_input_element.h"
+#include "third_party/blink/renderer/core/html/forms/labels_node_list.h"
 #include "third_party/blink/renderer/core/html/html_br_element.h"
 #include "third_party/blink/renderer/core/html/html_dimension.h"
 #include "third_party/blink/renderer/core/html/html_frame_owner_element.h"
@@ -64,6 +72,7 @@
 #include "third_party/blink/renderer/core/mathml_names.h"
 #include "third_party/blink/renderer/core/page/spatial_navigation.h"
 #include "third_party/blink/renderer/core/svg/svg_svg_element.h"
+#include "third_party/blink/renderer/core/trustedtypes/trusted_script.h"
 #include "third_party/blink/renderer/core/xml_names.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/language.h"
@@ -330,6 +339,7 @@ AttributeTriggers* HTMLElement::TriggersForAttributeName(
   const AtomicString& kNoEvent = g_null_atom;
   static AttributeTriggers attribute_triggers[] = {
       {kDirAttr, kNoWebFeature, kNoEvent, &HTMLElement::OnDirAttrChanged},
+      {kFormAttr, kNoWebFeature, kNoEvent, &HTMLElement::OnFormAttrChanged},
       {kInertAttr, WebFeature::kInertAttribute, kNoEvent,
        &HTMLElement::OnInertAttrChanged},
       {kLangAttr, kNoWebFeature, kNoEvent, &HTMLElement::OnLangAttrChanged},
@@ -410,6 +420,8 @@ AttributeTriggers* HTMLElement::TriggersForAttributeName(
       {kOnmouseupAttr, kNoWebFeature, event_type_names::kMouseup, nullptr},
       {kOnmousewheelAttr, kNoWebFeature, event_type_names::kMousewheel,
        nullptr},
+      {kOnoverscrollAttr, kNoWebFeature, event_type_names::kOverscroll,
+       nullptr},
       {kOnpasteAttr, kNoWebFeature, event_type_names::kPaste, nullptr},
       {kOnpauseAttr, kNoWebFeature, event_type_names::kPause, nullptr},
       {kOnplayAttr, kNoWebFeature, event_type_names::kPlay, nullptr},
@@ -437,6 +449,7 @@ AttributeTriggers* HTMLElement::TriggersForAttributeName(
       {kOnresetAttr, kNoWebFeature, event_type_names::kReset, nullptr},
       {kOnresizeAttr, kNoWebFeature, event_type_names::kResize, nullptr},
       {kOnscrollAttr, kNoWebFeature, event_type_names::kScroll, nullptr},
+      {kOnscrollendAttr, kNoWebFeature, event_type_names::kScrollend, nullptr},
       {kOnseekedAttr, kNoWebFeature, event_type_names::kSeeked, nullptr},
       {kOnseekingAttr, kNoWebFeature, event_type_names::kSeeking, nullptr},
       {kOnselectAttr, kNoWebFeature, event_type_names::kSelect, nullptr},
@@ -582,6 +595,17 @@ const AtomicString& HTMLElement::EventNameForAttributeName(
 
 void HTMLElement::AttributeChanged(const AttributeModificationParams& params) {
   Element::AttributeChanged(params);
+  if (params.name == html_names::kDisabledAttr &&
+      params.old_value.IsNull() != params.new_value.IsNull()) {
+    if (IsFormAssociatedCustomElement()) {
+      EnsureElementInternals().DisabledAttributeChanged();
+      if (params.reason == AttributeModificationReason::kDirectly &&
+          IsDisabledFormControl() &&
+          AdjustedFocusedElementInTreeScope() == this)
+        blur();
+    }
+    return;
+  }
   if (params.reason != AttributeModificationReason::kDirectly)
     return;
   // adjustedFocusedElementInTreeScope() is not trivial. We should check
@@ -670,6 +694,41 @@ DocumentFragment* HTMLElement::TextToFragment(const String& text,
   }
 
   return fragment;
+}
+
+void HTMLElement::setInnerText(
+    const StringOrTrustedScript& string_or_trusted_script,
+    ExceptionState& exception_state) {
+  String value;
+  if (string_or_trusted_script.IsString())
+    value = string_or_trusted_script.GetAsString();
+  else if (string_or_trusted_script.IsTrustedScript())
+    value = string_or_trusted_script.GetAsTrustedScript()->toString();
+  setInnerText(value, exception_state);
+}
+
+void HTMLElement::setInnerText(
+    const StringTreatNullAsEmptyStringOrTrustedScript& string_or_trusted_script,
+    ExceptionState& exception_state) {
+  StringOrTrustedScript tmp;
+  if (string_or_trusted_script.IsString())
+    tmp.SetString(string_or_trusted_script.GetAsString());
+  else if (string_or_trusted_script.IsTrustedScript())
+    tmp.SetTrustedScript(string_or_trusted_script.GetAsTrustedScript());
+  setInnerText(tmp, exception_state);
+}
+
+void HTMLElement::innerText(
+    StringTreatNullAsEmptyStringOrTrustedScript& result) {
+  result.SetString(innerText());
+}
+
+void HTMLElement::innerText(StringOrTrustedScript& result) {
+  result.SetString(innerText());
+}
+
+String HTMLElement::innerText() {
+  return Element::innerText();
 }
 
 void HTMLElement::setInnerText(const String& text,
@@ -865,8 +924,11 @@ String HTMLElement::title() const {
 }
 
 int HTMLElement::tabIndex() const {
-  if (SupportsFocus())
+  if (SupportsFocus() ||
+      (RuntimeEnabledFeatures::KeyboardFocusableScrollersEnabled() &&
+       IsScrollableNode(this))) {
     return Element::tabIndex();
+  }
   return -1;
 }
 
@@ -1078,8 +1140,22 @@ Node::InsertionNotificationRequest HTMLElement::InsertedInto(
       InActiveDocument() && FastHasAttribute(kNonceAttr)) {
     setAttribute(kNonceAttr, g_empty_atom);
   }
+  if (IsFormAssociatedCustomElement())
+    EnsureElementInternals().InsertedInto(insertion_point);
 
   return kInsertionDone;
+}
+
+void HTMLElement::RemovedFrom(ContainerNode& insertion_point) {
+  Element::RemovedFrom(insertion_point);
+  if (IsFormAssociatedCustomElement())
+    EnsureElementInternals().RemovedFrom(insertion_point);
+}
+
+void HTMLElement::DidMoveToNewDocument(Document& old_document) {
+  if (IsFormAssociatedCustomElement())
+    EnsureElementInternals().DidMoveToNewDocument(old_document);
+  Element::DidMoveToNewDocument(old_document);
 }
 
 void HTMLElement::AddHTMLLengthToStyle(MutableCSSPropertyValueSet* style,
@@ -1216,6 +1292,12 @@ void HTMLElement::AddHTMLColorToStyle(MutableCSSPropertyValueSet* style,
   style->SetProperty(property_id, *CSSColorValue::Create(parsed_color.Rgb()));
 }
 
+LabelsNodeList* HTMLElement::labels() {
+  if (!IsLabelable())
+    return nullptr;
+  return EnsureCachedCollection<LabelsNodeList>(kLabelsNodeListType);
+}
+
 bool HTMLElement::IsInteractiveContent() const {
   return false;
 }
@@ -1340,6 +1422,11 @@ void HTMLElement::OnDirAttrChanged(const AttributeModificationParams& params) {
     CalculateAndAdjustDirectionality();
 }
 
+void HTMLElement::OnFormAttrChanged(const AttributeModificationParams& params) {
+  if (IsFormAssociatedCustomElement())
+    EnsureElementInternals().FormAttributeChanged();
+}
+
 void HTMLElement::OnInertAttrChanged(
     const AttributeModificationParams& params) {
   UpdateDistributionForUnknownReasons();
@@ -1367,6 +1454,81 @@ void HTMLElement::OnTabIndexAttrChanged(
 void HTMLElement::OnXMLLangAttrChanged(
     const AttributeModificationParams& params) {
   Element::ParseAttribute(params);
+}
+
+ElementInternals* HTMLElement::attachInternals(
+    ExceptionState& exception_state) {
+  CustomElementRegistry* registry = CustomElement::Registry(*this);
+  auto* definition =
+      registry ? registry->DefinitionForName(localName()) : nullptr;
+  if (!definition) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidStateError,
+        "Unable to attach ElementInternals to non-custom elements.");
+    return nullptr;
+  }
+  if (!definition->Descriptor().IsAutonomous()) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidStateError,
+        "Unable to attach ElementInternals to a customized built-in element.");
+    return nullptr;
+  }
+  if (definition->DisableInternals()) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidStateError,
+        "ElementInternals is disabled by disabledFeature static field.");
+    return nullptr;
+  }
+  if (DidAttachInternals()) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidStateError,
+        "ElementInternals for the specified element was already attached.");
+    return nullptr;
+  }
+  SetDidAttachInternals();
+  return &EnsureElementInternals();
+}
+
+bool HTMLElement::IsFormAssociatedCustomElement() const {
+  return GetCustomElementState() == CustomElementState::kCustom &&
+         GetCustomElementDefinition()->IsFormAssociated();
+}
+
+bool HTMLElement::SupportsFocus() const {
+  return Element::SupportsFocus() && !IsDisabledFormControl();
+};
+
+bool HTMLElement::IsDisabledFormControl() const {
+  if (!IsFormAssociatedCustomElement())
+    return false;
+  return const_cast<HTMLElement*>(this)
+      ->EnsureElementInternals()
+      .IsActuallyDisabled();
+}
+
+bool HTMLElement::MatchesEnabledPseudoClass() const {
+  return IsFormAssociatedCustomElement() && !const_cast<HTMLElement*>(this)
+                                                 ->EnsureElementInternals()
+                                                 .IsActuallyDisabled();
+}
+
+bool HTMLElement::MatchesValidityPseudoClasses() const {
+  return IsFormAssociatedCustomElement();
+}
+
+bool HTMLElement::willValidate() const {
+  return IsFormAssociatedCustomElement() && const_cast<HTMLElement*>(this)
+                                                ->EnsureElementInternals()
+                                                .WillValidate();
+}
+
+bool HTMLElement::IsValidElement() {
+  return IsFormAssociatedCustomElement() &&
+         EnsureElementInternals().IsValidElement();
+}
+
+bool HTMLElement::IsLabelable() const {
+  return IsFormAssociatedCustomElement();
 }
 
 }  // namespace blink

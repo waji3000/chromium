@@ -15,7 +15,7 @@
 #include "base/values.h"
 #include "components/browser_sync/browser_sync_switches.h"
 #include "components/browser_sync/profile_sync_test_util.h"
-#include "components/signin/core/browser/account_tracker_service.h"
+#include "components/signin/core/browser/account_info.h"
 #include "components/sync/base/pref_names.h"
 #include "components/sync/driver/configure_context.h"
 #include "components/sync/driver/fake_data_type_controller.h"
@@ -28,6 +28,7 @@
 #include "components/sync_preferences/testing_pref_service_syncable.h"
 #include "components/version_info/version_info_values.h"
 #include "services/identity/public/cpp/identity_test_environment.h"
+#include "services/identity/public/cpp/primary_account_mutator.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -193,7 +194,7 @@ class ProfileSyncServiceTest : public ::testing::Test {
                                                            builder.Build());
     service_ = std::make_unique<ProfileSyncService>(std::move(init_params));
 
-    ON_CALL(*component_factory(), CreateCommonDataTypeControllers(_, _))
+    ON_CALL(*component_factory(), CreateCommonDataTypeControllers(_))
         .WillByDefault(testing::InvokeWithoutArgs([=]() {
           syncer::DataTypeController::TypeVector controllers;
           controllers.push_back(
@@ -223,7 +224,7 @@ class ProfileSyncServiceTest : public ::testing::Test {
 
     service_ = std::make_unique<ProfileSyncService>(std::move(init_params));
 
-    ON_CALL(*component_factory(), CreateCommonDataTypeControllers(_, _))
+    ON_CALL(*component_factory(), CreateCommonDataTypeControllers(_))
         .WillByDefault(testing::InvokeWithoutArgs([=]() {
           syncer::DataTypeController::TypeVector controllers;
           controllers.push_back(
@@ -290,10 +291,6 @@ class ProfileSyncServiceTest : public ::testing::Test {
 
   invalidation::ProfileIdentityProvider* identity_provider() {
     return profile_sync_service_bundle_.identity_provider();
-  }
-
-  AccountTrackerService* account_tracker() {
-    return profile_sync_service_bundle_.account_tracker();
   }
 
   identity::IdentityManager* identity_manager() {
@@ -380,7 +377,6 @@ TEST_F(ProfileSyncServiceTest, SuccessfulLocalBackendInitialization) {
   InitializeForNthSync();
   EXPECT_EQ(syncer::SyncService::DISABLE_REASON_NONE,
             service()->GetDisableReasons());
-  EXPECT_FALSE(service()->IsSyncConfirmationNeeded());
   EXPECT_EQ(syncer::SyncService::TransportState::ACTIVE,
             service()->GetTransportState());
 }
@@ -397,7 +393,6 @@ TEST_F(ProfileSyncServiceWithoutStandaloneTransportTest, NeedsConfirmation) {
   sync_prefs.SetKeepEverythingSynced(true);
   service()->Initialize();
 
-  EXPECT_TRUE(service()->IsSyncConfirmationNeeded());
   EXPECT_EQ(syncer::SyncService::DISABLE_REASON_NONE,
             service()->GetDisableReasons());
   // Note: At this point the engine *can* start, but nothing has kicked it off
@@ -429,7 +424,6 @@ TEST_F(ProfileSyncServiceWithStandaloneTransportTest, NeedsConfirmation) {
   sync_prefs.SetKeepEverythingSynced(true);
   service()->Initialize();
 
-  EXPECT_TRUE(service()->IsSyncConfirmationNeeded());
   EXPECT_EQ(syncer::SyncService::DISABLE_REASON_NONE,
             service()->GetDisableReasons());
 
@@ -498,7 +492,7 @@ TEST_F(ProfileSyncServiceTest, DisabledByPolicyBeforeInitThenPolicyRemoved) {
 
   // Once we mark first setup complete again (it was cleared by the policy) and
   // sign in, sync starts up.
-  service()->SetFirstSetupComplete();
+  service()->GetUserSettings()->SetFirstSetupComplete();
   SignIn();
   EXPECT_EQ(syncer::SyncService::TransportState::ACTIVE,
             service()->GetTransportState());
@@ -541,7 +535,7 @@ TEST_F(ProfileSyncServiceTest, AbortedByShutdown) {
   ShutdownAndDeleteService();
 }
 
-// Test RequestStop() before we've initialized the backend.
+// Test SetSyncRequested(false) before we've initialized the backend.
 TEST_F(ProfileSyncServiceWithoutStandaloneTransportTest, EarlyRequestStop) {
   CreateService(ProfileSyncService::AUTO_START);
   // Set up a fake sync engine that will not immediately finish initialization.
@@ -554,7 +548,7 @@ TEST_F(ProfileSyncServiceWithoutStandaloneTransportTest, EarlyRequestStop) {
             service()->GetTransportState());
 
   // Request stop. Sync should get disabled.
-  service()->RequestStop(ProfileSyncService::KEEP_DATA);
+  service()->GetUserSettings()->SetSyncRequested(false);
   EXPECT_EQ(syncer::SyncService::DISABLE_REASON_USER_CHOICE,
             service()->GetDisableReasons());
   EXPECT_EQ(syncer::SyncService::TransportState::DISABLED,
@@ -565,7 +559,7 @@ TEST_F(ProfileSyncServiceWithoutStandaloneTransportTest, EarlyRequestStop) {
   // Sync should become active.
   EXPECT_CALL(*component_factory(), CreateSyncEngine(_, _, _, _))
       .WillOnce(ReturnNewFakeSyncEngine());
-  service()->RequestStart();
+  service()->GetUserSettings()->SetSyncRequested(true);
   EXPECT_EQ(syncer::SyncService::DISABLE_REASON_NONE,
             service()->GetDisableReasons());
   EXPECT_EQ(syncer::SyncService::TransportState::ACTIVE,
@@ -589,7 +583,7 @@ TEST_F(ProfileSyncServiceWithStandaloneTransportTest, EarlyRequestStop) {
   // transport mode.
   EXPECT_CALL(*component_factory(), CreateSyncEngine(_, _, _, _))
       .WillOnce(ReturnNewFakeSyncEngine());
-  service()->RequestStop(ProfileSyncService::KEEP_DATA);
+  service()->GetUserSettings()->SetSyncRequested(false);
   EXPECT_EQ(syncer::SyncService::DISABLE_REASON_USER_CHOICE,
             service()->GetDisableReasons());
   EXPECT_EQ(syncer::SyncService::TransportState::ACTIVE,
@@ -598,7 +592,7 @@ TEST_F(ProfileSyncServiceWithStandaloneTransportTest, EarlyRequestStop) {
   EXPECT_FALSE(service()->IsSyncFeatureEnabled());
 
   // Request start. Now Sync-the-feature should start again.
-  service()->RequestStart();
+  service()->GetUserSettings()->SetSyncRequested(true);
   EXPECT_EQ(syncer::SyncService::DISABLE_REASON_NONE,
             service()->GetDisableReasons());
   EXPECT_EQ(syncer::SyncService::TransportState::ACTIVE,
@@ -607,7 +601,7 @@ TEST_F(ProfileSyncServiceWithStandaloneTransportTest, EarlyRequestStop) {
   EXPECT_TRUE(service()->IsSyncFeatureEnabled());
 }
 
-// Test RequestStop() after we've initialized the backend.
+// Test SetSyncRequested(false) after we've initialized the backend.
 TEST_F(ProfileSyncServiceWithoutStandaloneTransportTest,
        DisableAndEnableSyncTemporarily) {
   CreateService(ProfileSyncService::AUTO_START);
@@ -624,7 +618,7 @@ TEST_F(ProfileSyncServiceWithoutStandaloneTransportTest,
 
   testing::Mock::VerifyAndClearExpectations(component_factory());
 
-  service()->RequestStop(ProfileSyncService::KEEP_DATA);
+  service()->GetUserSettings()->SetSyncRequested(false);
   EXPECT_TRUE(prefs()->GetBoolean(syncer::prefs::kSyncSuppressStart));
   EXPECT_EQ(syncer::SyncService::DISABLE_REASON_USER_CHOICE,
             service()->GetDisableReasons());
@@ -633,7 +627,7 @@ TEST_F(ProfileSyncServiceWithoutStandaloneTransportTest,
   EXPECT_FALSE(service()->IsSyncFeatureActive());
   EXPECT_FALSE(service()->IsSyncFeatureEnabled());
 
-  service()->RequestStart();
+  service()->GetUserSettings()->SetSyncRequested(true);
   EXPECT_FALSE(prefs()->GetBoolean(syncer::prefs::kSyncSuppressStart));
   EXPECT_EQ(syncer::SyncService::DISABLE_REASON_NONE,
             service()->GetDisableReasons());
@@ -659,7 +653,7 @@ TEST_F(ProfileSyncServiceWithStandaloneTransportTest,
 
   testing::Mock::VerifyAndClearExpectations(component_factory());
 
-  service()->RequestStop(ProfileSyncService::KEEP_DATA);
+  service()->GetUserSettings()->SetSyncRequested(false);
   EXPECT_TRUE(prefs()->GetBoolean(syncer::prefs::kSyncSuppressStart));
   EXPECT_EQ(syncer::SyncService::DISABLE_REASON_USER_CHOICE,
             service()->GetDisableReasons());
@@ -668,7 +662,7 @@ TEST_F(ProfileSyncServiceWithStandaloneTransportTest,
   EXPECT_FALSE(service()->IsSyncFeatureActive());
   EXPECT_FALSE(service()->IsSyncFeatureEnabled());
 
-  service()->RequestStart();
+  service()->GetUserSettings()->SetSyncRequested(true);
   EXPECT_FALSE(prefs()->GetBoolean(syncer::prefs::kSyncSuppressStart));
   EXPECT_EQ(syncer::SyncService::DISABLE_REASON_NONE,
             service()->GetDisableReasons());
@@ -694,8 +688,12 @@ TEST_F(ProfileSyncServiceTest, EnableSyncSignOutAndChangeAccount) {
   EXPECT_EQ(identity_manager()->GetPrimaryAccountId(),
             identity_provider()->GetActiveAccountId());
 
-  identity_manager()->ClearPrimaryAccount(
-      identity::IdentityManager::ClearAccountTokensAction::kDefault,
+  auto* account_mutator = identity_manager()->GetPrimaryAccountMutator();
+
+  // GetPrimaryAccountMutator() returns nullptr on ChromeOS only.
+  DCHECK(account_mutator);
+  account_mutator->ClearPrimaryAccount(
+      identity::PrimaryAccountMutator::ClearAccountsAction::kDefault,
       signin_metrics::SIGNOUT_TEST,
       signin_metrics::SignoutDelete::IGNORE_METRIC);
   // Wait for PSS to be notified that the primary account has gone away.
@@ -776,12 +774,10 @@ TEST_F(ProfileSyncServiceTest, RevokeAccessTokenFromTokenService) {
   base::RunLoop().RunUntilIdle();
   ASSERT_FALSE(service()->GetAccessTokenForTest().empty());
 
-  std::string secondary_account_gaiaid = "1234567";
-  std::string secondary_account_name = "test_user2@gmail.com";
-  std::string secondary_account_id = account_tracker()->SeedAccountInfo(
-      secondary_account_gaiaid, secondary_account_name);
-  identity_test_env()->SetRefreshTokenForAccount(secondary_account_id);
-  identity_test_env()->RemoveRefreshTokenForAccount(secondary_account_id);
+  AccountInfo secondary_account_info =
+      identity_test_env()->MakeAccountAvailable("test_user2@gmail.com");
+  identity_test_env()->RemoveRefreshTokenForAccount(
+      secondary_account_info.account_id);
   EXPECT_FALSE(service()->GetAccessTokenForTest().empty());
 
   identity_test_env()->RemoveRefreshTokenForPrimaryAccount();
@@ -884,8 +880,13 @@ TEST_F(ProfileSyncServiceTest, SignOutRevokeAccessToken) {
   base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(service()->GetAccessTokenForTest().empty());
 
-  identity_manager()->ClearPrimaryAccount(
-      identity::IdentityManager::ClearAccountTokensAction::kDefault,
+  auto* account_mutator = identity_manager()->GetPrimaryAccountMutator();
+
+  // GetPrimaryAccountMutator() returns nullptr on ChromeOS only.
+  DCHECK(account_mutator);
+
+  account_mutator->ClearPrimaryAccount(
+      identity::PrimaryAccountMutator::ClearAccountsAction::kDefault,
       signin_metrics::SIGNOUT_TEST,
       signin_metrics::SignoutDelete::IGNORE_METRIC);
   EXPECT_TRUE(service()->GetAccessTokenForTest().empty());
@@ -904,7 +905,7 @@ TEST_F(ProfileSyncServiceWithoutStandaloneTransportTest, ClearDataOnSignOut) {
   ASSERT_TRUE(service()->GetLocalDeviceInfoProvider()->GetLocalDeviceInfo());
 
   // Sign out.
-  service()->RequestStop(ProfileSyncService::CLEAR_DATA);
+  service()->StopAndClear();
 
   EXPECT_EQ(syncer::SyncService::TransportState::DISABLED,
             service()->GetTransportState());
@@ -926,7 +927,7 @@ TEST_F(ProfileSyncServiceWithStandaloneTransportTest, ClearDataOnSignOut) {
   ASSERT_TRUE(service()->GetLocalDeviceInfoProvider()->GetLocalDeviceInfo());
 
   // Sign out.
-  service()->RequestStop(ProfileSyncService::CLEAR_DATA);
+  service()->StopAndClear();
 
   // Even though Sync-the-feature is disabled, Sync-the-transport should still
   // be running, and should have updated the last synced time.
@@ -1098,8 +1099,7 @@ TEST_F(ProfileSyncServiceTest, MemoryPressureRecording) {
 
   testing::Mock::VerifyAndClearExpectations(component_factory());
 
-  syncer::SyncPrefs sync_prefs(
-      service()->GetSyncClientForTest()->GetPrefService());
+  syncer::SyncPrefs sync_prefs(prefs());
 
   ASSERT_EQ(prefs()->GetInteger(syncer::prefs::kSyncMemoryPressureWarningCount),
             0);
@@ -1321,8 +1321,7 @@ TEST_F(ProfileSyncServiceTest, PassphrasePromptDueToVersion) {
   CreateService(ProfileSyncService::AUTO_START);
   InitializeForNthSync();
 
-  syncer::SyncPrefs sync_prefs(
-      service()->GetSyncClientForTest()->GetPrefService());
+  syncer::SyncPrefs sync_prefs(prefs());
   ASSERT_EQ(PRODUCT_VERSION, sync_prefs.GetLastRunVersion());
 
   sync_prefs.SetPassphrasePrompted(true);
@@ -1470,7 +1469,7 @@ TEST_F(ProfileSyncServiceTest, LocalBackendDisabledByPolicy) {
   prefs()->SetManagedPref(syncer::prefs::kSyncManaged,
                           std::make_unique<base::Value>(false));
 
-  service()->RequestStart();
+  service()->GetUserSettings()->SetSyncRequested(true);
   EXPECT_EQ(syncer::SyncService::DISABLE_REASON_NONE,
             service()->GetDisableReasons());
   EXPECT_EQ(syncer::SyncService::TransportState::ACTIVE,

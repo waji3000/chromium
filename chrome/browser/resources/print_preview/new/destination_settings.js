@@ -31,6 +31,11 @@ Polymer({
     /** @type {!print_preview_new.State} */
     state: Number,
 
+    noDestinationsFound: {
+      type: Boolean,
+      value: false,
+    },
+
     /** @private {boolean} */
     showCloudPrintPromo_: {
       type: Boolean,
@@ -58,7 +63,7 @@ Polymer({
    * @private
    */
   shouldDisableButton_: function() {
-    return !this.destinationStore ||
+    return !this.destinationStore || this.noDestinationsFound ||
         (this.disabled &&
          this.state != print_preview_new.State.INVALID_PRINTER);
   },
@@ -66,6 +71,14 @@ Polymer({
   /** @private */
   onDestinationSet_: function() {
     this.loadingDestination_ = !this.destination || !this.destination.id;
+  },
+
+  /**
+   * @return {boolean} Whether to show the spinner.
+   * @private
+   */
+  shouldShowSpinner_: function() {
+    return this.loadingDestination_ && !this.noDestinationsFound;
   },
 
   /**

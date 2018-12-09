@@ -45,7 +45,8 @@ TextControlInnerContainer::TextControlInnerContainer(Document& document)
 
 TextControlInnerContainer* TextControlInnerContainer::Create(
     Document& document) {
-  TextControlInnerContainer* element = new TextControlInnerContainer(document);
+  TextControlInnerContainer* element =
+      MakeGarbageCollected<TextControlInnerContainer>(document);
   element->setAttribute(kIdAttr, shadow_element_names::TextFieldContainer());
   return element;
 }
@@ -63,7 +64,8 @@ EditingViewPortElement::EditingViewPortElement(Document& document)
 }
 
 EditingViewPortElement* EditingViewPortElement::Create(Document& document) {
-  EditingViewPortElement* element = new EditingViewPortElement(document);
+  EditingViewPortElement* element =
+      MakeGarbageCollected<EditingViewPortElement>(document);
   element->setAttribute(kIdAttr, shadow_element_names::EditingViewPort());
   return element;
 }
@@ -97,7 +99,7 @@ inline TextControlInnerEditorElement::TextControlInnerEditorElement(
 
 TextControlInnerEditorElement* TextControlInnerEditorElement::Create(
     Document& document) {
-  return new TextControlInnerEditorElement(document);
+  return MakeGarbageCollected<TextControlInnerEditorElement>(document);
 }
 
 void TextControlInnerEditorElement::DefaultEventHandler(Event& event) {
@@ -217,7 +219,7 @@ inline SearchFieldCancelButtonElement::SearchFieldCancelButtonElement(
 SearchFieldCancelButtonElement* SearchFieldCancelButtonElement::Create(
     Document& document) {
   SearchFieldCancelButtonElement* element =
-      new SearchFieldCancelButtonElement(document);
+      MakeGarbageCollected<SearchFieldCancelButtonElement>(document);
   element->SetShadowPseudoId(AtomicString("-webkit-search-cancel-button"));
   element->setAttribute(kIdAttr, shadow_element_names::SearchClearButton());
   return element;

@@ -85,6 +85,9 @@ class IconLabelBubbleView : public views::InkDropObserver,
   // Exposed for testing.
   SeparatorView* separator_view() const { return separator_view_; }
 
+  // Exposed for testing.
+  bool is_animating_label() const { return slide_animation_.is_animating(); }
+
   void set_next_element_interior_padding(int padding) {
     next_element_interior_padding_ = padding;
   }
@@ -106,12 +109,6 @@ class IconLabelBubbleView : public views::InkDropObserver,
   // Returns true when the separator should be visible.
   virtual bool ShouldShowSeparator() const;
 
-  // Returns true when additional padding equal to
-  // GetWidthBetweenIconAndSeparator() should be added to the end of the view.
-  // This is useful in the case where it's required to layout subsequent views
-  // in the same position regardless of whether the separator is shown or not.
-  virtual bool ShouldShowExtraEndSpace() const;
-
   // Returns a multiplier used to calculate the actual width of the view based
   // on its desired width.  This ranges from 0 for a zero-width view to 1 for a
   // full-width view and can be used to animate the width of the view.
@@ -132,9 +129,9 @@ class IconLabelBubbleView : public views::InkDropObserver,
 
   // views::Button:
   gfx::Size CalculatePreferredSize() const override;
+  void OnBoundsChanged(const gfx::Rect& previous_bounds) override;
   void Layout() override;
   bool OnMousePressed(const ui::MouseEvent& event) override;
-  void GetAccessibleNodeData(ui::AXNodeData* node_data) override;
   void OnNativeThemeChanged(const ui::NativeTheme* native_theme) override;
   void AddInkDropLayer(ui::Layer* ink_drop_layer) override;
   void RemoveInkDropLayer(ui::Layer* ink_drop_layer) override;
@@ -229,6 +226,8 @@ class IconLabelBubbleView : public views::InkDropObserver,
   // Disables highlights and calls Hide on the slide animation, should not be
   // called directly, use AnimateOut() instead, which handles label visibility.
   void HideAnimation();
+
+  gfx::Rect CalculateInkDropContainerBounds() const;
 
   // The contents of the bubble.
   views::ImageView* image_;

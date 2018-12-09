@@ -29,7 +29,7 @@ namespace blink {
 
 namespace test_interface_2_partial_v8_internal {
 
-static void voidMethodPartial1Method(const v8::FunctionCallbackInfo<v8::Value>& info) {
+static void VoidMethodPartial1Method(const v8::FunctionCallbackInfo<v8::Value>& info) {
   TestInterface2* impl = V8TestInterface2::ToImpl(info.Holder());
 
   if (UNLIKELY(info.Length() < 1)) {
@@ -45,7 +45,7 @@ static void voidMethodPartial1Method(const v8::FunctionCallbackInfo<v8::Value>& 
   TestInterface2Partial::voidMethodPartial1(*impl, value);
 }
 
-static void voidMethodPartial2Method(const v8::FunctionCallbackInfo<v8::Value>& info) {
+static void VoidMethodPartial2Method(const v8::FunctionCallbackInfo<v8::Value>& info) {
   TestInterface2* impl = V8TestInterface2::ToImpl(info.Holder());
 
   if (UNLIKELY(info.Length() < 1)) {
@@ -63,45 +63,45 @@ static void voidMethodPartial2Method(const v8::FunctionCallbackInfo<v8::Value>& 
 
 }  // namespace test_interface_2_partial_v8_internal
 
-void V8TestInterface2Partial::voidMethodPartial1MethodCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
+void V8TestInterface2Partial::VoidMethodPartial1MethodCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
   RUNTIME_CALL_TIMER_SCOPE_DISABLED_BY_DEFAULT(info.GetIsolate(), "Blink_TestInterface2_voidMethodPartial1");
 
-  test_interface_2_partial_v8_internal::voidMethodPartial1Method(info);
+  test_interface_2_partial_v8_internal::VoidMethodPartial1Method(info);
 }
 
-void V8TestInterface2Partial::voidMethodPartial2MethodCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
+void V8TestInterface2Partial::VoidMethodPartial2MethodCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
   RUNTIME_CALL_TIMER_SCOPE_DISABLED_BY_DEFAULT(info.GetIsolate(), "Blink_TestInterface2_voidMethodPartial2");
 
-  test_interface_2_partial_v8_internal::voidMethodPartial2Method(info);
+  test_interface_2_partial_v8_internal::VoidMethodPartial2Method(info);
 }
 
-static const V8DOMConfiguration::MethodConfiguration V8TestInterface2Methods[] = {
-    {"voidMethodPartial2", V8TestInterface2Partial::voidMethodPartial2MethodCallback, 1, v8::None, V8DOMConfiguration::kOnPrototype, V8DOMConfiguration::kCheckHolder, V8DOMConfiguration::kDoNotCheckAccess, V8DOMConfiguration::kHasSideEffect, V8DOMConfiguration::kAllWorlds},
+static constexpr V8DOMConfiguration::MethodConfiguration kV8TestInterface2Methods[] = {
+    {"voidMethodPartial2", V8TestInterface2Partial::VoidMethodPartial2MethodCallback, 1, v8::None, V8DOMConfiguration::kOnPrototype, V8DOMConfiguration::kCheckHolder, V8DOMConfiguration::kDoNotCheckAccess, V8DOMConfiguration::kHasSideEffect, V8DOMConfiguration::kAllWorlds},
 };
 
-void V8TestInterface2Partial::installV8TestInterface2Template(
+void V8TestInterface2Partial::InstallV8TestInterface2Template(
     v8::Isolate* isolate,
     const DOMWrapperWorld& world,
-    v8::Local<v8::FunctionTemplate> interfaceTemplate) {
+    v8::Local<v8::FunctionTemplate> interface_template) {
   // Initialize the interface object's template.
-  V8TestInterface2::installV8TestInterface2Template(isolate, world, interfaceTemplate);
+  V8TestInterface2::InstallV8TestInterface2Template(isolate, world, interface_template);
 
-  v8::Local<v8::Signature> signature = v8::Signature::New(isolate, interfaceTemplate);
+  v8::Local<v8::Signature> signature = v8::Signature::New(isolate, interface_template);
   ALLOW_UNUSED_LOCAL(signature);
-  v8::Local<v8::ObjectTemplate> instanceTemplate = interfaceTemplate->InstanceTemplate();
-  ALLOW_UNUSED_LOCAL(instanceTemplate);
-  v8::Local<v8::ObjectTemplate> prototypeTemplate = interfaceTemplate->PrototypeTemplate();
-  ALLOW_UNUSED_LOCAL(prototypeTemplate);
+  v8::Local<v8::ObjectTemplate> instance_template = interface_template->InstanceTemplate();
+  ALLOW_UNUSED_LOCAL(instance_template);
+  v8::Local<v8::ObjectTemplate> prototype_template = interface_template->PrototypeTemplate();
+  ALLOW_UNUSED_LOCAL(prototype_template);
 
   // Register IDL constants, attributes and operations.
   V8DOMConfiguration::InstallMethods(
-      isolate, world, instanceTemplate, prototypeTemplate, interfaceTemplate,
-      signature, V8TestInterface2Methods, base::size(V8TestInterface2Methods));
+      isolate, world, instance_template, prototype_template, interface_template,
+      signature, kV8TestInterface2Methods, base::size(kV8TestInterface2Methods));
 
   // Custom signature
 
   V8TestInterface2Partial::InstallRuntimeEnabledFeaturesOnTemplate(
-      isolate, world, interfaceTemplate);
+      isolate, world, interface_template);
 }
 
 void V8TestInterface2Partial::InstallRuntimeEnabledFeaturesOnTemplate(
@@ -121,18 +121,24 @@ void V8TestInterface2Partial::InstallRuntimeEnabledFeaturesOnTemplate(
 
   // Custom signature
   if (RuntimeEnabledFeatures::Interface2PartialFeatureNameEnabled()) {
-    const V8DOMConfiguration::MethodConfiguration voidMethodPartial1MethodConfiguration[] = {
-      {"voidMethodPartial1", V8TestInterface2Partial::voidMethodPartial1MethodCallback, 1, v8::None, V8DOMConfiguration::kOnPrototype, V8DOMConfiguration::kCheckHolder, V8DOMConfiguration::kDoNotCheckAccess, V8DOMConfiguration::kHasSideEffect, V8DOMConfiguration::kAllWorlds}
-    };
-    for (const auto& methodConfig : voidMethodPartial1MethodConfiguration)
-      V8DOMConfiguration::InstallMethod(isolate, world, instance_template, prototype_template, interface_template, signature, methodConfig);
+    {
+      // Install voidMethodPartial1 configuration
+      constexpr V8DOMConfiguration::MethodConfiguration kConfigurations[] = {
+          {"voidMethodPartial1", V8TestInterface2Partial::VoidMethodPartial1MethodCallback, 1, v8::None, V8DOMConfiguration::kOnPrototype, V8DOMConfiguration::kCheckHolder, V8DOMConfiguration::kDoNotCheckAccess, V8DOMConfiguration::kHasSideEffect, V8DOMConfiguration::kAllWorlds}
+      };
+      for (const auto& config : kConfigurations) {
+        V8DOMConfiguration::InstallMethod(
+            isolate, world, instance_template, prototype_template,
+            interface_template, signature, config);
+      }
+    }
   }
 }
 
-void V8TestInterface2Partial::initialize() {
+void V8TestInterface2Partial::Initialize() {
   // Should be invoked from ModulesInitializer.
   V8TestInterface2::UpdateWrapperTypeInfo(
-      &V8TestInterface2Partial::installV8TestInterface2Template,
+      &V8TestInterface2Partial::InstallV8TestInterface2Template,
       nullptr,
       &V8TestInterface2Partial::InstallRuntimeEnabledFeaturesOnTemplate,
       nullptr);

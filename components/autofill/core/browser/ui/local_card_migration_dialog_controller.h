@@ -28,12 +28,16 @@ class LocalCardMigrationDialogController {
   virtual LocalCardMigrationDialogState GetViewState() const = 0;
   virtual const std::vector<MigratableCreditCard>& GetCardList() const = 0;
   virtual const LegalMessageLines& GetLegalMessageLines() const = 0;
+  virtual const base::string16& GetTipMessage() const = 0;
   virtual void OnSaveButtonClicked(
       const std::vector<std::string>& selected_cards_guids) = 0;
   virtual void OnCancelButtonClicked() = 0;
+  virtual void OnDoneButtonClicked() = 0;
   virtual void OnViewCardsButtonClicked() = 0;
   virtual void OnLegalMessageLinkClicked(const GURL& url) = 0;
+  virtual void DeleteCard(const std::string& deleted_card_guid) = 0;
   virtual void OnDialogClosed() = 0;
+  virtual bool AllCardsInvalid() const = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(LocalCardMigrationDialogController);

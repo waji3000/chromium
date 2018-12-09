@@ -25,8 +25,9 @@ suite('RuntimeHostPermissions', function() {
 
   test('permissions display', function() {
     const permissions = {
-      simplePermissions: ['permission 1', 'permission 2'],
       hostAccess: HostAccess.ON_CLICK,
+      hasAllHosts: true,
+      hosts: [{granted: false, host: 'https://*/*'}],
     };
 
     element.set('permissions', permissions);
@@ -51,13 +52,10 @@ suite('RuntimeHostPermissions', function() {
     // Setting the mode to on specific sites should display the runtime hosts
     // list.
     element.set('permissions.hostAccess', HostAccess.ON_SPECIFIC_SITES);
-    element.set('permissions.specificSiteControls', {
-      hasAllHosts: false,
-      hosts: [
-        {host: 'https://example.com', granted: true},
-        {host: 'https://chromium.org', granted: true}
-      ],
-    });
+    element.set('permissions.hosts', [
+      {host: 'https://example.com', granted: true},
+      {host: 'https://chromium.org', granted: true}
+    ]);
     Polymer.dom.flush();
     expectEquals(HostAccess.ON_SPECIFIC_SITES, selectHostAccess.value);
     expectTrue(testIsVisible('#hosts'));
@@ -67,8 +65,9 @@ suite('RuntimeHostPermissions', function() {
 
   test('permissions selection', function() {
     const permissions = {
-      simplePermissions: ['permission 1', 'permission 2'],
       hostAccess: HostAccess.ON_CLICK,
+      hasAllHosts: true,
+      hosts: [{granted: false, host: 'https://*.com/*'}],
     };
 
     element.set('permissions', permissions);
@@ -101,6 +100,8 @@ suite('RuntimeHostPermissions', function() {
   test('on select sites cancel', function() {
     const permissions = {
       hostAccess: HostAccess.ON_CLICK,
+      hasAllHosts: true,
+      hosts: [{granted: false, host: 'https://*/*'}],
     };
 
     element.permissions = permissions;
@@ -131,8 +132,9 @@ suite('RuntimeHostPermissions', function() {
 
   test('on select sites accept', function() {
     const permissions = {
-      simplePermissions: ['permission 1', 'permission 2'],
       hostAccess: HostAccess.ON_CLICK,
+      hasAllHosts: true,
+      hosts: [{granted: false, host: 'https://*/*'}],
     };
 
     element.set('permissions', permissions);
@@ -164,20 +166,47 @@ suite('RuntimeHostPermissions', function() {
     return whenClosed.then(() => {
       Polymer.dom.flush();
       expectEquals(HostAccess.ON_SPECIFIC_SITES, selectHostAccess.value);
+
+      // Simulate the new host being added.
+      const updatedPermissions = {
+        hostAccess: HostAccess.ON_SPECIFIC_SITES,
+        hasAllHosts: true,
+        hosts: [
+          {host: 'https://example.com/*', granted: true},
+          {host: 'https://*/*', granted: false},
+        ],
+      };
+      element.permissions = updatedPermissions;
+      Polymer.dom.flush();
+
+      // Open the dialog by clicking to edit the host permission.
+      const editHost = element.$$('.edit-host');
+      editHost.click();
+      const actionMenu = element.$$('cr-action-menu');
+      const actionMenuEdit = actionMenu.querySelector('#action-menu-edit');
+      assertTrue(!!actionMenuEdit);
+      actionMenuEdit.click();
+      Polymer.dom.flush();
+
+      // Verify that the dialog does not want to update the old host access.
+      // Regression test for https://crbug.com/903082.
+      const dialog = element.$$('extensions-runtime-hosts-dialog');
+      assertTrue(!!dialog);
+      expectTrue(dialog.$.dialog.open);
+      expectFalse(dialog.updateHostAccess);
+      expectEquals('https://example.com/*', dialog.currentSite);
     });
   });
 
   test('clicking add host triggers dialog', function() {
     const permissions = {
-      simplePermissions: [],
       hostAccess: HostAccess.ON_SPECIFIC_SITES,
-      specificSiteControls: {
-        hasAllHosts: false,
-        hosts: [
-          {host: 'https://www.example.com/*', granted: true},
-          {host: 'https://*.google.com', granted: false}
-        ],
-      },
+      hasAllHosts: true,
+      hosts: [
+        {host: 'https://www.example.com/*', granted: true},
+        {host: 'https://*.google.com', granted: false},
+        {host: '*://*.com/*', granted: false},
+      ],
     };
 
     element.set('permissions', permissions);
@@ -198,15 +227,13 @@ suite('RuntimeHostPermissions', function() {
 
   test('removing runtime host permissions', function() {
     const permissions = {
-      simplePermissions: [],
       hostAccess: HostAccess.ON_SPECIFIC_SITES,
-      specificSiteControls: {
-        hasAllHosts: false,
-        hosts: [
-          {host: 'https://example.com', granted: true},
-          {host: 'https://chromium.org', granted: true}
-        ],
-      },
+      hasAllHosts: true,
+      hosts: [
+        {host: 'https://example.com', granted: true},
+        {host: 'https://chromium.org', granted: true},
+        {host: '*://*.com/*', granted: false},
+      ],
     };
     element.set('permissions', permissions);
     Polymer.dom.flush();
@@ -231,15 +258,13 @@ suite('RuntimeHostPermissions', function() {
 
   test('clicking edit host triggers dialog', function() {
     const permissions = {
-      simplePermissions: [],
       hostAccess: HostAccess.ON_SPECIFIC_SITES,
-      specificSiteControls: {
-        hasAllHosts: false,
-        hosts: [
-          {host: 'https://example.com', granted: true},
-          {host: 'https://chromium.org', granted: true}
-        ],
-      },
+      hasAllHosts: true,
+      hosts: [
+        {host: 'https://example.com', granted: true},
+        {host: 'https://chromium.org', granted: true},
+        {host: '*://*.com/*', granted: false},
+      ],
     };
     element.set('permissions', permissions);
     Polymer.dom.flush();

@@ -47,6 +47,13 @@ class InlineLoginHandlerImpl : public InlineLoginHandler,
   void HandleLoginError(const std::string& error_msg,
                         const base::string16& email);
 
+  // Calls the javascript function 'sendLSTFetchResults' with the given
+  // base::Value result. This value will be passed to another
+  // WebUiMessageHandler which needs to handle the 'lstFetchResults' message
+  // with a single argument that is the dictionary of values relevant for the
+  // sign in of the user.
+  void SendLSTFetchResultsMessage(const base::Value& arg);
+
  private:
   // InlineLoginHandler overrides:
   void SetExtraInitParams(base::DictionaryValue& params) override;
@@ -123,7 +130,7 @@ class InlineLoginHandlerImpl : public InlineLoginHandler,
   DISALLOW_COPY_AND_ASSIGN(InlineLoginHandlerImpl);
 };
 
-// Handles details of signing the user in with SigninManager and turning on
+// Handles details of signing the user in with IdentityManager and turning on
 // sync after InlineLoginHandlerImpl has acquired the auth tokens from GAIA.
 // This is a separate class from InlineLoginHandlerImpl because the full signin
 // process is asynchronous and can outlive the signin UI.

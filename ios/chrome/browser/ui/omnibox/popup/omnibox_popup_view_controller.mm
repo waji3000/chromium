@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "base/ios/ios_util.h"
+#include "base/metrics/histogram_macros.h"
 #import "ios/chrome/browser/ui/omnibox/image_retriever.h"
 #import "ios/chrome/browser/ui/omnibox/omnibox_util.h"
 #import "ios/chrome/browser/ui/omnibox/popup/omnibox_popup_row.h"
@@ -27,7 +28,7 @@
 namespace {
 const int kRowCount = 6;
 const CGFloat kRowHeight = 48.0;
-const CGFloat kShortcutsRowHeight = 320;
+const CGFloat kShortcutsRowHeight = 220;
 const CGFloat kAnswerRowHeight = 64.0;
 const CGFloat kTopAndBottomPadding = 8.0;
 UIColor* BackgroundColorTablet() {
@@ -76,6 +77,10 @@ UIColor* BackgroundColorIncognito() {
 // The cell with shortcuts to display when no results are available (only if
 // this is enabled with |shortcutsEnabled|). Lazily instantiated.
 @property(nonatomic, strong) UITableViewCell* shortcutsCell;
+
+// Time the view appeared on screen. Used to record a metric of how long this
+// view controller was on screen.
+@property(nonatomic, assign) base::TimeTicks viewAppearanceTime;
 
 @end
 
@@ -127,10 +132,7 @@ UIColor* BackgroundColorIncognito() {
 - (void)viewDidLoad {
   [super viewDidLoad];
 
-  // Respect the safe area on iOS 11 to support iPhone X.
-  if (@available(iOS 11, *)) {
-    self.tableView.insetsContentViewsToSafeArea = YES;
-  }
+  self.tableView.insetsContentViewsToSafeArea = YES;
 
   // Initialize the same size as the parent view, autoresize will correct this.
   [self.view setFrame:CGRectZero];
@@ -168,15 +170,8 @@ UIColor* BackgroundColorIncognito() {
   if ([self.tableView respondsToSelector:@selector(setLayoutMargins:)]) {
     [self.tableView setLayoutMargins:UIEdgeInsetsZero];
   }
-  if (@available(iOS 11, *)) {
-    self.tableView.contentInsetAdjustmentBehavior =
-        UIScrollViewContentInsetAdjustmentNever;
-  }
-#if !defined(__IPHONE_11_0) || __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_11_0
-  else {
-    self.automaticallyAdjustsScrollViewInsets = NO;
-  }
-#endif
+  self.tableView.contentInsetAdjustmentBehavior =
+      UIScrollViewContentInsetAdjustmentNever;
   [self.tableView setContentInset:UIEdgeInsetsMake(kTopAndBottomPadding, 0,
                                                    kTopAndBottomPadding, 0)];
   self.tableView.estimatedRowHeight = 0;
@@ -216,6 +211,19 @@ UIColor* BackgroundColorIncognito() {
     [self layoutRows];
   }
                                completion:nil];
+}
+
+#pragma mark - View lifecycle
+
+- (void)viewDidAppear:(BOOL)animated {
+  [super viewDidAppear:animated];
+  self.viewAppearanceTime = base::TimeTicks::Now();
+}
+
+- (void)viewWillDisappear:(BOOL)animated {
+  [super viewWillDisappear:animated];
+  UMA_HISTOGRAM_MEDIUM_TIMES("MobileOmnibox.PopupOpenDuration",
+                             base::TimeTicks::Now() - self.viewAppearanceTime);
 }
 
 #pragma mark - Properties accessors
@@ -347,7 +355,7 @@ UIColor* BackgroundColorIncognito() {
   [detailTextLabel setTextAlignment:_alignment];
 
   // The width must be positive for CGContextRef to be valid.
-  UIEdgeInsets safeAreaInsets = SafeAreaInsetsForView(self.view);
+  UIEdgeInsets safeAreaInsets = self.view.safeAreaInsets;
   CGRect rowBounds = UIEdgeInsetsInsetRect(self.view.bounds, safeAreaInsets);
   CGFloat labelWidth =
       MAX(40, floorf(rowBounds.size.width) - kTextCellLeadingPadding);
@@ -409,12 +417,13 @@ UIColor* BackgroundColorIncognito() {
 
   // Show append button for search history/search suggestions as the right
   // control element (aka an accessory element of a table view cell).
-  row.trailingButton.hidden = !match.isAppendable && !match.isTabMatch;
+  BOOL hasVisibleTrailingButton = match.isAppendable || match.isTabMatch;
+  row.trailingButton.hidden = !hasVisibleTrailingButton;
   [row.trailingButton cancelTrackingWithEvent:nil];
 
   // If a right accessory element is present or the text alignment is right
   // aligned, adjust the width to align with the accessory element.
-  if (match.isAppendable || alignmentRight) {
+  if (hasVisibleTrailingButton || alignmentRight) {
     LayoutRect layout =
         LayoutRectForRectInBoundingRect(textLabel.frame, self.view.frame);
     layout.size.width -= kTrailingButtonWidth;
@@ -547,19 +556,20 @@ UIColor* BackgroundColorIncognito() {
 - (void)scrollViewDidScroll:(UIScrollView*)scrollView {
   // TODO(crbug.com/733650): Default to the dragging check once it's been tested
   // on trunk.
-  if (base::ios::IsRunningOnIOS11OrLater()) {
-    if (!scrollView.dragging)
-      return;
-  } else {
-    // Setting the top inset of the scrollView to |kTopAndBottomPadding| causes
-    // a one time scrollViewDidScroll to |-kTopAndBottomPadding|.  It's easier
-    // to just ignore this one scroll tick.
-    if (scrollView.contentOffset.y == 0 - kTopAndBottomPadding)
-      return;
+  if (!scrollView.dragging)
+    return;
+
+  if (!_currentResult.count) {
+    // No need to dismiss the keyboard when there are no results.
+    return;
   }
 
+  // TODO(crbug.com/911534): The following call chain ultimately just dismisses
+  // the keyboard, but involves many layers of plumbing, and should be
+  // refactored.
   if (self.forwardsScrollEvents)
     [self.delegate autocompleteResultConsumerDidScroll:self];
+
   for (OmniboxPopupRow* row in _rows) {
     row.highlighted = NO;
   }

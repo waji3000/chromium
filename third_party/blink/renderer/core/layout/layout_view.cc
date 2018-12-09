@@ -129,7 +129,7 @@ bool LayoutView::HitTest(const HitTestLocation& location,
   // hit test recurses into a child document, it could trigger a layout on the
   // parent document, which can destroy PaintLayer that are higher up in the
   // call stack, leading to crashes.
-  // Note that Document::updateLayout calls its parent's updateLayout.
+  // Note that Document::UpdateLayout calls its parent's UpdateLayout.
   // Note that if an iframe has its render pipeline throttled, it will not
   // update layout here, and it will also not propagate the hit test into the
   // iframe's inner document.
@@ -197,8 +197,8 @@ bool LayoutView::HitTestNoLifecycleUpdate(const HitTestLocation& location,
   }
 
   TRACE_EVENT_END1("blink,devtools.timeline", "HitTest", "endData",
-                   InspectorHitTestEvent::EndData(result.GetHitTestRequest(),
-                                                  location, result));
+                   inspector_hit_test_event::EndData(result.GetHitTestRequest(),
+                                                     location, result));
   return hit_layer;
 }
 
@@ -228,8 +228,6 @@ bool LayoutView::IsChildAllowed(LayoutObject* child,
 bool LayoutView::CanHaveChildren() const {
   FrameOwner* owner = GetFrame()->Owner();
   if (!owner)
-    return true;
-  if (!RuntimeEnabledFeatures::DisplayNoneIFrameCreatesNoLayoutObjectEnabled())
     return true;
   // Although it is not spec compliant, many websites intentionally call
   // Window.print() on display:none iframes. https://crbug.com/819327.
@@ -464,7 +462,7 @@ static void SetShouldDoFullPaintInvalidationForViewAndAllDescendantsInternal(
 }
 
 void LayoutView::SetShouldDoFullPaintInvalidationForViewAndAllDescendants() {
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
     SetSubtreeShouldDoFullPaintInvalidation();
   else
     SetShouldDoFullPaintInvalidationForViewAndAllDescendantsInternal(this);
@@ -616,10 +614,6 @@ LayoutRect LayoutView::OverflowClipRect(
     ExcludeScrollbars(rect, overlay_scrollbar_clip_behavior);
 
   return rect;
-}
-
-LayoutRect LayoutView::FixedBackgroundPositioningArea() const {
-  return OverflowClipRect(LayoutPoint());
 }
 
 void LayoutView::SetAutosizeScrollbarModes(ScrollbarMode h_mode,

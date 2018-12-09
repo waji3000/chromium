@@ -9,36 +9,18 @@
 #include <memory>
 
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/histogram_macros.h"
-#include "base/numerics/checked_math.h"
 #include "third_party/blink/renderer/core/css/cssom/css_url_image_value.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser.h"
-#include "third_party/blink/renderer/core/execution_context/execution_context.h"
-#include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
-#include "third_party/blink/renderer/core/html/canvas/image_data.h"
 #include "third_party/blink/renderer/core/html/canvas/text_metrics.h"
 #include "third_party/blink/renderer/core/html/html_image_element.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
 #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
-#include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
 #include "third_party/blink/renderer/core/svg/svg_image_element.h"
-#include "third_party/blink/renderer/core/typed_arrays/array_buffer_view_helpers.h"
-#include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_gradient.h"
 #include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_pattern.h"
-#include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_style.h"
 #include "third_party/blink/renderer/modules/canvas/canvas2d/path_2d.h"
-#include "third_party/blink/renderer/platform/bindings/exception_state.h"
-#include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/geometry/float_quad.h"
-#include "third_party/blink/renderer/platform/graphics/canvas_heuristic_parameters.h"
-#include "third_party/blink/renderer/platform/graphics/color.h"
-#include "third_party/blink/renderer/platform/graphics/image.h"
-#include "third_party/blink/renderer/platform/graphics/paint/paint_canvas.h"
-#include "third_party/blink/renderer/platform/graphics/paint/paint_flags.h"
 #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
 #include "third_party/blink/renderer/platform/graphics/stroke_data.h"
-#include "third_party/blink/renderer/platform/histogram.h"
-#include "third_party/blink/renderer/platform/wtf/math_extras.h"
 
 namespace blink {
 
@@ -1272,8 +1254,7 @@ void BaseRenderingContext2D::drawImage(ScriptState* script_state,
 
   ValidateStateStack();
 
-  if (!origin_tainted_by_content_ &&
-      WouldTaintOrigin(image_source, ExecutionContext::From(script_state)))
+  if (!origin_tainted_by_content_ && WouldTaintOrigin(image_source))
     SetOriginTaintedByContent();
 
   Draw(
@@ -1291,30 +1272,56 @@ void BaseRenderingContext2D::drawImage(ScriptState* script_state,
           : CanvasRenderingContext2DState::kNonOpaqueImage);
 
   ValidateStateStack();
-
+  bool source_is_canvas = false;
   if (!IsPaint2D()) {
-    std::string histogram_name = "Blink.Canvas.DrawImage.Duration.";
+    std::string image_source_name;
     if (image_source->IsCanvasElement()) {
-      histogram_name.append("Canvas.");
+      image_source_name = "Canvas";
+      source_is_canvas = true;
     } else if (image_source->IsCSSImageValue()) {
-      histogram_name.append("CssImage.");
+      image_source_name = "CssImage";
     } else if (image_source->IsImageElement()) {
-      histogram_name.append("ImageElement.");
+      image_source_name = "ImageElement";
     } else if (image_source->IsImageBitmap()) {
-      histogram_name.append("ImageBitmap.");
+      image_source_name = "ImageBitmap";
     } else if (image_source->IsOffscreenCanvas()) {
-      histogram_name.append("OffscreenCanvas.");
+      image_source_name = "OffscreenCanvas";
+      source_is_canvas = true;
     } else if (image_source->IsSVGSource()) {
-      histogram_name.append("SVG.");
+      image_source_name = "SVG";
     } else if (image_source->IsVideoElement()) {
-      histogram_name.append("Video.");
+      image_source_name = "Video";
     } else {  // Unknown source.
-      histogram_name.append("Unknown.");
+      image_source_name = "Unknown";
     }
-    histogram_name.append(
-        CanCreateCanvas2dResourceProvider() && IsAccelerated() ? "GPU" : "CPU");
+
+    std::string duration_histogram_name =
+        "Blink.Canvas.DrawImage.Duration." + image_source_name;
+    std::string size_histogram_name =
+        "Blink.Canvas.DrawImage.SqrtNumberOfPixels." + image_source_name;
+
+    if (CanCreateCanvas2dResourceProvider() && IsAccelerated()) {
+      if (source_is_canvas)
+        size_histogram_name.append(".GPU");
+      duration_histogram_name.append(".GPU");
+    } else {
+      if (source_is_canvas)
+        size_histogram_name.append(".CPU");
+      duration_histogram_name.append(".CPU");
+    }
+
     base::TimeDelta elapsed = TimeTicks::Now() - start_time;
-    UmaHistogramMicrosecondsTimes(histogram_name, elapsed);
+    base::UmaHistogramMicrosecondsTimes(duration_histogram_name, elapsed);
+
+    float sqrt_pixels_float =
+        std::sqrt(dst_rect.Width()) * std::sqrt(dst_rect.Height());
+    // If sqrt_pixels_float overflows as int CheckedNumeric will store it
+    // as invalid, then ValueOrDefault will return the maximum int.
+    base::CheckedNumeric<int> sqrt_pixels = sqrt_pixels_float;
+    base::UmaHistogramCustomCounts(
+        size_histogram_name,
+        sqrt_pixels.ValueOrDefault(std::numeric_limits<int>::max()), 1, 5000,
+        50);
   }
 }
 
@@ -1452,8 +1459,7 @@ CanvasPattern* BaseRenderingContext2D::createPattern(
   }
   DCHECK(image_for_rendering);
 
-  bool origin_clean =
-      !WouldTaintOrigin(image_source, ExecutionContext::From(script_state));
+  bool origin_clean = !WouldTaintOrigin(image_source);
 
   return CanvasPattern::Create(std::move(image_for_rendering), repeat_mode,
                                origin_clean);
@@ -1667,24 +1673,29 @@ ImageData* BaseRenderingContext2D::getImageData(
     int scaled_time = getScaledElapsedTime(
         image_data_rect.Width(), image_data_rect.Height(), start_time);
     if (CanCreateCanvas2dResourceProvider() && IsAccelerated()) {
-      UMA_HISTOGRAM_COUNTS_1000("Blink.Canvas.GetImageDataScaledDuration.GPU",
-                                scaled_time);
+      base::UmaHistogramCounts1000(
+          "Blink.Canvas.GetImageDataScaledDuration.GPU", scaled_time);
     } else {
-      UMA_HISTOGRAM_COUNTS_1000("Blink.Canvas.GetImageDataScaledDuration.CPU",
-                                scaled_time);
+      base::UmaHistogramCounts1000(
+          "Blink.Canvas.GetImageDataScaledDuration.CPU", scaled_time);
     }
   }
 
   return imageData;
 }
 
-int BaseRenderingContext2D::getScaledElapsedTime(int width,
-                                                 int height,
+int BaseRenderingContext2D::getScaledElapsedTime(float width,
+                                                 float height,
                                                  base::TimeTicks start_time) {
   base::TimeDelta elapsed_time = base::TimeTicks::Now() - start_time;
-  float sqrt_pixels = std::sqrt(width * height);
-  return elapsed_time.InMicrosecondsF() * 10.0f /
-         (sqrt_pixels == 0 ? 1 : sqrt_pixels);
+  float sqrt_pixels = std::sqrt(width) * std::sqrt(height);
+  float scaled_time_float = elapsed_time.InMicrosecondsF() * 10.0f /
+                            (sqrt_pixels == 0 ? 1.0f : sqrt_pixels);
+
+  // If scaled_time_float overflows as integer, CheckedNumeric will store it
+  // as invalid, then ValueOrDefault will return the maximum int.
+  base::CheckedNumeric<int> checked_scaled_time = scaled_time_float;
+  return checked_scaled_time.ValueOrDefault(std::numeric_limits<int>::max());
 }
 
 void BaseRenderingContext2D::putImageData(ImageData* data,
@@ -1773,11 +1784,11 @@ void BaseRenderingContext2D::putImageData(ImageData* data,
     int scaled_time =
         getScaledElapsedTime(dest_rect.Width(), dest_rect.Height(), start_time);
     if (CanCreateCanvas2dResourceProvider() && IsAccelerated()) {
-      UMA_HISTOGRAM_COUNTS_1000("Blink.Canvas.PutImageDataScaledDuration.GPU",
-                                scaled_time);
+      base::UmaHistogramCounts1000(
+          "Blink.Canvas.PutImageDataScaledDuration.GPU", scaled_time);
     } else {
-      UMA_HISTOGRAM_COUNTS_1000("Blink.Canvas.PutImageDataScaledDuration.CPU",
-                                scaled_time);
+      base::UmaHistogramCounts1000(
+          "Blink.Canvas.PutImageDataScaledDuration.CPU", scaled_time);
     }
   }
 

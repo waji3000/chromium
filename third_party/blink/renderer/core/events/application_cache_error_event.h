@@ -7,7 +7,7 @@
 
 #include "third_party/blink/public/platform/web_application_cache_host_client.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
-#include "third_party/blink/renderer/core/event_names.h"
+#include "third_party/blink/renderer/core/event_interface_names.h"
 #include "third_party/blink/renderer/core/events/application_cache_error_event_init.h"
 #include "third_party/blink/renderer/core/loader/appcache/application_cache_host.h"
 
@@ -17,6 +17,12 @@ class ApplicationCacheErrorEvent final : public Event {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
+  ApplicationCacheErrorEvent(WebApplicationCacheHost::ErrorReason,
+                             const String& url,
+                             int status,
+                             const String& message);
+  ApplicationCacheErrorEvent(const AtomicString& event_type,
+                             const ApplicationCacheErrorEventInit* initializer);
   ~ApplicationCacheErrorEvent() override;
 
   static ApplicationCacheErrorEvent* Create(
@@ -24,13 +30,15 @@ class ApplicationCacheErrorEvent final : public Event {
       const String& url,
       int status,
       const String& message) {
-    return new ApplicationCacheErrorEvent(reason, url, status, message);
+    return MakeGarbageCollected<ApplicationCacheErrorEvent>(reason, url, status,
+                                                            message);
   }
 
   static ApplicationCacheErrorEvent* Create(
       const AtomicString& event_type,
       const ApplicationCacheErrorEventInit* initializer) {
-    return new ApplicationCacheErrorEvent(event_type, initializer);
+    return MakeGarbageCollected<ApplicationCacheErrorEvent>(event_type,
+                                                            initializer);
   }
 
   const String& reason() const { return reason_; }
@@ -39,19 +47,12 @@ class ApplicationCacheErrorEvent final : public Event {
   const String& message() const { return message_; }
 
   const AtomicString& InterfaceName() const override {
-    return EventNames::ApplicationCacheErrorEvent;
+    return event_interface_names::kApplicationCacheErrorEvent;
   }
 
   void Trace(blink::Visitor*) override;
 
  private:
-  ApplicationCacheErrorEvent(WebApplicationCacheHost::ErrorReason,
-                             const String& url,
-                             int status,
-                             const String& message);
-  ApplicationCacheErrorEvent(const AtomicString& event_type,
-                             const ApplicationCacheErrorEventInit* initializer);
-
   String reason_;
   String url_;
   int status_;

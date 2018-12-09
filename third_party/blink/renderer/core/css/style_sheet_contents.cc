@@ -332,34 +332,20 @@ const AtomicString& StyleSheetContents::NamespaceURIFromPrefix(
 void StyleSheetContents::ParseAuthorStyleSheet(
     const CSSStyleSheetResource* cached_style_sheet,
     const SecurityOrigin* security_origin) {
-  TRACE_EVENT1("blink,devtools.timeline", "ParseAuthorStyleSheet", "data",
-               InspectorParseAuthorStyleSheetEvent::Data(cached_style_sheet));
+  TRACE_EVENT1(
+      "blink,devtools.timeline", "ParseAuthorStyleSheet", "data",
+      inspector_parse_author_style_sheet_event::Data(cached_style_sheet));
   TimeTicks start_time = CurrentTimeTicks();
 
-  bool is_same_origin_request =
-      security_origin && security_origin->CanRequest(BaseURL());
-
-  // When the response was fetched via the Service Worker, the original URL may
-  // not be same as the base URL.
-  // TODO(horo): When we will use the original URL as the base URL, we can
-  // remove this check. crbug.com/553535
-  if (is_same_origin_request &&
-      cached_style_sheet->GetResponse().WasFetchedViaServiceWorker()) {
-    const KURL original_url(
-        cached_style_sheet->GetResponse().OriginalURLViaServiceWorker());
-    // |originalURL| is empty when the response is created in the SW.
-    if (!original_url.IsEmpty() && !security_origin->CanRequest(original_url))
-      is_same_origin_request = false;
-  }
-
+  const ResourceResponse& response = cached_style_sheet->GetResponse();
   CSSStyleSheetResource::MIMETypeCheck mime_type_check =
-      IsQuirksModeBehavior(parser_context_->Mode()) && is_same_origin_request
+      (IsQuirksModeBehavior(parser_context_->Mode()) &&
+       response.IsCorsSameOrigin())
           ? CSSStyleSheetResource::MIMETypeCheck::kLax
           : CSSStyleSheetResource::MIMETypeCheck::kStrict;
   String sheet_text =
       cached_style_sheet->SheetText(parser_context_, mime_type_check);
 
-  const ResourceResponse& response = cached_style_sheet->GetResponse();
   source_map_url_ = response.HttpHeaderField(http_names::kSourceMap);
   if (source_map_url_.IsEmpty()) {
     // Try to get deprecated header.
@@ -535,6 +521,7 @@ static bool ChildRulesHaveFailedOrCanceledSubresources(
       case StyleRuleBase::kKeyframe:
       case StyleRuleBase::kSupports:
       case StyleRuleBase::kViewport:
+      case StyleRuleBase::kFontFeatureValues:
         break;
     }
   }

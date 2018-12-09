@@ -9,6 +9,7 @@
 #include "base/optional.h"
 #include "base/synchronization/waitable_event.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
+#include "components/viz/common/skia_helper.h"
 #include "components/viz/service/display/output_surface_frame.h"
 #include "components/viz/service/gl/gpu_service_impl.h"
 #include "gpu/command_buffer/common/swap_buffers_complete_params.h"
@@ -30,6 +31,7 @@
 #include "ui/gfx/skia_util.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
+#include "ui/gl/gl_gl_api_implementation.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gl_version_info.h"
 #include "ui/gl/init/gl_factory.h"
@@ -71,6 +73,11 @@ SkiaOutputSurfaceImplOnGpu::SkiaOutputSurfaceImplOnGpu(
       gpu_service_->sync_point_manager()->CreateSyncPointClientState(
           gpu::CommandBufferNamespace::VIZ_OUTPUT_SURFACE, command_buffer_id_,
           gpu_service_->skia_output_surface_sequence_id());
+
+  gpu::GpuChannelManager* channel_manager = gpu_service_->gpu_channel_manager();
+  feature_info_ = base::MakeRefCounted<gpu::gles2::FeatureInfo>(
+      channel_manager->gpu_driver_bug_workarounds(),
+      channel_manager->gpu_feature_info());
 
   if (gpu_service_->is_using_vulkan())
     InitializeForVulkan();
@@ -180,6 +187,7 @@ void SkiaOutputSurfaceImplOnGpu::Reshape(
 
 void SkiaOutputSurfaceImplOnGpu::FinishPaintCurrentFrame(
     std::unique_ptr<SkDeferredDisplayList> ddl,
+    std::unique_ptr<SkDeferredDisplayList> overdraw_ddl,
     uint64_t sync_fence_release) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   DCHECK(ddl);
@@ -197,6 +205,21 @@ void SkiaOutputSurfaceImplOnGpu::FinishPaintCurrentFrame(
     gr_context()->flush();
   }
   sync_point_client_state_->ReleaseFenceSync(sync_fence_release);
+
+  if (overdraw_ddl) {
+    sk_sp<SkSurface> overdraw_surface = SkSurface::MakeRenderTarget(
+        gr_context(), overdraw_ddl->characterization(), SkBudgeted::kNo);
+    overdraw_surface->draw(overdraw_ddl.get());
+
+    SkPaint paint;
+    sk_sp<SkImage> overdraw_image = overdraw_surface->makeImageSnapshot();
+
+    sk_sp<SkColorFilter> colorFilter = SkiaHelper::MakeOverdrawColorFilter();
+    paint.setColorFilter(colorFilter);
+    // TODO(xing.xu): move below to the thread where skia record happens.
+    sk_surface_->getCanvas()->drawImage(overdraw_image.get(), 0, 0, &paint);
+    gr_context()->flush();
+  }
 }
 
 void SkiaOutputSurfaceImplOnGpu::SwapBuffers(OutputSurfaceFrame frame) {
@@ -242,6 +265,7 @@ void SkiaOutputSurfaceImplOnGpu::SwapBuffers(OutputSurfaceFrame frame) {
     latency.AddLatencyNumberWithTimestamp(
         ui::INPUT_EVENT_LATENCY_FRAME_SWAP_COMPONENT, swap_end, 1);
   }
+  latency_tracker_.OnGpuSwapBuffersCompleted(frame.latency_info);
 }
 
 void SkiaOutputSurfaceImplOnGpu::FinishPaintRenderPass(
@@ -291,6 +315,11 @@ void SkiaOutputSurfaceImplOnGpu::CopyOutput(
     const gfx::Rect& copy_rect,
     std::unique_ptr<CopyOutputRequest> request) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  if (!MakeCurrent()) {
+    request->SendResult(
+        std::make_unique<CopyOutputSkBitmapResult>(gfx::Rect(), SkBitmap()));
+    return;
+  }
 
   // TODO(crbug.com/644851): Complete the implementation for all request types,
   // scaling, etc.
@@ -330,6 +359,13 @@ void SkiaOutputSurfaceImplOnGpu::FulfillPromiseTexture(
     return;
   }
 
+  if (gpu_service_->is_using_vulkan()) {
+    // Probably this texture is created with wrong inteface (GLES2Interface).
+    DLOG(ERROR) << "Failed to fulfill the promise texture whose backend is not "
+                   "compitable with vulkan.";
+    return;
+  }
+
   auto* mailbox_manager = gpu_service_->mailbox_manager();
   auto* texture_base = mailbox_manager->ConsumeTexture(metadata.mailbox);
   if (!texture_base) {
@@ -337,8 +373,11 @@ void SkiaOutputSurfaceImplOnGpu::FulfillPromiseTexture(
     return;
   }
   BindOrCopyTextureIfNecessary(texture_base);
-  GetGrBackendTexture(*gl_version_info(), *texture_base, metadata.color_type,
-                      backend_texture);
+  gpu::GetGrBackendTexture(texture_base->target(), metadata.size,
+                           *metadata.backend_format.getGLFormat(),
+                           *metadata.driver_backend_format.getGLFormat(),
+                           texture_base->service_id(), metadata.color_type,
+                           backend_texture);
 }
 
 void SkiaOutputSurfaceImplOnGpu::FulfillPromiseTexture(
@@ -382,8 +421,7 @@ void SkiaOutputSurfaceImplOnGpu::DidSwapBuffersComplete(
 const gpu::gles2::FeatureInfo* SkiaOutputSurfaceImplOnGpu::GetFeatureInfo()
     const {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  NOTIMPLEMENTED();
-  return nullptr;
+  return feature_info_.get();
 }
 
 const gpu::GpuPreferences& SkiaOutputSurfaceImplOnGpu::GetGpuPreferences()
@@ -519,13 +557,12 @@ void SkiaOutputSurfaceImplOnGpu::CreateSkSurfaceForVulkan() {
 
 bool SkiaOutputSurfaceImplOnGpu::MakeCurrent() {
   if (!gpu_service_->is_using_vulkan()) {
-    if (context_state_->context_lost ||
-        !gl_context()->MakeCurrent(gl_surface_.get())) {
+    if (!context_state_->MakeCurrent(gl_surface_.get())) {
       LOG(ERROR) << "Failed to make current.";
-      context_state_->context_lost = true;
       context_lost_callback_.Run();
       return false;
     }
+    context_state_->need_context_state_reset = true;
   }
   return true;
 }

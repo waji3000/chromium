@@ -10,8 +10,10 @@
 #include <algorithm>
 #include <memory>
 
+#include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/path_service.h"
@@ -19,10 +21,11 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "base/win/current_module.h"
+#include "base/win/i18n.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_handle.h"
+#include "chrome/credential_provider/common/gcp_strings.h"
 #include "chrome/credential_provider/gaiacp/gaia_credential_provider_i.h"
-#include "chrome/credential_provider/gaiacp/gcp_strings.h"
 #include "chrome/credential_provider/gaiacp/gcp_utils.h"
 #include "chrome/credential_provider/gaiacp/logging.h"
 #include "chrome/credential_provider/gaiacp/os_process_manager.h"
@@ -30,6 +33,8 @@
 #include "chrome/credential_provider/gaiacp/reg_utils.h"
 #include "chrome/credential_provider/gaiacp/scoped_lsa_policy.h"
 #include "chrome/credential_provider/gaiacp/scoped_user_profile.h"
+#include "chrome/installer/launcher_support/chrome_launcher_support.h"
+#include "content/public/common/content_switches.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "google_apis/google_api_keys.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
@@ -118,18 +123,20 @@ HRESULT WaitForLoginUIAndGetResult(
   DCHECK(result);
   DCHECK(status_text);
 
-  // Buffers used to accumulate output from UI.
+  // Buffer used to accumulate output from UI.
   const int kBufferSize = 4096;
-  static char stdout_buffer[kBufferSize];
-  static char stderr_buffer[kBufferSize];
+  std::vector<char> output_buffer(kBufferSize, '\0');
+  base::ScopedClosureRunner zero_buffer_on_exit(
+      base::BindOnce(base::IgnoreResult(&RtlSecureZeroMemory),
+                     &output_buffer[0], kBufferSize));
 
   DWORD exit_code;
   HRESULT hr = WaitForProcess(uiprocinfo->procinfo.process_handle(),
                               uiprocinfo->parent_handles, &exit_code,
-                              stdout_buffer, stderr_buffer, kBufferSize);
-  // stdout contains sensitive information like the password.  Don't log it.
-  LOGFN(INFO) << "exit_code=" << exit_code
-              << " stderr: " << stderr_buffer;
+                              &output_buffer[0], kBufferSize);
+  // output_buffer contains sensitive information like the password. Don't log
+  // it.
+  LOGFN(INFO) << "exit_code=" << exit_code;
 
   // If the UI process did not complete successfully, nothing more to do.
   if (exit_code == kUiecEMailMissmatch) {
@@ -140,8 +147,8 @@ HRESULT WaitForLoginUIAndGetResult(
     return E_ABORT;
   }
 
-  std::unique_ptr<base::Value> parsed(
-      base::JSONReader::Read(stdout_buffer, base::JSON_ALLOW_TRAILING_COMMAS));
+  std::unique_ptr<base::Value> parsed(base::JSONReader::Read(
+      &output_buffer[0], base::JSON_ALLOW_TRAILING_COMMAS));
   if (!parsed || !parsed->is_dict()) {
     LOGFN(ERROR) << "Could not parse data from logon UI";
     *status_text =
@@ -310,9 +317,9 @@ HRESULT CGaiaCredentialBase::OnDllRegisterServer() {
   bool save_password = true;
   base::string16 fullname(GetStringResource(IDS_GAIA_ACCOUNT_FULLNAME));
   base::string16 comment(GetStringResource(IDS_GAIA_ACCOUNT_COMMENT));
-  hr = CreateNewUser(manager, kGaiaAccountName, password, fullname.c_str(),
-                     comment.c_str(), /*add_to_users_group=*/false,
-                     &sid_string);
+  hr =
+      CreateNewUser(manager, kGaiaAccountName, password, fullname.c_str(),
+                    comment.c_str(), /*add_to_users_group=*/false, &sid_string);
   if (hr == HRESULT_FROM_WIN32(NERR_UserExists)) {
     // If CreateNewUser() found an existing user, the password was not changed.
     // Consider this a success but don't save the newly generated password
@@ -476,45 +483,45 @@ HRESULT CGaiaCredentialBase::GetGlsCommandline(
   DCHECK(email);
   DCHECK(command_line);
 
-  // Get the application name.
-
-  base::FilePath install_path;
-  HRESULT hr = GetInstallDirectory(&install_path);
-  if (FAILED(hr)) {
-    LOGFN(ERROR) << "GetInstallDirectory hr=" << putHR(hr);
-    return hr;
+  base::FilePath chrome_path =
+      chrome_launcher_support::GetChromePathForInstallationLevel(
+          chrome_launcher_support::SYSTEM_LEVEL_INSTALLATION, false);
+  if (chrome_path.empty()) {
+    LOGFN(ERROR) << "No path to chrome.exe could be found.";
+    return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
   }
 
-  // TODO(crbug.com/887444): Replace this with path to chrome.
-  command_line->SetProgram(
-      install_path.Append(
-          FILE_PATH_LITERAL("weblogin-win32-ia32\\weblogin.exe")));
+  command_line->SetProgram(chrome_path);
 
   LOGFN(INFO) << "App exe: " << command_line->GetProgram().value();
-
-  // Get the command line.
 
   // If an email pattern is specified, pass it to the webui.
   wchar_t email_pattern[64];
   ULONG length = base::size(email_pattern);
-  hr = GetGlobalFlag(L"ep", email_pattern, &length);
+  HRESULT hr = GetGlobalFlag(L"ep", email_pattern, &length);
   if (FAILED(hr))
     email_pattern[0] = 0;
+  if (*email_pattern)
+    command_line->AppendSwitchNative(kEmailDomainSwitch, email_pattern);
 
-  // TODO: these arguments will not be needed once the electron app is replaced
-  // with chrome.
-  std::string id = google_apis::GetOAuth2ClientID(google_apis::CLIENT_MAIN);
-  std::string secret =
-      google_apis::GetOAuth2ClientSecret(google_apis::CLIENT_MAIN);
+  command_line->AppendSwitchNative(kGcpwSigninSwitch, email);
 
-  if (wcslen(email_pattern) > 0)
-    command_line->AppendSwitchNative("pattern", email_pattern);
+  // Get the current UI language for the logon screen and pass it onto Chrome
+  // The UI language depends on whether we are using a SYSTEM logon (initial
+  // logon) or a lock screen logon (from a user). If the user who locked the
+  // screen has a specific language, that will be the one used for the UI
+  // language.
+  std::vector<base::string16> languages;
+  if (base::win::i18n::GetThreadPreferredUILanguageList(&languages)) {
+    command_line->AppendSwitchNative("lang", languages[0]);
+  }
 
-  if (email && wcslen(email) > 0)
-    command_line->AppendSwitchNative("email", email);
-
-  command_line->AppendSwitchASCII("client-id", id);
-  command_line->AppendSwitchASCII("client-secret", secret);
+  // The gpu process will be running on an alternative desktop since it does not
+  // have access to the winlogon desktop. This mitigation is required merely to
+  // be able to start Chrome during winlogon. However, In this scenario no gpu
+  // rendering can be done to the screen, so all the gpu features need to be
+  // disabled. (crbug.com/904902)
+  command_line->AppendSwitch("disable-gpu");
 
   LOGFN(INFO) << "Command line: " << command_line->GetCommandLineString();
   return S_OK;
@@ -637,13 +644,7 @@ HRESULT CGaiaCredentialBase::SetSelected(BOOL* auto_login) {
 HRESULT CGaiaCredentialBase::SetDeselected(void) {
   LOGFN(INFO);
 
-  // Terminate login UI process if started.  This is best effort since it may
-  // have already terminated.
-  if (logon_ui_process_ != INVALID_HANDLE_VALUE) {
-    LOGFN(INFO) << "Attempting to kill logon UI process";
-    ::TerminateProcess(logon_ui_process_, kUiecKilled);
-    logon_ui_process_ = INVALID_HANDLE_VALUE;
-  }
+  TerminateLogonProcess();
 
   // Do not reset the internal state here, otherwise auto-logon will not work.
 
@@ -765,6 +766,7 @@ HRESULT CGaiaCredentialBase::GetSerialization(
     CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION* cpcs,
     wchar_t** status_text,
     CREDENTIAL_PROVIDER_STATUS_ICON* status_icon) {
+  USES_CONVERSION;
   LOGFN(INFO);
   DCHECK(status_text);
   DCHECK(status_icon);
@@ -786,8 +788,27 @@ HRESULT CGaiaCredentialBase::GetSerialization(
   // If HandleAutologon returns S_FALSE, then there was not enough information
   // to log the user on.  Display the Gaia sign in page.
   if (hr == S_FALSE) {
+    // Logon process is still running, return that serialization is not
+    // finished so that a second logon stub isn't started.
+    if (logon_ui_process_ != INVALID_HANDLE_VALUE) {
+      *cpgsr = CPGSR_NO_CREDENTIAL_NOT_FINISHED;
+      return S_OK;
+    }
+
     LOGFN(INFO) << "HandleAutologon hr=" << putHR(hr);
     TellOmahaDidRun();
+
+    // If there is no internet connection, just abort right away.
+    if (provider_->HasInternetConnection() != S_OK) {
+      BSTR error_message = AllocErrorString(IDS_NO_NETWORK);
+      ::SHStrDupW(OLE2CW(error_message), status_text);
+      ::SysFreeString(error_message);
+
+      *status_icon = CPSI_NONE;
+      *cpgsr = CPGSR_NO_CREDENTIAL_FINISHED;
+      LOGFN(INFO) << "No internet connection";
+      return S_OK;
+    }
 
     // The account creation is async so we are not done yet.
     *cpgsr = CPGSR_NO_CREDENTIAL_NOT_FINISHED;
@@ -846,6 +867,7 @@ HRESULT CGaiaCredentialBase::CreateAndRunLogonStub() {
 
   // Save the handle to the logon UI process so that it can be killed should
   // the credential be Unadvise()d.
+  DCHECK_EQ(logon_ui_process_, INVALID_HANDLE_VALUE);
   logon_ui_process_ = uiprocinfo->procinfo.process_handle();
 
   uiprocinfo->credential = this;
@@ -929,8 +951,14 @@ HRESULT CGaiaCredentialBase::ForkGaiaLogonStub(
   DCHECK(uiprocinfo);
 
   ScopedStartupInfo startupinfo(kDesktopFullName);
-  HRESULT hr = InitializeStdHandles(CommDirection::kChildToParentOnly,
-                                    &startupinfo, &uiprocinfo->parent_handles);
+
+  // Only create a stdout pipe for the logon stub process. On some machines
+  // Chrome will not startup properly when also given a stderror pipe due
+  // to access restrictions. For the purposes of the credential provider
+  // only the output of stdout matters.
+  HRESULT hr =
+      InitializeStdHandles(CommDirection::kChildToParentOnly, kStdOutput,
+                           &startupinfo, &uiprocinfo->parent_handles);
   if (FAILED(hr)) {
     LOGFN(ERROR) << "InitializeStdHandles hr=" << putHR(hr);
     return hr;
@@ -988,8 +1016,9 @@ HRESULT CGaiaCredentialBase::ForkSaveAccountInfoStub(
 
   ScopedStartupInfo startupinfo;
   StdParentHandles parent_handles;
-  HRESULT hr = InitializeStdHandles(CommDirection::kParentToChildOnly,
-                                    &startupinfo, &parent_handles);
+  HRESULT hr =
+      InitializeStdHandles(CommDirection::kParentToChildOnly, kAllStdHandles,
+                           &startupinfo, &parent_handles);
   if (FAILED(hr)) {
     LOGFN(ERROR) << "InitializeStdHandles hr=" << putHR(hr);
     *status_text = AllocErrorString(IDS_INTERNAL_ERROR);
@@ -1011,24 +1040,32 @@ HRESULT CGaiaCredentialBase::ForkSaveAccountInfoStub(
     return hr;
   }
 
+  // Mark this process as a child process so that it doesn't try to
+  // start a crashpad handler process. Only the main entry point
+  // into the dll should start the handler process.
+  command_line.AppendSwitchASCII(switches::kProcessType,
+                                 "gcpw-save-account-info");
+
   base::win::ScopedProcessInformation procinfo;
   hr = OSProcessManager::Get()->CreateRunningProcess(
       command_line, startupinfo.GetInfo(), &procinfo);
   if (FAILED(hr)) {
     LOGFN(ERROR) << "CreateProcessWithTokenW hr=" << putHR(hr);
+    *status_text = AllocErrorString(IDS_INTERNAL_ERROR);
     return hr;
   }
 
   // Write account info to stdin of child process.  This buffer is read by
-  // SaveAccountInfoW() in dllmain.cpp.
+  // SaveAccountInfoW() in dllmain.cpp.  If this fails, chrome won't pick up
+  // the credentials from the credential provider and will need to sign in
+  // manually.  TODO(crbug.com/902911): Figure out how to handle this.
   std::string json;
   if (base::JSONWriter::Write(*dict, &json)) {
     DWORD written;
     if (!::WriteFile(parent_handles.hstdin_write.Get(), json.c_str(),
                      json.length() + 1, &written, /*lpOverlapped=*/nullptr)) {
-      HRESULT hr = HRESULT_FROM_WIN32(::GetLastError());
-      LOGFN(ERROR) << "WriteFile hr=" << putHR(hr);
-      *status_text = AllocErrorString(IDS_INTERNAL_ERROR);
+      HRESULT hrWrite = HRESULT_FROM_WIN32(::GetLastError());
+      LOGFN(ERROR) << "WriteFile hr=" << putHR(hrWrite);
     }
   } else {
     LOGFN(ERROR) << "base::JSONWriter::Write failed";
@@ -1070,6 +1107,10 @@ unsigned __stdcall CGaiaCredentialBase::WaitForLoginUI(void* param) {
     // If hr is E_ABORT, this is a user initiated cancel.  Don't consider this
     // an error.
     LONG sts = hr == E_ABORT ? STATUS_SUCCESS : HRESULT_CODE(hr);
+
+    // Either WaitForLoginUIImpl did not fail or there should be an error
+    // message to display.
+    DCHECK(sts == STATUS_SUCCESS || status_text != nullptr);
     hr = uiprocinfo->credential->ReportError(sts, STATUS_SUCCESS, status_text);
     if (FAILED(hr)) {
       LOGFN(ERROR) << "uiprocinfo->credential->ReportError hr=" << putHR(hr);
@@ -1123,21 +1164,19 @@ HRESULT CGaiaCredentialBase::WaitForLoginUIImpl(
 
   dict->SetString(kKeySID, OLE2CA(sid));
 
-  if (SUCCEEDED(hr)) {
-    // Fire off a process to call SaveAccountInfo().
-    //
-    // The eventual call to OnUserAuthenticated() will tell winlogon that
-    // logging in is finished. It seems that winlogon will kill this process
-    // after a short time, which races with an attempt to save the account info
-    // to the registry if done here.  For this reason a child pocess is used.
-    hr = ForkSaveAccountInfoStub(dict, status_text);
-    if (FAILED(hr)) {
-      LOGFN(ERROR) << "ForkSaveAccountInfoStub hr=" << putHR(hr);
-      return hr;
-    }
-
-    *properties = std::move(dict);
+  // Fire off a process to call SaveAccountInfo().
+  //
+  // The eventual call to OnUserAuthenticated() will tell winlogon that
+  // logging in is finished. It seems that winlogon will kill this process
+  // after a short time, which races with an attempt to save the account info
+  // to the registry if done here.  For this reason a child pocess is used.
+  hr = ForkSaveAccountInfoStub(dict, status_text);
+  if (FAILED(hr)) {
+    LOGFN(ERROR) << "ForkSaveAccountInfoStub hr=" << putHR(hr);
+    return hr;
   }
+
+  *properties = std::move(dict);
 
   // When this function returns, winlogon will be told to logon to the newly
   // created account.  This is important, as the save account info process
@@ -1218,6 +1257,16 @@ HRESULT CGaiaCredentialBase::Terminate() {
   return S_OK;
 }
 
+void CGaiaCredentialBase::TerminateLogonProcess() {
+  // Terminate login UI process if started.  This is best effort since it may
+  // have already terminated.
+  if (logon_ui_process_ != INVALID_HANDLE_VALUE) {
+    LOGFN(INFO) << "Attempting to kill logon UI process";
+    ::TerminateProcess(logon_ui_process_, kUiecKilled);
+    logon_ui_process_ = INVALID_HANDLE_VALUE;
+  }
+}
+
 HRESULT CGaiaCredentialBase::FinishAuthentication(BSTR username,
                                                   BSTR password,
                                                   BSTR fullname,
@@ -1245,6 +1294,12 @@ HRESULT CGaiaCredentialBase::ReportError(LONG status,
   if (status_text != nullptr)
     result_status_text_.assign(OLE2CW(status_text));
 
+  // If the user cancelled out of the logon, the process may be already
+  // terminated, but if the handle to the process is still valid the
+  // credential provider will not start a new GLS process when requested so
+  // try to terminate the logon process now and clear the handle.
+  TerminateLogonProcess();
+
   // TODO(rogerta): for some reason the error info saved by ReportError()
   // never gets used because ReportResult() is never called by winlogon.exe
   // when the logon fails.  Not sure what I'm doing wrong here.  This
@@ -1256,4 +1311,3 @@ HRESULT CGaiaCredentialBase::ReportError(LONG status,
 }
 
 }  // namespace credential_provider
-

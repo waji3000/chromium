@@ -5,6 +5,8 @@
 #include "ash/system/unified/unified_system_tray.h"
 
 #include "ash/accessibility/accessibility_controller.h"
+#include "ash/public/cpp/ash_features.h"
+#include "ash/shelf/shelf.h"
 #include "ash/shell.h"
 #include "ash/strings/grit/ash_strings.h"
 #include "ash/system/date/date_view.h"
@@ -14,11 +16,10 @@
 #include "ash/system/message_center/message_center_ui_delegate.h"
 #include "ash/system/model/clock_model.h"
 #include "ash/system/model/system_tray_model.h"
+#include "ash/system/network/network_icon_purger.h"
 #include "ash/system/network/network_tray_view.h"
-#include "ash/system/network/tray_network_state_observer.h"
 #include "ash/system/power/tray_power.h"
 #include "ash/system/status_area_widget.h"
-#include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/tray_constants.h"
 #include "ash/system/tray/tray_container.h"
 #include "ash/system/unified/ime_mode_view.h"
@@ -40,7 +41,7 @@ namespace ash {
 
 class UnifiedSystemTray::UiDelegate : public MessageCenterUiDelegate {
  public:
-  UiDelegate(UnifiedSystemTray* owner);
+  explicit UiDelegate(UnifiedSystemTray* owner);
   ~UiDelegate() override;
 
   // MessageCenterUiDelegate:
@@ -114,42 +115,13 @@ void UnifiedSystemTray::UiDelegate::HideMessageCenter() {
   owner_->HideBubbleInternal();
 }
 
-class UnifiedSystemTray::NetworkStateDelegate
-    : public TrayNetworkStateObserver::Delegate {
- public:
-  explicit NetworkStateDelegate(tray::NetworkTrayView* tray_view);
-  ~NetworkStateDelegate() override;
-
-  // TrayNetworkStateObserver::Delegate
-  void NetworkStateChanged(bool notify_a11y) override;
-
- private:
-  tray::NetworkTrayView* const tray_view_;
-  const std::unique_ptr<TrayNetworkStateObserver> network_state_observer_;
-
-  DISALLOW_COPY_AND_ASSIGN(NetworkStateDelegate);
-};
-
-UnifiedSystemTray::NetworkStateDelegate::NetworkStateDelegate(
-    tray::NetworkTrayView* tray_view)
-    : tray_view_(tray_view),
-      network_state_observer_(
-          std::make_unique<TrayNetworkStateObserver>(this)) {}
-
-UnifiedSystemTray::NetworkStateDelegate::~NetworkStateDelegate() = default;
-
-void UnifiedSystemTray::NetworkStateDelegate::NetworkStateChanged(
-    bool notify_a11y) {
-  tray_view_->UpdateNetworkStateHandlerIcon();
-  tray_view_->UpdateConnectionStatus(tray::GetConnectedNetwork(), notify_a11y);
-}
-
 UnifiedSystemTray::UnifiedSystemTray(Shelf* shelf)
     : TrayBackgroundView(shelf),
       ui_delegate_(std::make_unique<UiDelegate>(this)),
       model_(std::make_unique<UnifiedSystemTrayModel>()),
       slider_bubble_controller_(
           std::make_unique<UnifiedSliderBubbleController>(this)),
+      network_icon_purger_(std::make_unique<NetworkIconPurger>()),
       ime_mode_view_(new ImeModeView(shelf)),
       managed_device_view_(new ManagedDeviceView(shelf)),
       notification_counter_item_(new NotificationCounterView(shelf)),
@@ -163,10 +135,15 @@ UnifiedSystemTray::UnifiedSystemTray(Shelf* shelf)
 
   // It is possible in unit tests that it's missing.
   if (chromeos::NetworkHandler::IsInitialized()) {
-    tray::NetworkTrayView* network_item = new tray::NetworkTrayView(shelf);
-    network_state_delegate_ =
-        std::make_unique<NetworkStateDelegate>(network_item);
-    tray_container()->AddChildView(network_item);
+    if (features::IsSeparateNetworkIconsEnabled()) {
+      tray_container()->AddChildView(
+          tray::NetworkTrayView::CreateForDefault(shelf));
+      tray_container()->AddChildView(
+          tray::NetworkTrayView::CreateForMobile(shelf));
+    } else {
+      tray_container()->AddChildView(
+          tray::NetworkTrayView::CreateForSingleIcon(shelf));
+    }
   }
 
   tray_container()->AddChildView(new tray::PowerTrayView(shelf));
@@ -229,7 +206,7 @@ void UnifiedSystemTray::UpdateAfterLoginStatusChange() {
 }
 
 bool UnifiedSystemTray::ShouldEnableExtraKeyboardAccessibility() {
-  return Shell::Get()->accessibility_controller()->IsSpokenFeedbackEnabled();
+  return Shell::Get()->accessibility_controller()->spoken_feedback_enabled();
 }
 
 void UnifiedSystemTray::AddInkDropLayer(ui::Layer* ink_drop_layer) {

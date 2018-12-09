@@ -143,8 +143,6 @@ const char kChromeUISupervisedUserPassphrasePageHost[] =
     "managed-user-passphrase";
 const char kChromeUISyncConfirmationHost[] = "sync-confirmation";
 const char kChromeUISyncConfirmationURL[] = "chrome://sync-confirmation/";
-const char kChromeUISyncConsentBumpURL[] =
-    "chrome://sync-confirmation/?consent-bump";
 const char kChromeUISyncFileSystemInternalsHost[] = "syncfs-internals";
 const char kChromeUISyncHost[] = "sync";
 const char kChromeUISyncInternalsHost[] = "sync-internals";
@@ -226,6 +224,8 @@ const char kChromeUISetTimeURL[] = "chrome://set-time/";
 const char kChromeUISlowHost[] = "slow";
 const char kChromeUISlowTraceHost[] = "slow_trace";
 const char kChromeUISlowURL[] = "chrome://slow/";
+const char kChromeUISmbShareHost[] = "smb-share-dialog";
+const char kChromeUISmbShareURL[] = "chrome://smb-share-dialog/";
 const char kChromeUISysInternalsHost[] = "sys-internals";
 const char kChromeUIUserImageHost[] = "userimage";
 const char kChromeUIUserImageURL[] = "chrome://userimage/";
@@ -271,6 +271,7 @@ const char kChromeUIWebRtcLogsHost[] = "webrtc-logs";
 // chrome_autocomplete_provider_client.cc to be listed by the built-in
 // AutocompleteProvider.
 
+const char kAddressesSubPage[] = "addresses";
 const char kAutofillSubPage[] = "autofill";
 const char kClearBrowserDataSubPage[] = "clearBrowserData";
 const char kContentSettingsSubPage[] = "content";

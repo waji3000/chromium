@@ -97,7 +97,6 @@ void ParamTraits<network::DataElement>::Write(base::Pickle* m,
     case network::DataElement::TYPE_CHUNKED_DATA_PIPE: {
       WriteParam(m, const_cast<network::DataElement&>(p)
                         .ReleaseChunkedDataPipeGetter()
-                        .PassInterface()
                         .PassHandle()
                         .release());
       break;
@@ -263,11 +262,6 @@ void ParamTraits<scoped_refptr<network::ResourceRequestBody>>::Log(
 // Generate constructors.
 #undef SERVICES_NETWORK_PUBLIC_CPP_NETWORK_IPC_PARAM_TRAITS_H_
 #include "ipc/struct_constructor_macros.h"
-#include "network_ipc_param_traits.h"
-
-// Generate destructors.
-#undef SERVICES_NETWORK_PUBLIC_CPP_NETWORK_IPC_PARAM_TRAITS_H_
-#include "ipc/struct_destructor_macros.h"
 #include "network_ipc_param_traits.h"
 
 // Generate param traits write methods.

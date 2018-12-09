@@ -26,9 +26,12 @@
 
 #include "third_party/blink/renderer/modules/media_controls/media_controls_impl.h"
 
+#include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_size.h"
 #include "third_party/blink/renderer/bindings/core/v8/string_or_trusted_html.h"
+#include "third_party/blink/renderer/core/css/css_property_value_set.h"
+#include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/dom/events/event_dispatch_forbidden_scope.h"
 #include "third_party/blink/renderer/core/dom/mutation_observer.h"
 #include "third_party/blink/renderer/core/dom/mutation_observer_init.h"
@@ -86,6 +89,7 @@
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/text/platform_locale.h"
+#include "third_party/blink/renderer/platform/web_test_support.h"
 
 namespace blink {
 
@@ -131,9 +135,18 @@ const char kActAsAudioControlsCSSClass[] = "audio-only";
 const char kScrubbingMessageCSSClass[] = "scrubbing-message";
 const char kTestModeCSSClass[] = "test-mode";
 const char kImmersiveModeCSSClass[] = "immersive-mode";
+const char kPipPresentedCSSClass[] = "pip-presented";
 
 // The delay between two taps to be recognized as a double tap gesture.
 constexpr WTF::TimeDelta kDoubleTapDelay = TimeDelta::FromMilliseconds(300);
+
+// The time user have to hover on mute button to show volume slider.
+// If this value is changed, you need to change the corresponding value in
+// media_controls_impl_test.cc
+constexpr WTF::TimeDelta kTimeToShowVolumeSlider =
+    TimeDelta::FromMilliseconds(200);
+constexpr WTF::TimeDelta kTimeToShowVolumeSliderTest =
+    TimeDelta::FromMilliseconds(0);
 
 // The number of seconds to jump when double tapping.
 constexpr int kNumberOfSecondsToJump = 10;
@@ -209,7 +222,7 @@ bool PreferHiddenVolumeControls(const Document& document) {
 }
 
 // If you change this value, then also update the corresponding value in
-// LayoutTests/media/media-controls.js.
+// web_tests/media/media-controls.js.
 constexpr TimeDelta kTimeWithoutMouseMovementBeforeHidingMediaControls =
     TimeDelta::FromSeconds(3);
 constexpr TimeDelta kModernTimeWithoutMouseMovementBeforeHidingMediaControls =
@@ -372,7 +385,8 @@ MediaControlsImpl::MediaControlsImpl(HTMLMediaElement& media_element)
       fullscreen_button_(nullptr),
       display_cutout_fullscreen_button_(nullptr),
       download_button_(nullptr),
-      media_event_listener_(new MediaControlsMediaEventListener(this)),
+      media_event_listener_(
+          MakeGarbageCollected<MediaControlsMediaEventListener>(this)),
       orientation_lock_delegate_(nullptr),
       rotate_to_fullscreen_delegate_(nullptr),
       display_cutout_delegate_(nullptr),
@@ -385,7 +399,7 @@ MediaControlsImpl::MediaControlsImpl(HTMLMediaElement& media_element)
       is_paused_for_scrubbing_(false),
       resize_observer_(ResizeObserver::Create(
           media_element.GetDocument(),
-          new MediaControlsResizeObserverDelegate(this))),
+          MakeGarbageCollected<MediaControlsResizeObserverDelegate>(this))),
       element_size_changed_timer_(
           media_element.GetDocument().GetTaskRunner(TaskType::kInternalMedia),
           this,
@@ -394,7 +408,11 @@ MediaControlsImpl::MediaControlsImpl(HTMLMediaElement& media_element)
       tap_timer_(
           media_element.GetDocument().GetTaskRunner(TaskType::kInternalMedia),
           this,
-          &MediaControlsImpl::TapTimerFired) {
+          &MediaControlsImpl::TapTimerFired),
+      volume_slider_wanted_timer_(
+          media_element.GetDocument().GetTaskRunner(TaskType::kInternalMedia),
+          this,
+          &MediaControlsImpl::VolumeSliderWantedTimerFired) {
   // On touch devices, start with the assumption that the user will interact via
   // touch events.
   Settings* settings = media_element.GetDocument().GetSettings();
@@ -405,7 +423,8 @@ MediaControlsImpl::MediaControlsImpl(HTMLMediaElement& media_element)
 
 MediaControlsImpl* MediaControlsImpl::Create(HTMLMediaElement& media_element,
                                              ShadowRoot& shadow_root) {
-  MediaControlsImpl* controls = new MediaControlsImpl(media_element);
+  MediaControlsImpl* controls =
+      MakeGarbageCollected<MediaControlsImpl>(media_element);
   controls->SetShadowPseudoId(AtomicString("-webkit-media-controls"));
   controls->InitializeControls();
   controls->Reset();
@@ -414,22 +433,23 @@ MediaControlsImpl* MediaControlsImpl::Create(HTMLMediaElement& media_element,
       media_element.IsHTMLVideoElement()) {
     // Initialize the orientation lock when going fullscreen feature.
     controls->orientation_lock_delegate_ =
-        new MediaControlsOrientationLockDelegate(
+        MakeGarbageCollected<MediaControlsOrientationLockDelegate>(
             ToHTMLVideoElement(media_element));
   }
 
   if (MediaControlsDisplayCutoutDelegate::IsEnabled() &&
       media_element.IsHTMLVideoElement()) {
     // Initialize the pinch gesture to expand into the display cutout feature.
-    controls->display_cutout_delegate_ = new MediaControlsDisplayCutoutDelegate(
-        ToHTMLVideoElement(media_element));
+    controls->display_cutout_delegate_ =
+        MakeGarbageCollected<MediaControlsDisplayCutoutDelegate>(
+            ToHTMLVideoElement(media_element));
   }
 
   if (RuntimeEnabledFeatures::VideoRotateToFullscreenEnabled() &&
       media_element.IsHTMLVideoElement()) {
     // Initialize the rotate-to-fullscreen feature.
     controls->rotate_to_fullscreen_delegate_ =
-        new MediaControlsRotateToFullscreenDelegate(
+        MakeGarbageCollected<MediaControlsRotateToFullscreenDelegate>(
             ToHTMLVideoElement(media_element));
   }
 
@@ -440,7 +460,7 @@ MediaControlsImpl* MediaControlsImpl::Create(HTMLMediaElement& media_element,
           ->GetMediaDownloadInProductHelpEnabled() &&
       media_element.IsHTMLVideoElement()) {
     controls->download_iph_manager_ =
-        new MediaDownloadInProductHelpManager(*controls);
+        MakeGarbageCollected<MediaDownloadInProductHelpManager>(*controls);
   }
 
   MediaControlsResourceLoader::InjectMediaControlsUAStyleSheet();
@@ -523,47 +543,55 @@ MediaControlsImpl* MediaControlsImpl::Create(HTMLMediaElement& media_element,
 //       (-internal-media-controls-display-cutout-fullscreen-button)
 void MediaControlsImpl::InitializeControls() {
   if (IsModern() && ShouldShowVideoControls()) {
-    loading_panel_ = new MediaControlLoadingPanelElement(*this);
+    loading_panel_ =
+        MakeGarbageCollected<MediaControlLoadingPanelElement>(*this);
     ParserAppendChild(loading_panel_);
   }
 
-  overlay_enclosure_ = new MediaControlOverlayEnclosureElement(*this);
+  overlay_enclosure_ =
+      MakeGarbageCollected<MediaControlOverlayEnclosureElement>(*this);
 
   if (RuntimeEnabledFeatures::MediaControlsOverlayPlayButtonEnabled()) {
-    overlay_play_button_ = new MediaControlOverlayPlayButtonElement(*this);
+    overlay_play_button_ =
+        MakeGarbageCollected<MediaControlOverlayPlayButtonElement>(*this);
 
     if (!IsModern())
       overlay_enclosure_->ParserAppendChild(overlay_play_button_);
   }
 
-  overlay_cast_button_ = new MediaControlCastButtonElement(*this, true);
+  overlay_cast_button_ =
+      MakeGarbageCollected<MediaControlCastButtonElement>(*this, true);
   overlay_enclosure_->ParserAppendChild(overlay_cast_button_);
 
   ParserAppendChild(overlay_enclosure_);
 
   // Create an enclosing element for the panel so we can visually offset the
   // controls correctly.
-  enclosure_ = new MediaControlPanelEnclosureElement(*this);
+  enclosure_ = MakeGarbageCollected<MediaControlPanelEnclosureElement>(*this);
 
-  panel_ = new MediaControlPanelElement(*this);
+  panel_ = MakeGarbageCollected<MediaControlPanelElement>(*this);
 
   // If using the modern media controls, the buttons should belong to a
   // seperate button panel. This is because they are displayed in two lines.
   if (IsModern() && ShouldShowVideoControls()) {
-    media_button_panel_ = new MediaControlButtonPanelElement(*this);
-    scrubbing_message_ = new MediaControlScrubbingMessageElement(*this);
+    media_button_panel_ =
+        MakeGarbageCollected<MediaControlButtonPanelElement>(*this);
+    scrubbing_message_ =
+        MakeGarbageCollected<MediaControlScrubbingMessageElement>(*this);
   }
 
-  play_button_ = new MediaControlPlayButtonElement(*this);
+  play_button_ = MakeGarbageCollected<MediaControlPlayButtonElement>(*this);
 
-  current_time_display_ = new MediaControlCurrentTimeDisplayElement(*this);
+  current_time_display_ =
+      MakeGarbageCollected<MediaControlCurrentTimeDisplayElement>(*this);
   current_time_display_->SetIsWanted(true);
 
-  duration_display_ = new MediaControlRemainingTimeDisplayElement(*this);
-  timeline_ = new MediaControlTimelineElement(*this);
-  mute_button_ = new MediaControlMuteButtonElement(*this);
+  duration_display_ =
+      MakeGarbageCollected<MediaControlRemainingTimeDisplayElement>(*this);
+  timeline_ = MakeGarbageCollected<MediaControlTimelineElement>(*this);
+  mute_button_ = MakeGarbageCollected<MediaControlMuteButtonElement>(*this);
 
-  volume_slider_ = new MediaControlVolumeSliderElement(*this);
+  volume_slider_ = MakeGarbageCollected<MediaControlVolumeSliderElement>(*this);
   if (PreferHiddenVolumeControls(GetDocument()))
     volume_slider_->SetIsWanted(false);
 
@@ -572,7 +600,7 @@ void MediaControlsImpl::InitializeControls() {
       GetDocument().GetSettings()->GetPictureInPictureEnabled() &&
       MediaElement().IsHTMLVideoElement()) {
     picture_in_picture_button_ =
-        new MediaControlPictureInPictureButtonElement(*this);
+        MakeGarbageCollected<MediaControlPictureInPictureButtonElement>(*this);
     picture_in_picture_button_->SetIsWanted(
         ShouldShowPictureInPictureButton(MediaElement()));
   }
@@ -580,25 +608,33 @@ void MediaControlsImpl::InitializeControls() {
   if (RuntimeEnabledFeatures::DisplayCutoutAPIEnabled() &&
       MediaElement().IsHTMLVideoElement()) {
     display_cutout_fullscreen_button_ =
-        new MediaControlDisplayCutoutFullscreenButtonElement(*this);
+        MakeGarbageCollected<MediaControlDisplayCutoutFullscreenButtonElement>(
+            *this);
   }
 
-  fullscreen_button_ = new MediaControlFullscreenButtonElement(*this);
-  download_button_ = new MediaControlDownloadButtonElement(*this);
-  cast_button_ = new MediaControlCastButtonElement(*this, false);
+  fullscreen_button_ =
+      MakeGarbageCollected<MediaControlFullscreenButtonElement>(*this);
+  download_button_ =
+      MakeGarbageCollected<MediaControlDownloadButtonElement>(*this);
+  cast_button_ =
+      MakeGarbageCollected<MediaControlCastButtonElement>(*this, false);
   toggle_closed_captions_button_ =
-      new MediaControlToggleClosedCaptionsButtonElement(*this);
-  overflow_menu_ = new MediaControlOverflowMenuButtonElement(*this);
+      MakeGarbageCollected<MediaControlToggleClosedCaptionsButtonElement>(
+          *this);
+  overflow_menu_ =
+      MakeGarbageCollected<MediaControlOverflowMenuButtonElement>(*this);
 
   PopulatePanel();
   enclosure_->ParserAppendChild(panel_);
 
   ParserAppendChild(enclosure_);
 
-  text_track_list_ = new MediaControlTextTrackListElement(*this);
+  text_track_list_ =
+      MakeGarbageCollected<MediaControlTextTrackListElement>(*this);
   ParserAppendChild(text_track_list_);
 
-  overflow_list_ = new MediaControlOverflowMenuListElement(*this);
+  overflow_list_ =
+      MakeGarbageCollected<MediaControlOverflowMenuListElement>(*this);
   ParserAppendChild(overflow_list_);
 
   // The order in which we append elements to the overflow list is significant
@@ -606,22 +642,24 @@ void MediaControlsImpl::InitializeControls() {
   // relative to each other.  The first item appended appears at the top of the
   // overflow menu.
   overflow_list_->ParserAppendChild(play_button_->CreateOverflowElement(
-      new MediaControlPlayButtonElement(*this)));
+      MakeGarbageCollected<MediaControlPlayButtonElement>(*this)));
   overflow_list_->ParserAppendChild(fullscreen_button_->CreateOverflowElement(
-      new MediaControlFullscreenButtonElement(*this)));
+      MakeGarbageCollected<MediaControlFullscreenButtonElement>(*this)));
   overflow_list_->ParserAppendChild(download_button_->CreateOverflowElement(
-      new MediaControlDownloadButtonElement(*this)));
+      MakeGarbageCollected<MediaControlDownloadButtonElement>(*this)));
   overflow_list_->ParserAppendChild(mute_button_->CreateOverflowElement(
-      new MediaControlMuteButtonElement(*this)));
+      MakeGarbageCollected<MediaControlMuteButtonElement>(*this)));
   overflow_list_->ParserAppendChild(cast_button_->CreateOverflowElement(
-      new MediaControlCastButtonElement(*this, false)));
+      MakeGarbageCollected<MediaControlCastButtonElement>(*this, false)));
   overflow_list_->ParserAppendChild(
       toggle_closed_captions_button_->CreateOverflowElement(
-          new MediaControlToggleClosedCaptionsButtonElement(*this)));
+          MakeGarbageCollected<MediaControlToggleClosedCaptionsButtonElement>(
+              *this)));
   if (picture_in_picture_button_) {
     overflow_list_->ParserAppendChild(
         picture_in_picture_button_->CreateOverflowElement(
-            new MediaControlPictureInPictureButtonElement(*this)));
+            MakeGarbageCollected<MediaControlPictureInPictureButtonElement>(
+                *this)));
   }
 
   // Set the default CSS classes.
@@ -699,15 +737,17 @@ Node::InsertionNotificationRequest MediaControlsImpl::InsertedInto(
     display_cutout_delegate_->Attach();
 
   if (!resize_observer_) {
-    resize_observer_ =
-        ResizeObserver::Create(MediaElement().GetDocument(),
-                               new MediaControlsResizeObserverDelegate(this));
+    resize_observer_ = ResizeObserver::Create(
+        MediaElement().GetDocument(),
+        MakeGarbageCollected<MediaControlsResizeObserverDelegate>(this));
     HTMLMediaElement& html_media_element = MediaElement();
     resize_observer_->observe(&html_media_element);
   }
 
-  if (!element_mutation_callback_)
-    element_mutation_callback_ = new MediaElementMutationCallback(this);
+  if (!element_mutation_callback_) {
+    element_mutation_callback_ =
+        MakeGarbageCollected<MediaElementMutationCallback>(this);
+  }
 
   return HTMLDivElement::InsertedInto(root);
 }
@@ -1036,8 +1076,10 @@ bool MediaControlsImpl::ShouldHideMediaControls(unsigned behavior_flags) const {
     return false;
 
   // Don't hide if the mouse is over the controls.
+  // Touch focus shouldn't affect controls visibility.
   const bool ignore_controls_hover = behavior_flags & kIgnoreControlsHover;
-  if (!ignore_controls_hover && AreVideoControlsHovered())
+  if (!ignore_controls_hover && AreVideoControlsHovered() &&
+      !is_touch_interaction_)
     return false;
 
   // Don't hide if the mouse is over the video area.
@@ -1374,11 +1416,51 @@ void MediaControlsImpl::UpdateOverflowMenuWanted() const {
 
   if (download_iph_manager_)
     download_iph_manager_->UpdateInProductHelp();
+
+  UpdateOverflowAndTrackListCSSClassForPip();
+  UpdateOverflowMenuItemCSSClass();
+}
+
+// This method is responsible for adding css class to overflow menu list
+// items to achieve the animation that items appears one after another when
+// open the overflow menu.
+void MediaControlsImpl::UpdateOverflowMenuItemCSSClass() const {
+  unsigned int id = 0;
+  for (Element* item = ElementTraversal::LastChild(*overflow_list_); item;
+       item = ElementTraversal::PreviousSibling(*item)) {
+    const CSSPropertyValueSet* inline_style = item->InlineStyle();
+    DOMTokenList& class_list = item->classList();
+
+    // We don't care if the hidden element still have animated-* CSS class
+    if (inline_style &&
+        inline_style->GetPropertyValue(CSSPropertyDisplay) == "none")
+      continue;
+
+    AtomicString css_class =
+        AtomicString("animated-") + AtomicString::Number(id++);
+    if (!class_list.contains(css_class))
+      class_list.setValue(css_class);
+  }
 }
 
 void MediaControlsImpl::UpdateScrubbingMessageFits() const {
   if (scrubbing_message_)
     scrubbing_message_->SetDoesFit(size_.Width() >= kMinScrubbingMessageWidth);
+}
+
+// We want to have wider menu when pip is enabled so that "Exit picture in
+// picture" text won't be truncated. When pip is disable (e.g. on mobile
+// device), we don't want to enlarged the menu because it would look empty
+// when "picture in picture" text is not presented.
+void MediaControlsImpl::UpdateOverflowAndTrackListCSSClassForPip() const {
+  if (picture_in_picture_button_.Get() &&
+      picture_in_picture_button_.Get()->OverflowElementIsWanted()) {
+    overflow_list_->classList().Add(kPipPresentedCSSClass);
+    text_track_list_->classList().Add(kPipPresentedCSSClass);
+  } else {
+    overflow_list_->classList().Remove(kPipPresentedCSSClass);
+    text_track_list_->classList().Remove(kPipPresentedCSSClass);
+  }
 }
 
 void MediaControlsImpl::UpdateSizingCSSClass() {
@@ -1404,7 +1486,8 @@ void MediaControlsImpl::MaybeToggleControlsFromTap() {
     MakeTransparent();
   } else {
     MakeOpaque();
-    if (ShouldHideMediaControls(kIgnoreWaitForTimer)) {
+    // Touch focus shouldn't affect controls visibility.
+    if (ShouldHideMediaControls(kIgnoreWaitForTimer | kIgnoreFocus)) {
       keep_showing_until_timer_fires_ = true;
       StartHideMediaControlsTimer();
     }
@@ -1519,13 +1602,22 @@ void MediaControlsImpl::HandlePointerEvent(Event* event) {
     if (!ContainsRelatedTarget(event)) {
       is_mouse_over_controls_ = false;
       StopHideMediaControlsTimer();
+
+      // When we get a mouse out, if video is playing and control should
+      // hide regardless of focus, hide the control.
+      // This will fix the issue that when mouse out event happen while video is
+      // focused, control never hides.
+      if (!MediaElement().paused() && ShouldHideMediaControls(kIgnoreFocus))
+        MakeTransparent();
     }
   } else if (event->type() == event_type_names::kPointermove) {
     // When we get a mouse move, show the media controls, and start a timer
     // that will hide the media controls after a 3 seconds without a mouse move.
     is_mouse_over_controls_ = true;
     MakeOpaqueFromPointerEvent();
-    if (ShouldHideMediaControls(kIgnoreVideoHover))
+
+    // Start the timer regardless of focus state
+    if (ShouldHideMediaControls(kIgnoreVideoHover | kIgnoreFocus))
       StartHideMediaControlsTimer();
   }
 }
@@ -1569,6 +1661,15 @@ void MediaControlsImpl::HandleTouchEvent(Event* event) {
     if (event->type() == event_type_names::kClick &&
         !ContainsRelatedTarget(event)) {
       event->SetDefaultHandled();
+
+      // In immersive mode we don't use double-tap features, so instead of
+      // waiting 300 ms for a potential second tap, we just immediately toggle
+      // controls visiblity.
+      if (GetDocument().GetSettings() &&
+          GetDocument().GetSettings()->GetImmersiveModeEnabled()) {
+        MaybeToggleControlsFromTap();
+        return;
+      }
 
       if (tap_timer_.IsActive()) {
         // Cancel the visibility toggle event.
@@ -1646,11 +1747,13 @@ void MediaControlsImpl::TapTimerFired(TimerBase*) {
     // and there's nothing to do), or the user is playing by click (in which
     // case we need to start playing).
     if (is_paused_for_double_tap_) {
-      // TODO(https://crbug.com/896255): Add and record useraction.
+      Platform::Current()->RecordAction(
+          UserMetricsAction("Media.Controls.ClickAnywhereToPause"));
       // TODO(https://crbug.com/896252): Show overlay pause animation.
       is_paused_for_double_tap_ = false;
     } else {
-      // TODO(https://crbug.com/896255): Add and record useraction.
+      Platform::Current()->RecordAction(
+          UserMetricsAction("Media.Controls.ClickAnywhereToPlay"));
       // TODO(https://crbug.com/896252): Show overlay play animation.
       MediaElement().Play();
     }
@@ -1736,7 +1839,8 @@ void MediaControlsImpl::OnVolumeChange() {
 }
 
 void MediaControlsImpl::OnFocusIn() {
-  if (!MediaElement().ShouldShowControls())
+  // Touch focus shouldn't affect controls visibility.
+  if (!MediaElement().ShouldShowControls() || is_touch_interaction_)
     return;
 
   ResetHideMediaControlsTimer();
@@ -2159,14 +2263,31 @@ void MediaControlsImpl::StartHideMediaControlsIfNecessary() {
     StartHideMediaControlsTimer();
 }
 
+void MediaControlsImpl::VolumeSliderWantedTimerFired(TimerBase*) {
+  volume_slider_->OpenSlider();
+}
+
 void MediaControlsImpl::OpenVolumeSliderIfNecessary() {
-  if (ShouldOpenVolumeSlider())
-    volume_slider_->OpenSlider();
+  if (ShouldOpenVolumeSlider()) {
+    if (volume_slider_->IsFocused() || mute_button_->IsFocused()) {
+      // When we're focusing with the keyboard, we don't need the delay.
+      volume_slider_->OpenSlider();
+    } else {
+      volume_slider_wanted_timer_.StartOneShot(
+          WebTestSupport::IsRunningWebTest() ? kTimeToShowVolumeSliderTest
+                                             : kTimeToShowVolumeSlider,
+          FROM_HERE);
+    }
+  }
 }
 
 void MediaControlsImpl::CloseVolumeSliderIfNecessary() {
-  if (ShouldCloseVolumeSlider())
+  if (ShouldCloseVolumeSlider()) {
     volume_slider_->CloseSlider();
+
+    if (volume_slider_wanted_timer_.IsActive())
+      volume_slider_wanted_timer_.Stop();
+  }
 }
 
 bool MediaControlsImpl::ShouldOpenVolumeSlider() const {
@@ -2180,7 +2301,8 @@ bool MediaControlsImpl::ShouldCloseVolumeSlider() const {
   if (!volume_slider_ || !IsModern())
     return false;
 
-  return !(volume_slider_->IsHovered() || mute_button_->IsHovered());
+  return !(volume_slider_->IsHovered() || mute_button_->IsHovered() ||
+           volume_slider_->IsFocused() || mute_button_->IsFocused());
 }
 
 const MediaControlDownloadButtonElement& MediaControlsImpl::DownloadButton()

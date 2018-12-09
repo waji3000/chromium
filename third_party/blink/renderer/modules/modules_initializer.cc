@@ -45,8 +45,8 @@
 #include "third_party/blink/renderer/modules/document_metadata/copyless_paste_server.h"
 #include "third_party/blink/renderer/modules/encryptedmedia/html_media_element_encrypted_media.h"
 #include "third_party/blink/renderer/modules/encryptedmedia/media_keys_controller.h"
+#include "third_party/blink/renderer/modules/event_interface_modules_names.h"
 #include "third_party/blink/renderer/modules/event_modules_factory.h"
-#include "third_party/blink/renderer/modules/event_modules_names.h"
 #include "third_party/blink/renderer/modules/event_target_modules_names.h"
 #include "third_party/blink/renderer/modules/exported/web_embedded_worker_impl.h"
 #include "third_party/blink/renderer/modules/filesystem/dragged_isolated_file_system_impl.h"
@@ -99,15 +99,15 @@ namespace blink {
 void ModulesInitializer::Initialize() {
   // Strings must be initialized before calling CoreInitializer::init().
   const unsigned kModulesStaticStringsCount =
-      EventNames::kModulesNamesCount + event_target_names::kModulesNamesCount +
-      IndexedDBNames::kNamesCount;
+      event_interface_names::kModulesNamesCount +
+      event_target_names::kModulesNamesCount + indexed_db_names::kNamesCount;
   StringImpl::ReserveStaticStringsCapacityForSize(kModulesStaticStringsCount);
 
-  EventNames::initModules();
-  event_target_names::initModules();
+  event_interface_names::InitModules();
+  event_target_names::InitModules();
   Document::RegisterEventFactory(EventModulesFactory::Create());
   ModuleBindingsInitializer::Init();
-  IndexedDBNames::init();
+  indexed_db_names::Init();
   AXObjectCache::Init(AXObjectCacheImpl::Create);
   DraggedIsolatedFileSystem::Init(
       DraggedIsolatedFileSystemImpl::PrepareForDataObject);
@@ -216,13 +216,16 @@ void ModulesInitializer::InitInspectorAgentSession(
     InspectorDOMAgent* dom_agent,
     InspectedFrames* inspected_frames,
     Page* page) const {
+  session->Append(MakeGarbageCollected<InspectorIndexedDBAgent>(
+      inspected_frames, session->V8Session()));
   session->Append(
-      new InspectorIndexedDBAgent(inspected_frames, session->V8Session()));
-  session->Append(new DeviceOrientationInspectorAgent(inspected_frames));
-  session->Append(new InspectorDOMStorageAgent(inspected_frames));
+      MakeGarbageCollected<DeviceOrientationInspectorAgent>(inspected_frames));
+  session->Append(
+      MakeGarbageCollected<InspectorDOMStorageAgent>(inspected_frames));
   if (allow_view_agents) {
     session->Append(InspectorDatabaseAgent::Create(page));
-    session->Append(new InspectorAccessibilityAgent(inspected_frames, dom_agent));
+    session->Append(MakeGarbageCollected<InspectorAccessibilityAgent>(
+        inspected_frames, dom_agent));
     session->Append(InspectorCacheStorageAgent::Create(inspected_frames));
   }
 }
@@ -236,7 +239,7 @@ void ModulesInitializer::OnClearWindowObjectInMainWorld(
   NavigatorGamepad::From(document);
   NavigatorServiceWorker::From(document);
   DOMWindowStorageController::From(document);
-  if (OriginTrials::WebVREnabled(document.GetExecutionContext()))
+  if (origin_trials::WebVREnabled(document.GetExecutionContext()))
     NavigatorVR::From(document);
   if (RuntimeEnabledFeatures::PresentationEnabled() &&
       settings.GetPresentationReceiver()) {
@@ -270,7 +273,8 @@ void ModulesInitializer::ProvideModulesToPage(Page& page,
                                               WebViewClient* client) const {
   MediaKeysController::ProvideMediaKeysTo(page);
   ::blink::ProvideContextFeaturesTo(page, ContextFeaturesClientImpl::Create());
-  ::blink::ProvideDatabaseClientTo(page, new DatabaseClient);
+  ::blink::ProvideDatabaseClientTo(page,
+                                   MakeGarbageCollected<DatabaseClient>());
   StorageNamespace::ProvideSessionStorageNamespaceTo(page, client);
 }
 

@@ -30,6 +30,15 @@ CSPSource::CSPSource(ContentSecurityPolicy* policy,
       host_wildcard_(host_wildcard),
       port_wildcard_(port_wildcard) {}
 
+CSPSource::CSPSource(ContentSecurityPolicy* policy, const CSPSource& other)
+    : CSPSource(policy,
+                other.scheme_,
+                other.host_,
+                other.port_,
+                other.path_,
+                other.host_wildcard_,
+                other.port_wildcard_) {}
+
 bool CSPSource::Matches(const KURL& url,
                         ResourceRequest::RedirectStatus redirect_status) const {
   SchemeMatchingResult schemes_match = SchemeMatches(url.Protocol());
@@ -234,9 +243,9 @@ CSPSource* CSPSource::Intersect(CSPSource* other) const {
           : other->scheme_;
   if (IsSchemeOnly() || other->IsSchemeOnly()) {
     const CSPSource* stricter = IsSchemeOnly() ? other : this;
-    return new CSPSource(policy_, scheme, stricter->host_, stricter->port_,
-                         stricter->path_, stricter->host_wildcard_,
-                         stricter->port_wildcard_);
+    return MakeGarbageCollected<CSPSource>(
+        policy_, scheme, stricter->host_, stricter->port_, stricter->path_,
+        stricter->host_wildcard_, stricter->port_wildcard_);
   }
 
   String host = host_wildcard_ == kNoWildcard ? host_ : other->host_;
@@ -253,8 +262,8 @@ CSPSource* CSPSource::Intersect(CSPSource* other) const {
       (host_wildcard_ == kHasWildcard) ? other->host_wildcard_ : host_wildcard_;
   WildcardDisposition port_wildcard =
       (port_wildcard_ == kHasWildcard) ? other->port_wildcard_ : port_wildcard_;
-  return new CSPSource(policy_, scheme, host, port, path, host_wildcard,
-                       port_wildcard);
+  return MakeGarbageCollected<CSPSource>(policy_, scheme, host, port, path,
+                                         host_wildcard, port_wildcard);
 }
 
 bool CSPSource::IsSchemeOnly() const {

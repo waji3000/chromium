@@ -50,6 +50,13 @@ class MODULES_EXPORT RTCIceTransport final
   USING_GARBAGE_COLLECTED_MIXIN(RTCIceTransport);
 
  public:
+  enum class CloseReason {
+    // stop() was called.
+    kStopped,
+    // The ExecutionContext is being destroyed.
+    kContextDestroyed,
+  };
+
   static RTCIceTransport* Create(ExecutionContext* context);
   static RTCIceTransport* Create(
       ExecutionContext* context,
@@ -57,6 +64,11 @@ class MODULES_EXPORT RTCIceTransport final
       scoped_refptr<base::SingleThreadTaskRunner> host_thread,
       std::unique_ptr<IceTransportAdapterCrossThreadFactory> adapter_factory);
 
+  explicit RTCIceTransport(
+      ExecutionContext* context,
+      scoped_refptr<base::SingleThreadTaskRunner> proxy_thread,
+      scoped_refptr<base::SingleThreadTaskRunner> host_thread,
+      std::unique_ptr<IceTransportAdapterCrossThreadFactory> adapter_factory);
   ~RTCIceTransport() override;
 
   // Returns true if start() has been called.
@@ -115,12 +127,6 @@ class MODULES_EXPORT RTCIceTransport final
   void Trace(blink::Visitor* visitor) override;
 
  private:
-  explicit RTCIceTransport(
-      ExecutionContext* context,
-      scoped_refptr<base::SingleThreadTaskRunner> proxy_thread,
-      scoped_refptr<base::SingleThreadTaskRunner> host_thread,
-      std::unique_ptr<IceTransportAdapterCrossThreadFactory> adapter_factory);
-
   // IceTransportProxy::Delegate overrides.
   void OnGatheringStateChanged(cricket::IceGatheringState new_state) override;
   void OnCandidateGathered(const cricket::Candidate& candidate) override;
@@ -132,6 +138,11 @@ class MODULES_EXPORT RTCIceTransport final
   // Fills in |local_parameters_| with a random usernameFragment and a random
   // password.
   void GenerateLocalParameters();
+
+  // Permenantly closes the RTCIceTransport with the given reason.
+  // The RTCIceTransport must not already be closed.
+  // This will transition the state to closed.
+  void Close(CloseReason reason);
 
   bool RaiseExceptionIfClosed(ExceptionState& exception_state) const;
 

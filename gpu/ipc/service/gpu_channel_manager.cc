@@ -13,10 +13,11 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "components/viz/common/features.h"
+#include "gpu/command_buffer/common/context_creation_attribs.h"
 #include "gpu/command_buffer/common/sync_token.h"
 #include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/gpu_tracer.h"
@@ -63,7 +64,7 @@ GpuChannelManager::GpuChannelManager(
     const GpuFeatureInfo& gpu_feature_info,
     GpuProcessActivityFlags activity_flags,
     scoped_refptr<gl::GLSurface> default_offscreen_surface,
-    GrContext* vulkan_gr_context)
+    viz::VulkanContextProvider* vulkan_context_provider)
     : task_runner_(task_runner),
       io_task_runner_(io_task_runner),
       gpu_preferences_(gpu_preferences),
@@ -84,7 +85,7 @@ GpuChannelManager::GpuChannelManager(
       memory_pressure_listener_(
           base::Bind(&GpuChannelManager::HandleMemoryPressure,
                      base::Unretained(this))),
-      vulkan_gr_context_(vulkan_gr_context),
+      vulkan_context_provider_(vulkan_context_provider),
       weak_factory_(this) {
   DCHECK(task_runner->BelongsToCurrentThread());
   DCHECK(io_task_runner);
@@ -213,7 +214,10 @@ void GpuChannelManager::LoseAllContexts() {
 }
 
 void GpuChannelManager::MaybeExitOnContextLost() {
-  if (!gpu_preferences().single_process && !gpu_preferences().in_process_gpu) {
+  if (gpu_preferences().single_process || gpu_preferences().in_process_gpu)
+    return;
+
+  if (!exiting_for_lost_context_) {
     LOG(ERROR) << "Exiting GPU process because some drivers cannot recover"
                << " from problems.";
     exiting_for_lost_context_ = true;
@@ -315,7 +319,7 @@ void GpuChannelManager::OnBackgroundCleanup() {
 
   if (raster_decoder_context_state_) {
     gr_cache_controller_.reset();
-    raster_decoder_context_state_->context_lost = true;
+    raster_decoder_context_state_->MarkContextLost();
     raster_decoder_context_state_.reset();
   }
 
@@ -349,7 +353,7 @@ void GpuChannelManager::HandleMemoryPressure(
 scoped_refptr<raster::RasterDecoderContextState>
 GpuChannelManager::GetRasterDecoderContextState(ContextResult* result) {
   if (raster_decoder_context_state_ &&
-      !raster_decoder_context_state_->context_lost) {
+      !raster_decoder_context_state_->context_lost()) {
     *result = ContextResult::kSuccess;
     return raster_decoder_context_state_;
   }
@@ -394,9 +398,8 @@ GpuChannelManager::GetRasterDecoderContextState(ContextResult* result) {
       use_virtualized_gl_contexts ? share_group->GetSharedContext(surface.get())
                                   : nullptr;
   if (!context) {
-    gl::GLContextAttribs attribs;
-    if (use_passthrough_decoder)
-      attribs.global_texture_share_group = true;
+    gl::GLContextAttribs attribs = gles2::GenerateGLContextAttribs(
+        ContextCreationAttribs(), use_passthrough_decoder);
     context =
         gl::init::CreateGLContext(share_group.get(), surface.get(), attribs);
     if (!context) {
@@ -434,11 +437,23 @@ GpuChannelManager::GetRasterDecoderContextState(ContextResult* result) {
   // TODO(penghuang): https://crbug.com/899735 Handle device lost for Vulkan.
   raster_decoder_context_state_ = new raster::RasterDecoderContextState(
       std::move(share_group), std::move(surface), std::move(context),
-      use_virtualized_gl_contexts, vulkan_gr_context_);
+      use_virtualized_gl_contexts,
+      base::BindOnce(&GpuChannelManager::OnContextLost, base::Unretained(this),
+                     /*synthetic_loss=*/false),
+      vulkan_context_provider_);
+
+  if (!vulkan_context_provider_) {
+    if (!raster_decoder_context_state_->InitializeGL(
+            gpu_driver_bug_workarounds(), gpu_feature_info())) {
+      raster_decoder_context_state_ = nullptr;
+      return nullptr;
+    }
+  }
+
   const bool enable_raster_transport =
       gpu_feature_info_.status_values[GPU_FEATURE_TYPE_OOP_RASTERIZATION] ==
       gpu::kGpuFeatureStatusEnabled;
-  if (enable_raster_transport) {
+  if (enable_raster_transport || features::IsUsingSkiaDeferredDisplayList()) {
     raster_decoder_context_state_->InitializeGrContext(
         gpu_driver_bug_workarounds_, gr_shader_cache(), &activity_flags_,
         watchdog_);
@@ -449,6 +464,18 @@ GpuChannelManager::GetRasterDecoderContextState(ContextResult* result) {
 
   *result = ContextResult::kSuccess;
   return raster_decoder_context_state_;
+}
+
+void GpuChannelManager::OnContextLost(bool synthetic_loss) {
+  // Work around issues with recovery by allowing a new GPU process to launch.
+  if (!synthetic_loss && gpu_driver_bug_workarounds_.exit_on_context_lost)
+    MaybeExitOnContextLost();
+
+  // Lose all other contexts.
+  if (!synthetic_loss &&
+      (gl::GLContext::LosesAllContextsOnContextLost() ||
+       raster_decoder_context_state_->use_virtualized_gl_contexts))
+    LoseAllContexts();
 }
 
 void GpuChannelManager::ScheduleGrContextCleanup() {

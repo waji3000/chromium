@@ -257,19 +257,22 @@ TEST_F(WindowTreeClientTest, SetBoundsFailedLocalSurfaceId) {
   WindowPortMusTestHelper(&window).SimulateEmbedding();
 
   const gfx::Rect original_bounds(window.bounds());
+  const viz::LocalSurfaceId original_local_surface_id(
+      window.GetLocalSurfaceIdAllocation().local_surface_id());
   const gfx::Rect new_bounds(gfx::Rect(0, 0, 100, 100));
   ASSERT_NE(new_bounds, window.bounds());
   window.SetBounds(new_bounds);
   EXPECT_EQ(new_bounds, window.bounds());
   WindowMus* window_mus = WindowMus::Get(&window);
   ASSERT_NE(nullptr, window_mus);
-  EXPECT_TRUE(window_mus->GetLocalSurfaceId().is_valid());
+  EXPECT_TRUE(window_mus->GetLocalSurfaceIdAllocation().IsValid());
 
   // Reverting the change should also revert the viz::LocalSurfaceId.
   ASSERT_TRUE(window_tree()->AckSingleChangeOfType(WindowTreeChangeType::BOUNDS,
                                                    false));
   EXPECT_EQ(original_bounds, window.bounds());
-  EXPECT_FALSE(window_mus->GetLocalSurfaceId().is_valid());
+  EXPECT_EQ(original_local_surface_id,
+            window.GetLocalSurfaceIdAllocation().local_surface_id());
 }
 
 INSTANTIATE_TEST_CASE_P(/* no prefix */,
@@ -282,10 +285,9 @@ TEST_P(WindowTreeClientTestSurfaceSync, ClientSurfaceEmbedderCreated) {
   window.Init(ui::LAYER_NOT_DRAWN);
   WindowPortMusTestHelper(&window).SimulateEmbedding();
 
-  // The window will allocate a viz::LocalSurfaceId once it has a bounds.
   WindowPortMus* window_port_mus = WindowPortMus::Get(&window);
   ASSERT_NE(nullptr, window_port_mus);
-  EXPECT_FALSE(WindowMus::Get(&window)->GetLocalSurfaceId().is_valid());
+
   // A ClientSurfaceEmbedder is only created once there is bounds and a
   // FrameSinkId.
   EXPECT_EQ(nullptr, window_port_mus->client_surface_embedder());
@@ -293,7 +295,7 @@ TEST_P(WindowTreeClientTestSurfaceSync, ClientSurfaceEmbedderCreated) {
   ASSERT_NE(new_bounds, window.bounds());
   window.SetBounds(new_bounds);
   EXPECT_EQ(new_bounds, window.bounds());
-  EXPECT_TRUE(WindowMus::Get(&window)->GetLocalSurfaceId().is_valid());
+  EXPECT_TRUE(WindowMus::Get(&window)->GetLocalSurfaceIdAllocation().IsValid());
 
   // Once the bounds have been set, the ClientSurfaceEmbedder should be created.
   ClientSurfaceEmbedder* client_surface_embedder =
@@ -484,7 +486,6 @@ TEST_F(WindowTreeClientTest, SetBoundsFailedWithPendingChange) {
 
   // This shouldn't trigger the bounds changing yet.
   EXPECT_EQ(new_bounds, root_window.bounds());
-  EXPECT_FALSE(root_window_mus->GetLocalSurfaceId().is_valid());
 
   // Tell the client the change failed, which should trigger failing to the
   // most recent bounds from server.
@@ -492,14 +493,14 @@ TEST_F(WindowTreeClientTest, SetBoundsFailedWithPendingChange) {
                                                    false));
   EXPECT_EQ(server_changed_bounds, root_window.bounds());
   EXPECT_EQ(server_changed_local_surface_id,
-            root_window_mus->GetLocalSurfaceId());
+            root_window_mus->GetLocalSurfaceIdAllocation().local_surface_id());
 
   // Simulate server changing back to original bounds. Should take immediately.
   window_tree_client()->OnWindowBoundsChanged(server_id(&root_window),
                                               server_changed_bounds,
                                               original_bounds, base::nullopt);
   EXPECT_EQ(original_bounds, root_window.bounds());
-  EXPECT_FALSE(root_window_mus->GetLocalSurfaceId().is_valid());
+  EXPECT_FALSE(root_window_mus->GetLocalSurfaceIdAllocation().IsValid());
 }
 
 TEST_F(WindowTreeClientTest, TwoInFlightBoundsChangesBothCanceled) {
@@ -2409,6 +2410,20 @@ TEST_F(WindowTreeClientTestHighDPI, NewTopLevelWindowBounds) {
   const float device_scale_factor = 2.0f;
   EXPECT_EQ(gfx::ConvertRectToPixel(device_scale_factor, bounds),
             top_level->GetHost()->GetBoundsInPixels());
+}
+
+TEST_F(WindowTreeClientTestHighDPI, HostCtorInitializesDisplayScale) {
+  // WindowTreeHost's ctor attempts to initialize the display scale factor.
+  WindowTreeHostMus window_tree_host(
+      CreateInitParamsForTopLevel(window_tree_client_impl()));
+  EXPECT_EQ(2.0f, window_tree_host.device_scale_factor());
+  // This test sets pixel bounds before calling WindowTreeHost::InitHost() to
+  // simulate circumstances similar to <http://crbug.com/899084>. Pixel bounds
+  // should still be scaled to DIP bounds for the window tree before InitHost.
+  gfx::Rect bounds(2, 4, 60, 80);
+  gfx::Rect pixel_bounds = gfx::ConvertRectToPixel(2.0f, bounds);
+  window_tree_host.SetBoundsInPixels(pixel_bounds);
+  EXPECT_EQ(bounds, window_tree()->last_set_window_bounds());
 }
 
 TEST_F(WindowTreeClientTestHighDPI, ObservedInputEventsInDip) {

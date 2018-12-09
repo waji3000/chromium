@@ -1856,27 +1856,6 @@ CSSValue* ComputedStyleUtils::StrokeDashArrayToCSSValueList(
   return list;
 }
 
-CSSValue* ComputedStyleUtils::PaintOrderToCSSValueList(
-    const SVGComputedStyle& svg_style) {
-  CSSValueList* list = CSSValueList::CreateSpaceSeparated();
-  for (int i = 0; i < 3; i++) {
-    EPaintOrderType paint_order_type = svg_style.PaintOrderType(i);
-    switch (paint_order_type) {
-      case PT_FILL:
-      case PT_STROKE:
-      case PT_MARKERS:
-        list->Append(*CSSIdentifierValue::Create(paint_order_type));
-        break;
-      case PT_NONE:
-      default:
-        NOTREACHED();
-        break;
-    }
-  }
-
-  return list;
-}
-
 CSSValue* ComputedStyleUtils::AdjustSVGPaintForCurrentColor(
     const SVGPaint& paint,
     const Color& current_color) {
@@ -2309,30 +2288,30 @@ CSSValue* ComputedStyleUtils::ValuesForFontVariantProperty(
 // Returns up to two values for 'scroll-customization' property. The values
 // correspond to the customization values for 'x' and 'y' axes.
 CSSValue* ComputedStyleUtils::ScrollCustomizationFlagsToCSSValue(
-    ScrollCustomization::ScrollDirection scroll_customization) {
+    scroll_customization::ScrollDirection scroll_customization) {
   CSSValueList* list = CSSValueList::CreateSpaceSeparated();
-  if (scroll_customization == ScrollCustomization::kScrollDirectionAuto) {
+  if (scroll_customization == scroll_customization::kScrollDirectionAuto) {
     list->Append(*CSSIdentifierValue::Create(CSSValueAuto));
   } else if (scroll_customization ==
-             ScrollCustomization::kScrollDirectionNone) {
+             scroll_customization::kScrollDirectionNone) {
     list->Append(*CSSIdentifierValue::Create(CSSValueNone));
   } else {
-    if ((scroll_customization & ScrollCustomization::kScrollDirectionPanX) ==
-        ScrollCustomization::kScrollDirectionPanX)
+    if ((scroll_customization & scroll_customization::kScrollDirectionPanX) ==
+        scroll_customization::kScrollDirectionPanX)
       list->Append(*CSSIdentifierValue::Create(CSSValuePanX));
     else if (scroll_customization &
-             ScrollCustomization::kScrollDirectionPanLeft)
+             scroll_customization::kScrollDirectionPanLeft)
       list->Append(*CSSIdentifierValue::Create(CSSValuePanLeft));
     else if (scroll_customization &
-             ScrollCustomization::kScrollDirectionPanRight)
+             scroll_customization::kScrollDirectionPanRight)
       list->Append(*CSSIdentifierValue::Create(CSSValuePanRight));
-    if ((scroll_customization & ScrollCustomization::kScrollDirectionPanY) ==
-        ScrollCustomization::kScrollDirectionPanY)
+    if ((scroll_customization & scroll_customization::kScrollDirectionPanY) ==
+        scroll_customization::kScrollDirectionPanY)
       list->Append(*CSSIdentifierValue::Create(CSSValuePanY));
-    else if (scroll_customization & ScrollCustomization::kScrollDirectionPanUp)
+    else if (scroll_customization & scroll_customization::kScrollDirectionPanUp)
       list->Append(*CSSIdentifierValue::Create(CSSValuePanUp));
     else if (scroll_customization &
-             ScrollCustomization::kScrollDirectionPanDown)
+             scroll_customization::kScrollDirectionPanDown)
       list->Append(*CSSIdentifierValue::Create(CSSValuePanDown));
   }
 

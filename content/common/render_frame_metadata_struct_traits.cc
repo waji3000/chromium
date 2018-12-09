@@ -22,6 +22,7 @@ bool StructTraits<content::mojom::RenderFrameMetadataDataView,
   out->is_mobile_optimized = data.is_mobile_optimized();
   out->device_scale_factor = data.device_scale_factor();
   out->page_scale_factor = data.page_scale_factor();
+  out->external_page_scale_factor = data.external_page_scale_factor();
   out->top_controls_height = data.top_controls_height();
   out->top_controls_shown_ratio = data.top_controls_shown_ratio();
 #if defined(OS_ANDROID)
@@ -39,9 +40,7 @@ bool StructTraits<content::mojom::RenderFrameMetadataDataView,
          data.ReadRootLayerSize(&out->root_layer_size) &&
 #endif
          data.ReadViewportSizeInPixels(&out->viewport_size_in_pixels) &&
-         data.ReadLocalSurfaceId(&out->local_surface_id) &&
-         data.ReadLocalSurfaceIdAllocationTimeFromChild(
-             &out->local_surface_id_allocation_time_from_child);
+         data.ReadLocalSurfaceIdAllocation(&out->local_surface_id_allocation);
 }
 
 }  // namespace mojo

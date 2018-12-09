@@ -288,7 +288,7 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
 
   LayoutUnit ConstrainLogicalWidthByMinMax(LayoutUnit,
                                            LayoutUnit,
-                                           LayoutBlock*) const;
+                                           const LayoutBlock*) const;
   LayoutUnit ConstrainLogicalHeightByMinMax(
       LayoutUnit logical_height,
       LayoutUnit intrinsic_content_height) const;
@@ -388,6 +388,14 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   void SetFrameRect(const LayoutRect& rect) {
     SetLocation(rect.Location());
     SetSize(rect.Size());
+  }
+  // Similar to SetFrameRect(), except it avoids notifying other code about size
+  // and location changes. This should only be used from a DisplayLockContext to
+  // temporarily put in place a pending frame rect which is restored at the end
+  // of layout. Code outside of layout should not observe location or size
+  // changes.
+  void SetFrameRectForDisplayLock(const LayoutRect& rect) {
+    frame_rect_ = rect;
   }
 
   // Note that those functions have their origin at this box's CSS border box.
@@ -540,8 +548,12 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
                                   const LayoutSize& delta);
   void AddLayoutOverflowFromChild(const LayoutBox& child,
                                   const LayoutSize& delta);
-  void ClearLayoutOverflow();
+  void SetLayoutClientAfterEdge(LayoutUnit client_after_edge);
+  LayoutUnit LayoutClientAfterEdge() const;
+
   void ClearAllOverflows() { overflow_.reset(); }
+  void ClearLayoutOverflow();
+  void ClearVisualOverflow();
 
   virtual void UpdateAfterLayout();
 
@@ -1293,6 +1305,9 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   bool HasVisualOverflow() const {
     return overflow_ && !BorderBoxRect().Contains(VisualOverflowRect());
   }
+  bool HasLayoutOverflow() const {
+    return overflow_ && !BorderBoxRect().Contains(LayoutOverflowRect());
+  }
 
   // Return true if re-laying out the containing block of this object means that
   // we need to recalculate the preferred min/max logical widths of this object.
@@ -1760,9 +1775,6 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   // See LayoutObject::maxPreferredLogicalWidth() for more details.
   LayoutUnit max_preferred_logical_width_;
 
-  // Our overflow information.
-  std::unique_ptr<BoxOverflowModel> overflow_;
-
  private:
   LogicalToPhysicalSetter<LayoutUnit, LayoutBox> LogicalMarginToPhysicalSetter(
       const ComputedStyle* override_style) {
@@ -1772,6 +1784,9 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
         &LayoutBox::SetMarginTop, &LayoutBox::SetMarginRight,
         &LayoutBox::SetMarginBottom, &LayoutBox::SetMarginLeft);
   }
+
+  // Our overflow information.
+  std::unique_ptr<BoxOverflowModel> overflow_;
 
   union {
     // The inline box containing this LayoutBox, for atomic inline elements.

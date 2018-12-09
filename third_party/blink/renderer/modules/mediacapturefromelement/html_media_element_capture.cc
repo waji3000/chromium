@@ -34,7 +34,7 @@ class MediaElementEventListener final : public EventListener {
 
  private:
   // EventListener implementation.
-  void handleEvent(ExecutionContext*, Event*) override;
+  void Invoke(ExecutionContext*, Event*) override;
   bool operator==(const EventListener& other) const override {
     return this == &other;
   }
@@ -52,8 +52,8 @@ MediaElementEventListener::MediaElementEventListener(HTMLMediaElement* element,
   UpdateSources(element->GetExecutionContext());
 }
 
-void MediaElementEventListener::handleEvent(ExecutionContext* context,
-                                            Event* event) {
+void MediaElementEventListener::Invoke(ExecutionContext* context,
+                                       Event* event) {
   DVLOG(2) << __func__ << " " << event->type();
   DCHECK(media_stream_);
 
@@ -125,7 +125,7 @@ void MediaElementEventListener::UpdateSources(ExecutionContext* context) {
     sources_.insert(track->Component()->Source());
 
   if (!media_element_->currentSrc().IsEmpty() &&
-      !media_element_->IsMediaDataCORSSameOrigin()) {
+      !media_element_->IsMediaDataCorsSameOrigin()) {
     for (auto source : sources_)
       MediaStreamCenter::Instance().DidStopMediaStreamSource(source);
   }
@@ -155,7 +155,7 @@ MediaStream* HTMLMediaElementCapture::captureStream(
   }
 
   ExecutionContext* context = ExecutionContext::From(script_state);
-  if (!element.currentSrc().IsEmpty() && !element.IsMediaDataCORSSameOrigin()) {
+  if (!element.currentSrc().IsEmpty() && !element.IsMediaDataCorsSameOrigin()) {
     exception_state.ThrowSecurityError(
         "Cannot capture from element with cross-origin data");
     return nullptr;
@@ -169,7 +169,7 @@ MediaStream* HTMLMediaElementCapture::captureStream(
   MediaStream* stream = MediaStream::Create(context, web_stream);
 
   MediaElementEventListener* listener =
-      new MediaElementEventListener(&element, stream);
+      MakeGarbageCollected<MediaElementEventListener>(&element, stream);
   element.addEventListener(event_type_names::kLoadedmetadata, listener, false);
   element.addEventListener(event_type_names::kEnded, listener, false);
 

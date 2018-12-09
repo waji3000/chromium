@@ -64,15 +64,13 @@ void DeactivateNewTransactions(v8::Isolate* isolate) {
 class FakeIDBDatabaseCallbacks final : public IDBDatabaseCallbacks {
  public:
   static FakeIDBDatabaseCallbacks* Create() {
-    return new FakeIDBDatabaseCallbacks();
+    return MakeGarbageCollected<FakeIDBDatabaseCallbacks>();
   }
+  FakeIDBDatabaseCallbacks() = default;
   void OnVersionChange(int64_t old_version, int64_t new_version) override {}
   void OnForcedClose() override {}
   void OnAbort(int64_t transaction_id, DOMException* error) override {}
   void OnComplete(int64_t transaction_id) override {}
-
- private:
-  FakeIDBDatabaseCallbacks() = default;
 };
 
 class IDBTransactionTest : public testing::Test {
@@ -80,7 +78,7 @@ class IDBTransactionTest : public testing::Test {
   void SetUp() override {
     url_loader_mock_factory_ = platform_->GetURLLoaderMockFactory();
     WebURLResponse response;
-    response.SetURL(KURL("blob:"));
+    response.SetCurrentRequestUrl(KURL("blob:"));
     url_loader_mock_factory_->RegisterURLProtocol(WebString("blob"), response,
                                                   "");
   }
@@ -98,7 +96,7 @@ class IDBTransactionTest : public testing::Test {
     HashSet<String> transaction_scope = {"store"};
     transaction_ = IDBTransaction::CreateNonVersionChange(
         scope.GetScriptState(), kTransactionId, transaction_scope,
-        kWebIDBTransactionModeReadOnly, db_.Get());
+        mojom::IDBTransactionMode::ReadOnly, db_.Get());
 
     IDBKeyPath store_key_path("primaryKey");
     scoped_refptr<IDBObjectStoreMetadata> store_metadata = base::AdoptRef(

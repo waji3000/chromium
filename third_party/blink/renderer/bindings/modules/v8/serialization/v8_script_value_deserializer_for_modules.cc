@@ -21,11 +21,12 @@
 namespace blink {
 
 ScriptWrappable* V8ScriptValueDeserializerForModules::ReadDOMObject(
-    SerializationTag tag) {
+    SerializationTag tag,
+    ExceptionState& exception_state) {
   // Give the core/ implementation a chance to try first.
   // If it didn't recognize the kind of wrapper, try the modules types.
   if (ScriptWrappable* wrappable =
-          V8ScriptValueDeserializer::ReadDOMObject(tag))
+          V8ScriptValueDeserializer::ReadDOMObject(tag, exception_state))
     return wrappable;
 
   switch (tag) {
@@ -58,7 +59,7 @@ ScriptWrappable* V8ScriptValueDeserializerForModules::ReadDOMObject(
           certificate_generator->FromPEM(pem_private_key, pem_certificate);
       if (!certificate)
         return nullptr;
-      return new RTCCertificate(std::move(certificate));
+      return MakeGarbageCollected<RTCCertificate>(std::move(certificate));
     }
     case kDetectedBarcodeTag: {
       String raw_value;

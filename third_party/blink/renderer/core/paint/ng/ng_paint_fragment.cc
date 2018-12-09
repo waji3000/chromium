@@ -39,7 +39,7 @@ struct SameSizeAsNGPaintFragment : public RefCounted<NGPaintFragment>,
                                    public ImageResourceObserver {
   void* pointers[6];
   NGPhysicalOffset offsets[2];
-  LayoutRect rects[2];
+  LayoutRect rects[1];
   unsigned flags;
 };
 
@@ -176,7 +176,20 @@ NGPaintFragment::NGPaintFragment(
   DCHECK(physical_fragment_);
 }
 
-NGPaintFragment::~NGPaintFragment() = default;
+NGPaintFragment::~NGPaintFragment() {
+  // The default destructor will deref |first_child_|, but because children are
+  // in a linked-list, it will call this destructor recursively. Remove children
+  // first non-recursively to avoid stack overflow when there are many chlidren.
+  RemoveChildren();
+}
+
+void NGPaintFragment::RemoveChildren() {
+  scoped_refptr<NGPaintFragment> child = std::move(first_child_);
+  DCHECK(!first_child_);
+  while (child) {
+    child = std::move(child->next_sibling_);
+  }
+}
 
 template <typename Traverse>
 NGPaintFragment& NGPaintFragment::List<Traverse>::front() const {
@@ -289,6 +302,12 @@ scoped_refptr<NGPaintFragment> NGPaintFragment::Create(
   return paint_fragment;
 }
 
+NGPaintFragment::RareData& NGPaintFragment::EnsureRareData() {
+  if (!rare_data_)
+    rare_data_ = std::make_unique<RareData>();
+  return *rare_data_;
+}
+
 void NGPaintFragment::UpdateFromCachedLayoutResult(
     scoped_refptr<const NGPhysicalFragment> fragment,
     NGPhysicalOffset offset) {
@@ -316,16 +335,22 @@ void NGPaintFragment::UpdateFromCachedLayoutResult(
 
 NGPaintFragment* NGPaintFragment::Last(const NGBreakToken& break_token) {
   for (NGPaintFragment* fragment = this; fragment;
-       fragment = fragment->next_fragmented_.get()) {
+       fragment = fragment->Next()) {
     if (fragment->PhysicalFragment().BreakToken() == &break_token)
       return fragment;
   }
   return nullptr;
 }
 
+NGPaintFragment* NGPaintFragment::Next() {
+  if (!rare_data_)
+    return nullptr;
+  return rare_data_->next_fragmented_.get();
+}
+
 NGPaintFragment* NGPaintFragment::Last() {
   for (NGPaintFragment* fragment = this;;) {
-    NGPaintFragment* next = fragment->next_fragmented_.get();
+    NGPaintFragment* next = fragment->Next();
     if (!next)
       return fragment;
     fragment = next;
@@ -347,7 +372,8 @@ scoped_refptr<NGPaintFragment>* NGPaintFragment::Find(
     if (!*fragment)
       return fragment;
 
-    scoped_refptr<NGPaintFragment>* next = &(*fragment)->next_fragmented_;
+    scoped_refptr<NGPaintFragment>* next =
+        &(*fragment)->EnsureRareData().next_fragmented_;
     if ((*fragment)->PhysicalFragment().BreakToken() == break_token)
       return next;
     fragment = next;
@@ -356,7 +382,9 @@ scoped_refptr<NGPaintFragment>* NGPaintFragment::Find(
 }
 
 void NGPaintFragment::SetNext(scoped_refptr<NGPaintFragment> fragment) {
-  next_fragmented_ = std::move(fragment);
+  if (!rare_data_ && !fragment)
+    return;
+  EnsureRareData().next_fragmented_ = std::move(fragment);
 }
 
 bool NGPaintFragment::IsDescendantOfNotSelf(
@@ -382,6 +410,18 @@ bool NGPaintFragment::HasOverflowClip() const {
 bool NGPaintFragment::ShouldClipOverflow() const {
   return physical_fragment_->IsBox() &&
          ToNGPhysicalBoxFragment(*physical_fragment_).ShouldClipOverflow();
+}
+
+LayoutRect NGPaintFragment::SelectionVisualRect() const {
+  if (!rare_data_)
+    return LayoutRect();
+  return rare_data_->selection_visual_rect_;
+}
+
+void NGPaintFragment::SetSelectionVisualRect(const LayoutRect& rect) {
+  if (!rare_data_ && rect.IsEmpty())
+    return;
+  EnsureRareData().selection_visual_rect_ = rect;
 }
 
 LayoutRect NGPaintFragment::SelfInkOverflow() const {
@@ -488,6 +528,10 @@ NGPaintFragment::FragmentRange NGPaintFragment::InlineFragmentsFor(
   return FragmentRange(nullptr, false);
 }
 
+const NGPaintFragment* NGPaintFragment::LastForSameLayoutObject() const {
+  return const_cast<NGPaintFragment*>(this)->LastForSameLayoutObject();
+}
+
 NGPaintFragment* NGPaintFragment::LastForSameLayoutObject() {
   NGPaintFragment* fragment = this;
   while (fragment->next_for_same_layout_object_)
@@ -587,9 +631,6 @@ NGPaintFragment* NGPaintFragment::FirstLineBox() const {
 
 void NGPaintFragment::MarkLineBoxesDirtyFor(const LayoutObject& layout_object) {
   DCHECK(layout_object.IsInline()) << layout_object;
-
-  if (TryMarkFirstLineBoxDirtyFor(layout_object))
-    return;
 
   // Since |layout_object| isn't in fragment tree, check preceding siblings.
   // Note: Once we reuse lines below dirty lines, we should check next siblings.

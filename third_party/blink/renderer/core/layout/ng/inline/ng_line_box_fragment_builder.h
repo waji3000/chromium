@@ -9,6 +9,7 @@
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_break_token.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_node.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_line_height_metrics.h"
+#include "third_party/blink/renderer/core/layout/ng/inline/ng_physical_line_box_fragment.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_container_fragment_builder.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_layout_result.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_positioned_float.h"
@@ -32,6 +33,7 @@ class CORE_EXPORT NGLineBoxFragmentBuilder final
                            TextDirection)
       : NGContainerFragmentBuilder(style, writing_mode, TextDirection::kLtr),
         node_(node),
+        line_box_type_(NGPhysicalLineBoxFragment::kNormalLineBox),
         base_direction_(TextDirection::kLtr) {}
 
   void Reset();
@@ -39,6 +41,9 @@ class CORE_EXPORT NGLineBoxFragmentBuilder final
   LayoutUnit LineHeight() const {
     return metrics_.LineHeight().ClampNegativeToZero();
   }
+
+  // Mark this line box is an "empty" line box. See NGLineBoxType.
+  void SetIsEmptyLineBox();
 
   const NGLineHeightMetrics& Metrics() const { return metrics_; }
   void SetMetrics(const NGLineHeightMetrics& metrics) { metrics_ = metrics; }
@@ -65,7 +70,6 @@ class CORE_EXPORT NGLineBoxFragmentBuilder final
     scoped_refptr<NGLayoutResult> layout_result;
     scoped_refptr<const NGPhysicalFragment> fragment;
     LayoutObject* out_of_flow_positioned_box = nullptr;
-    LayoutObject* out_of_flow_containing_box = nullptr;
     // The offset of the border box, initially in this child coordinate system.
     // |ComputeInlinePositions()| converts it to the offset within the line box.
     NGLogicalOffset offset;
@@ -76,6 +80,8 @@ class CORE_EXPORT NGLineBoxFragmentBuilder final
     // |UpdateAfterReorder()| to track children of boxes across BiDi reorder.
     unsigned box_data_index = 0;
     UBiDiLevel bidi_level = 0xff;
+    // The current text direction for OOF positioned items.
+    TextDirection container_direction = TextDirection::kLtr;
 
     // Empty constructor needed for |resize()|.
     Child() = default;
@@ -113,11 +119,11 @@ class CORE_EXPORT NGLineBoxFragmentBuilder final
           bidi_level(bidi_level) {}
     // Create an out-of-flow positioned object.
     Child(LayoutObject* out_of_flow_positioned_box,
-          LayoutObject* out_of_flow_containing_box,
-          UBiDiLevel bidi_level)
+          UBiDiLevel bidi_level,
+          TextDirection container_direction)
         : out_of_flow_positioned_box(out_of_flow_positioned_box),
-          out_of_flow_containing_box(out_of_flow_containing_box),
-          bidi_level(bidi_level) {}
+          bidi_level(bidi_level),
+          container_direction(container_direction) {}
 
     bool HasInFlowFragment() const { return layout_result || fragment; }
     bool HasOutOfFlowFragment() const { return out_of_flow_positioned_box; }
@@ -204,6 +210,7 @@ class CORE_EXPORT NGLineBoxFragmentBuilder final
   NGLineHeightMetrics metrics_;
   Vector<NGPositionedFloat> positioned_floats_;
 
+  NGPhysicalLineBoxFragment::NGLineBoxType line_box_type_;
   TextDirection base_direction_;
 
   friend class NGLayoutResult;

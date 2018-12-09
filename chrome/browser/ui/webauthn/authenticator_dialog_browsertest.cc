@@ -33,7 +33,7 @@ class AuthenticatorDialogTest : public DialogBrowserTest {
         AuthenticatorTransport::kNearFieldCommunication,
         AuthenticatorTransport::kInternal,
         AuthenticatorTransport::kCloudAssistedBluetoothLowEnergy};
-    model->StartFlow(std::move(transport_availability), base::nullopt);
+    model->StartFlow(std::move(transport_availability), base::nullopt, nullptr);
 
     // The dialog should immediately close as soon as it is displayed.
     if (name == "closed") {
@@ -72,7 +72,8 @@ class AuthenticatorDialogTest : public DialogBrowserTest {
       model->SetSelectedAuthenticatorForTesting(AuthenticatorReference(
           "test_authenticator_id" /* authenticator_id */,
           base::string16() /* authenticator_display_name */,
-          AuthenticatorTransport::kInternal, false /* is_in_pairing_mode */));
+          AuthenticatorTransport::kInternal, false /* is_in_pairing_mode */,
+          false /* is_paired */));
       model->SetCurrentStep(
           AuthenticatorRequestDialogModel::Step::kBlePinEntry);
     } else if (name == "ble_verifying") {

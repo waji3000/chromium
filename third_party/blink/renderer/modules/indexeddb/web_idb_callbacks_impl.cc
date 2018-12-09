@@ -31,27 +31,24 @@
 #include <memory>
 
 #include "base/memory/ptr_util.h"
-#include "third_party/blink/public/platform/modules/indexeddb/web_idb_cursor.h"
-#include "third_party/blink/public/platform/modules/indexeddb/web_idb_database.h"
-#include "third_party/blink/public/platform/modules/indexeddb/web_idb_database_error.h"
-#include "third_party/blink/public/platform/modules/indexeddb/web_idb_key.h"
-#include "third_party/blink/public/platform/modules/indexeddb/web_idb_name_and_version.h"
-#include "third_party/blink/public/platform/modules/indexeddb/web_idb_value.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/modules/indexed_db_names.h"
 #include "third_party/blink/renderer/modules/indexeddb/idb_metadata.h"
 #include "third_party/blink/renderer/modules/indexeddb/idb_request.h"
 #include "third_party/blink/renderer/modules/indexeddb/idb_value.h"
+#include "third_party/blink/renderer/modules/indexeddb/web_idb_cursor.h"
+#include "third_party/blink/renderer/modules/indexeddb/web_idb_database.h"
+#include "third_party/blink/renderer/modules/indexeddb/web_idb_database_error.h"
+#include "third_party/blink/renderer/modules/indexeddb/web_idb_name_and_version.h"
+#include "third_party/blink/renderer/modules/indexeddb/web_idb_value.h"
 #include "third_party/blink/renderer/platform/shared_buffer.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 
 using blink::WebIDBCursor;
 using blink::WebIDBDatabase;
 using blink::WebIDBDatabaseError;
-using blink::WebIDBKey;
 using blink::WebIDBKeyPath;
-using blink::WebIDBMetadata;
 using blink::WebIDBNameAndVersion;
 using blink::WebIDBValue;
 using blink::WebVector;
@@ -67,7 +64,7 @@ std::unique_ptr<WebIDBCallbacksImpl> WebIDBCallbacksImpl::Create(
 WebIDBCallbacksImpl::WebIDBCallbacksImpl(IDBRequest* request)
     : request_(request) {
   probe::AsyncTaskScheduled(request_->GetExecutionContext(),
-                            IndexedDBNames::IndexedDB, this);
+                            indexed_db_names::kIndexedDB, this);
 }
 
 WebIDBCallbacksImpl::~WebIDBCallbacksImpl() {
@@ -111,8 +108,8 @@ void WebIDBCallbacksImpl::OnSuccess(
 }
 
 void WebIDBCallbacksImpl::OnSuccess(WebIDBCursor* cursor,
-                                    WebIDBKey key,
-                                    WebIDBKey primary_key,
+                                    std::unique_ptr<IDBKey> key,
+                                    std::unique_ptr<IDBKey> primary_key,
                                     WebIDBValue value) {
   if (!request_)
     return;
@@ -120,12 +117,12 @@ void WebIDBCallbacksImpl::OnSuccess(WebIDBCursor* cursor,
   probe::AsyncTask async_task(request_->GetExecutionContext(), this, "success");
   std::unique_ptr<IDBValue> idb_value = value.ReleaseIdbValue();
   idb_value->SetIsolate(request_->GetIsolate());
-  request_->HandleResponse(base::WrapUnique(cursor), key.ReleaseIdbKey(),
-                           primary_key.ReleaseIdbKey(), std::move(idb_value));
+  request_->HandleResponse(base::WrapUnique(cursor), std::move(key),
+                           std::move(primary_key), std::move(idb_value));
 }
 
 void WebIDBCallbacksImpl::OnSuccess(WebIDBDatabase* backend,
-                                    const WebIDBMetadata& metadata) {
+                                    const IDBDatabaseMetadata& metadata) {
   std::unique_ptr<WebIDBDatabase> db = base::WrapUnique(backend);
   if (request_) {
     probe::AsyncTask async_task(request_->GetExecutionContext(), this,
@@ -139,12 +136,12 @@ void WebIDBCallbacksImpl::OnSuccess(WebIDBDatabase* backend,
   }
 }
 
-void WebIDBCallbacksImpl::OnSuccess(WebIDBKey key) {
+void WebIDBCallbacksImpl::OnSuccess(std::unique_ptr<IDBKey> key) {
   if (!request_)
     return;
 
   probe::AsyncTask async_task(request_->GetExecutionContext(), this, "success");
-  request_->HandleResponse(key.ReleaseIdbKey());
+  request_->HandleResponse(std::move(key));
 }
 
 void WebIDBCallbacksImpl::OnSuccess(WebIDBValue value) {
@@ -188,8 +185,8 @@ void WebIDBCallbacksImpl::OnSuccess() {
   request_->HandleResponse();
 }
 
-void WebIDBCallbacksImpl::OnSuccess(WebIDBKey key,
-                                    WebIDBKey primary_key,
+void WebIDBCallbacksImpl::OnSuccess(std::unique_ptr<IDBKey> key,
+                                    std::unique_ptr<IDBKey> primary_key,
                                     WebIDBValue value) {
   if (!request_)
     return;
@@ -197,7 +194,7 @@ void WebIDBCallbacksImpl::OnSuccess(WebIDBKey key,
   probe::AsyncTask async_task(request_->GetExecutionContext(), this, "success");
   std::unique_ptr<IDBValue> idb_value = value.ReleaseIdbValue();
   idb_value->SetIsolate(request_->GetIsolate());
-  request_->HandleResponse(key.ReleaseIdbKey(), primary_key.ReleaseIdbKey(),
+  request_->HandleResponse(std::move(key), std::move(primary_key),
                            std::move(idb_value));
 }
 
@@ -214,8 +211,8 @@ void WebIDBCallbacksImpl::OnBlocked(long long old_version) {
 
 void WebIDBCallbacksImpl::OnUpgradeNeeded(long long old_version,
                                           WebIDBDatabase* database,
-                                          const WebIDBMetadata& metadata,
-                                          unsigned short data_loss,
+                                          const IDBDatabaseMetadata& metadata,
+                                          mojom::IDBDataLoss data_loss,
                                           WebString data_loss_message) {
   std::unique_ptr<WebIDBDatabase> db = base::WrapUnique(database);
   if (request_) {
@@ -224,9 +221,9 @@ void WebIDBCallbacksImpl::OnUpgradeNeeded(long long old_version,
 #if DCHECK_IS_ON()
     DCHECK(!request_->TransactionHasQueuedResults());
 #endif  // DCHECK_IS_ON()
-    request_->EnqueueUpgradeNeeded(
-        old_version, std::move(db), IDBDatabaseMetadata(metadata),
-        static_cast<WebIDBDataLoss>(data_loss), data_loss_message);
+    request_->EnqueueUpgradeNeeded(old_version, std::move(db),
+                                   IDBDatabaseMetadata(metadata), data_loss,
+                                   data_loss_message);
   } else {
     db->Close();
   }

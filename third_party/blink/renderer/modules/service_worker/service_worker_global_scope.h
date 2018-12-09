@@ -31,8 +31,8 @@
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_SERVICE_WORKER_SERVICE_WORKER_GLOBAL_SCOPE_H_
 
 #include <memory>
+#include "third_party/blink/public/mojom/cache_storage/cache_storage.mojom-blink.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker.mojom-blink.h"
-#include "third_party/blink/public/platform/modules/cache_storage/cache_storage.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/request_or_usv_string.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
@@ -42,6 +42,7 @@
 
 namespace blink {
 
+class ExceptionState;
 class RespondWithObserver;
 class RequestInit;
 class ScriptPromise;
@@ -50,6 +51,7 @@ class ServiceWorker;
 class ServiceWorkerClients;
 class ServiceWorkerRegistration;
 class ServiceWorkerThread;
+class StringOrTrustedScriptURL;
 class WaitUntilObserver;
 struct GlobalScopeCreationParams;
 struct WebServiceWorkerObjectInfo;
@@ -67,6 +69,10 @@ class MODULES_EXPORT ServiceWorkerGlobalScope final : public WorkerGlobalScope {
       mojom::blink::CacheStoragePtrInfo,
       base::TimeTicks time_origin);
 
+  ServiceWorkerGlobalScope(std::unique_ptr<GlobalScopeCreationParams>,
+                           ServiceWorkerThread*,
+                           mojom::blink::CacheStoragePtrInfo,
+                           base::TimeTicks time_origin);
   ~ServiceWorkerGlobalScope() override;
 
   // ExecutionContext overrides:
@@ -149,11 +155,8 @@ class MODULES_EXPORT ServiceWorkerGlobalScope final : public WorkerGlobalScope {
       const AddEventListenerOptionsResolved*) override;
 
  private:
-  ServiceWorkerGlobalScope(std::unique_ptr<GlobalScopeCreationParams>,
-                           ServiceWorkerThread*,
-                           mojom::blink::CacheStoragePtrInfo,
-                           base::TimeTicks time_origin);
-  void importScripts(const Vector<String>& urls, ExceptionState&) override;
+  void importScripts(const HeapVector<StringOrTrustedScriptURL>& urls,
+                     ExceptionState&) override;
   SingleCachedMetadataHandler* CreateWorkerScriptCachedMetadataHandler(
       const KURL& script_url,
       const Vector<char>* meta_data) override;

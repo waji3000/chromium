@@ -156,10 +156,6 @@ class SyncEngine : public ModelTypeConfigurer {
   virtual void HasUnsyncedItemsForTest(
       base::OnceCallback<void(bool)> cb) const = 0;
 
-  // True if the cryptographer has any keys available to attempt decryption.
-  // Could mean we've downloaded and loaded Nigori objects, or we bootstrapped
-  // using a token previously received.
-  virtual bool IsCryptographerReady(const BaseTransaction* trans) const = 0;
 
   virtual void GetModelSafeRoutingInfo(ModelSafeRoutingInfo* out) const = 0;
 
@@ -191,6 +187,9 @@ class SyncEngine : public ModelTypeConfigurer {
   virtual void OnCookieJarChanged(bool account_mismatch,
                                   bool empty_jar,
                                   const base::Closure& callback) = 0;
+
+  // Enables/Disables invalidations for session sync related datatypes.
+  virtual void SetInvalidationsForSessionsEnabled(bool enabled) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SyncEngine);

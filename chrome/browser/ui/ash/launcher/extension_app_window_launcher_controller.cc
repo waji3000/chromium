@@ -6,7 +6,6 @@
 
 #include <memory>
 
-#include "ash/public/cpp/app_list/internal_app_id_constants.h"
 #include "ash/public/cpp/shelf_model.h"
 #include "ash/public/cpp/shelf_types.h"
 #include "ash/public/cpp/window_properties.h"
@@ -15,7 +14,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
 #include "chrome/browser/ui/ash/launcher/extension_app_window_launcher_item_controller.h"
-#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
+#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager_client.h"
 #include "extensions/browser/app_window/app_window.h"
 #include "extensions/browser/app_window/native_app_window.h"
 #include "extensions/common/extension.h"
@@ -29,8 +28,6 @@ using extensions::AppWindowRegistry;
 
 namespace {
 
-constexpr char kChromeCameraAppId[] = "hfhhnacclhffhdffklopdkcgdhifgngh";
-
 // Get the ShelfID for a given |app_window|.
 ash::ShelfID GetShelfId(AppWindow* app_window) {
   // Set launch_id default value to an empty string. If showInShelf parameter
@@ -43,12 +40,7 @@ ash::ShelfID GetShelfId(AppWindow* app_window) {
     else
       launch_id = base::StringPrintf("%d", app_window->session_id().id());
   }
-
-  // For camera app, always put the internal app icon onto shelf.
-  std::string app_id = app_window->extension_id();
-  if (app_id.compare(kChromeCameraAppId) == 0)
-    app_id = app_list::kInternalAppIdCamera;
-  return ash::ShelfID(app_id, launch_id);
+  return ash::ShelfID(app_window->extension_id(), launch_id);
 }
 
 }  // namespace

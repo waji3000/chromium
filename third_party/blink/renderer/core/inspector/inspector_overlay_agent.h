@@ -56,7 +56,7 @@ class InspectorDOMAgent;
 class LocalFrame;
 class Node;
 class Page;
-class PageOverlay;
+class FrameOverlay;
 class WebGestureEvent;
 class WebMouseEvent;
 class WebLocalFrameImpl;
@@ -82,6 +82,7 @@ class CORE_EXPORT InspectorOverlayAgent final
   protocol::Response setShowDebugBorders(bool) override;
   protocol::Response setShowFPSCounter(bool) override;
   protocol::Response setShowScrollBottleneckRects(bool) override;
+  protocol::Response setShowHitTestBorders(bool) override;
   protocol::Response setShowViewportSizeOnResize(bool) override;
   protocol::Response setPausedInDebuggerMessage(
       protocol::Maybe<String>) override;
@@ -209,7 +210,7 @@ class CORE_EXPORT InspectorOverlayAgent final
   bool needs_update_;
   v8_inspector::V8InspectorSession* v8_session_;
   Member<InspectorDOMAgent> dom_agent_;
-  std::unique_ptr<PageOverlay> page_overlay_;
+  std::unique_ptr<FrameOverlay> frame_overlay_;
   Member<Node> hovered_node_for_inspect_mode_;
   bool swallow_next_mouse_up_;
   SearchMode inspect_mode_;
@@ -224,6 +225,7 @@ class CORE_EXPORT InspectorOverlayAgent final
   InspectorAgentState::Boolean show_fps_counter_;
   InspectorAgentState::Boolean show_paint_rects_;
   InspectorAgentState::Boolean show_scroll_bottleneck_rects_;
+  InspectorAgentState::Boolean show_hit_test_borders_;
   InspectorAgentState::Boolean show_size_on_resize_;
   InspectorAgentState::String paused_in_debugger_message_;
   DISALLOW_COPY_AND_ASSIGN(InspectorOverlayAgent);

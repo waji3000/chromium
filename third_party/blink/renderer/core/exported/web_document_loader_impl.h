@@ -79,12 +79,12 @@ class CORE_EXPORT WebDocumentLoaderImpl final : public DocumentLoader,
   void SetServiceWorkerNetworkProvider(
       std::unique_ptr<WebServiceWorkerNetworkProvider>) override;
   WebServiceWorkerNetworkProvider* GetServiceWorkerNetworkProvider() override;
-  void ResetSourceLocation() override;
   void BlockParser() override;
   void ResumeParser() override;
   bool IsArchive() const override;
   WebArchiveInfo GetArchiveInfo() const override;
   bool HadUserGesture() const override;
+  bool IsListingFtpDirectory() const override;
 
   void Trace(blink::Visitor*) override;
 

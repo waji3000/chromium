@@ -157,8 +157,8 @@ TextDecoderStream* TextDecoderStream::Create(ScriptState* script_state,
     return nullptr;
   }
 
-  return new TextDecoderStream(script_state, encoding, options,
-                               exception_state);
+  return MakeGarbageCollected<TextDecoderStream>(script_state, encoding,
+                                                 options, exception_state);
 }
 
 TextDecoderStream::~TextDecoderStream() = default;
@@ -167,14 +167,12 @@ String TextDecoderStream::encoding() const {
   return String(encoding_.GetName()).LowerASCII();
 }
 
-ScriptValue TextDecoderStream::readable(ScriptState* script_state,
-                                        ExceptionState& exception_state) const {
-  return transform_->Readable(script_state, exception_state);
+ReadableStream* TextDecoderStream::readable() const {
+  return transform_->Readable();
 }
 
-ScriptValue TextDecoderStream::writable(ScriptState* script_state,
-                                        ExceptionState& exception_state) const {
-  return transform_->Writable(script_state, exception_state);
+WritableStream* TextDecoderStream::writable() const {
+  return transform_->Writable();
 }
 
 void TextDecoderStream::Trace(Visitor* visitor) {
@@ -186,7 +184,7 @@ TextDecoderStream::TextDecoderStream(ScriptState* script_state,
                                      const WTF::TextEncoding& encoding,
                                      const TextDecoderOptions* options,
                                      ExceptionState& exception_state)
-    : transform_(new TransformStream()),
+    : transform_(MakeGarbageCollected<TransformStream>()),
       encoding_(encoding),
       fatal_(options->fatal()),
       ignore_bom_(options->ignoreBOM()) {
@@ -195,7 +193,8 @@ TextDecoderStream::TextDecoderStream(ScriptState* script_state,
                                       "Cannot queue task to retain wrapper");
     return;
   }
-  transform_->Init(new Transformer(script_state, encoding, fatal_, ignore_bom_),
+  transform_->Init(MakeGarbageCollected<Transformer>(script_state, encoding,
+                                                     fatal_, ignore_bom_),
                    script_state, exception_state);
 }
 

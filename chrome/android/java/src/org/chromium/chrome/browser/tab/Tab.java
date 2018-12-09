@@ -45,7 +45,6 @@ import org.chromium.chrome.browser.AppHooks;
 import org.chromium.chrome.browser.ChromeActionModeCallback;
 import org.chromium.chrome.browser.ChromeActivity;
 import org.chromium.chrome.browser.ChromeFeatureList;
-import org.chromium.chrome.browser.ChromeTabbedActivity;
 import org.chromium.chrome.browser.ChromeVersionInfo;
 import org.chromium.chrome.browser.IntentHandler;
 import org.chromium.chrome.browser.IntentHandler.TabOpenType;
@@ -72,7 +71,6 @@ import org.chromium.chrome.browser.native_page.FrozenNativePage;
 import org.chromium.chrome.browser.native_page.NativePage;
 import org.chromium.chrome.browser.native_page.NativePageAssassin;
 import org.chromium.chrome.browser.native_page.NativePageFactory;
-import org.chromium.chrome.browser.net.spdyproxy.DataReductionProxySettings;
 import org.chromium.chrome.browser.offlinepages.OfflinePageUtils;
 import org.chromium.chrome.browser.policy.PolicyAuditor;
 import org.chromium.chrome.browser.prerender.ExternalPrerenderHandler;
@@ -89,7 +87,6 @@ import org.chromium.chrome.browser.tabmodel.TabModel.TabLaunchType;
 import org.chromium.chrome.browser.tabmodel.TabModel.TabSelectionType;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
 import org.chromium.chrome.browser.tabmodel.TabReparentingParams;
-import org.chromium.chrome.browser.util.ColorUtils;
 import org.chromium.chrome.browser.vr.VrModuleProvider;
 import org.chromium.chrome.browser.widget.PulseDrawable;
 import org.chromium.chrome.browser.widget.textbubble.TextBubble;
@@ -119,7 +116,6 @@ import org.chromium.ui.base.PageTransition;
 import org.chromium.ui.base.WindowAndroid;
 import org.chromium.ui.mojom.WindowOpenDisposition;
 import org.chromium.ui.widget.AnchoredPopupWindow;
-import org.chromium.ui.widget.ViewRectProvider;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -261,6 +257,13 @@ public class Tab
     private final @Nullable @TabLaunchType Integer mLaunchType;
 
     /**
+     * Saves how this tab was initially launched so that we can record metrics on how the
+     * tab was created. This is different than {@code mLaunchType}, since {@code mLaunchType} will
+     * be overridden to "FROM_RESTORE" during tab restoration.
+     */
+    private @Nullable @TabLaunchType Integer mLaunchTypeAtCreation;
+
+    /**
      * Navigation state of the WebContents as returned by nativeGetContentsStateAsByteBuffer(),
      * stored to be inflated on demand using unfreezeContents(). If this is not null, there is no
      * WebContents around. Upon tab switch WebContents will be unfrozen and the variable will be set
@@ -362,18 +365,6 @@ public class Tab
     private boolean mIsDetached;
 
     /**
-     * Stores total data saved at the start of a page load. Used to calculate delta at the end of
-     * page load, which is just an estimate of the data saved for the current page load since there
-     * may be multiple pages loading at the same time. This estimate is used to get an idea of how
-     * widely used the data saver feature is for a particular user at a time (i.e. not since the
-     * user started using Chrome).
-     */
-    private long mDataSavedOnStartPageLoad;
-
-    private int mDefaultThemeColor;
-    private int mThemeColor;
-
-    /**
      * The Text bubble used to display In Product help widget for download feature on videos.
      */
     private TextBubble mDownloadIPHBubble;
@@ -406,12 +397,6 @@ public class Tab
             auditor.notifyCertificateFailure(
                     PolicyAuditor.nativeGetCertificateFailure(getWebContents()),
                     getApplicationContext());
-            updateThemeColorIfNeeded(false);
-        }
-
-        @Override
-        public void onUrlUpdated(Tab tab) {
-            updateThemeColorIfNeeded(false);
         }
 
         @Override
@@ -424,7 +409,7 @@ public class Tab
 
             if (didFinishLoad) {
                 // Simulate the PAGE_LOAD_FINISHED notification that we did not get.
-                didFinishPageLoad();
+                didFinishPageLoad(url);
             }
         }
     };
@@ -497,12 +482,13 @@ public class Tab
                 ContextUtils.getApplicationContext(), ChromeActivity.getThemeId());
         mWindowAndroid = window;
         mLaunchType = type;
+        mLaunchTypeAtCreation = type;
         mIsDetached = getActivity() == null;
 
         Resources resources = mThemedApplicationContext.getResources();
         mIdealFaviconSize = resources.getDimensionPixelSize(R.dimen.default_favicon_size);
-        mDefaultThemeColor = calculateDefaultThemeColor();
-        mThemeColor = calculateThemeColor(false);
+
+        TabThemeColorHelper.createForTab(this);
 
         // Restore data from the TabState, if it existed.
         if (frozenState != null) {
@@ -545,11 +531,6 @@ public class Tab
         };
     }
 
-    private int calculateDefaultThemeColor() {
-        Resources resources = mThemedApplicationContext.getResources();
-        return ColorUtils.getDefaultThemeColor(resources, mIncognito);
-    }
-
     /**
      * Restores member fields from the given TabState.
      * @param state TabState containing information about this Tab.
@@ -562,12 +543,12 @@ public class Tab
         mTimestampMillis = state.timestampMillis;
         mUrl = state.getVirtualUrlFromState();
 
-        mThemeColor = state.hasThemeColor() ? state.getThemeColor() : getDefaultThemeColor();
-
+        TabThemeColorHelper.get(this).updateFromTabState(state);
         mTitle = state.getDisplayTitleFromState();
         mIsTitleDirectionRtl = mTitle != null
                 && LocalizationUtils.getFirstStrongCharacterDirection(mTitle)
                         == LocalizationUtils.RIGHT_TO_LEFT;
+        mLaunchTypeAtCreation = state.tabLaunchTypeAtCreation;
     }
 
     /**
@@ -802,7 +783,8 @@ public class Tab
         tabState.parentId = mParentId;
         tabState.shouldPreserve = mShouldPreserve;
         tabState.timestampMillis = mTimestampMillis;
-        tabState.themeColor = getThemeColor();
+        tabState.tabLaunchTypeAtCreation = mLaunchTypeAtCreation;
+        tabState.themeColor = TabThemeColorHelper.getColor(this);
         return tabState;
     }
 
@@ -895,7 +877,7 @@ public class Tab
         if (isLoading()) {
             RewindableIterator<TabObserver> observers = getTabObservers();
             while (observers.hasNext()) {
-                observers.next().onPageLoadFinished(this);
+                observers.next().onPageLoadFinished(this, getUrl());
             }
         }
         if (getWebContents() != null) getWebContents().stop();
@@ -920,64 +902,7 @@ public class Tab
         return Color.WHITE;
     }
 
-    /**
-     * @return The current theme color based on the value passed from the web contents and the
-     *         security state.
-     */
-    public int getThemeColor() {
-        return mThemeColor;
-    }
-
-    /**
-     * Calculate the theme color based on if the page is native, the theme color changed, etc.
-     * @param didWebContentsThemeColorChange If the theme color of the web contents is known to have
-     *                                       changed.
-     * @return The theme color that should be used for this tab.
-     */
-    private int calculateThemeColor(boolean didWebContentsThemeColorChange) {
-        if (isNativePage()) return mNativePage.getThemeColor();
-
-        // Start by assuming the current theme color is that one that should be used. This will
-        // either be transparent, the last theme color, or the color restored from TabState.
-        int themeColor = ColorUtils.isValidThemeColor(mThemeColor) || mThemeColor == 0
-                ? mThemeColor
-                : getDefaultThemeColor();
-
-        // Only use the web contents for the theme color if it is known to have changed, This
-        // corresponds to the didChangeThemeColor in WebContentsObserver.
-        if (getWebContents() != null && didWebContentsThemeColorChange) {
-            themeColor = getWebContents().getThemeColor();
-            if (themeColor != 0 && !ColorUtils.isValidThemeColor(themeColor)) themeColor = 0;
-        }
-
-        // Do not apply the theme color if there are any security issues on the page.
-        int securityLevel = getSecurityLevel();
-        if (securityLevel == ConnectionSecurityLevel.DANGEROUS
-                || securityLevel == ConnectionSecurityLevel.SECURE_WITH_POLICY_INSTALLED_CERT) {
-            themeColor = getDefaultThemeColor();
-        }
-
-        if (isShowingInterstitialPage()) themeColor = getDefaultThemeColor();
-
-        if (themeColor == Color.TRANSPARENT) themeColor = getDefaultThemeColor();
-        if (isIncognito()) themeColor = getDefaultThemeColor();
-        if (isPreview()) themeColor = getDefaultThemeColor();
-
-        // Ensure there is no alpha component to the theme color as that is not supported in the
-        // dependent UI.
-        themeColor |= 0xFF000000;
-        return themeColor;
-    }
-
-    /**
-     * Determines if the theme color has changed and notifies the listeners if it has.
-     * @param didWebContentsThemeColorChange If the theme color of the web contents is known to have
-     *                                       changed.
-     */
-    void updateThemeColorIfNeeded(boolean didWebContentsThemeColorChange) {
-        int themeColor = calculateThemeColor(didWebContentsThemeColorChange);
-        if (themeColor == mThemeColor) return;
-        mThemeColor = themeColor;
+    void notifyThemeColorChanged(int themeColor) {
         RewindableIterator<TabObserver> observers = getTabObservers();
         while (observers.hasNext()) {
             observers.next().onDidChangeThemeColor(this, themeColor);
@@ -1205,10 +1130,6 @@ public class Tab
             mNativePage.getView().addOnAttachStateChangeListener(mAttachStateChangeListener);
         }
         pushNativePageStateToNavigationEntry();
-        // Notifying of theme color change before content change because some of
-        // the observers depend on the theme information being correct in
-        // onContentChanged().
-        updateThemeColorIfNeeded(false);
         notifyContentChanged();
         destroyNativePageInternal(previousNativePage);
     }
@@ -1428,8 +1349,6 @@ public class Tab
     public void attach(ChromeActivity activity, TabDelegateFactory tabDelegateFactory) {
         assert mIsDetached;
         updateWindowAndroid(activity.getWindowAndroid());
-        mDefaultThemeColor = calculateDefaultThemeColor();
-        updateThemeColorIfNeeded(false);
 
         // Update for the controllers that need the Compositor from the new Activity.
         attachTabContentManager(activity.getTabContentManager());
@@ -1538,9 +1457,6 @@ public class Tab
      */
     protected void didStartPageLoad(String validatedUrl, boolean showingErrorPage) {
         updateTitle();
-        mDataSavedOnStartPageLoad =
-                DataReductionProxySettings.getInstance().getContentLengthSavedInHistorySummary();
-
         if (mIsRendererUnresponsive) handleRendererResponsiveStateChanged(true);
 
         for (TabObserver observer : mObservers) observer.onPageLoadStarted(this, validatedUrl);
@@ -1548,93 +1464,15 @@ public class Tab
 
     /**
      * Called when a page has finished loading.
+     * @param url URL that was loaded.
      */
-    protected void didFinishPageLoad() {
+    protected void didFinishPageLoad(String url) {
         mIsTabStateDirty = true;
         updateTitle();
         updateFullscreenEnabledState();
 
-        for (TabObserver observer : mObservers) observer.onPageLoadFinished(this);
+        for (TabObserver observer : mObservers) observer.onPageLoadFinished(this, url);
         mIsBeingRestored = false;
-
-        // TODO(crbug.com/889682): Consider moving the rest of this function to a Tab User data.
-        long dataSaved =
-                DataReductionProxySettings.getInstance().getContentLengthSavedInHistorySummary()
-                - mDataSavedOnStartPageLoad;
-
-        Tracker tracker = TrackerFactory.getTrackerForProfile(Profile.getLastUsedProfile());
-        if (dataSaved > 0L) {
-            tracker.notifyEvent(EventConstants.DATA_SAVED_ON_PAGE_LOAD);
-        }
-
-        if (isPreview()) {
-            tracker.notifyEvent(EventConstants.PREVIEWS_PAGE_LOADED);
-        }
-
-        maybeShowDataSaverInProductHelp(tracker);
-        maybeShowPreviewVerboseStatusInProductHelp(tracker);
-    }
-
-    private void maybeShowDataSaverInProductHelp(final Tracker tracker) {
-        if (!tracker.shouldTriggerHelpUI(FeatureConstants.DATA_SAVER_DETAIL_FEATURE)) return;
-
-        if (!(getActivity() instanceof ChromeTabbedActivity)) return;
-
-        View anchorView = getActivity().getToolbarManager().getMenuButton();
-        if (anchorView == null) return;
-
-        ViewRectProvider rectProvider = new ViewRectProvider(anchorView);
-        TextBubble textBubble =
-                new TextBubble(getActivity(), anchorView, R.string.iph_data_saver_detail_text,
-                        R.string.iph_data_saver_detail_accessibility_text, rectProvider);
-        textBubble.setDismissOnTouchInteraction(true);
-        getActivity().getAppMenuHandler().setMenuHighlight(R.id.app_menu_footer);
-        textBubble.addOnDismissListener(new OnDismissListener() {
-            @Override
-            public void onDismiss() {
-                ThreadUtils.postOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        tracker.dismissed(FeatureConstants.DATA_SAVER_DETAIL_FEATURE);
-                        getActivity().getAppMenuHandler().setMenuHighlight(null);
-                    }
-                });
-            }
-        });
-        int yInsetPx = mThemedApplicationContext.getResources().getDimensionPixelOffset(
-                R.dimen.text_bubble_menu_anchor_y_inset);
-        rectProvider.setInsetPx(0, 0, 0, yInsetPx);
-        textBubble.show();
-    }
-
-    private void maybeShowPreviewVerboseStatusInProductHelp(final Tracker tracker) {
-        if (!isPreview()) return;
-        if (!(getActivity() instanceof ChromeTabbedActivity)) return;
-        final View anchorView = getActivity().getToolbarManager().getSecurityIconView();
-        if (anchorView == null) return;
-
-        if (!tracker.shouldTriggerHelpUI(FeatureConstants.PREVIEWS_OMNIBOX_UI_FEATURE)) return;
-
-        final ViewRectProvider rectProvider = new ViewRectProvider(anchorView);
-        final TextBubble textBubble =
-                new TextBubble(getActivity(), anchorView, R.string.iph_previews_omnibox_ui_text,
-                        R.string.iph_previews_omnibox_ui_accessibility_text, rectProvider);
-        textBubble.setDismissOnTouchInteraction(true);
-        textBubble.addOnDismissListener(new OnDismissListener() {
-            @Override
-            public void onDismiss() {
-                ThreadUtils.postOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        tracker.dismissed(FeatureConstants.PREVIEWS_OMNIBOX_UI_FEATURE);
-                    }
-                });
-            }
-        });
-        final int yInsetPx = mThemedApplicationContext.getResources().getDimensionPixelOffset(
-                R.dimen.text_bubble_menu_anchor_y_inset);
-        rectProvider.setInsetPx(0, 0, 0, yInsetPx);
-        textBubble.show();
     }
 
     /**
@@ -1737,7 +1575,6 @@ public class Tab
 
             SwipeRefreshHandler.from(this);
 
-            updateThemeColorIfNeeded(false);
             notifyContentChanged();
 
             // For browser tabs, we want to set accessibility focus to the page
@@ -1985,7 +1822,6 @@ public class Tab
      * background on low-memory devices).
      * @return true iff the Tab handled the request.
      */
-    @CalledByNative
     public boolean loadIfNeeded() {
         if (getActivity() == null) {
             Log.e(TAG, "Tab couldn't be loaded because Context was null.");
@@ -2493,6 +2329,13 @@ public class Tab
     }
 
     /**
+     * @return The reason the Tab was launched.
+     */
+    public @Nullable @TabLaunchType Integer getLaunchTypeAtInitialTabCreation() {
+        return mLaunchTypeAtCreation;
+    }
+
+    /**
      * @return true iff the tab doesn't hold a live page. This happens before initialize() and when
      * the tab holds frozen WebContents state that is yet to be inflated.
      */
@@ -2929,21 +2772,6 @@ public class Tab
 
         tab.detach();
         return tab;
-    }
-
-    /**
-     * @return Whether the theme color for this tab is the default color.
-     */
-    public boolean isDefaultThemeColor() {
-        return isNativePage() || mDefaultThemeColor == getThemeColor();
-    }
-
-    /**
-     * @return The default theme color for this tab.
-     */
-    @VisibleForTesting
-    public int getDefaultThemeColor() {
-        return mDefaultThemeColor;
     }
 
     /**

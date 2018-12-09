@@ -5,8 +5,8 @@
 #include "services/network/public/cpp/host_resolver_mojom_traits.h"
 
 #include "mojo/public/cpp/base/time_mojom_traits.h"
-#include "net/interfaces/ip_address_struct_traits.h"
-#include "net/interfaces/ip_endpoint_struct_traits.h"
+#include "services/network/public/cpp/ip_address_mojom_traits.h"
+#include "services/network/public/cpp/ip_endpoint_mojom_traits.h"
 
 namespace mojo {
 
@@ -215,34 +215,32 @@ bool StructTraits<DnsConfigOverridesDataView, net::DnsConfigOverrides>::Read(
 }
 
 // static
-ResolveHostParameters::DnsQueryType EnumTraits<
-    ResolveHostParameters::DnsQueryType,
-    net::HostResolver::DnsQueryType>::ToMojom(net::HostResolver::DnsQueryType
-                                                  input) {
+ResolveHostParameters::DnsQueryType
+EnumTraits<ResolveHostParameters::DnsQueryType, net::DnsQueryType>::ToMojom(
+    net::DnsQueryType input) {
   switch (input) {
-    case net::HostResolver::DnsQueryType::UNSPECIFIED:
+    case net::DnsQueryType::UNSPECIFIED:
       return ResolveHostParameters::DnsQueryType::UNSPECIFIED;
-    case net::HostResolver::DnsQueryType::A:
+    case net::DnsQueryType::A:
       return ResolveHostParameters::DnsQueryType::A;
-    case net::HostResolver::DnsQueryType::AAAA:
+    case net::DnsQueryType::AAAA:
       return ResolveHostParameters::DnsQueryType::AAAA;
   }
 }
 
 // static
-bool EnumTraits<ResolveHostParameters::DnsQueryType,
-                net::HostResolver::DnsQueryType>::
+bool EnumTraits<ResolveHostParameters::DnsQueryType, net::DnsQueryType>::
     FromMojom(ResolveHostParameters::DnsQueryType input,
-              net::HostResolver::DnsQueryType* output) {
+              net::DnsQueryType* output) {
   switch (input) {
     case ResolveHostParameters::DnsQueryType::UNSPECIFIED:
-      *output = net::HostResolver::DnsQueryType::UNSPECIFIED;
+      *output = net::DnsQueryType::UNSPECIFIED;
       return true;
     case ResolveHostParameters::DnsQueryType::A:
-      *output = net::HostResolver::DnsQueryType::A;
+      *output = net::DnsQueryType::A;
       return true;
     case ResolveHostParameters::DnsQueryType::AAAA:
-      *output = net::HostResolver::DnsQueryType::AAAA;
+      *output = net::DnsQueryType::AAAA;
       return true;
   }
 }

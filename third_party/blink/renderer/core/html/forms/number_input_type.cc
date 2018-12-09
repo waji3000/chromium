@@ -95,7 +95,7 @@ static RealNumberRenderSize CalculateRenderSize(const Decimal& value) {
 }
 
 InputType* NumberInputType::Create(HTMLInputElement& element) {
-  return new NumberInputType(element);
+  return MakeGarbageCollected<NumberInputType>(element);
 }
 
 void NumberInputType::CountUsage() {
@@ -286,21 +286,23 @@ bool NumberInputType::SupportsPlaceholder() const {
 void NumberInputType::MinOrMaxAttributeChanged() {
   TextFieldInputType::MinOrMaxAttributeChanged();
 
-  if (GetElement().GetLayoutObject())
+  if (GetElement().GetLayoutObject()) {
     GetElement()
         .GetLayoutObject()
         ->SetNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(
-            LayoutInvalidationReason::kAttributeChanged);
+            layout_invalidation_reason::kAttributeChanged);
+  }
 }
 
 void NumberInputType::StepAttributeChanged() {
   TextFieldInputType::StepAttributeChanged();
 
-  if (GetElement().GetLayoutObject())
+  if (GetElement().GetLayoutObject()) {
     GetElement()
         .GetLayoutObject()
         ->SetNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(
-            LayoutInvalidationReason::kAttributeChanged);
+            layout_invalidation_reason::kAttributeChanged);
+  }
 }
 
 bool NumberInputType::SupportsSelectionAPI() const {

@@ -16,7 +16,7 @@
 #include "base/linux_util.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/default_clock.h"
 #include "base/values.h"
@@ -27,14 +27,12 @@
 #include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_key_manager.h"
 #include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_key_names.h"
 #include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_notification_controller.h"
-#include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_reauth.h"
 #include "chrome/browser/chromeos/login/session/user_session_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/gcm/gcm_profile_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/ui/webui/chromeos/multidevice_setup/multidevice_setup_dialog.h"
-#include "chrome/common/apps/platform_apps/api/easy_unlock_private.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
@@ -44,11 +42,11 @@
 #include "chromeos/components/proximity_auth/proximity_auth_profile_pref_manager.h"
 #include "chromeos/components/proximity_auth/proximity_auth_system.h"
 #include "chromeos/components/proximity_auth/screenlock_bridge.h"
+#include "chromeos/components/proximity_auth/smart_lock_metrics_recorder.h"
 #include "chromeos/components/proximity_auth/switches.h"
 #include "components/cryptauth/cryptauth_enrollment_manager.h"
 #include "components/cryptauth/cryptauth_enrollment_utils.h"
 #include "components/cryptauth/cryptauth_gcm_manager_impl.h"
-#include "components/cryptauth/local_device_data_provider.h"
 #include "components/cryptauth/remote_device_loader.h"
 #include "components/cryptauth/secure_message_delegate_impl.h"
 #include "components/gcm_driver/gcm_profile_service.h"
@@ -149,8 +147,8 @@ void EasyUnlockServiceRegular::LoadRemoteDevices() {
       !device_sync_client_->is_ready()) {
     // OnEnrollmentFinished() or OnNewDevicesSynced() will call back on this
     // method once |device_sync_client_| is ready.
-    PA_LOG(INFO) << "DeviceSyncClient is not ready yet, delaying "
-                    "UseLoadedRemoteDevices().";
+    PA_LOG(VERBOSE) << "DeviceSyncClient is not ready yet, delaying "
+                       "UseLoadedRemoteDevices().";
     return;
   }
 
@@ -169,8 +167,8 @@ void EasyUnlockServiceRegular::LoadRemoteDevices() {
       !is_in_valid_legacy_host_state) {
     // OnFeatureStatesChanged() will call back on this method when feature state
     // changes.
-    PA_LOG(INFO) << "Smart Lock is disabled; aborting.";
-    SetProximityAuthDevices(GetAccountId(), cryptauth::RemoteDeviceRefList(),
+    PA_LOG(VERBOSE) << "Smart Lock is disabled; aborting.";
+    SetProximityAuthDevices(GetAccountId(), multidevice::RemoteDeviceRefList(),
                             base::nullopt /* local_device */);
     return;
   }
@@ -194,7 +192,7 @@ void EasyUnlockServiceRegular::LoadRemoteDevices() {
     pref_manager_->SetEasyUnlockEnabledStateSet();
     LogSmartLockEnabledState(SmartLockEnabledState::ENABLED);
   } else {
-    SetProximityAuthDevices(GetAccountId(), cryptauth::RemoteDeviceRefList(),
+    SetProximityAuthDevices(GetAccountId(), multidevice::RemoteDeviceRefList(),
                             base::nullopt /* local_device */);
 
     if (pref_manager_->IsEasyUnlockEnabledStateSet()) {
@@ -209,7 +207,7 @@ void EasyUnlockServiceRegular::LoadRemoteDevices() {
   //   1. New devices were synced on the lock screen.
   //   2. The service was initialized while the login screen is still up.
   if (proximity_auth::ScreenlockBridge::Get()->IsLocked()) {
-    PA_LOG(INFO) << "Deferring device load until screen is unlocked.";
+    PA_LOG(VERBOSE) << "Deferring device load until screen is unlocked.";
     deferring_device_load_ = true;
     return;
   }
@@ -232,28 +230,25 @@ void EasyUnlockServiceRegular::LoadRemoteDevices() {
 }
 
 void EasyUnlockServiceRegular::OnRemoteDevicesLoaded(
-    const cryptauth::RemoteDeviceList& remote_devices) {
+    const multidevice::RemoteDeviceList& remote_devices) {
   DCHECK(!base::FeatureList::IsEnabled(chromeos::features::kMultiDeviceApi));
 
-  cryptauth::RemoteDeviceRefList remote_device_refs;
+  multidevice::RemoteDeviceRefList remote_device_refs;
   for (auto& remote_device : remote_devices) {
-    remote_device_refs.push_back(cryptauth::RemoteDeviceRef(
-        std::make_shared<cryptauth::RemoteDevice>(remote_device)));
+    remote_device_refs.push_back(multidevice::RemoteDeviceRef(
+        std::make_shared<multidevice::RemoteDevice>(remote_device)));
   }
 
   UseLoadedRemoteDevices(remote_device_refs);
 }
 
 void EasyUnlockServiceRegular::UseLoadedRemoteDevices(
-    const cryptauth::RemoteDeviceRefList& remote_devices) {
+    const multidevice::RemoteDeviceRefList& remote_devices) {
   // When EasyUnlock is enabled, only one EasyUnlock host should exist.
   DCHECK(remote_devices.size() == 1u);
 
-  SetProximityAuthDevices(
-      GetAccountId(), remote_devices,
-      base::FeatureList::IsEnabled(chromeos::features::kMultiDeviceApi)
-          ? device_sync_client_->GetLocalDeviceMetadata()
-          : base::nullopt);
+  SetProximityAuthDevices(GetAccountId(), remote_devices,
+                          device_sync_client_->GetLocalDeviceMetadata());
 
   // We need to store a copy of |local_and_remote_devices| in the TPM, so it can
   // be retrieved on the sign-in screen when a user session has not been started
@@ -265,7 +260,7 @@ void EasyUnlockServiceRegular::UseLoadedRemoteDevices(
   // TODO(crbug.com/856380): For historical reasons, the local and remote device
   // are persisted together in a list. This is awkward and hacky; they should
   // be persisted in a dictionary.
-  cryptauth::RemoteDeviceRefList local_and_remote_devices;
+  multidevice::RemoteDeviceRefList local_and_remote_devices;
   local_and_remote_devices.push_back(remote_devices[0]);
   if (base::FeatureList::IsEnabled(chromeos::features::kMultiDeviceApi)) {
     local_and_remote_devices.push_back(
@@ -308,9 +303,9 @@ void EasyUnlockServiceRegular::UseLoadedRemoteDevices(
     std::unique_ptr<base::ListValue> beacon_seed_list(new base::ListValue());
     for (const auto& beacon_seed : device.beacon_seeds()) {
       std::string b64_beacon_seed;
-      base::Base64UrlEncode(beacon_seed.SerializeAsString(),
-                            base::Base64UrlEncodePolicy::INCLUDE_PADDING,
-                            &b64_beacon_seed);
+      base::Base64UrlEncode(
+          multidevice::ToCryptAuthSeed(beacon_seed).SerializeAsString(),
+          base::Base64UrlEncodePolicy::INCLUDE_PADDING, &b64_beacon_seed);
       beacon_seed_list->AppendString(b64_beacon_seed);
     }
 
@@ -322,8 +317,8 @@ void EasyUnlockServiceRegular::UseLoadedRemoteDevices(
 
     // This differentiates the local device from the remote device.
     bool unlock_key = device.GetSoftwareFeatureState(
-                          cryptauth::SoftwareFeature::EASY_UNLOCK_HOST) ==
-                      cryptauth::SoftwareFeatureState::kEnabled;
+                          multidevice::SoftwareFeature::kSmartLockHost) ==
+                      multidevice::SoftwareFeatureState::kEnabled;
     dict->SetBoolean(key_names::kKeyUnlockKey, unlock_key);
 
     device_list->Append(std::move(dict));
@@ -391,7 +386,7 @@ void EasyUnlockServiceRegular::SetRemoteDevices(
   std::string remote_devices_json;
   JSONStringValueSerializer serializer(&remote_devices_json);
   serializer.Serialize(devices);
-  PA_LOG(INFO) << "Setting RemoteDevices:\n  " << remote_devices_json;
+  PA_LOG(VERBOSE) << "Setting RemoteDevices:\n  " << remote_devices_json;
 
   DictionaryPrefUpdate pairing_update(profile()->GetPrefs(),
                                       prefs::kEasyUnlockPairing);
@@ -527,24 +522,25 @@ bool EasyUnlockServiceRegular::IsInLegacyHostMode() const {
   }
 
   bool has_supported_easy_unlock_host = false;
-  for (const cryptauth::RemoteDeviceRef& remote_device_ref :
+  for (const multidevice::RemoteDeviceRef& remote_device_ref :
        device_sync_client_->GetSyncedDevices()) {
-    cryptauth::SoftwareFeatureState better_together_host_state =
+    multidevice::SoftwareFeatureState better_together_host_state =
         remote_device_ref.GetSoftwareFeatureState(
-            cryptauth::SoftwareFeature::BETTER_TOGETHER_HOST);
+            multidevice::SoftwareFeature::kBetterTogetherHost);
     // If there's any valid Better Together host, don't support legacy mode.
     if (better_together_host_state ==
-            cryptauth::SoftwareFeatureState::kSupported ||
+            multidevice::SoftwareFeatureState::kSupported ||
         better_together_host_state ==
-            cryptauth::SoftwareFeatureState::kEnabled) {
+            multidevice::SoftwareFeatureState::kEnabled) {
       return false;
     }
 
-    cryptauth::SoftwareFeatureState easy_unlock_host_state =
+    multidevice::SoftwareFeatureState easy_unlock_host_state =
         remote_device_ref.GetSoftwareFeatureState(
-            cryptauth::SoftwareFeature::EASY_UNLOCK_HOST);
-    if (easy_unlock_host_state == cryptauth::SoftwareFeatureState::kSupported ||
-        easy_unlock_host_state == cryptauth::SoftwareFeatureState::kEnabled) {
+            multidevice::SoftwareFeature::kSmartLockHost);
+    if (easy_unlock_host_state ==
+            multidevice::SoftwareFeatureState::kSupported ||
+        easy_unlock_host_state == multidevice::SoftwareFeatureState::kEnabled) {
       has_supported_easy_unlock_host = true;
     }
   }
@@ -617,7 +613,7 @@ void EasyUnlockServiceRegular::OnNewDevicesSynced() {
     public_keys_before_sync.insert(remote_device.public_key());
   }
 
-  cryptauth::RemoteDeviceRefList remote_device_unlock_keys_after_sync =
+  multidevice::RemoteDeviceRefList remote_device_unlock_keys_after_sync =
       GetUnlockKeys();
   std::set<std::string> public_keys_after_sync;
   for (const auto& remote_device : remote_device_unlock_keys_after_sync) {
@@ -733,7 +729,7 @@ void EasyUnlockServiceRegular::OnScreenDidUnlock(
   // user is signing in we need to load the remotes. Otherwise, the
   // first time the user locks the screen the feature won't work.
   if (deferring_device_load_) {
-    PA_LOG(INFO) << "Loading deferred devices after screen unlock.";
+    PA_LOG(VERBOSE) << "Loading deferred devices after screen unlock.";
     deferring_device_load_ = false;
     LoadRemoteDevices();
   }
@@ -744,13 +740,10 @@ void EasyUnlockServiceRegular::OnScreenDidUnlock(
 
   if (shown_pairing_changed_notification_) {
     shown_pairing_changed_notification_ = false;
-    std::vector<cryptauth::ExternalDeviceInfo> unlock_keys =
-        GetCryptAuthDeviceManager()->GetUnlockKeys();
-    if (!unlock_keys.empty()) {
-      // TODO(tengs): Right now, we assume that there is only one possible
-      // unlock key. We need to update this notification be more generic.
+
+    if (!GetUnlockKeys().empty()) {
       notification_controller_->ShowPairingChangeAppliedNotification(
-          unlock_keys[0].friendly_device_name());
+          GetUnlockKeys()[0].name());
     }
   }
 
@@ -761,9 +754,33 @@ void EasyUnlockServiceRegular::OnScreenDidUnlock(
                                     : GetPasswordAuthEvent();
     RecordEasyUnlockScreenUnlockEvent(event);
 
+    if (will_unlock_using_easy_unlock_ ||
+        event == PASSWORD_ENTRY_PHONE_LOCKED ||
+        event == PASSWORD_ENTRY_PHONE_NOT_LOCKABLE ||
+        event == PASSWORD_ENTRY_RSSI_TOO_LOW ||
+        event == PASSWORD_ENTRY_PHONE_LOCKED_AND_RSSI_TOO_LOW ||
+        event == PASSWORD_ENTRY_WITH_AUTHENTICATED_PHONE) {
+      SmartLockMetricsRecorder::RecordGetRemoteStatusResultUnlockSuccess();
+    }
+
     if (will_unlock_using_easy_unlock_) {
+      SmartLockMetricsRecorder::RecordAuthResultUnlockSuccess();
       RecordEasyUnlockScreenUnlockDuration(base::TimeTicks::Now() -
                                            lock_screen_last_shown_timestamp_);
+    } else {
+      OnUserEnteredPassword();
+    }
+
+    if (event == PASSWORD_ENTRY_BLUETOOTH_CONNECTING) {
+      SmartLockMetricsRecorder::RecordGetRemoteStatusResultUnlockFailure(
+          SmartLockMetricsRecorder::
+              SmartLockGetRemoteStatusResultFailureReason::
+                  kUserEnteredPasswordWhileConnecting);
+    } else if (event == PASSWORD_ENTRY_NO_BLUETOOTH) {
+      SmartLockMetricsRecorder::RecordGetRemoteStatusResultUnlockFailure(
+          SmartLockMetricsRecorder::
+              SmartLockGetRemoteStatusResultFailureReason::
+                  kUserEnteredPasswordWhileBluetoothDisabled);
     }
   }
 
@@ -803,12 +820,12 @@ void EasyUnlockServiceRegular::RefreshCryptohomeKeysIfPossible() {
   CheckCryptohomeKeysAndMaybeHardlock();
 }
 
-cryptauth::RemoteDeviceRefList EasyUnlockServiceRegular::GetUnlockKeys() {
-  cryptauth::RemoteDeviceRefList unlock_keys;
+multidevice::RemoteDeviceRefList EasyUnlockServiceRegular::GetUnlockKeys() {
+  multidevice::RemoteDeviceRefList unlock_keys;
   for (const auto& remote_device : device_sync_client_->GetSyncedDevices()) {
     bool unlock_key = remote_device.GetSoftwareFeatureState(
-                          cryptauth::SoftwareFeature::EASY_UNLOCK_HOST) ==
-                      cryptauth::SoftwareFeatureState::kEnabled;
+                          multidevice::SoftwareFeature::kSmartLockHost) ==
+                      multidevice::SoftwareFeatureState::kEnabled;
     if (unlock_key)
       unlock_keys.push_back(remote_device);
   }

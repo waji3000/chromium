@@ -26,6 +26,7 @@
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_input_event.h"
 #include "third_party/blink/renderer/core/editing/ime/input_method_controller.h"
+#include "third_party/blink/renderer/core/event_interface_names.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/input/input_device_capabilities.h"
@@ -85,7 +86,7 @@ KeyboardEvent* KeyboardEvent::Create(ScriptState* script_state,
         initializer->ctrlKey(), initializer->altKey(), initializer->shiftKey(),
         initializer->metaKey());
   }
-  return new KeyboardEvent(type, initializer);
+  return MakeGarbageCollected<KeyboardEvent>(type, initializer);
 }
 
 KeyboardEvent::KeyboardEvent() : location_(kDomKeyLocationStandard) {}
@@ -181,7 +182,7 @@ int KeyboardEvent::charCode() const {
 }
 
 const AtomicString& KeyboardEvent::InterfaceName() const {
-  return EventNames::KeyboardEvent;
+  return event_interface_names::kKeyboardEvent;
 }
 
 bool KeyboardEvent::IsKeyboardEvent() const {

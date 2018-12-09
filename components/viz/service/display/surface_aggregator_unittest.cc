@@ -37,6 +37,7 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 
 namespace viz {
 namespace {
@@ -211,7 +212,7 @@ class SurfaceAggregatorTest : public testing::Test, public DisplayTimeSource {
                             std::vector<SurfaceRange>* referenced_surfaces) {
     switch (desc.material) {
       case DrawQuad::SOLID_COLOR:
-        cc::AddQuad(pass, gfx::Rect(0, 0, 5, 5), desc.color);
+        cc::AddQuad(pass, desc.rect, desc.color);
         break;
       case DrawQuad::SURFACE_CONTENT:
         referenced_surfaces->emplace_back(desc.surface_range);
@@ -358,14 +359,14 @@ class SurfaceAggregatorValidSurfaceTest : public SurfaceAggregatorTest {
 
   void SetUp() override {
     SurfaceAggregatorTest::SetUp();
-    root_local_surface_id_ = allocator_.GetCurrentLocalSurfaceId();
+    allocator_.GenerateId();
+    root_local_surface_id_ =
+        allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
     root_surface_ = manager_.surface_manager()->GetSurfaceForId(
         SurfaceId(support_->frame_sink_id(), root_local_surface_id_));
   }
 
-  void TearDown() override {
-    SurfaceAggregatorTest::TearDown();
-  }
+  void TearDown() override { SurfaceAggregatorTest::TearDown(); }
 
   // Verifies that if the |SharedQuadState::quad_layer_rect| can be covered by
   // |DrawQuad::Rect| in the SharedQuadState.
@@ -432,13 +433,21 @@ class SurfaceAggregatorValidSurfaceTest : public SurfaceAggregatorTest {
     support->SubmitCompositorFrame(local_surface_id, std::move(frame));
   }
 
+  RenderPassList GenerateRenderPassList(
+      const std::vector<Pass>& passes,
+      std::vector<SurfaceRange>* referenced_surfaces) {
+    RenderPassList pass_list;
+    AddPasses(&pass_list, passes, referenced_surfaces);
+    return pass_list;
+  }
+
   void SubmitCompositorFrame(CompositorFrameSinkSupport* support,
                              const std::vector<Pass>& passes,
                              const LocalSurfaceId& local_surface_id,
                              float device_scale_factor) {
-    RenderPassList pass_list;
     std::vector<SurfaceRange> referenced_surfaces;
-    AddPasses(&pass_list, passes, &referenced_surfaces);
+    RenderPassList pass_list =
+        GenerateRenderPassList(passes, &referenced_surfaces);
     SubmitPassListAsFrame(support, local_surface_id, &pass_list,
                           std::move(referenced_surfaces), device_scale_factor);
   }
@@ -519,7 +528,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, OpacityCopied) {
       kNeedsSyncPoints);
   allocator_.GenerateId();
   LocalSurfaceId embedded_local_surface_id =
-      allocator_.GetCurrentLocalSurfaceId();
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId embedded_surface_id(embedded_support->frame_sink_id(),
                                 embedded_local_surface_id);
 
@@ -579,7 +588,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, RotatedClip) {
       kNeedsSyncPoints);
   allocator_.GenerateId();
   LocalSurfaceId embedded_local_surface_id =
-      allocator_.GetCurrentLocalSurfaceId();
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId embedded_surface_id(embedded_support->frame_sink_id(),
                                 embedded_local_surface_id);
 
@@ -699,7 +708,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, SimpleSurfaceReference) {
       kNeedsSyncPoints);
   allocator_.GenerateId();
   LocalSurfaceId embedded_local_surface_id =
-      allocator_.GetCurrentLocalSurfaceId();
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId embedded_surface_id(embedded_support->frame_sink_id(),
                                 embedded_local_surface_id);
 
@@ -730,6 +739,176 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, SimpleSurfaceReference) {
   AggregateAndVerify(expected_passes, {root_surface_id, embedded_surface_id});
 }
 
+class TestVizClient {
+ public:
+  TestVizClient(SurfaceAggregatorValidSurfaceTest* test,
+                FrameSinkManagerImpl* manager,
+                const FrameSinkId& frame_sink_id,
+                const LocalSurfaceId& local_surface_id,
+                const gfx::Rect& bounds)
+      : test_(test),
+        frame_sink_id_(frame_sink_id),
+        local_surface_id_(local_surface_id),
+        bounds_(bounds) {
+    constexpr bool is_root = false;
+    constexpr bool needs_sync_points = false;
+    support_ = std::make_unique<CompositorFrameSinkSupport>(
+        nullptr, manager, frame_sink_id, is_root, needs_sync_points);
+  }
+
+  ~TestVizClient() = default;
+
+  void SubmitCompositorFrame(SkColor bgcolor) {
+    using Quad = SurfaceAggregatorValidSurfaceTest::Quad;
+    using Pass = SurfaceAggregatorValidSurfaceTest::Pass;
+
+    std::vector<SurfaceRange> referenced_surfaces;
+    std::vector<Quad> embedded_quads = {Quad::SolidColorQuad(bgcolor, bounds_)};
+    for (const auto& embed : embedded_clients_) {
+      if (embed.second) {
+        embedded_quads.push_back(Quad::SurfaceQuad(
+            SurfaceRange(base::nullopt, embed.first->surface_id()),
+            SK_ColorWHITE, embed.first->bounds(), false));
+      } else {
+        referenced_surfaces.emplace_back(
+            SurfaceRange(base::nullopt, embed.first->surface_id()));
+      }
+    }
+    std::vector<Pass> embedded_passes = {Pass(embedded_quads, bounds_.size())};
+
+    constexpr float device_scale_factor = 1.0f;
+    RenderPassList pass_list =
+        test_->GenerateRenderPassList(embedded_passes, &referenced_surfaces);
+    test_->SubmitPassListAsFrame(support_.get(), local_surface_id_, &pass_list,
+                                 referenced_surfaces, device_scale_factor);
+  }
+
+  void SetEmbeddedClient(TestVizClient* embedded, bool add_quad) {
+    embedded_clients_[embedded] = add_quad;
+  }
+
+  CopyOutputRequest* RequestCopyOfOutput() {
+    auto copy_request = CopyOutputRequest::CreateStubForTesting();
+    auto* copy_request_ptr = copy_request.get();
+    support_->RequestCopyOfOutput(local_surface_id_, std::move(copy_request));
+    return copy_request_ptr;
+  }
+
+  SurfaceId surface_id() const { return {frame_sink_id_, local_surface_id_}; }
+  const gfx::Rect& bounds() const { return bounds_; }
+
+ private:
+  SurfaceAggregatorValidSurfaceTest* const test_;
+  std::unique_ptr<CompositorFrameSinkSupport> support_;
+  const FrameSinkId frame_sink_id_;
+  const LocalSurfaceId local_surface_id_;
+  const gfx::Rect bounds_;
+
+  std::map<TestVizClient*, bool> embedded_clients_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestVizClient);
+};
+
+TEST_F(SurfaceAggregatorValidSurfaceTest, UndrawnSurfaces) {
+  allocator_.GenerateId();
+  TestVizClient child(
+      this, &manager_, kArbitraryFrameSinkId1,
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id(),
+      gfx::Rect(10, 10));
+  child.SubmitCompositorFrame(SK_ColorBLUE);
+
+  // Parent first submits a CompositorFrame that renfereces |child|, but does
+  // not provide a DrawQuad that embeds it.
+  allocator_.GenerateId();
+  TestVizClient parent(
+      this, &manager_, kArbitraryFrameSinkId2,
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id(),
+      gfx::Rect(15, 15));
+  parent.SetEmbeddedClient(&child, false);
+  parent.SubmitCompositorFrame(SK_ColorGREEN);
+
+  std::vector<Quad> root_quads = {
+      Quad::SolidColorQuad(SK_ColorWHITE, gfx::Rect(5, 5)),
+      Quad::SurfaceQuad(SurfaceRange(base::nullopt, parent.surface_id()),
+                        SK_ColorWHITE, parent.bounds(), false),
+      Quad::SolidColorQuad(SK_ColorBLACK, gfx::Rect(5, 5))};
+  std::vector<Pass> root_passes = {Pass(root_quads, SurfaceSize())};
+
+  constexpr float device_scale_factor = 1.0f;
+  SubmitCompositorFrame(support_.get(), root_passes, root_local_surface_id_,
+                        device_scale_factor);
+
+  std::vector<Quad> expected_quads = {
+      Quad::SolidColorQuad(SK_ColorWHITE, gfx::Rect(5, 5)),
+      Quad::SolidColorQuad(SK_ColorGREEN, parent.bounds()),
+      Quad::SolidColorQuad(SK_ColorBLACK, gfx::Rect(5, 5))};
+  std::vector<Pass> expected_passes = {Pass(expected_quads, SurfaceSize())};
+  SurfaceId root_surface_id(support_->frame_sink_id(), root_local_surface_id_);
+  AggregateAndVerify(expected_passes, {root_surface_id, parent.surface_id(),
+                                       child.surface_id()});
+  // |child| should not be drawn.
+  EXPECT_THAT(aggregator_.undrawn_surfaces(),
+              ::testing::ElementsAre(child.surface_id()));
+
+  // Submit another CompositorFrame from |parent|, this time with a DrawQuad for
+  // |child|.
+  parent.SetEmbeddedClient(&child, true);
+  parent.SubmitCompositorFrame(SK_ColorGREEN);
+
+  expected_quads = {Quad::SolidColorQuad(SK_ColorWHITE, gfx::Rect(5, 5)),
+                    Quad::SolidColorQuad(SK_ColorGREEN, parent.bounds()),
+                    Quad::SolidColorQuad(SK_ColorBLUE, child.bounds()),
+                    Quad::SolidColorQuad(SK_ColorBLACK, gfx::Rect(5, 5))};
+  AggregateAndVerify(
+      {Pass(expected_quads, SurfaceSize())},
+      {root_surface_id, parent.surface_id(), child.surface_id()});
+  EXPECT_THAT(aggregator_.undrawn_surfaces(), ::testing::IsEmpty());
+}
+
+TEST_F(SurfaceAggregatorValidSurfaceTest, UndrawnSurfacesWithCopyRequests) {
+  allocator_.GenerateId();
+  TestVizClient child(
+      this, &manager_, kArbitraryFrameSinkId1,
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id(),
+      gfx::Rect(10, 10));
+  child.SubmitCompositorFrame(SK_ColorBLUE);
+  child.RequestCopyOfOutput();
+
+  // Parent first submits a CompositorFrame that renfereces |child|, but does
+  // not provide a DrawQuad that embeds it.
+  allocator_.GenerateId();
+  TestVizClient parent(
+      this, &manager_, kArbitraryFrameSinkId2,
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id(),
+      gfx::Rect(15, 15));
+  parent.SetEmbeddedClient(&child, false);
+  parent.SubmitCompositorFrame(SK_ColorGREEN);
+
+  std::vector<Quad> root_quads = {
+      Quad::SolidColorQuad(SK_ColorWHITE, gfx::Rect(5, 5)),
+      Quad::SurfaceQuad(SurfaceRange(base::nullopt, parent.surface_id()),
+                        SK_ColorWHITE, parent.bounds(), false),
+      Quad::SolidColorQuad(SK_ColorBLACK, gfx::Rect(5, 5))};
+  std::vector<Pass> root_passes = {Pass(root_quads, SurfaceSize())};
+
+  constexpr float device_scale_factor = 1.0f;
+  SubmitCompositorFrame(support_.get(), root_passes, root_local_surface_id_,
+                        device_scale_factor);
+
+  std::vector<Quad> expected_quads = {
+      Quad::SolidColorQuad(SK_ColorWHITE, gfx::Rect(5, 5)),
+      Quad::SolidColorQuad(SK_ColorGREEN, parent.bounds()),
+      Quad::SolidColorQuad(SK_ColorBLACK, gfx::Rect(5, 5))};
+  std::vector<Quad> expected_copy_quads = {
+      Quad::SolidColorQuad(SK_ColorBLUE, child.bounds())};
+  std::vector<Pass> expected_passes = {Pass(expected_copy_quads, SurfaceSize()),
+                                       Pass(expected_quads, SurfaceSize())};
+  SurfaceId root_surface_id(support_->frame_sink_id(), root_local_surface_id_);
+  AggregateAndVerify(expected_passes, {root_surface_id, parent.surface_id(),
+                                       child.surface_id()});
+  EXPECT_THAT(aggregator_.undrawn_surfaces(), ::testing::IsEmpty());
+}
+
 // This test verifies that in the absence of a primary Surface,
 // SurfaceAggregator will embed a fallback Surface, if available. If the primary
 // Surface is available, though, the fallback will not be used.
@@ -744,13 +923,13 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, FallbackSurfaceReference) {
 
   child_allocator_.GenerateId();
   LocalSurfaceId fallback_child_local_surface_id =
-      child_allocator_.GetCurrentLocalSurfaceId();
+      child_allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId fallback_child_surface_id(fallback_child_support->frame_sink_id(),
                                       fallback_child_local_surface_id);
 
   child_allocator_.GenerateId();
   LocalSurfaceId primary_child_local_surface_id =
-      child_allocator_.GetCurrentLocalSurfaceId();
+      child_allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId primary_child_surface_id(primary_child_support->frame_sink_id(),
                                      primary_child_local_surface_id);
 
@@ -797,7 +976,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, FallbackSurfaceReference) {
       // Bottom guttter.
       Quad::SolidColorQuad(SK_ColorWHITE, gfx::Rect(0, 5, 5, 10)),
       // Contents of the fallback surface.
-      Quad::SolidColorQuad(SK_ColorRED, gfx::Rect(5, 5)),
+      Quad::SolidColorQuad(SK_ColorRED, gfx::Rect(fallback_size)),
   };
   std::vector<Pass> expected_passes1 = {Pass(expected_quads1, SurfaceSize())};
 
@@ -826,7 +1005,8 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, FallbackSurfaceReference) {
 
   // Submit the fallback again to create some damage then aggregate again.
   child_allocator_.GenerateId();
-  fallback_child_local_surface_id = child_allocator_.GetCurrentLocalSurfaceId();
+  fallback_child_local_surface_id =
+      child_allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
 
   SubmitCompositorFrame(fallback_child_support.get(), fallback_child_passes,
 
@@ -899,7 +1079,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, StretchContentToFillBounds) {
       kNeedsSyncPoints);
   allocator_.GenerateId();
   LocalSurfaceId primary_child_local_surface_id =
-      allocator_.GetCurrentLocalSurfaceId();
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId primary_child_surface_id(primary_child_support->frame_sink_id(),
                                      primary_child_local_surface_id);
 
@@ -969,7 +1149,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, StretchContentToFillStretchedBounds) {
       kNeedsSyncPoints);
   allocator_.GenerateId();
   LocalSurfaceId primary_child_local_surface_id =
-      allocator_.GetCurrentLocalSurfaceId();
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId primary_child_surface_id(primary_child_support->frame_sink_id(),
                                      primary_child_local_surface_id);
 
@@ -1040,7 +1220,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, StretchContentToFillSquashedBounds) {
       kNeedsSyncPoints);
   allocator_.GenerateId();
   LocalSurfaceId primary_child_local_surface_id =
-      allocator_.GetCurrentLocalSurfaceId();
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId primary_child_surface_id(primary_child_support->frame_sink_id(),
                                      primary_child_local_surface_id);
 
@@ -1108,7 +1288,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, FallbackSurfaceReferenceWithPrimary) {
       kNeedsSyncPoints);
   allocator_.GenerateId();
   LocalSurfaceId primary_child_local_surface_id =
-      allocator_.GetCurrentLocalSurfaceId();
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId primary_child_surface_id(primary_child_support->frame_sink_id(),
                                      primary_child_local_surface_id);
   std::vector<Quad> primary_child_quads = {
@@ -1129,7 +1309,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, FallbackSurfaceReferenceWithPrimary) {
       kNeedsSyncPoints);
   allocator_.GenerateId();
   LocalSurfaceId fallback_child_local_surface_id =
-      allocator_.GetCurrentLocalSurfaceId();
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId fallback_child_surface_id(fallback_child_support->frame_sink_id(),
                                       fallback_child_local_surface_id);
 
@@ -1201,7 +1381,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, CopyRequest) {
       kNeedsSyncPoints);
   allocator_.GenerateId();
   LocalSurfaceId embedded_local_surface_id =
-      allocator_.GetCurrentLocalSurfaceId();
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId embedded_surface_id(embedded_support->frame_sink_id(),
                                 embedded_local_surface_id);
 
@@ -1261,7 +1441,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, RootCopyRequest) {
       kNeedsSyncPoints);
   allocator_.GenerateId();
   LocalSurfaceId embedded_local_surface_id =
-      allocator_.GetCurrentLocalSurfaceId();
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId embedded_surface_id(embedded_support->frame_sink_id(),
                                 embedded_local_surface_id);
 
@@ -1345,12 +1525,13 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, UnreferencedSurface) {
       kNeedsSyncPoints);
   allocator_.GenerateId();
   LocalSurfaceId embedded_local_surface_id =
-      allocator_.GetCurrentLocalSurfaceId();
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId embedded_surface_id(embedded_support->frame_sink_id(),
                                 embedded_local_surface_id);
   allocator_.GenerateId();
-  SurfaceId nonexistent_surface_id(support_->frame_sink_id(),
-                                   allocator_.GetCurrentLocalSurfaceId());
+  SurfaceId nonexistent_surface_id(
+      support_->frame_sink_id(),
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id());
 
   std::vector<Quad> embedded_quads = {
       Quad::SolidColorQuad(SK_ColorGREEN, gfx::Rect(5, 5))};
@@ -1366,7 +1547,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, UnreferencedSurface) {
 
   allocator_.GenerateId();
   LocalSurfaceId parent_local_surface_id =
-      allocator_.GetCurrentLocalSurfaceId();
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId parent_surface_id(parent_support->frame_sink_id(),
                               parent_local_surface_id);
 
@@ -1440,7 +1621,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, UnreferencedSurface) {
 TEST_F(SurfaceAggregatorValidSurfaceTest, MultiPassSurfaceReference) {
   child_allocator_.GenerateId();
   LocalSurfaceId embedded_local_surface_id =
-      child_allocator_.GetCurrentLocalSurfaceId();
+      child_allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId embedded_surface_id(child_support_->frame_sink_id(),
                                 embedded_local_surface_id);
 
@@ -1610,7 +1791,8 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, InvalidSurfaceReference) {
 // SolidColorDrawQuad should be placed in lieu of a frame.
 TEST_F(SurfaceAggregatorValidSurfaceTest, ValidSurfaceReferenceWithNoFrame) {
   allocator_.GenerateId();
-  LocalSurfaceId empty_local_surface_id = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId empty_local_surface_id =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId surface_with_no_frame_id(kArbitraryFrameSinkId1,
                                      empty_local_surface_id);
 
@@ -1640,7 +1822,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, ValidSurfaceReferenceWithNoFrame) {
 TEST_F(SurfaceAggregatorValidSurfaceTest, ValidFallbackWithNoFrame) {
   allocator_.GenerateId();
   const LocalSurfaceId empty_local_surface_id =
-      allocator_.GetCurrentLocalSurfaceId();
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   const SurfaceId surface_with_no_frame_id(support_->frame_sink_id(),
                                            empty_local_surface_id);
 
@@ -1684,7 +1866,8 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, SimpleCyclicalReference) {
 // Tests a more complex cycle with one intermediate surface.
 TEST_F(SurfaceAggregatorValidSurfaceTest, TwoSurfaceCyclicalReference) {
   allocator_.GenerateId();
-  LocalSurfaceId child_local_surface_id = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId child_local_surface_id =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId child_surface_id(child_support_->frame_sink_id(),
                              child_local_surface_id);
 
@@ -1729,7 +1912,8 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, TwoSurfaceCyclicalReference) {
 // namespace and update RenderPassDrawQuad's id references to match.
 TEST_F(SurfaceAggregatorValidSurfaceTest, RenderPassIdMapping) {
   allocator_.GenerateId();
-  LocalSurfaceId child_local_surface_id = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId child_local_surface_id =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId child_surface_id(child_support_->frame_sink_id(),
                              child_local_surface_id);
 
@@ -1863,7 +2047,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, AggregateSharedQuadStateProperties) {
   int pass_id = 1;
   allocator_.GenerateId();
   LocalSurfaceId grandchild_local_surface_id =
-      allocator_.GetCurrentLocalSurfaceId();
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId grandchild_surface_id(grandchild_support->frame_sink_id(),
                                   grandchild_local_surface_id);
 
@@ -1881,7 +2065,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, AggregateSharedQuadStateProperties) {
 
   allocator_.GenerateId();
   LocalSurfaceId child_one_local_surface_id =
-      allocator_.GetCurrentLocalSurfaceId();
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId child_one_surface_id(child_one_support->frame_sink_id(),
                                  child_one_local_surface_id);
 
@@ -1903,7 +2087,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, AggregateSharedQuadStateProperties) {
 
   allocator_.GenerateId();
   LocalSurfaceId child_two_local_surface_id =
-      allocator_.GetCurrentLocalSurfaceId();
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId child_two_surface_id(child_two_support->frame_sink_id(),
                                  child_two_local_surface_id);
 
@@ -1984,7 +2168,8 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, AggregateMultiplePassWithTransform) {
       kNeedsSyncPoints);
   // Innermost child surface.
   allocator_.GenerateId();
-  LocalSurfaceId child_local_surface_id = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId child_local_surface_id =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId child_surface_id(child_support_->frame_sink_id(),
                              child_local_surface_id);
   {
@@ -2020,7 +2205,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, AggregateMultiplePassWithTransform) {
   // Middle child surface.
   allocator_.GenerateId();
   LocalSurfaceId middle_local_surface_id =
-      allocator_.GetCurrentLocalSurfaceId();
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId middle_surface_id(middle_support->frame_sink_id(),
                               middle_local_surface_id);
   {
@@ -2170,7 +2355,8 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, AggregateDamageRect) {
   child_root_pass_sqs->quad_to_target_transform.Translate(8, 0);
 
   allocator_.GenerateId();
-  LocalSurfaceId child_local_surface_id = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId child_local_surface_id =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId child_surface_id(child_support_->frame_sink_id(),
                              child_local_surface_id);
   child_support_->SubmitCompositorFrame(child_local_surface_id,
@@ -2190,7 +2376,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, AggregateDamageRect) {
 
   allocator_.GenerateId();
   LocalSurfaceId parent_local_surface_id =
-      allocator_.GetCurrentLocalSurfaceId();
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId parent_surface_id(parent_support->frame_sink_id(),
                               parent_local_surface_id);
   parent_support->SubmitCompositorFrame(parent_local_surface_id,
@@ -2357,7 +2543,8 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, AggregateDamageRectWithSquashToFit) {
   child_root_pass_sqs->quad_to_target_transform.Translate(8, 0);
 
   allocator_.GenerateId();
-  LocalSurfaceId child_local_surface_id = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId child_local_surface_id =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId child_surface_id(child_support_->frame_sink_id(),
                              child_local_surface_id);
   child_support_->SubmitCompositorFrame(child_local_surface_id,
@@ -2377,7 +2564,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, AggregateDamageRectWithSquashToFit) {
 
   allocator_.GenerateId();
   LocalSurfaceId parent_local_surface_id =
-      allocator_.GetCurrentLocalSurfaceId();
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId parent_surface_id(parent_support->frame_sink_id(),
                               parent_local_surface_id);
   parent_support->SubmitCompositorFrame(parent_local_surface_id,
@@ -2462,7 +2649,8 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, AggregateDamageRectWithStretchToFit) {
   child_root_pass_sqs->quad_to_target_transform.Translate(8, 0);
 
   allocator_.GenerateId();
-  LocalSurfaceId child_local_surface_id = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId child_local_surface_id =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId child_surface_id(child_support_->frame_sink_id(),
                              child_local_surface_id);
   child_support_->SubmitCompositorFrame(child_local_surface_id,
@@ -2482,7 +2670,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, AggregateDamageRectWithStretchToFit) {
 
   allocator_.GenerateId();
   LocalSurfaceId parent_local_surface_id =
-      allocator_.GetCurrentLocalSurfaceId();
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId parent_surface_id(parent_support->frame_sink_id(),
                               parent_local_surface_id);
   parent_support->SubmitCompositorFrame(parent_local_surface_id,
@@ -2579,7 +2767,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, SwitchSurfaceDamage) {
 
   allocator_.GenerateId();
   LocalSurfaceId second_root_local_surface_id =
-      allocator_.GetCurrentLocalSurfaceId();
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId second_root_surface_id(support_->frame_sink_id(),
                                    second_root_local_surface_id);
   {
@@ -2628,15 +2816,20 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, SurfaceDamageSameFrameSinkId) {
       nullptr, &manager_, kArbitraryFrameSinkId1, kRootIsRoot,
       kNeedsSyncPoints);
   allocator_.GenerateId();
-  LocalSurfaceId id1 = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId id1 =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   allocator_.GenerateId();
-  LocalSurfaceId id2 = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId id2 =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   allocator_.GenerateId();
-  LocalSurfaceId id3 = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId id3 =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   allocator_.GenerateId();
-  LocalSurfaceId id4 = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId id4 =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   allocator_.GenerateId();
-  LocalSurfaceId id5 = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId id5 =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId fallback_surface_id(kArbitraryFrameSinkId1, id2);
   SurfaceId primary_surface_id(kArbitraryFrameSinkId1, id4);
   std::vector<Quad> embedded_quads = {
@@ -2689,13 +2882,17 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, SurfaceDamageDifferentFrameSinkId) {
       nullptr, &manager_, kArbitraryFrameSinkId1, kRootIsRoot,
       kNeedsSyncPoints);
   allocator_.GenerateId();
-  LocalSurfaceId id1 = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId id1 =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   allocator_.GenerateId();
-  LocalSurfaceId id2 = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId id2 =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   allocator_.GenerateId();
-  LocalSurfaceId id3 = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId id3 =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   allocator_.GenerateId();
-  LocalSurfaceId id4 = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId id4 =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId fallback_surface_id(kArbitraryFrameSinkId1, id2);
   SurfaceId primary_surface_id(kArbitraryFrameSinkId2, id4);
   std::vector<Quad> embedded_quads = {
@@ -2737,7 +2934,6 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, SurfaceDamageDifferentFrameSinkId) {
   EXPECT_TRUE(aggregator_.NotifySurfaceDamageAndCheckForDisplayDamage(
       SurfaceId(kArbitraryFrameSinkId2, id4)));
 
-
   // This FrameSinkId is not embedded at all so it shouldn't damage the display.
   EXPECT_FALSE(aggregator_.NotifySurfaceDamageAndCheckForDisplayDamage(
       SurfaceId(kArbitraryFrameSinkId3, id4)));
@@ -2747,11 +2943,14 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, SurfaceDamageDifferentFrameSinkId) {
 // surface damages the display.
 TEST_F(SurfaceAggregatorValidSurfaceTest, SurfaceDamagePrimarySurfaceOnly) {
   allocator_.GenerateId();
-  LocalSurfaceId id1 = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId id1 =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   allocator_.GenerateId();
-  LocalSurfaceId id2 = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId id2 =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   allocator_.GenerateId();
-  LocalSurfaceId id3 = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId id3 =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId primary_surface_id(kArbitraryFrameSinkId1, id2);
 
   CompositorFrame frame = MakeCompositorFrameFromSurfaceRanges(
@@ -2787,11 +2986,14 @@ TEST_F(SurfaceAggregatorValidSurfaceTest,
       nullptr, &manager_, kArbitraryFrameSinkId1, kRootIsRoot,
       kNeedsSyncPoints);
   allocator_.GenerateId();
-  LocalSurfaceId id1 = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId id1 =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   allocator_.GenerateId();
-  LocalSurfaceId id2 = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId id2 =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   allocator_.GenerateId();
-  LocalSurfaceId id3 = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId id3 =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId surface_id(kArbitraryFrameSinkId1, id2);
 
   std::vector<Quad> embedded_quads = {
@@ -2837,7 +3039,8 @@ class SurfaceAggregatorPartialSwapTest
 // Tests that quads outside the damage rect are ignored.
 TEST_F(SurfaceAggregatorPartialSwapTest, IgnoreOutside) {
   allocator_.GenerateId();
-  LocalSurfaceId child_local_surface_id = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId child_local_surface_id =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId child_surface_id(child_support_->frame_sink_id(),
                              child_local_surface_id);
   constexpr float device_scale_factor = 1.0f;
@@ -3294,10 +3497,12 @@ void SubmitCompositorFrameWithResources(
     bool flipped = false;
     bool nearest_neighbor = false;
     bool secure_output_only = true;
+    ui::ProtectedVideoType protected_video_type =
+        ui::ProtectedVideoType::kClear;
     quad->SetAll(sqs, rect, visible_rect, needs_blending, resource_ids[i],
                  gfx::Size(), premultiplied_alpha, uv_top_left, uv_bottom_right,
                  background_color, vertex_opacity, flipped, nearest_neighbor,
-                 secure_output_only);
+                 secure_output_only, protected_video_type);
   }
   frame.render_pass_list.push_back(std::move(pass));
   support->SubmitCompositorFrame(surface_id.local_surface_id(),
@@ -3623,7 +3828,8 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, HasDamageByChangingChildSurface) {
             &child_surface_frame.metadata.referenced_surfaces);
 
   allocator_.GenerateId();
-  LocalSurfaceId child_local_surface_id = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId child_local_surface_id =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId child_surface_id(child_support_->frame_sink_id(),
                              child_local_surface_id);
   child_support_->SubmitCompositorFrame(child_local_surface_id,
@@ -3704,7 +3910,8 @@ TEST_F(SurfaceAggregatorValidSurfaceTest,
             &child_surface_frame.metadata.referenced_surfaces);
 
   allocator_.GenerateId();
-  LocalSurfaceId child_local_surface_id = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId child_local_surface_id =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId child_surface_id(child_support_->frame_sink_id(),
                              child_local_surface_id);
   child_support_->SubmitCompositorFrame(child_local_surface_id,
@@ -3742,7 +3949,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest,
       Pass(grand_child_quads, 1, SurfaceSize())};
   allocator_.GenerateId();
   LocalSurfaceId grand_child_local_surface_id =
-      allocator_.GetCurrentLocalSurfaceId();
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId grand_child_surface_id(grand_child_support->frame_sink_id(),
                                    grand_child_local_surface_id);
   {
@@ -3823,7 +4030,8 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, HasDamageFromRenderPassQuads) {
             &child_frame.metadata.referenced_surfaces);
 
   allocator_.GenerateId();
-  LocalSurfaceId child_local_surface_id = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId child_local_surface_id =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId child_surface_id(child_support_->frame_sink_id(),
                              child_local_surface_id);
   child_support_->SubmitCompositorFrame(child_local_surface_id,
@@ -3991,7 +4199,8 @@ TEST_F(SurfaceAggregatorValidSurfaceTest,
             &child_frame.metadata.referenced_surfaces);
 
   allocator_.GenerateId();
-  LocalSurfaceId child_local_surface_id = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId child_local_surface_id =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId child_surface_id(child_support_->frame_sink_id(),
                              child_local_surface_id);
   child_support_->SubmitCompositorFrame(child_local_surface_id,
@@ -4081,11 +4290,112 @@ TEST_F(SurfaceAggregatorValidSurfaceTest,
   }
 }
 
+// Tests that the damage rect from a child surface is clipped before
+// aggregated with the parent damage rect when clipping is on
+TEST_F(SurfaceAggregatorValidSurfaceTest, DamageRectWithClippedChildSurface) {
+  std::vector<Quad> child_surface_quads = {
+      Quad::SolidColorQuad(SK_ColorRED, gfx::Rect(SurfaceSize()))};
+  std::vector<Pass> child_surface_passes = {
+      Pass(child_surface_quads, 1, SurfaceSize())};
+
+  CompositorFrame child_surface_frame = MakeEmptyCompositorFrame();
+  AddPasses(&child_surface_frame.render_pass_list, child_surface_passes,
+            &child_surface_frame.metadata.referenced_surfaces);
+
+  allocator_.GenerateId();
+  LocalSurfaceId child_local_surface_id =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
+  SurfaceId child_surface_id(child_support_->frame_sink_id(),
+                             child_local_surface_id);
+  child_support_->SubmitCompositorFrame(child_local_surface_id,
+                                        std::move(child_surface_frame));
+
+  // root surface quads
+  std::vector<Quad> root_surface_quads = {
+      Quad::SurfaceQuad(SurfaceRange(base::nullopt, child_surface_id),
+                        SK_ColorWHITE, gfx::Rect(SurfaceSize()), false)};
+  std::vector<Pass> root_passes = {Pass(root_surface_quads, 1, SurfaceSize())};
+
+  CompositorFrame root_frame = MakeEmptyCompositorFrame();
+  AddPasses(&root_frame.render_pass_list, root_passes,
+            &root_frame.metadata.referenced_surfaces);
+
+  SurfaceId root_surface_id(support_->frame_sink_id(), root_local_surface_id_);
+  support_->SubmitCompositorFrame(root_local_surface_id_,
+                                  std::move(root_frame));
+  // The damage rect of the very first frame is always the full rect
+  CompositorFrame aggregated_frame =
+      aggregator_.Aggregate(root_surface_id, GetNextDisplayTimeAndIncrement());
+
+  // Parameters used for damage rect testing
+  gfx::Transform transform(0.5, 0, 0, 0.5, 20, 0);
+  gfx::Rect clip_rect = gfx::Rect(30, 30, 40, 40);
+
+  // Clipping is off
+  {
+    CompositorFrame child_surface_frame = MakeEmptyCompositorFrame();
+    AddPasses(&child_surface_frame.render_pass_list, child_surface_passes,
+              &child_surface_frame.metadata.referenced_surfaces);
+    child_support_->SubmitCompositorFrame(child_local_surface_id,
+                                          std::move(child_surface_frame));
+
+    CompositorFrame root_frame = MakeEmptyCompositorFrame();
+    AddPasses(&root_frame.render_pass_list, root_passes,
+              &root_frame.metadata.referenced_surfaces);
+    auto* root_render_pass = root_frame.render_pass_list[0].get();
+    auto* surface_quad_sqs = root_render_pass->shared_quad_state_list.front();
+    surface_quad_sqs->quad_to_target_transform = transform;
+    surface_quad_sqs->is_clipped = false;
+    // Set the root damage rect to empty. Only the child surface will be tested.
+    root_render_pass->damage_rect = gfx::Rect();
+    support_->SubmitCompositorFrame(root_local_surface_id_,
+                                    std::move(root_frame));
+
+    CompositorFrame aggregated_frame = aggregator_.Aggregate(
+        root_surface_id, GetNextDisplayTimeAndIncrement());
+
+    // The root damage rect should be the size of the child surface damage rect
+    gfx::Rect expected_damage_rect(20, 0, 50, 50);
+    EXPECT_EQ(aggregated_frame.render_pass_list[0]->damage_rect,
+              expected_damage_rect);
+  }
+  // Clipping is on
+  {
+    CompositorFrame child_surface_frame = MakeEmptyCompositorFrame();
+    AddPasses(&child_surface_frame.render_pass_list, child_surface_passes,
+              &child_surface_frame.metadata.referenced_surfaces);
+    child_support_->SubmitCompositorFrame(child_local_surface_id,
+                                          std::move(child_surface_frame));
+
+    CompositorFrame root_frame = MakeEmptyCompositorFrame();
+    AddPasses(&root_frame.render_pass_list, root_passes,
+              &root_frame.metadata.referenced_surfaces);
+    auto* root_render_pass = root_frame.render_pass_list[0].get();
+    auto* surface_quad_sqs = root_render_pass->shared_quad_state_list.front();
+    surface_quad_sqs->quad_to_target_transform = transform;
+    surface_quad_sqs->is_clipped = true;
+    surface_quad_sqs->clip_rect = clip_rect;
+    root_render_pass->damage_rect = gfx::Rect();
+    support_->SubmitCompositorFrame(root_local_surface_id_,
+                                    std::move(root_frame));
+
+    CompositorFrame aggregated_frame = aggregator_.Aggregate(
+        root_surface_id, GetNextDisplayTimeAndIncrement());
+
+    // The root damage rect should be the size of the clipped child surface
+    // damage rect
+    gfx::Rect expected_damage_rect(30, 30, 40, 20);
+    EXPECT_EQ(aggregated_frame.render_pass_list[0]->damage_rect,
+              expected_damage_rect);
+  }
+}
+
 // Tests that quads outside the damage rect are not ignored for cached render
 // pass.
 TEST_F(SurfaceAggregatorPartialSwapTest, NotIgnoreOutsideForCachedRenderPass) {
   allocator_.GenerateId();
-  LocalSurfaceId child_local_surface_id = allocator_.GetCurrentLocalSurfaceId();
+  LocalSurfaceId child_local_surface_id =
+      allocator_.GetCurrentLocalSurfaceIdAllocation().local_surface_id();
   SurfaceId child_surface_id(child_support_->frame_sink_id(),
                              child_local_surface_id);
   // The child surface has two quads, one with a visible rect of 15,15 6x6 and

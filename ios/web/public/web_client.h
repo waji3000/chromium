@@ -17,7 +17,7 @@
 #include "base/values.h"
 #include "ios/web/public/user_agent.h"
 #include "mojo/public/cpp/system/message_pipe.h"
-#include "services/service_manager/public/cpp/embedded_service_info.h"
+#include "services/service_manager/public/mojom/service.mojom.h"
 #include "ui/base/layout.h"
 #include "url/url_util.h"
 
@@ -32,6 +32,10 @@ class GURL;
 
 namespace net {
 class SSLInfo;
+}
+
+namespace service_manager {
+class Service;
 }
 
 namespace web {
@@ -136,11 +140,10 @@ class WebClient {
   virtual NSString* GetDocumentStartScriptForMainFrame(
       BrowserState* browser_state) const;
 
-  using StaticServiceMap =
-      std::map<std::string, service_manager::EmbeddedServiceInfo>;
-
-  // Registers services to be loaded by the Service Manager.
-  virtual void RegisterServices(StaticServiceMap* services) {}
+  // Handles an incoming service request from the Service Manager.
+  virtual std::unique_ptr<service_manager::Service> HandleServiceRequest(
+      const std::string& service_name,
+      service_manager::mojom::ServiceRequest request);
 
   // Allows the embedder to provide a dictionary loaded from a JSON file
   // resembling a service manifest whose capabilities section will be merged

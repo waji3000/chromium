@@ -33,6 +33,7 @@
 
 #include <iosfwd>
 #include <limits>
+#include "base/compiler_specific.h"
 #include "base/numerics/safe_conversions.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
@@ -45,7 +46,7 @@ namespace blink {
 #if DCHECK_IS_ON()
 #define REPORT_OVERFLOW(doesOverflow)                                          \
   DLOG_IF(ERROR, !(doesOverflow)) << "LayoutUnit overflow !(" << #doesOverflow \
-                                  << ") in " << WTF_PRETTY_FUNCTION
+                                  << ") in " << PRETTY_FUNCTION
 #else
 #define REPORT_OVERFLOW(doesOverflow) ((void)0)
 #endif
@@ -199,12 +200,12 @@ class LayoutUnit {
     return return_value;
   }
 
-  static const LayoutUnit Max() {
+  static constexpr LayoutUnit Max() {
     LayoutUnit m;
     m.value_ = std::numeric_limits<int>::max();
     return m;
   }
-  static const LayoutUnit Min() {
+  static constexpr LayoutUnit Min() {
     LayoutUnit m;
     m.value_ = std::numeric_limits<int>::min();
     return m;

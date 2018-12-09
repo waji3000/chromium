@@ -17,6 +17,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/post_task.h"
+#include "base/test/bind_test_util.h"
 #include "build/build_config.h"
 #include "content/browser/download/download_manager_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
@@ -29,9 +30,9 @@
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/browser/site_isolation_policy.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/previews_state.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/common/url_loader_throttle.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
@@ -41,6 +42,7 @@
 #include "content/shell/browser/shell.h"
 #include "content/shell/browser/shell_content_browser_client.h"
 #include "content/shell/browser/shell_network_delegate.h"
+#include "content/test/test_content_browser_client.h"
 #include "net/base/filename_util.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
@@ -307,6 +309,12 @@ std::unique_ptr<net::test_server::HttpResponse> CancelOnRequest(
 // URLRequest, which passes the error on ResourceLoader teardown, rather than in
 // response to call to AsyncResourceHandler::OnResponseComplete.
 IN_PROC_BROWSER_TEST_F(LoaderBrowserTest, SyncXMLHttpRequest_Cancelled) {
+  // If network service is running in-process, we can't simulate a crash.
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService) &&
+      IsNetworkServiceRunningInProcess()) {
+    return;
+  }
+
   embedded_test_server()->RegisterRequestHandler(base::Bind(
       &CancelOnRequest, "/hung",
       shell()->web_contents()->GetMainFrame()->GetProcess()->GetID(),
@@ -724,7 +732,6 @@ IN_PROC_BROWSER_TEST_F(LoaderBrowserTest, RedirectToFileSystemURLBlocked) {
                    "/server-redirect?" + CreateFileSystemURL(shell()).spec())));
 }
 
-
 namespace {
 
 struct RequestData {
@@ -1133,6 +1140,156 @@ IN_PROC_BROWSER_TEST_F(LoaderBrowserTest,
     EXPECT_THAT(html_content.c_str(), Not(HasSubstr("cookie_A=A")));
     EXPECT_THAT(html_content.c_str(), HasSubstr("cookie_B=B"));
   }
+}
+
+class URLModifyingThrottle : public URLLoaderThrottle {
+ public:
+  URLModifyingThrottle(bool modify_start, bool modify_redirect)
+      : modify_start_(modify_start), modify_redirect_(modify_redirect) {}
+  ~URLModifyingThrottle() override = default;
+
+  void WillStartRequest(network::ResourceRequest* request,
+                        bool* defer) override {
+    if (!modify_start_)
+      return;
+
+    GURL::Replacements replacements;
+    replacements.SetQueryStr("foo=bar");
+    request->url = request->url.ReplaceComponents(replacements);
+    request->headers.SetHeader("Foo", "Bar");
+  }
+
+  void WillRedirectRequest(
+      net::RedirectInfo* redirect_info,
+      const network::ResourceResponseHead& response_head,
+      bool* defer,
+      std::vector<std::string>* to_be_removed_request_headers,
+      net::HttpRequestHeaders* modified_request_headers) override {
+    if (!modify_redirect_)
+      return;
+
+    modified_request_headers->SetHeader("Foo", "Bar");
+
+    // This is only supported if the network service is enabled.
+    if (!base::FeatureList::IsEnabled(network::features::kNetworkService))
+      return;
+
+    if (modified_redirect_url_)
+      return;  // Only need to do this once.
+
+    modified_redirect_url_ = true;
+    GURL::Replacements replacements;
+    replacements.SetQueryStr("foo=bar");
+    redirect_info->new_url =
+        redirect_info->new_url.ReplaceComponents(replacements);
+  }
+
+ private:
+  bool modify_start_;
+  bool modify_redirect_;
+  bool modified_redirect_url_ = false;
+
+  DISALLOW_COPY_AND_ASSIGN(URLModifyingThrottle);
+};
+
+class ThrottleContentBrowserClient : public TestContentBrowserClient {
+ public:
+  ThrottleContentBrowserClient(bool modify_start, bool modify_redirect)
+      : TestContentBrowserClient(),
+        modify_start_(modify_start),
+        modify_redirect_(modify_redirect) {}
+  ~ThrottleContentBrowserClient() override {}
+
+  // ContentBrowserClient overrides:
+  std::vector<std::unique_ptr<URLLoaderThrottle>> CreateURLLoaderThrottles(
+      const network::ResourceRequest& request,
+      ResourceContext* resource_context,
+      const base::RepeatingCallback<WebContents*()>& wc_getter,
+      NavigationUIData* navigation_ui_data,
+      int frame_tree_node_id) override {
+    std::vector<std::unique_ptr<URLLoaderThrottle>> throttles;
+    auto throttle =
+        std::make_unique<URLModifyingThrottle>(modify_start_, modify_redirect_);
+    throttles.push_back(std::move(throttle));
+    return throttles;
+  }
+
+ private:
+  bool modify_start_;
+  bool modify_redirect_;
+
+  DISALLOW_COPY_AND_ASSIGN(ThrottleContentBrowserClient);
+};
+
+// Ensures if a URLLoaderThrottle modifies a URL in WillStartRequest the new
+// request matches
+IN_PROC_BROWSER_TEST_F(LoaderBrowserTest, URLLoaderThrottleStartModify) {
+  base::Lock lock;
+  ThrottleContentBrowserClient content_browser_client(true, false);
+  auto* old_content_browser_client =
+      SetBrowserClientForTesting(&content_browser_client);
+
+  std::set<GURL> urls_requested;
+  std::map<GURL, net::test_server::HttpRequest::HeaderMap> header_map;
+  embedded_test_server()->RegisterRequestMonitor(base::BindLambdaForTesting(
+      [&](const net::test_server::HttpRequest& request) {
+        base::AutoLock auto_lock(lock);
+        urls_requested.insert(request.GetURL());
+        header_map[request.GetURL()] = request.headers;
+      }));
+
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  GURL url = embedded_test_server()->GetURL("/simple_page.html");
+  NavigateToURL(shell(), url);
+
+  {
+    GURL expected_url(url.spec() + "?foo=bar");
+    base::AutoLock auto_lock(lock);
+    ASSERT_TRUE(urls_requested.find(expected_url) != urls_requested.end());
+    ASSERT_TRUE(header_map[expected_url]["Foo"] == "Bar");
+  }
+
+  SetBrowserClientForTesting(old_content_browser_client);
+}
+
+// Ensures if a URLLoaderThrottle modifies a URL and headers in
+// WillRedirectRequest the new request matches.
+IN_PROC_BROWSER_TEST_F(LoaderBrowserTest, URLLoaderThrottleRedirectModify) {
+  base::Lock lock;
+  ThrottleContentBrowserClient content_browser_client(false, true);
+  auto* old_content_browser_client =
+      SetBrowserClientForTesting(&content_browser_client);
+
+  std::set<GURL> urls_requested;
+  std::map<GURL, net::test_server::HttpRequest::HeaderMap> header_map;
+  embedded_test_server()->RegisterRequestMonitor(base::BindLambdaForTesting(
+      [&](const net::test_server::HttpRequest& request) {
+        base::AutoLock auto_lock(lock);
+        urls_requested.insert(request.GetURL());
+        header_map[request.GetURL()] = request.headers;
+      }));
+
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  GURL url =
+      embedded_test_server()->GetURL("/server-redirect?simple_page.html");
+  NavigateToURL(shell(), url);
+
+  GURL expected_url;
+  // This is only supported if the network service is enabled.
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService))
+    expected_url = embedded_test_server()->GetURL("/simple_page.html?foo=bar");
+  else
+    expected_url = embedded_test_server()->GetURL("/simple_page.html");
+
+  {
+    base::AutoLock auto_lock(lock);
+    ASSERT_EQ(header_map[expected_url]["Foo"], "Bar");
+    ASSERT_NE(urls_requested.find(expected_url), urls_requested.end());
+  }
+
+  SetBrowserClientForTesting(old_content_browser_client);
 }
 
 }  // namespace content

@@ -95,12 +95,12 @@ TEST_F(NGBlockLayoutAlgorithmTest, Caching) {
   ScopedLayoutNGFragmentCachingForTest layout_ng_fragment_caching(true);
 
   SetBodyInnerHTML(R"HTML(
-    <div id="box" style="width:30px; height:40px"></div>
+    <div id="box" style="width:30px; height:40%;"></div>
   )HTML");
 
   NGConstraintSpace space = ConstructBlockLayoutTestConstraintSpace(
       WritingMode::kHorizontalTb, TextDirection::kLtr,
-      NGLogicalSize(LayoutUnit(100), NGSizeIndefinite));
+      NGLogicalSize(LayoutUnit(100), LayoutUnit(100)));
 
   LayoutBlockFlow* block_flow =
       ToLayoutBlockFlow(GetLayoutObjectByElementId("box"));
@@ -117,14 +117,22 @@ TEST_F(NGBlockLayoutAlgorithmTest, Caching) {
   // Test identical, but not pointer-equal, constraint space
   space = ConstructBlockLayoutTestConstraintSpace(
       WritingMode::kHorizontalTb, TextDirection::kLtr,
-      NGLogicalSize(LayoutUnit(100), NGSizeIndefinite));
+      NGLogicalSize(LayoutUnit(100), LayoutUnit(100)));
   result = block_flow->CachedLayoutResult(space, nullptr);
   EXPECT_NE(result.get(), nullptr);
 
   // Test different constraint space
   space = ConstructBlockLayoutTestConstraintSpace(
       WritingMode::kHorizontalTb, TextDirection::kLtr,
-      NGLogicalSize(LayoutUnit(200), NGSizeIndefinite));
+      NGLogicalSize(LayoutUnit(200), LayoutUnit(100)));
+  result = block_flow->CachedLayoutResult(space, nullptr);
+  EXPECT_NE(result.get(), nullptr);
+
+  // Test a different constraint space that will actually result in a different
+  // size.
+  space = ConstructBlockLayoutTestConstraintSpace(
+      WritingMode::kHorizontalTb, TextDirection::kLtr,
+      NGLogicalSize(LayoutUnit(200), LayoutUnit(200)));
   result = block_flow->CachedLayoutResult(space, nullptr);
   EXPECT_EQ(result.get(), nullptr);
 
@@ -747,7 +755,7 @@ TEST_F(NGBlockLayoutAlgorithmTest, CollapsingMarginsEmptyBlockWithClearance) {
     MutableStyleForElement(inflow_element)->SetMarginTop(inflow_margin_top);
     inflow_element->GetLayoutObject()->SetNeedsLayout("");
 
-    GetDocument().View()->UpdateAllLifecyclePhases();
+    UpdateAllLifecyclePhasesForTest();
 
     LayoutNGBlockFlow* child;
     // #float
@@ -1100,14 +1108,12 @@ TEST_F(NGBlockLayoutAlgorithmTest, PositionFloatInsideEmptyBlocks) {
           ->MutableSet();
   ASSERT_EQ(2UL, floating_objects.size());
   auto left_floating_object = floating_objects.TakeFirst();
-  ASSERT_TRUE(left_floating_object->IsPlaced());
   // 80 = float_inline_offset(25) + accumulative offset of empty blocks(35 + 20)
   EXPECT_THAT(left_floating_object->X(), LayoutUnit(15));
   // 10 = left float's margin
   EXPECT_THAT(left_floating_object->Y(), LayoutUnit());
 
   auto right_floating_object = floating_objects.TakeFirst();
-  ASSERT_TRUE(right_floating_object->IsPlaced());
   // 150 = float_inline_offset(25) +
   //       right float offset(125)
   EXPECT_THAT(right_floating_object->X(), LayoutUnit(140));
@@ -2296,7 +2302,7 @@ TEST_F(NGBlockLayoutAlgorithmTest, RootFragmentOffsetInsideLegacy) {
     </div>
   )HTML");
 
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   const LayoutObject* innerNGRoot = GetLayoutObjectByElementId("innerNGRoot");
 
   ASSERT_TRUE(innerNGRoot->IsLayoutNGMixin());
@@ -2316,7 +2322,7 @@ TEST_F(NGBlockLayoutAlgorithmTest, DetailsFlexDoesntCrash) {
   SetBodyInnerHTML(R"HTML(
     <details style="display:flex"></details>
   )HTML");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   // No crash is good.
 }
 

@@ -32,6 +32,9 @@ def main():
   parser.add_argument('--gtest_repeat',
                       help='GTest repeat value to use. This also disables the '
                            'test launcher timeout.')
+  parser.add_argument('--test-launcher-retry-limit',
+                      help='Number of times that test suite will retry failing '
+                           'tests. This is multiplicative with --gtest_repeat.')
   parser.add_argument('--gtest_break_on_failure', action='store_true',
                       default=False,
                       help='Should GTest break on failure; useful with '
@@ -60,12 +63,18 @@ def main():
                       help='Enable Chrome test server spawner.')
   parser.add_argument('child_args', nargs='*',
                       help='Arguments for the test process.')
+  parser.add_argument('--test-launcher-bot-mode', action='store_true',
+                      default=False,
+                      help='Informs the TestLauncher to that it should enable '
+                      'special allowances for running on a test bot.')
   args = parser.parse_args()
   ConfigureLogging(args)
 
   child_args = ['--test-launcher-retry-limit=0']
   if args.single_process_tests:
     child_args.append('--single-process-tests')
+  if args.test_launcher_bot_mode:
+    child_args.append('--test-launcher-bot-mode')
   if args.test_launcher_batch_limit:
     child_args.append('--test-launcher-batch-limit=%d' %
                        args.test_launcher_batch_limit)
@@ -79,6 +88,9 @@ def main():
   if args.gtest_repeat:
     child_args.append('--gtest_repeat=' + args.gtest_repeat)
     child_args.append('--test-launcher-timeout=-1')
+  if args.test_launcher_retry_limit:
+    child_args.append(
+        '--test-launcher-retry-limit=' + args.test_launcher_retry_limit)
   if args.gtest_break_on_failure:
     child_args.append('--gtest_break_on_failure')
   if args.child_args:

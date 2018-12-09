@@ -9,29 +9,19 @@
 #include "base/memory/weak_ptr.h"
 #include "base/optional.h"
 #include "base/values.h"
+#include "chromeos/components/multidevice/remote_device_ref.h"
 #include "chromeos/components/proximity_auth/logging/log_buffer.h"
 #include "chromeos/components/proximity_auth/messenger_observer.h"
 #include "chromeos/components/proximity_auth/proximity_auth_client.h"
 #include "chromeos/components/proximity_auth/remote_device_life_cycle.h"
 #include "chromeos/services/device_sync/public/cpp/device_sync_client.h"
 #include "chromeos/services/secure_channel/public/cpp/client/secure_channel_client.h"
-#include "components/cryptauth/connection_observer.h"
-#include "components/cryptauth/cryptauth_client.h"
-#include "components/cryptauth/cryptauth_device_manager.h"
-#include "components/cryptauth/cryptauth_enrollment_manager.h"
-#include "components/cryptauth/cryptauth_gcm_manager.h"
 #include "components/cryptauth/network_request_error.h"
-#include "components/cryptauth/remote_device_ref.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
 namespace base {
 class ListValue;
 }
-
-namespace cryptauth {
-class ExternalDeviceInfo;
-class RemoteDeviceLoader;
-}  // namespace cryptauth
 
 namespace proximity_auth {
 
@@ -42,14 +32,11 @@ struct RemoteStatusUpdate;
 class ProximityAuthWebUIHandler
     : public content::WebUIMessageHandler,
       public LogBuffer::Observer,
-      public cryptauth::CryptAuthEnrollmentManager::Observer,
-      public cryptauth::CryptAuthDeviceManager::Observer,
       public chromeos::device_sync::DeviceSyncClient::Observer,
       public RemoteDeviceLifeCycle::Observer,
       public MessengerObserver {
  public:
   ProximityAuthWebUIHandler(
-      ProximityAuthClient* proximity_auth_client,
       chromeos::device_sync::DeviceSyncClient* device_sync_client,
       chromeos::secure_channel::SecureChannelClient* secure_channel_client);
   ~ProximityAuthWebUIHandler() override;
@@ -61,16 +48,6 @@ class ProximityAuthWebUIHandler
   // LogBuffer::Observer:
   void OnLogMessageAdded(const LogBuffer::LogMessage& log_message) override;
   void OnLogBufferCleared() override;
-
-  // CryptAuthEnrollmentManager::Observer:
-  void OnEnrollmentStarted() override;
-  void OnEnrollmentFinished(bool success) override;
-
-  // CryptAuthDeviceManager::Observer:
-  void OnSyncStarted() override;
-  void OnSyncFinished(cryptauth::CryptAuthDeviceManager::SyncResult sync_result,
-                      cryptauth::CryptAuthDeviceManager::DeviceChangeResult
-                          device_change_result) override;
 
   // chromeos::device_sync::DeviceSyncClient::Observer:
   void OnEnrollmentFinished() override;
@@ -87,29 +64,12 @@ class ProximityAuthWebUIHandler
   void ForceDeviceSync(const base::ListValue* args);
   void ToggleConnection(const base::ListValue* args);
 
-  // Initializes CryptAuth managers, used for development purposes.
-  void InitGCMManager();
-  void InitEnrollmentManager();
-  void InitDeviceManager();
-
-  void OnCryptAuthClientError(cryptauth::NetworkRequestError error);
-  void OnEasyUnlockToggled(const cryptauth::ToggleEasyUnlockResponse& response);
-
-  void OnFoundEligibleUnlockDevices(
-      const cryptauth::FindEligibleUnlockDevicesResponse& response);
-
-  // Called when the RemoteDevice is loaded so we can create a connection.
-  void OnRemoteDevicesLoaded(const cryptauth::RemoteDeviceList& remote_devices);
-
-  void StartRemoteDeviceLifeCycle(cryptauth::RemoteDeviceRef remote_device);
+  void StartRemoteDeviceLifeCycle(
+      chromeos::multidevice::RemoteDeviceRef remote_device);
   void CleanUpRemoteDeviceLifeCycle();
 
-  std::unique_ptr<base::DictionaryValue> ExternalDeviceInfoToDictionary(
-      const cryptauth::ExternalDeviceInfo& device_info);
   std::unique_ptr<base::DictionaryValue> RemoteDeviceToDictionary(
-      const cryptauth::RemoteDeviceRef& remote_device);
-  std::unique_ptr<base::DictionaryValue> IneligibleDeviceToDictionary(
-      const cryptauth::IneligibleDevice& ineligible_device);
+      const chromeos::multidevice::RemoteDeviceRef& remote_device);
 
   // RemoteDeviceLifeCycle::Observer:
   void OnLifeCycleStateChanged(RemoteDeviceLifeCycle::State old_state,
@@ -125,8 +85,8 @@ class ProximityAuthWebUIHandler
       chromeos::device_sync::mojom::NetworkRequestResult result_code);
   void OnFindEligibleDevices(
       chromeos::device_sync::mojom::NetworkRequestResult result_code,
-      cryptauth::RemoteDeviceRefList eligible_devices,
-      cryptauth::RemoteDeviceRefList ineligible_devices);
+      chromeos::multidevice::RemoteDeviceRefList eligible_devices,
+      chromeos::multidevice::RemoteDeviceRefList ineligible_devices);
   void OnGetDebugInfo(
       chromeos::device_sync::mojom::DebugInfoPtr debug_info_ptr);
 
@@ -144,22 +104,11 @@ class ProximityAuthWebUIHandler
       std::unique_ptr<base::ListValue> synced_devices);
 
   std::unique_ptr<base::Value> GetTruncatedLocalDeviceId();
-
-  // These two methods cannot be used if the chromeos::features::kMultiDeviceApi
-  // flag is enabled.
-  std::unique_ptr<base::DictionaryValue> GetEnrollmentStateDictionary();
-  std::unique_ptr<base::DictionaryValue> GetDeviceSyncStateDictionary();
-
   std::unique_ptr<base::ListValue> GetRemoteDevicesList();
 
   // The delegate used to fetch dependencies. Must outlive this instance.
-  ProximityAuthClient* proximity_auth_client_;
   chromeos::device_sync::DeviceSyncClient* device_sync_client_;
   chromeos::secure_channel::SecureChannelClient* secure_channel_client_;
-  std::unique_ptr<cryptauth::CryptAuthClientFactory> cryptauth_client_factory_;
-
-  // We only support one concurrent API call.
-  std::unique_ptr<cryptauth::CryptAuthClient> cryptauth_client_;
 
   // True if we get a message from the loaded WebContents to know that it is
   // initialized, and we can inject JavaScript.
@@ -167,8 +116,8 @@ class ProximityAuthWebUIHandler
 
   // Member variables for connecting to and authenticating the remote device.
   // TODO(tengs): Support multiple simultaenous connections.
-  std::unique_ptr<cryptauth::RemoteDeviceLoader> remote_device_loader_;
-  base::Optional<cryptauth::RemoteDeviceRef> selected_remote_device_;
+  base::Optional<chromeos::multidevice::RemoteDeviceRef>
+      selected_remote_device_;
   std::unique_ptr<RemoteDeviceLifeCycle> life_cycle_;
   std::unique_ptr<RemoteStatusUpdate> last_remote_status_update_;
 

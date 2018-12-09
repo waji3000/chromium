@@ -189,6 +189,22 @@ v8::Local<v8::Promise> ZxObjectWaitOne(gin::Arguments* args) {
   return v8::Local<v8::Promise>();
 }
 
+v8::Local<v8::Value> ZxChannelCreate(gin::Arguments* args) {
+  zx_handle_t channel0, channel1;
+  zx_status_t status = zx_channel_create(0, &channel0, &channel1);
+  if (status != ZX_OK) {
+    return gin::DataObjectBuilder(args->isolate())
+        .Set("status", status)
+        .Build();
+  }
+
+  return gin::DataObjectBuilder(args->isolate())
+      .Set("status", status)
+      .Set("first", channel0)
+      .Set("second", channel1)
+      .Build();
+}
+
 zx_status_t ZxChannelWrite(gin::Arguments* args) {
   zx_handle_t handle;
   if (!args->GetNext(&handle)) {
@@ -240,7 +256,6 @@ v8::Local<v8::Object> ZxChannelRead(gin::Arguments* args) {
                     handles.data(), handles.size(), &actual_handles);
   DCHECK_EQ(actual_bytes, data_size);
   DCHECK_EQ(actual_handles, num_handles);
-  CHECK_EQ(actual_handles, 0u) << "Handle passing untested";
 
   if (status != ZX_OK) {
     return gin::DataObjectBuilder(args->isolate())
@@ -346,23 +361,48 @@ ZxBindings::ZxBindings(v8::Isolate* isolate, v8::Local<v8::Object> global)
   SET_CONSTANT(ZX_ERR_CONNECTION_RESET);
   SET_CONSTANT(ZX_ERR_CONNECTION_ABORTED);
 
+  v8::Local<v8::Context> context = isolate->GetCurrentContext();
+
   // Handle APIs.
-  global->Set(
-      gin::StringToSymbol(isolate, "$ZxObjectWaitOne"),
-      gin::CreateFunctionTemplate(isolate, base::BindRepeating(ZxObjectWaitOne))
-          ->GetFunction());
+  global
+      ->Set(context, gin::StringToSymbol(isolate, "$ZxObjectWaitOne"),
+            gin::CreateFunctionTemplate(isolate,
+                                        base::BindRepeating(ZxObjectWaitOne))
+                ->GetFunction(context)
+                .ToLocalChecked())
+      .ToChecked();
+  global
+      ->Set(context, gin::StringToSymbol(isolate, "$zx_handle_close"),
+            gin::CreateFunctionTemplate(isolate,
+                                        base::BindRepeating(zx_handle_close))
+                ->GetFunction(context)
+                .ToLocalChecked())
+      .ToChecked();
   SET_CONSTANT(ZX_HANDLE_INVALID);
   SET_CONSTANT(ZX_TIME_INFINITE);
 
   // Channel APIs.
-  global->Set(
-      gin::StringToSymbol(isolate, "$ZxChannelWrite"),
-      gin::CreateFunctionTemplate(isolate, base::BindRepeating(&ZxChannelWrite))
-          ->GetFunction());
-  global->Set(
-      gin::StringToSymbol(isolate, "$ZxChannelRead"),
-      gin::CreateFunctionTemplate(isolate, base::BindRepeating(&ZxChannelRead))
-          ->GetFunction());
+  global
+      ->Set(context, gin::StringToSymbol(isolate, "$ZxChannelCreate"),
+            gin::CreateFunctionTemplate(isolate,
+                                        base::BindRepeating(&ZxChannelCreate))
+                ->GetFunction(context)
+                .ToLocalChecked())
+      .ToChecked();
+  global
+      ->Set(context, gin::StringToSymbol(isolate, "$ZxChannelWrite"),
+            gin::CreateFunctionTemplate(isolate,
+                                        base::BindRepeating(&ZxChannelWrite))
+                ->GetFunction(context)
+                .ToLocalChecked())
+      .ToChecked();
+  global
+      ->Set(context, gin::StringToSymbol(isolate, "$ZxChannelRead"),
+            gin::CreateFunctionTemplate(isolate,
+                                        base::BindRepeating(&ZxChannelRead))
+                ->GetFunction(context)
+                .ToLocalChecked())
+      .ToChecked();
   SET_CONSTANT(ZX_CHANNEL_READABLE);
   SET_CONSTANT(ZX_CHANNEL_WRITABLE);
   SET_CONSTANT(ZX_CHANNEL_PEER_CLOSED);
@@ -372,14 +412,20 @@ ZxBindings::ZxBindings(v8::Isolate* isolate, v8::Local<v8::Object> global)
 
   // Utilities to make string handling easier to convert to/from UCS-2 (JS) <->
   // UTF-8 (FIDL).
-  global->Set(
-      gin::StringToSymbol(isolate, "$FidlJsStrToUtf8Array"),
-      gin::CreateFunctionTemplate(isolate, base::BindRepeating(&StrToUtf8Array))
-          ->GetFunction());
-  global->Set(
-      gin::StringToSymbol(isolate, "$FidlJsUtf8ArrayToStr"),
-      gin::CreateFunctionTemplate(isolate, base::BindRepeating(&Utf8ArrayToStr))
-          ->GetFunction());
+  global
+      ->Set(context, gin::StringToSymbol(isolate, "$FidlJsStrToUtf8Array"),
+            gin::CreateFunctionTemplate(isolate,
+                                        base::BindRepeating(&StrToUtf8Array))
+                ->GetFunction(context)
+                .ToLocalChecked())
+      .ToChecked();
+  global
+      ->Set(context, gin::StringToSymbol(isolate, "$FidlJsUtf8ArrayToStr"),
+            gin::CreateFunctionTemplate(isolate,
+                                        base::BindRepeating(&Utf8ArrayToStr))
+                ->GetFunction(context)
+                .ToLocalChecked())
+      .ToChecked();
 
 #undef SET_CONSTANT
 }

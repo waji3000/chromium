@@ -100,47 +100,55 @@ InitSessionParams::~InitSessionParams() {}
 
 namespace {
 
+// Creates a JSON object (represented by base::DictionaryValue) that contains
+// the capabilities, for returning to the client app as the result of New
+// Session command.
 std::unique_ptr<base::DictionaryValue> CreateCapabilities(
     Session* session,
-    const Capabilities& capabilities) {
+    const Capabilities& capabilities,
+    const base::DictionaryValue& desired_caps) {
   std::unique_ptr<base::DictionaryValue> caps(new base::DictionaryValue());
-  caps->SetString("browserName", "chrome");
-  caps->SetString("version",
-                  session->chrome->GetBrowserInfo()->browser_version);
-  caps->SetString("chrome.chromedriverVersion", kChromeDriverVersion);
-  caps->SetString(
-      "goog:chromeOptions.debuggerAddress",
-      session->chrome->GetBrowserInfo()->debugger_address.ToString());
-  caps->SetString("platform", session->chrome->GetOperatingSystemName());
-  caps->SetString("pageLoadStrategy", session->chrome->page_load_strategy());
-  caps->SetBoolean("javascriptEnabled", true);
-  caps->SetBoolean("takesScreenshot", true);
-  caps->SetBoolean("takesHeapSnapshot", true);
-  caps->SetBoolean("handlesAlerts", true);
-  caps->SetBoolean("databaseEnabled", false);
-  caps->SetBoolean("locationContextEnabled", true);
-  caps->SetBoolean("mobileEmulationEnabled",
-                   session->chrome->IsMobileEmulationEnabled());
-  caps->SetBoolean("applicationCacheEnabled", false);
-  caps->SetBoolean("browserConnectionEnabled", false);
-  caps->SetBoolean("cssSelectorsEnabled", true);
-  caps->SetBoolean("webStorageEnabled", true);
-  caps->SetBoolean("rotatable", false);
-  caps->SetBoolean("acceptSslCerts", capabilities.accept_insecure_certs);
-  caps->SetBoolean("acceptInsecureCerts", capabilities.accept_insecure_certs);
-  caps->SetBoolean("nativeEvents", true);
-  caps->SetBoolean("hasTouchScreen", session->chrome->HasTouchScreen());
-  caps->SetString(session->w3c_compliant ? "unhandledPromptBehavior"
-                                         : "unexpectedAlertBehaviour",
-                  session->unhandled_prompt_behavior);
 
+  // Capabilities defined by W3C. Some of these capabilities have different
+  // names in legacy mode.
+  caps->SetString("browserName", "chrome");
+  caps->SetString(session->w3c_compliant ? "browserVersion" : "version",
+                  session->chrome->GetBrowserInfo()->browser_version);
+  if (session->w3c_compliant)
+    caps->SetString(
+        "platformName",
+        base::ToLowerASCII(session->chrome->GetOperatingSystemName()));
+  else
+    caps->SetString("platform", session->chrome->GetOperatingSystemName());
+  caps->SetString("pageLoadStrategy", session->chrome->page_load_strategy());
+  caps->SetBoolean("acceptInsecureCerts", capabilities.accept_insecure_certs);
+  const base::Value* proxy = desired_caps.FindKey("proxy");
+  if (proxy == nullptr || proxy->is_none())
+    caps->SetKey("proxy", base::Value(base::Value::Type::DICTIONARY));
+  else
+    caps->SetKey("proxy", proxy->Clone());
   // add setWindowRect based on whether we are desktop/android/remote
   if (capabilities.IsAndroid() || capabilities.IsRemoteBrowser()) {
     caps->SetBoolean("setWindowRect", false);
   } else {
     caps->SetBoolean("setWindowRect", true);
   }
+  caps->SetInteger("timeouts.script", session->script_timeout.InMilliseconds());
+  caps->SetInteger("timeouts.pageLoad",
+                   session->page_load_timeout.InMilliseconds());
+  caps->SetInteger("timeouts.implicit",
+                   session->implicit_wait.InMilliseconds());
+  caps->SetBoolean("strictFileInteractability",
+                    session->strict_file_interactability);
+  caps->SetString(session->w3c_compliant ? "unhandledPromptBehavior"
+                                         : "unexpectedAlertBehaviour",
+                  session->unhandled_prompt_behavior);
 
+  // Chrome-specific extensions.
+  caps->SetString("chrome.chromedriverVersion", kChromeDriverVersion);
+  caps->SetString(
+      "goog:chromeOptions.debuggerAddress",
+      session->chrome->GetBrowserInfo()->debugger_address.ToString());
   ChromeDesktopImpl* desktop = NULL;
   Status status = session->chrome->GetAsDesktop(&desktop);
   if (status.IsOk()) {
@@ -148,6 +156,26 @@ std::unique_ptr<base::DictionaryValue> CreateCapabilities(
                     desktop->command().GetSwitchValueNative("user-data-dir"));
     caps->SetBoolean("networkConnectionEnabled",
                      desktop->IsNetworkConnectionEnabled());
+  }
+
+  // Legacy capabilities.
+  if (!session->w3c_compliant) {
+    caps->SetBoolean("javascriptEnabled", true);
+    caps->SetBoolean("takesScreenshot", true);
+    caps->SetBoolean("takesHeapSnapshot", true);
+    caps->SetBoolean("handlesAlerts", true);
+    caps->SetBoolean("databaseEnabled", false);
+    caps->SetBoolean("locationContextEnabled", true);
+    caps->SetBoolean("mobileEmulationEnabled",
+                     session->chrome->IsMobileEmulationEnabled());
+    caps->SetBoolean("applicationCacheEnabled", false);
+    caps->SetBoolean("browserConnectionEnabled", false);
+    caps->SetBoolean("cssSelectorsEnabled", true);
+    caps->SetBoolean("webStorageEnabled", true);
+    caps->SetBoolean("rotatable", false);
+    caps->SetBoolean("acceptSslCerts", capabilities.accept_insecure_certs);
+    caps->SetBoolean("nativeEvents", true);
+    caps->SetBoolean("hasTouchScreen", session->chrome->HasTouchScreen());
   }
 
   return caps;
@@ -231,19 +259,28 @@ Status InitSessionHelper(const InitSessionParams& bound_params,
   }
 
   Capabilities capabilities;
-  Status status = capabilities.Parse(*desired_caps);
+  Status status = capabilities.Parse(*desired_caps, session->w3c_compliant);
   if (status.IsError())
     return status;
   status = capabilities.CheckSupport();
   if (status.IsError())
     return status;
 
-  session->unhandled_prompt_behavior = capabilities.unhandled_prompt_behavior;
+  if (capabilities.unhandled_prompt_behavior.length() > 0) {
+    session->unhandled_prompt_behavior = capabilities.unhandled_prompt_behavior;
+  } else {
+    // W3C spec (https://www.w3.org/TR/webdriver/#dfn-handle-any-user-prompts)
+    // shows the default behavior to be dismiss and notify. For backward
+    // compatibility, in legacy mode default behavior is not handling prompt.
+    session->unhandled_prompt_behavior =
+        session->w3c_compliant ? kDismissAndNotify : kIgnore;
+  }
 
   session->implicit_wait = capabilities.implicit_wait_timeout;
   session->page_load_timeout = capabilities.page_load_timeout;
   session->script_timeout = capabilities.script_timeout;
-
+  session->strict_file_interactability =
+        capabilities.strict_file_interactability;
   Log::Level driver_level = Log::kWarning;
   if (capabilities.logging_prefs.count(WebDriverLog::kDriverType))
     driver_level = capabilities.logging_prefs[WebDriverLog::kDriverType];
@@ -285,7 +322,8 @@ Status InitSessionHelper(const InitSessionParams& bound_params,
     return status;
   session->detach = capabilities.detach;
   session->force_devtools_screenshot = capabilities.force_devtools_screenshot;
-  session->capabilities = CreateCapabilities(session, capabilities);
+  session->capabilities =
+      CreateCapabilities(session, capabilities, *desired_caps);
 
   if (session->w3c_compliant) {
     base::DictionaryValue body;
@@ -322,15 +360,15 @@ bool MergeCapabilities(const base::DictionaryValue* always_match,
   return true;
 }
 
+// Implementation of "matching capabilities", as defined in W3C spec at
+// https://www.w3.org/TR/webdriver/#dfn-matching-capabilities.
+// It checks some requested capabilities and make sure they are supported.
+// Currently, we only check "browserName", but more can be added as necessary.
 bool MatchCapabilities(const base::DictionaryValue* capabilities) {
-  // Attempt to match the capabilities requested to the actual capabilities.
-  // Reject if they don't match.
-  if (capabilities->HasKey("browserName")) {
-    std::string name;
-    capabilities->GetString("browserName", &name);
-    if (name != "chrome") {
+  const base::Value* name;
+  if (capabilities->Get("browserName", &name) && !name->is_none()) {
+    if (!(name->is_string() && name->GetString() == "chrome"))
       return false;
-    }
   }
   return true;
 }
@@ -485,7 +523,7 @@ Status ExecuteLaunchApp(Session* session,
                         std::unique_ptr<base::Value>* value) {
   std::string id;
   if (!params.GetString("id", &id))
-    return Status(kUnknownError, "'id' must be a string");
+    return Status(kInvalidArgument, "'id' must be a string");
 
   ChromeDesktopImpl* desktop = NULL;
   Status status = session->chrome->GetAsDesktop(&desktop);
@@ -557,7 +595,7 @@ Status ExecuteSwitchToWindow(Session* session,
       return Status(kInvalidArgument, "'handle' must be a string");
   } else {
     if (!params.GetString("name", &name))
-      return Status(kUnknownError, "'name' must be a string");
+      return Status(kInvalidArgument, "'name' must be a string");
   }
 
   std::list<std::string> web_view_ids;
@@ -652,10 +690,10 @@ Status ExecuteSetTimeoutLegacy(Session* session,
                                std::unique_ptr<base::Value>* value) {
   double ms_double;
   if (!params.GetDouble("ms", &ms_double))
-    return Status(kUnknownError, "'ms' must be a double");
+    return Status(kInvalidArgument, "'ms' must be a double");
   std::string type;
   if (!params.GetString("type", &type))
-    return Status(kUnknownError, "'type' must be a string");
+    return Status(kInvalidArgument, "'type' must be a string");
 
   base::TimeDelta timeout =
       base::TimeDelta::FromMilliseconds(static_cast<int>(ms_double));
@@ -668,7 +706,7 @@ Status ExecuteSetTimeoutLegacy(Session* session,
         ((timeout < base::TimeDelta()) ? Session::kDefaultPageLoadTimeout
                                        : timeout);
   } else {
-    return Status(kUnknownError, "unknown type of timeout:" + type);
+    return Status(kInvalidArgument, "unknown type of timeout:" + type);
   }
   return Status(kOk);
 }
@@ -725,7 +763,7 @@ Status ExecuteSetScriptTimeout(Session* session,
                                std::unique_ptr<base::Value>* value) {
   double ms;
   if (!params.GetDouble("ms", &ms) || ms < 0)
-    return Status(kUnknownError, "'ms' must be a non-negative number");
+    return Status(kInvalidArgument, "'ms' must be a non-negative number");
   session->script_timeout =
       base::TimeDelta::FromMilliseconds(static_cast<int>(ms));
   return Status(kOk);
@@ -736,7 +774,7 @@ Status ExecuteImplicitlyWait(Session* session,
                              std::unique_ptr<base::Value>* value) {
   double ms;
   if (!params.GetDouble("ms", &ms) || ms < 0)
-    return Status(kUnknownError, "'ms' must be a non-negative number");
+    return Status(kInvalidArgument, "'ms' must be a non-negative number");
   session->implicit_wait =
       base::TimeDelta::FromMilliseconds(static_cast<int>(ms));
   return Status(kOk);
@@ -832,7 +870,7 @@ Status ExecuteSetNetworkConnection(Session* session,
 
   int connection_type;
   if (!params.GetInteger("parameters.type", &connection_type))
-    return Status(kUnknownError, "invalid connection_type");
+    return Status(kInvalidArgument, "invalid connection_type");
 
   desktop->SetNetworkConnection(connection_type);
 
@@ -891,33 +929,6 @@ Status ExecuteSetNetworkConnection(Session* session,
   return Status(kOk);
 }
 
-// TODO(johnchen): There is no public method in Chrome or ChromeDesktopImpl to
-// get both size and position in one call. What we're doing now is kind of
-// wasteful, since both GetWindowPosition and GetWindowSize end up getting both
-// position and size, and then discard one of the two pieces.
-Status ExecuteGetWindowRect(Session* session,
-                            const base::DictionaryValue& params,
-                            std::unique_ptr<base::Value>* value) {
-  int x, y;
-  int width, height;
-
-  Status status = session->chrome->GetWindowPosition(session->window, &x, &y);
-  if (status.IsError())
-    return status;
-  status = session->chrome->GetWindowSize(session->window, &width, &height);
-
-  if (status.IsError())
-    return status;
-
-  base::DictionaryValue rect;
-  rect.SetInteger("x", x);
-  rect.SetInteger("y", y);
-  rect.SetInteger("width", width);
-  rect.SetInteger("height", height);
-  value->reset(rect.DeepCopy());
-  return Status(kOk);
-}
-
 Status ExecuteGetWindowPosition(Session* session,
                                 const base::DictionaryValue& params,
                                 std::unique_ptr<base::Value>* value) {
@@ -940,7 +951,7 @@ Status ExecuteSetWindowPosition(Session* session,
   double x = 0;
   double y = 0;
   if (!params.GetDouble("x", &x) || !params.GetDouble("y", &y))
-    return Status(kUnknownError, "missing or invalid 'x' or 'y'");
+    return Status(kInvalidArgument, "missing or invalid 'x' or 'y'");
 
   return session->chrome->SetWindowPosition(session->window,
                                             static_cast<int>(x),
@@ -964,35 +975,6 @@ Status ExecuteGetWindowSize(Session* session,
   return Status(kOk);
 }
 
-Status ExecuteSetWindowRect(Session* session,
-                            const base::DictionaryValue& params,
-                            std::unique_ptr<base::Value>* value) {
-  double width = 0;
-  double height = 0;
-  double x = 0;
-  double y = 0;
-
-  // to pass to the set window rect command
-  base::DictionaryValue rect_params;
-
-  // only set position if both x and y are given
-  if (params.GetDouble("x", &x) && params.GetDouble("y", &y)) {
-    rect_params.SetInteger("x", static_cast<int>(x));
-    rect_params.SetInteger("y", static_cast<int>(y));
-  }  // only set size if both height and width are given
-  if (params.GetDouble("width", &width) &&
-      params.GetDouble("height", &height)) {
-    rect_params.SetInteger("width", static_cast<int>(width));
-    rect_params.SetInteger("height", static_cast<int>(height));
-  }
-  Status status = session->chrome->SetWindowRect(session->window, rect_params);
-  if (status.IsError())
-    return status;
-
-  // return the current window rect
-  return ExecuteGetWindowRect(session, params, value);
-}
-
 Status ExecuteSetWindowSize(Session* session,
                             const base::DictionaryValue& params,
                             std::unique_ptr<base::Value>* value) {
@@ -1000,41 +982,11 @@ Status ExecuteSetWindowSize(Session* session,
   double height = 0;
   if (!params.GetDouble("width", &width) ||
       !params.GetDouble("height", &height))
-    return Status(kUnknownError, "missing or invalid 'width' or 'height'");
+    return Status(kInvalidArgument, "missing or invalid 'width' or 'height'");
 
   return session->chrome->SetWindowSize(session->window,
                                         static_cast<int>(width),
                                         static_cast<int>(height));
-}
-
-Status ExecuteMaximizeWindow(Session* session,
-                             const base::DictionaryValue& params,
-                             std::unique_ptr<base::Value>* value) {
-  Status status = session->chrome->MaximizeWindow(session->window);
-  if (status.IsError())
-    return status;
-
-  return ExecuteGetWindowRect(session, params, value);
-}
-
-Status ExecuteMinimizeWindow(Session* session,
-                             const base::DictionaryValue& params,
-                             std::unique_ptr<base::Value>* value) {
-  Status status = session->chrome->MinimizeWindow(session->window);
-  if (status.IsError())
-    return status;
-
-  return ExecuteGetWindowRect(session, params, value);
-}
-
-Status ExecuteFullScreenWindow(Session* session,
-                               const base::DictionaryValue& params,
-                               std::unique_ptr<base::Value>* value) {
-  Status status = session->chrome->FullScreenWindow(session->window);
-  if (status.IsError())
-    return status;
-
-  return ExecuteGetWindowRect(session, params, value);
 }
 
 Status ExecuteGetAvailableLogTypes(Session* session,
@@ -1056,7 +1008,7 @@ Status ExecuteGetLog(Session* session,
                      std::unique_ptr<base::Value>* value) {
   std::string log_type;
   if (!params.GetString("type", &log_type)) {
-    return Status(kUnknownError, "missing or invalid 'type'");
+    return Status(kInvalidArgument, "missing or invalid 'type'");
   }
 
   // Evaluate a JavaScript in the renderer process for the current tab, to flush
@@ -1079,7 +1031,7 @@ Status ExecuteGetLog(Session* session,
       return Status(kOk);
     }
   }
-  return Status(kUnknownError, "log type '" + log_type + "' not found");
+  return Status(kInvalidArgument, "log type '" + log_type + "' not found");
 }
 
 Status ExecuteUploadFile(Session* session,
@@ -1087,7 +1039,7 @@ Status ExecuteUploadFile(Session* session,
                          std::unique_ptr<base::Value>* value) {
   std::string base64_zip_data;
   if (!params.GetString("file", &base64_zip_data))
-    return Status(kUnknownError, "missing or invalid 'file'");
+    return Status(kInvalidArgument, "missing or invalid 'file'");
   std::string zip_data;
   if (!Base64Decode(base64_zip_data, &zip_data))
     return Status(kUnknownError, "unable to decode 'file'");
@@ -1124,7 +1076,7 @@ Status ExecuteSetAutoReporting(Session* session,
                                std::unique_ptr<base::Value>* value) {
   bool enabled;
   if (!params.GetBoolean("enabled", &enabled))
-    return Status(kUnknownError, "missing parameter 'enabled'");
+    return Status(kInvalidArgument, "missing parameter 'enabled'");
   session->auto_reporting_enabled = enabled;
   return Status(kOk);
 }

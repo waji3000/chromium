@@ -156,11 +156,11 @@ GREYElementInteraction* CellWithMatcher(id<GREYMatcher> matcher) {
   ios::ChromeBrowserState* browserState =
       chrome_test_util::GetOriginalBrowserState();
 
-  // Resets the Service associated with this browserState to a service with
-  // default providers. The previous service is deleted.
+  // Resets the Service associated with this browserState to a new service with
+  // no providers. The previous service is deleted.
   IOSChromeContentSuggestionsServiceFactory::GetInstance()->SetTestingFactory(
       browserState,
-      base::BindRepeating(&CreateChromeContentSuggestionsServiceWithProviders));
+      base::BindRepeating(&CreateChromeContentSuggestionsService));
   [super tearDown];
 }
 
@@ -305,12 +305,7 @@ GREYElementInteraction* CellWithMatcher(id<GREYMatcher> matcher) {
   if (!IsRegularXRegularSizeClass()) {
     // Test that the omnibox is still pinned to the top of the screen and
     // under the safe area.
-    CGFloat safeAreaTop = 0;
-    if (@available(iOS 11, *)) {
-      safeAreaTop = ntp_home::CollectionView().safeAreaInsets.top;
-    } else {
-      safeAreaTop = StatusBarHeight();
-    }
+    CGFloat safeAreaTop = ntp_home::CollectionView().safeAreaInsets.top;
 
     CGFloat contentOffset = ntp_home::CollectionView().contentOffset.y;
     CGFloat fakeOmniboxOrigin = ntp_home::FakeOmnibox().frame.origin.y;
@@ -503,10 +498,7 @@ GREYElementInteraction* CellWithMatcher(id<GREYMatcher> matcher) {
   [ChromeEarlGrey goBack];
 
   [[self class] closeAllTabs];
-  chrome_test_util::OpenNewTab();
-  // TODO(crbug.com/783192): ChromeEarlGrey should have a method to open a new
-  // tab and synchronize with the UI.
-  [[GREYUIThreadExecutor sharedInstance] drainUntilIdle];
+  [ChromeEarlGrey openNewTab];
 
   [[EarlGrey selectElementWithMatcher:
                  chrome_test_util::StaticTextWithAccessibilityLabel(pageTitle)]

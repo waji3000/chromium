@@ -175,8 +175,8 @@ IntersectionObserver* IntersectionObserver::Create(
   if (exception_state.HadException())
     return nullptr;
 
-  return new IntersectionObserver(delegate, root, root_margin, thresholds,
-                                  delay, track_visibility);
+  return MakeGarbageCollected<IntersectionObserver>(
+      delegate, root, root_margin, thresholds, delay, track_visibility);
 }
 
 IntersectionObserver* IntersectionObserver::Create(
@@ -185,7 +185,8 @@ IntersectionObserver* IntersectionObserver::Create(
     const IntersectionObserverInit* observer_init,
     ExceptionState& exception_state) {
   V8IntersectionObserverDelegate* delegate =
-      new V8IntersectionObserverDelegate(callback, script_state);
+      MakeGarbageCollected<V8IntersectionObserverDelegate>(callback,
+                                                           script_state);
   return Create(observer_init, *delegate, exception_state);
 }
 
@@ -198,10 +199,11 @@ IntersectionObserver* IntersectionObserver::Create(
     bool track_visibility,
     ExceptionState& exception_state) {
   IntersectionObserverDelegateImpl* intersection_observer_delegate =
-      new IntersectionObserverDelegateImpl(document, std::move(callback));
-  return new IntersectionObserver(*intersection_observer_delegate, nullptr,
-                                  root_margin, thresholds, delay,
-                                  track_visibility);
+      MakeGarbageCollected<IntersectionObserverDelegateImpl>(
+          document, std::move(callback));
+  return MakeGarbageCollected<IntersectionObserver>(
+      *intersection_observer_delegate, nullptr, root_margin, thresholds, delay,
+      track_visibility);
 }
 
 IntersectionObserver::IntersectionObserver(
@@ -278,7 +280,7 @@ void IntersectionObserver::observe(Element* target,
     return;
 
   IntersectionObservation* observation =
-      new IntersectionObservation(*this, *target);
+      MakeGarbageCollected<IntersectionObservation>(*this, *target);
   target->EnsureIntersectionObserverData().AddObservation(*observation);
   observations_.insert(observation);
   if (target->isConnected()) {

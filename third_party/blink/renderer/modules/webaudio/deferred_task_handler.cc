@@ -30,8 +30,9 @@
 #include "third_party/blink/renderer/modules/webaudio/audio_node_output.h"
 #include "third_party/blink/renderer/modules/webaudio/offline_audio_context.h"
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
+#include "third_party/blink/renderer/platform/scheduler/public/post_cancellable_task.h"
+#include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
-#include "third_party/blink/renderer/platform/web_task_runner.h"
 
 namespace blink {
 
@@ -156,7 +157,8 @@ void DeferredTaskHandler::UpdateAutomaticPullNodes() {
   }
 }
 
-void DeferredTaskHandler::ProcessAutomaticPullNodes(size_t frames_to_process) {
+void DeferredTaskHandler::ProcessAutomaticPullNodes(
+    uint32_t frames_to_process) {
   DCHECK(IsAudioThread());
 
   for (unsigned i = 0; i < rendering_automatic_pull_handlers_.size(); ++i) {
@@ -167,6 +169,7 @@ void DeferredTaskHandler::ProcessAutomaticPullNodes(size_t frames_to_process) {
 
 void DeferredTaskHandler::AddTailProcessingHandler(
     scoped_refptr<AudioHandler> handler) {
+  DCHECK(accepts_tail_processing_);
   AssertGraphOwner();
 
   if (!tail_processing_handlers_.Contains(handler)) {
@@ -181,7 +184,7 @@ void DeferredTaskHandler::RemoveTailProcessingHandler(AudioHandler* handler,
                                                       bool disable_outputs) {
   AssertGraphOwner();
 
-  size_t index = tail_processing_handlers_.Find(handler);
+  wtf_size_t index = tail_processing_handlers_.Find(handler);
   if (index != kNotFound) {
 #if DEBUG_AUDIONODE_REFERENCES > 1
     handler->RemoveTailProcessingDebug(disable_outputs);

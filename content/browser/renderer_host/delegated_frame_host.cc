@@ -50,8 +50,14 @@ DelegatedFrameHost::DelegatedFrameHost(const viz::FrameSinkId& frame_sink_id,
   ImageTransportFactory* factory = ImageTransportFactory::GetInstance();
   factory->GetContextFactory()->AddObserver(this);
   DCHECK(host_frame_sink_manager_);
+  viz::ReportFirstSurfaceActivation should_report_first_surface_activation =
+      viz::ReportFirstSurfaceActivation::kNo;
+#ifdef OS_CHROMEOS
+  should_report_first_surface_activation =
+      viz::ReportFirstSurfaceActivation::kYes;
+#endif
   host_frame_sink_manager_->RegisterFrameSinkId(
-      frame_sink_id_, this, viz::ReportFirstSurfaceActivation::kNo);
+      frame_sink_id_, this, should_report_first_surface_activation);
   host_frame_sink_manager_->EnableSynchronizationReporting(
       frame_sink_id_, "Compositing.MainFrameSynchronization.Duration");
   host_frame_sink_manager_->SetFrameSinkDebugLabel(frame_sink_id_,
@@ -79,8 +85,6 @@ void DelegatedFrameHost::WasShown(
     compositor_->RequestPresentationTimeForNextFrame(
         CreateTabSwitchingTimeRecorder(base::TimeTicks::Now()));
   }
-
-  frame_evictor_->SetVisible(true);
 
   // Use the default deadline to synchronize web content with browser UI.
   // TODO(fsamuel): Investigate if there is a better deadline to use here.
@@ -120,8 +124,10 @@ void DelegatedFrameHost::CopyFromCompositingSurface(
     // The CopyOutputRequest API does not allow fixing the output size. Instead
     // we have the set area and scale in such a way that it would result in the
     // desired output size.
-    if (!request->has_area())
-      request->set_area(gfx::Rect(surface_dip_size_));
+    if (!request->has_area()) {
+      request->set_area(gfx::Rect(gfx::ScaleToRoundedSize(
+          surface_dip_size_, client_->GetDeviceScaleFactor())));
+    }
     request->set_result_selection(gfx::Rect(output_size));
     const gfx::Rect& area = request->area();
     request->SetScaleRatio(
@@ -222,7 +228,12 @@ void DelegatedFrameHost::EmbedSurface(
     return;
   }
 
+#ifdef OS_CHROMEOS
+  if (seen_first_activation_)
+    frame_evictor_->OnNewSurfaceEmbedded();
+#else
   frame_evictor_->OnNewSurfaceEmbedded();
+#endif
 
   if (!primary_surface_id ||
       primary_surface_id->local_surface_id() != local_surface_id_) {
@@ -271,24 +282,9 @@ void DelegatedFrameHost::SubmitCompositorFrame(
                                   std::move(hit_test_region_list));
 }
 
-void DelegatedFrameHost::ClearDelegatedFrame() {
-  // Ensure that we are able to swap in a new blank frame to replace any old
-  // content. This will result in a white flash if we switch back to this
-  // content.
-  // https://crbug.com/739621
-  EvictDelegatedFrame();
-}
-
 void DelegatedFrameHost::DidReceiveCompositorFrameAck(
     const std::vector<viz::ReturnedResource>& resources) {
   renderer_compositor_frame_sink_->DidReceiveCompositorFrameAck(resources);
-}
-
-void DelegatedFrameHost::DidPresentCompositorFrame(
-    uint32_t presentation_token,
-    const gfx::PresentationFeedback& feedback) {
-  renderer_compositor_frame_sink_->DidPresentCompositorFrame(presentation_token,
-                                                             feedback);
 }
 
 void DelegatedFrameHost::ReclaimResources(
@@ -303,16 +299,24 @@ void DelegatedFrameHost::OnBeginFramePausedChanged(bool paused) {
 
 void DelegatedFrameHost::OnFirstSurfaceActivation(
     const viz::SurfaceInfo& surface_info) {
+#ifdef OS_CHROMEOS
+  if (!seen_first_activation_)
+    frame_evictor_->OnNewSurfaceEmbedded();
+  seen_first_activation_ = true;
+#else
   NOTREACHED();
+#endif
 }
 
 void DelegatedFrameHost::OnFrameTokenChanged(uint32_t frame_token) {
   client_->OnFrameTokenChanged(frame_token);
 }
 
-void DelegatedFrameHost::OnBeginFrame(const viz::BeginFrameArgs& args) {
+void DelegatedFrameHost::OnBeginFrame(
+    const viz::BeginFrameArgs& args,
+    const base::flat_map<uint32_t, gfx::PresentationFeedback>& feedbacks) {
   if (renderer_compositor_frame_sink_)
-    renderer_compositor_frame_sink_->OnBeginFrame(args);
+    renderer_compositor_frame_sink_->OnBeginFrame(args, feedbacks);
   client_->OnBeginFrame(args.frame_time);
 }
 
@@ -344,12 +348,19 @@ void DelegatedFrameHost::EvictDelegatedFrame() {
   if (!HasSavedFrame())
     return;
 
+  DCHECK(!client_->DelegatedFrameHostIsVisible());
   std::vector<viz::SurfaceId> surface_ids = {
-      viz::SurfaceId(frame_sink_id_, local_surface_id_)};
-  DCHECK(host_frame_sink_manager_);
-  host_frame_sink_manager_->EvictSurfaces(surface_ids);
+      client_->CollectSurfaceIdsForEviction()};
+  // This list could be empty if this frame is not in the frame tree (can happen
+  // during navigation, construction, destruction, or in unit tests).
+  if (!surface_ids.empty()) {
+    DCHECK(std::find(surface_ids.begin(), surface_ids.end(),
+                     GetCurrentSurfaceId()) != surface_ids.end());
+    DCHECK(host_frame_sink_manager_);
+    host_frame_sink_manager_->EvictSurfaces(surface_ids);
+  }
   frame_evictor_->OnSurfaceDiscarded();
-  client_->WasEvicted();
+  client_->InvalidateLocalSurfaceIdOnEviction();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

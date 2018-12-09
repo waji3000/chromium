@@ -31,16 +31,23 @@ class UiControllerAndroid : public UiController,
       const base::android::JavaParamRef<jobject>& webContents,
       const base::android::JavaParamRef<jobjectArray>& parameterNames,
       const base::android::JavaParamRef<jobjectArray>& parameterValues,
-      const base::android::JavaParamRef<jstring>& initialUrlString);
+      const base::android::JavaParamRef<jstring>& locale,
+      const base::android::JavaParamRef<jstring>& countryCode);
   ~UiControllerAndroid() override;
 
   // Overrides UiController:
   void SetUiDelegate(UiDelegate* ui_delegate) override;
   void ShowStatusMessage(const std::string& message) override;
+  std::string GetStatusMessage() override;
   void ShowOverlay() override;
   void HideOverlay() override;
   void Shutdown() override;
+  void ShutdownGracefully() override;
+  void Close() override;
   void UpdateScripts(const std::vector<ScriptHandle>& scripts) override;
+  void Choose(const std::vector<UiController::Choice>& choices,
+              base::OnceCallback<void(const std::string&)> callback) override;
+  void ForceChoose(const std::string& result) override;
   void ChooseAddress(
       base::OnceCallback<void(const std::string&)> callback) override;
   void ChooseCard(
@@ -51,9 +58,13 @@ class UiControllerAndroid : public UiController,
       const std::string& title,
       const std::vector<std::string>& supported_basic_card_networks) override;
   void HideDetails() override;
-  void ShowDetails(const DetailsProto& details) override;
+  void ShowDetails(const DetailsProto& details,
+                   base::OnceCallback<void(bool)> callback) override;
   void ShowProgressBar(int progress, const std::string& message) override;
   void HideProgressBar() override;
+  void UpdateTouchableArea(bool enabled,
+                           const std::vector<RectF>& areas) override;
+  std::string GetDebugContext() const override;
 
   // Overrides Client:
   std::string GetApiKey() override;
@@ -68,11 +79,22 @@ class UiControllerAndroid : public UiController,
   void InvalidateAccessToken(const std::string& access_token) override;
 
   // Called by Java.
+  void Start(JNIEnv* env,
+             const base::android::JavaParamRef<jobject>& jcaller,
+             const base::android::JavaParamRef<jstring>& initialUrlString);
   void Destroy(JNIEnv* env, const base::android::JavaParamRef<jobject>& obj);
+  void UpdateTouchableArea(JNIEnv* env,
+                           const base::android::JavaParamRef<jobject>& obj);
+  void OnUserInteractionInsideTouchableArea(
+      JNIEnv* env,
+      const base::android::JavaParamRef<jobject>& jcaller);
   void OnScriptSelected(
       JNIEnv* env,
       const base::android::JavaParamRef<jobject>& jcaller,
       const base::android::JavaParamRef<jstring>& jscript_path);
+  void OnChoice(JNIEnv* env,
+                const base::android::JavaParamRef<jobject>& jcaller,
+                const base::android::JavaParamRef<jbyteArray>& jserver_payload);
   void OnAddressSelected(
       JNIEnv* env,
       const base::android::JavaParamRef<jobject>& jcaller,
@@ -88,12 +110,19 @@ class UiControllerAndroid : public UiController,
       const base::android::JavaParamRef<jobject>& jaddress,
       const base::android::JavaParamRef<jstring>& jpayer_name,
       const base::android::JavaParamRef<jstring>& jpayer_phone,
-      const base::android::JavaParamRef<jstring>& jpayer_email);
+      const base::android::JavaParamRef<jstring>& jpayer_email,
+      jboolean jis_terms_and_services_accepted);
   void OnAccessToken(JNIEnv* env,
                      const base::android::JavaParamRef<jobject>& jcaller,
                      jboolean success,
                      const base::android::JavaParamRef<jstring>& access_token);
+  void OnShowDetails(JNIEnv* env,
+                     const base::android::JavaParamRef<jobject>& jcaller,
+                     jboolean success);
   base::android::ScopedJavaLocalRef<jstring> GetPrimaryAccountName(
+      JNIEnv* env,
+      const base::android::JavaParamRef<jobject>& jcaller);
+  base::android::ScopedJavaLocalRef<jstring> OnRequestDebugContext(
       JNIEnv* env,
       const base::android::JavaParamRef<jobject>& jcaller);
 
@@ -102,15 +131,19 @@ class UiControllerAndroid : public UiController,
   base::android::ScopedJavaGlobalRef<jobject>
       java_autofill_assistant_ui_controller_;
 
+  // UI delegate can be nullptr before SetUiDelegate.
   UiDelegate* ui_delegate_;
   content::BrowserContext* browser_context_;
 
-  base::OnceCallback<void(const std::string&)> address_or_card_callback_;
+  base::OnceCallback<void(const std::string&)> choice_callback_;
   base::OnceCallback<void(std::unique_ptr<PaymentInformation>)>
       get_payment_information_callback_;
   std::unique_ptr<AccessTokenFetcher> access_token_fetcher_;
   base::OnceCallback<void(bool, const std::string&)>
       fetch_access_token_callback_;
+  base::OnceCallback<void(bool)> show_details_callback_;
+
+  base::WeakPtrFactory<UiControllerAndroid> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(UiControllerAndroid);
 };

@@ -25,7 +25,6 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/policy/core/browser/browser_policy_connector.h"
 #include "components/policy/core/common/mock_configuration_policy_provider.h"
-#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/test/test_utils.h"
 #include "extensions/browser/content_verifier.h"
 #include "extensions/browser/content_verifier/test_utils.h"
@@ -201,7 +200,7 @@ IN_PROC_BROWSER_TEST_F(ContentVerifierTest, PolicyCorrupted) {
   ExtensionService* service = system->extension_service();
 
   // The id of our test extension.
-  ExtensionId kExtensionId("npnbmohejbjohgpjnmjagbafnjhkmgko");
+  ExtensionId kExtensionId("dkjgfphccejbobpbljnpjcmhmagkdoia");
 
   // Setup fake policy and update check objects.
   content_verifier_test::ForceInstallProvider policy(kExtensionId);
@@ -326,7 +325,7 @@ class ContentVerifierPolicyTest : public ContentVerifierTest {
 
  protected:
   // The id of the extension we want to have force-installed.
-  std::string id_ = "npnbmohejbjohgpjnmjagbafnjhkmgko";
+  std::string id_ = "dkjgfphccejbobpbljnpjcmhmagkdoia";
 
  private:
   policy::MockConfigurationPolicyProvider policy_provider_;

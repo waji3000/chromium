@@ -3,35 +3,57 @@
 // found in the LICENSE file.
 
 #include "third_party/blink/renderer/core/paint/text_paint_timing_detector.h"
-#include "third_party/blink/renderer/core/paint/paint_tracker.h"
+#include "third_party/blink/renderer/core/paint/paint_timing_detector.h"
 #include "third_party/blink/renderer/core/testing/core_unit_test_helper.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+#include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 
 namespace blink {
 
-class TextPaintTimingDetectorTest : public RenderingTest {
+class TextPaintTimingDetectorTest
+    : public RenderingTest,
+      private ScopedFirstContentfulPaintPlusPlusForTest {
  public:
-  void SetUp() override {
-    RenderingTest::SetUp();
-    RuntimeEnabledFeatures::SetPaintTrackingEnabled(true);
-  }
+  TextPaintTimingDetectorTest()
+      : ScopedFirstContentfulPaintPlusPlusForTest(true) {}
+  void SetUp() override { RenderingTest::SetUp(); }
 
  protected:
   LocalFrameView& GetFrameView() { return *GetFrame().View(); }
-  PaintTracker& GetPaintTracker() { return GetFrameView().GetPaintTracker(); }
+  PaintTimingDetector& GetPaintTimingDetector() {
+    return GetFrameView().GetPaintTimingDetector();
+  }
+
+  unsigned CountRecords() {
+    return GetPaintTimingDetector()
+        .GetTextPaintTimingDetector()
+        .recorded_text_node_ids_.size();
+  }
+
+  void InvokeCallback() {
+    TextPaintTimingDetector& detector =
+        GetPaintTimingDetector().GetTextPaintTimingDetector();
+    detector.ReportSwapTime(WebLayerTreeView::SwapResult::kDidSwap,
+                            CurrentTimeTicks());
+  }
 
   TimeTicks LargestPaintStoredResult() {
-    return GetPaintTracker().GetTextPaintTimingDetector().largest_text_paint_;
+    return GetPaintTimingDetector()
+        .GetTextPaintTimingDetector()
+        .largest_text_paint_;
   }
 
   TimeTicks LastPaintStoredResult() {
-    return GetPaintTracker().GetTextPaintTimingDetector().last_text_paint_;
+    return GetPaintTimingDetector()
+        .GetTextPaintTimingDetector()
+        .last_text_paint_;
   }
 
   void UpdateAllLifecyclePhasesAndSimulateSwapTime() {
-    GetFrameView().UpdateAllLifecyclePhases();
+    GetFrameView().UpdateAllLifecyclePhases(
+        DocumentLifecycle::LifecycleUpdateReason::kTest);
     TextPaintTimingDetector& detector =
-        GetPaintTracker().GetTextPaintTimingDetector();
+        GetPaintTimingDetector().GetTextPaintTimingDetector();
     if (detector.texts_to_record_swap_time_.size() > 0) {
       detector.ReportSwapTime(WebLayerTreeView::SwapResult::kDidSwap,
                               CurrentTimeTicks());
@@ -39,7 +61,7 @@ class TextPaintTimingDetectorTest : public RenderingTest {
   }
 
   void SimulateAnalyze() {
-    GetPaintTracker().GetTextPaintTimingDetector().Analyze();
+    GetPaintTimingDetector().GetTextPaintTimingDetector().Analyze();
   }
 };
 
@@ -48,7 +70,7 @@ TEST_F(TextPaintTimingDetectorTest, LargestTextPaint_NoText) {
     <div></div>
   )HTML");
   UpdateAllLifecyclePhasesAndSimulateSwapTime();
-  TextRecord* record = GetPaintTracker()
+  TextRecord* record = GetPaintTimingDetector()
                            .GetTextPaintTimingDetector()
                            .FindLargestPaintCandidate();
   EXPECT_FALSE(record);
@@ -59,11 +81,24 @@ TEST_F(TextPaintTimingDetectorTest, LargestTextPaint_OneText) {
     <div>The only text</div>
   )HTML");
   UpdateAllLifecyclePhasesAndSimulateSwapTime();
-  TextRecord* record = GetPaintTracker()
+  TextRecord* record = GetPaintTimingDetector()
                            .GetTextPaintTimingDetector()
                            .FindLargestPaintCandidate();
   EXPECT_TRUE(record);
   EXPECT_EQ(record->text, "The only text");
+}
+
+TEST_F(TextPaintTimingDetectorTest, NodeRemovedBeforeAssigningSwapTime) {
+  SetBodyInnerHTML(R"HTML(
+    <div id="parent">
+      <div id="remove">The only text</div>
+    </div>
+  )HTML");
+  UpdateAllLifecyclePhasesForTest();
+  GetDocument().getElementById("parent")->RemoveChild(
+      GetDocument().getElementById("remove"));
+  InvokeCallback();
+  EXPECT_EQ(CountRecords(), 0u);
 }
 
 TEST_F(TextPaintTimingDetectorTest, LargestTextPaint_LargestText) {
@@ -80,7 +115,7 @@ TEST_F(TextPaintTimingDetectorTest, LargestTextPaint_LargestText) {
   GetDocument().body()->AppendChild(tiny_text);
   UpdateAllLifecyclePhasesAndSimulateSwapTime();
 
-  TextRecord* record = GetPaintTracker()
+  TextRecord* record = GetPaintTimingDetector()
                            .GetTextPaintTimingDetector()
                            .FindLargestPaintCandidate();
   EXPECT_EQ(record->text, "a long-long-long text");
@@ -133,7 +168,7 @@ TEST_F(TextPaintTimingDetectorTest, LargestTextPaint_ReportFirstPaintTime) {
                                                   AtomicString("height:100px"));
   UpdateAllLifecyclePhasesAndSimulateSwapTime();
 
-  TextRecord* record = GetPaintTracker()
+  TextRecord* record = GetPaintTimingDetector()
                            .GetTextPaintTimingDetector()
                            .FindLargestPaintCandidate();
   EXPECT_EQ(record->text, "a long-long-long-long moving text");
@@ -154,11 +189,12 @@ TEST_F(TextPaintTimingDetectorTest,
     <div class='out'>text outside of viewport</div>
   )HTML");
   UpdateAllLifecyclePhasesAndSimulateSwapTime();
-  EXPECT_FALSE(GetPaintTracker()
+  EXPECT_FALSE(GetPaintTimingDetector()
                    .GetTextPaintTimingDetector()
                    .FindLargestPaintCandidate());
-  EXPECT_FALSE(
-      GetPaintTracker().GetTextPaintTimingDetector().FindLastPaintCandidate());
+  EXPECT_FALSE(GetPaintTimingDetector()
+                   .GetTextPaintTimingDetector()
+                   .FindLastPaintCandidate());
 }
 
 TEST_F(TextPaintTimingDetectorTest, LargestTextPaint_IgnoreRemovedText) {
@@ -169,7 +205,7 @@ TEST_F(TextPaintTimingDetectorTest, LargestTextPaint_IgnoreRemovedText) {
     </div>
   )HTML");
   UpdateAllLifecyclePhasesAndSimulateSwapTime();
-  TextRecord* record = GetPaintTracker()
+  TextRecord* record = GetPaintTimingDetector()
                            .GetTextPaintTimingDetector()
                            .FindLargestPaintCandidate();
   EXPECT_TRUE(record);
@@ -180,7 +216,7 @@ TEST_F(TextPaintTimingDetectorTest, LargestTextPaint_IgnoreRemovedText) {
   GetDocument().getElementById("parent")->RemoveChild(
       GetDocument().getElementById("earlyLargeText"));
   UpdateAllLifecyclePhasesAndSimulateSwapTime();
-  record = GetPaintTracker()
+  record = GetPaintTimingDetector()
                .GetTextPaintTimingDetector()
                .FindLargestPaintCandidate();
   EXPECT_EQ(record->text, "small text");
@@ -194,7 +230,7 @@ TEST_F(TextPaintTimingDetectorTest, LargestTextPaint_ReportLastNullCandidate) {
   )HTML");
   UpdateAllLifecyclePhasesAndSimulateSwapTime();
   SimulateAnalyze();
-  TextRecord* record = GetPaintTracker()
+  TextRecord* record = GetPaintTimingDetector()
                            .GetTextPaintTimingDetector()
                            .FindLargestPaintCandidate();
   EXPECT_TRUE(record);
@@ -205,7 +241,7 @@ TEST_F(TextPaintTimingDetectorTest, LargestTextPaint_ReportLastNullCandidate) {
       GetDocument().getElementById("remove"));
   UpdateAllLifecyclePhasesAndSimulateSwapTime();
   SimulateAnalyze();
-  record = GetPaintTracker()
+  record = GetPaintTimingDetector()
                .GetTextPaintTimingDetector()
                .FindLargestPaintCandidate();
   EXPECT_FALSE(record);
@@ -221,7 +257,7 @@ TEST_F(TextPaintTimingDetectorTest,
     </div>
   )HTML");
   UpdateAllLifecyclePhasesAndSimulateSwapTime();
-  TextRecord* record = GetPaintTracker()
+  TextRecord* record = GetPaintTimingDetector()
                            .GetTextPaintTimingDetector()
                            .FindLargestPaintCandidate();
   EXPECT_EQ(record->text, "short");
@@ -242,7 +278,7 @@ TEST_F(TextPaintTimingDetectorTest, LargestTextPaint_CompareSizesAtFirstPaint) {
       ->setAttribute(html_names::kStyleAttr,
                      AtomicString("position:fixed;left:-10px"));
   UpdateAllLifecyclePhasesAndSimulateSwapTime();
-  TextRecord* record = GetPaintTracker()
+  TextRecord* record = GetPaintTimingDetector()
                            .GetTextPaintTimingDetector()
                            .FindLargestPaintCandidate();
   EXPECT_EQ(record->text, "large-to-small text");
@@ -253,8 +289,9 @@ TEST_F(TextPaintTimingDetectorTest, LastTextPaint_NoText) {
     <div></div>
   )HTML");
   UpdateAllLifecyclePhasesAndSimulateSwapTime();
-  TextRecord* record =
-      GetPaintTracker().GetTextPaintTimingDetector().FindLastPaintCandidate();
+  TextRecord* record = GetPaintTimingDetector()
+                           .GetTextPaintTimingDetector()
+                           .FindLastPaintCandidate();
   EXPECT_FALSE(record);
 }
 
@@ -263,8 +300,9 @@ TEST_F(TextPaintTimingDetectorTest, LastTextPaint_OneText) {
     <div>The only text</div>
   )HTML");
   UpdateAllLifecyclePhasesAndSimulateSwapTime();
-  TextRecord* record =
-      GetPaintTracker().GetTextPaintTimingDetector().FindLastPaintCandidate();
+  TextRecord* record = GetPaintTimingDetector()
+                           .GetTextPaintTimingDetector()
+                           .FindLastPaintCandidate();
   EXPECT_EQ(record->text, "The only text");
 }
 
@@ -282,8 +320,9 @@ TEST_F(TextPaintTimingDetectorTest, LastTextPaint_LastText) {
   GetDocument().body()->AppendChild(tiny_text);
   UpdateAllLifecyclePhasesAndSimulateSwapTime();
 
-  TextRecord* record =
-      GetPaintTracker().GetTextPaintTimingDetector().FindLastPaintCandidate();
+  TextRecord* record = GetPaintTimingDetector()
+                           .GetTextPaintTimingDetector()
+                           .FindLastPaintCandidate();
   EXPECT_EQ(record->text, "3rd text");
 }
 
@@ -309,8 +348,9 @@ TEST_F(TextPaintTimingDetectorTest, LastTextPaint_ReportFirstPaintTime) {
                                                   AtomicString("height:100px"));
   UpdateAllLifecyclePhasesAndSimulateSwapTime();
 
-  TextRecord* record =
-      GetPaintTracker().GetTextPaintTimingDetector().FindLastPaintCandidate();
+  TextRecord* record = GetPaintTimingDetector()
+                           .GetTextPaintTimingDetector()
+                           .FindLastPaintCandidate();
   EXPECT_EQ(record->text, "latest text");
   TimeTicks firing_time = record->first_paint_time;
   EXPECT_GE(firing_time, time1);
@@ -331,8 +371,9 @@ TEST_F(TextPaintTimingDetectorTest, LastTextPaint_IgnoreRemovedText) {
 
   GetDocument().body()->RemoveChild(GetDocument().body()->lastChild());
   UpdateAllLifecyclePhasesAndSimulateSwapTime();
-  TextRecord* record =
-      GetPaintTracker().GetTextPaintTimingDetector().FindLastPaintCandidate();
+  TextRecord* record = GetPaintTimingDetector()
+                           .GetTextPaintTimingDetector()
+                           .FindLastPaintCandidate();
   EXPECT_EQ(record->text, "earliest text");
 }
 
@@ -358,15 +399,17 @@ TEST_F(TextPaintTimingDetectorTest, LastTextPaint_StopRecordingOverNodeLimit) {
   text = GetDocument().createTextNode(WTF::String::Number(5000));
   GetDocument().body()->AppendChild(text);
   UpdateAllLifecyclePhasesAndSimulateSwapTime();
-  record =
-      GetPaintTracker().GetTextPaintTimingDetector().FindLastPaintCandidate();
+  record = GetPaintTimingDetector()
+               .GetTextPaintTimingDetector()
+               .FindLastPaintCandidate();
   EXPECT_EQ(record->text, "5000");
 
   text = GetDocument().createTextNode(WTF::String::Number(5001));
   GetDocument().body()->AppendChild(text);
   UpdateAllLifecyclePhasesAndSimulateSwapTime();
-  record =
-      GetPaintTracker().GetTextPaintTimingDetector().FindLastPaintCandidate();
+  record = GetPaintTimingDetector()
+               .GetTextPaintTimingDetector()
+               .FindLastPaintCandidate();
   EXPECT_EQ(record->text, "5000");
 }
 
@@ -378,7 +421,7 @@ TEST_F(TextPaintTimingDetectorTest, LastTextPaint_ReportLastNullCandidate) {
   )HTML");
   UpdateAllLifecyclePhasesAndSimulateSwapTime();
   SimulateAnalyze();
-  TextRecord* record = GetPaintTracker()
+  TextRecord* record = GetPaintTimingDetector()
                            .GetTextPaintTimingDetector()
                            .FindLargestPaintCandidate();
   EXPECT_TRUE(record);
@@ -389,7 +432,7 @@ TEST_F(TextPaintTimingDetectorTest, LastTextPaint_ReportLastNullCandidate) {
       GetDocument().getElementById("remove"));
   UpdateAllLifecyclePhasesAndSimulateSwapTime();
   SimulateAnalyze();
-  record = GetPaintTracker()
+  record = GetPaintTimingDetector()
                .GetTextPaintTimingDetector()
                .FindLargestPaintCandidate();
   EXPECT_FALSE(record);

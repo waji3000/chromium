@@ -15,9 +15,9 @@
 #include "base/trace_event/traced_value.h"
 #include "cc/trees/layer_tree_frame_sink.h"
 #include "components/exo/buffer.h"
-#include "components/exo/pointer.h"
 #include "components/exo/surface_delegate.h"
 #include "components/exo/surface_observer.h"
+#include "components/exo/wm_helper.h"
 #include "components/viz/common/quads/render_pass.h"
 #include "components/viz/common/quads/shared_quad_state.h"
 #include "components/viz/common/quads/solid_color_draw_quad.h"
@@ -58,6 +58,9 @@ DEFINE_UI_CLASS_PROPERTY_KEY(Surface*, kSurfaceKey, nullptr);
 // A property key to store whether the surface should only consume
 // stylus input events.
 DEFINE_UI_CLASS_PROPERTY_KEY(bool, kStylusOnlyKey, false);
+
+// Surface Id set by the client.
+DEFINE_UI_CLASS_PROPERTY_KEY(int32_t, kClientSurfaceIdKey, 0);
 
 // Helper function that returns an iterator to the first entry in |list|
 // with |key|.
@@ -465,6 +468,17 @@ void Surface::SetParent(Surface* parent, const gfx::Point& position) {
 
   if (delegate_)
     delegate_->OnSetParent(parent, position);
+}
+
+void Surface::SetClientSurfaceId(int32_t client_surface_id) {
+  if (client_surface_id)
+    window_->SetProperty(kClientSurfaceIdKey, client_surface_id);
+  else
+    window_->ClearProperty(kClientSurfaceIdKey);
+}
+
+int32_t Surface::GetClientSurfaceId() const {
+  return window_->GetProperty(kClientSurfaceIdKey);
 }
 
 void Surface::Commit() {
@@ -897,7 +911,7 @@ void Surface::AppendContentsToFrame(const gfx::Point& origin,
           uv_crop.origin(), uv_crop.bottom_right(),
           SK_ColorTRANSPARENT /* background_color */, vertex_opacity,
           false /* y_flipped */, false /* nearest_neighbor */,
-          state_.only_visible_on_secure_output);
+          state_.only_visible_on_secure_output, ui::ProtectedVideoType::kClear);
       if (current_resource_.is_overlay_candidate)
         texture_quad->set_resource_size_in_pixels(current_resource_.size);
       frame->resource_list.push_back(current_resource_);

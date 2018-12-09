@@ -15,7 +15,7 @@
 #include "base/logging.h"
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_config.h"
 #include "base/values.h"
@@ -50,7 +50,6 @@
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
-#include "content/browser/tracing/etw_tracing_agent_win.h"
 #endif
 
 #if defined(OS_ANDROID)
@@ -136,8 +135,6 @@ void TracingControllerImpl::AddAgents() {
   agents_.push_back(std::make_unique<CrOSTracingAgent>(connector));
 #elif defined(CAST_TRACING_AGENT)
   agents_.push_back(std::make_unique<CastTracingAgent>(connector));
-#elif defined(OS_WIN)
-  agents_.push_back(std::make_unique<EtwTracingAgent>(connector));
 #endif
 
   auto trace_event_agent = tracing::TraceEventAgent::Create(
@@ -176,9 +173,11 @@ TracingControllerImpl::GenerateMetadataDict() const {
   }
 
   metadata_dict->SetString("network-type", GetNetworkTypeString());
-  metadata_dict->SetString("product-version", GetContentClient()->GetProduct());
+  metadata_dict->SetString("product-version",
+                           GetContentClient()->browser()->GetProduct());
   metadata_dict->SetString("v8-version", V8_VERSION_STRING);
-  metadata_dict->SetString("user-agent", GetContentClient()->GetUserAgent());
+  metadata_dict->SetString("user-agent",
+                           GetContentClient()->browser()->GetUserAgent());
 
 #if defined(OS_ANDROID)
   // The library name is used for symbolizing heap profiles. This cannot be
@@ -459,6 +458,15 @@ void TracingControllerImpl::OnMetadataAvailable(base::Value metadata) {
   }
   if (is_data_complete_)
     CompleteFlush();
+}
+
+void TracingControllerImpl::SetTracingDelegateForTesting(
+    std::unique_ptr<TracingDelegate> delegate) {
+  if (!delegate)
+    delegate_.reset(GetContentClient()->browser()->GetTracingDelegate());
+  else {
+    delegate_ = std::move(delegate);
+  }
 }
 
 }  // namespace content

@@ -233,6 +233,7 @@ void SecurityInfoForRequest(
     SecurityInfo* security_info) {
   if (!visible_security_state.connection_info_initialized) {
     *security_info = SecurityInfo();
+    security_info->connection_info_initialized = false;
     security_info->malicious_content_status =
         visible_security_state.malicious_content_status;
     if (security_info->malicious_content_status !=
@@ -244,6 +245,7 @@ void SecurityInfoForRequest(
     }
     return;
   }
+  security_info->connection_info_initialized = true;
   security_info->certificate = visible_security_state.certificate;
 
   security_info->sha1_in_chain = visible_security_state.certificate &&
@@ -255,7 +257,6 @@ void SecurityInfoForRequest(
   security_info->content_with_cert_errors_status = GetContentStatus(
       visible_security_state.displayed_content_with_cert_errors,
       visible_security_state.ran_content_with_cert_errors);
-  security_info->security_bits = visible_security_state.security_bits;
   security_info->connection_status = visible_security_state.connection_status;
   security_info->key_exchange_group = visible_security_state.key_exchange_group;
   security_info->peer_signature_algorithm =
@@ -288,17 +289,37 @@ void SecurityInfoForRequest(
       visible_security_state.insecure_input_events;
 }
 
+std::string GetHistogramSuffixForSecurityLevel(
+    security_state::SecurityLevel level) {
+  switch (level) {
+    case EV_SECURE:
+      return "EV_SECURE";
+    case SECURE:
+      return "SECURE";
+    case NONE:
+      return "NONE";
+    case HTTP_SHOW_WARNING:
+      return "HTTP_SHOW_WARNING";
+    case SECURE_WITH_POLICY_INSTALLED_CERT:
+      return "SECURE_WITH_POLICY_INSTALLED_CERT";
+    case DANGEROUS:
+      return "DANGEROUS";
+    default:
+      return "OTHER";
+  }
+}
+
 }  // namespace
 
 SecurityInfo::SecurityInfo()
-    : security_level(NONE),
+    : connection_info_initialized(false),
+      security_level(NONE),
       malicious_content_status(MALICIOUS_CONTENT_STATUS_NONE),
       sha1_in_chain(false),
       mixed_content_status(CONTENT_STATUS_NONE),
       content_with_cert_errors_status(CONTENT_STATUS_NONE),
       scheme_is_cryptographic(false),
       cert_status(0),
-      security_bits(-1),
       connection_status(0),
       key_exchange_group(0),
       peer_signature_algorithm(0),
@@ -328,7 +349,6 @@ VisibleSecurityState::VisibleSecurityState()
       connection_status(0),
       key_exchange_group(0),
       peer_signature_algorithm(0),
-      security_bits(-1),
       displayed_mixed_content(false),
       contained_mixed_form(false),
       ran_mixed_content(false),
@@ -352,6 +372,12 @@ bool IsOriginLocalhostOrFile(const GURL& url) {
 bool IsSslCertificateValid(SecurityLevel security_level) {
   return security_level == SECURE || security_level == EV_SECURE ||
          security_level == SECURE_WITH_POLICY_INSTALLED_CERT;
+}
+
+std::string GetSecurityLevelHistogramName(
+    const std::string& prefix,
+    security_state::SecurityLevel level) {
+  return prefix + "." + GetHistogramSuffixForSecurityLevel(level);
 }
 
 }  // namespace security_state

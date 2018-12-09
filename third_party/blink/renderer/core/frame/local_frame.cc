@@ -30,7 +30,9 @@
 
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 
+#include <limits>
 #include <memory>
+#include <utility>
 
 #include "services/network/public/cpp/features.h"
 #include "services/service_manager/public/cpp/connector.h"
@@ -106,6 +108,7 @@
 #include "third_party/blink/renderer/platform/json/json_values.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_request.h"
+#include "third_party/blink/renderer/platform/network/network_state_notifier.h"
 #include "third_party/blink/renderer/platform/network/network_utils.h"
 #include "third_party/blink/renderer/platform/plugins/plugin_data.h"
 #include "third_party/blink/renderer/platform/plugins/plugin_script_forbidden_scope.h"
@@ -212,7 +215,7 @@ LocalFrame* LocalFrame::Create(LocalFrameClient* client,
                                Page& page,
                                FrameOwner* owner,
                                InterfaceRegistry* interface_registry) {
-  LocalFrame* frame = new LocalFrame(
+  LocalFrame* frame = MakeGarbageCollected<LocalFrame>(
       client, page, owner,
       interface_registry ? interface_registry
                          : InterfaceRegistry::GetEmptyInterfaceRegistry());
@@ -426,9 +429,6 @@ void LocalFrame::DetachImpl(FrameDetachType type) {
 
   DomWindow()->FrameDestroyed();
 
-  if (GetPage() && GetPage()->GetFocusController().FocusedFrame() == this)
-    GetPage()->GetFocusController().SetFocusedFrame(nullptr);
-
   probe::frameDetachedFromParent(this);
 
   supplements_.clear();
@@ -493,6 +493,10 @@ void LocalFrame::DidAttachDocument() {
   Document* document = GetDocument();
   DCHECK(document);
   GetEditor().Clear();
+  // Clearing the event handler clears many events, but notably can ensure that
+  // for a drag started on an element in a frame that was moved (likely via
+  // appendChild()), the drag source will detach and stop firing drag events
+  // even after the frame reattaches.
   GetEventHandler().Clear();
   Selection().DidAttachDocument(document);
   GetInputMethodController().DidAttachDocument(document);
@@ -577,8 +581,7 @@ void LocalFrame::DidFreeze() {
       // handler indicating potentially unsaved user state.
       bool unused_did_allow_navigation = false;
       bool proceed = GetDocument()->DispatchBeforeUnloadEvent(
-          *View()->GetChromeClient(), false /* is_reload */,
-          true /* auto_cancel */, unused_did_allow_navigation);
+          nullptr, false /* is_reload */, unused_did_allow_navigation);
       frame_resource_coordinator->SetHasNonEmptyBeforeUnload(!proceed);
     }
 
@@ -704,7 +707,7 @@ void LocalFrame::SetPrinting(bool printing,
   } else {
     if (LayoutView* layout_view = View()->GetLayoutView()) {
       layout_view->SetPreferredLogicalWidthsDirty();
-      layout_view->SetNeedsLayout(LayoutInvalidationReason::kPrintingChanged);
+      layout_view->SetNeedsLayout(layout_invalidation_reason::kPrintingChanged);
       layout_view->SetShouldDoFullPaintInvalidationForViewAndAllDescendants();
     }
     View()->UpdateLayout();
@@ -912,7 +915,7 @@ String LocalFrame::GetLayerTreeAsTextForTesting(unsigned flags) const {
     return String();
 
   std::unique_ptr<JSONObject> layers;
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
     layers = View()->CompositedLayersAsJSON(static_cast<LayerTreeFlags>(flags));
   } else {
     if (const auto* root_layer =
@@ -950,24 +953,28 @@ inline LocalFrame::LocalFrame(LocalFrameClient* client,
       editor_(Editor::Create(*this)),
       spell_checker_(SpellChecker::Create(*this)),
       selection_(FrameSelection::Create(*this)),
-      event_handler_(new EventHandler(*this)),
+      event_handler_(MakeGarbageCollected<EventHandler>(*this)),
       console_(FrameConsole::Create(*this)),
       input_method_controller_(InputMethodController::Create(*this)),
-      text_suggestion_controller_(new TextSuggestionController(*this)),
+      text_suggestion_controller_(
+          MakeGarbageCollected<TextSuggestionController>(*this)),
       navigation_disable_count_(0),
       page_zoom_factor_(ParentPageZoomFactor(this)),
       text_zoom_factor_(ParentTextZoomFactor(this)),
       in_view_source_mode_(false),
       inspector_task_runner_(InspectorTaskRunner::Create(
           GetTaskRunner(TaskType::kInternalInspector))),
-      interface_registry_(interface_registry) {
+      interface_registry_(interface_registry),
+      is_save_data_enabled_(
+          !(GetSettings() && GetSettings()->GetDataSaverHoldbackWebApi()) &&
+          GetNetworkStateNotifier().SaveDataEnabled()) {
   if (IsLocalRoot()) {
-    probe_sink_ = new CoreProbeSink();
-    performance_monitor_ = new PerformanceMonitor(this);
-    inspector_trace_events_ = new InspectorTraceEvents();
+    probe_sink_ = MakeGarbageCollected<CoreProbeSink>();
+    performance_monitor_ = MakeGarbageCollected<PerformanceMonitor>(this);
+    inspector_trace_events_ = MakeGarbageCollected<InspectorTraceEvents>();
     probe_sink_->addInspectorTraceEvents(inspector_trace_events_);
     if (RuntimeEnabledFeatures::AdTaggingEnabled()) {
-      ad_tracker_ = new AdTracker(this);
+      ad_tracker_ = MakeGarbageCollected<AdTracker>(this);
     }
   } else {
     // Inertness only needs to be updated if this frame might inherit the
@@ -979,7 +986,7 @@ inline LocalFrame::LocalFrame(LocalFrameClient* client,
     ad_tracker_ = LocalFrameRoot().ad_tracker_;
     performance_monitor_ = LocalFrameRoot().performance_monitor_;
   }
-  idleness_detector_ = new IdlenessDetector(this);
+  idleness_detector_ = MakeGarbageCollected<IdlenessDetector>(this);
   inspector_task_runner_->InitIsolate(V8PerIsolateData::MainThreadIsolate());
 
   if (ad_tracker_) {
@@ -1364,6 +1371,10 @@ bool LocalFrame::IsLazyLoadingImageAllowed() const {
     return false;
   if (Owner() && !Owner()->ShouldLazyLoadChildren())
     return false;
+  if (RuntimeEnabledFeatures::RestrictLazyImageLoadingToDataSaverEnabled() &&
+      !is_save_data_enabled_) {
+    return false;
+  }
   return true;
 }
 
@@ -1496,7 +1507,7 @@ SmoothScrollSequencer& LocalFrame::GetSmoothScrollSequencer() {
   if (!IsLocalRoot())
     return LocalFrameRoot().GetSmoothScrollSequencer();
   if (!smooth_scroll_sequencer_)
-    smooth_scroll_sequencer_ = new SmoothScrollSequencer();
+    smooth_scroll_sequencer_ = MakeGarbageCollected<SmoothScrollSequencer>();
   return *smooth_scroll_sequencer_;
 }
 
@@ -1521,11 +1532,6 @@ const mojom::blink::ReportingServiceProxyPtr& LocalFrame::GetReportingService()
         Platform::Current()->GetBrowserServiceName(), &reporting_service_);
   }
   return reporting_service_;
-}
-
-void LocalFrame::DeprecatedReportFeaturePolicyViolation(
-    mojom::FeaturePolicyFeature feature) const {
-  GetSecurityContext()->ReportFeaturePolicyViolation(feature);
 }
 
 // static

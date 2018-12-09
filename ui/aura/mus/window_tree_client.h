@@ -126,6 +126,10 @@ class AURA_EXPORT WindowTreeClient
   // Blocks until the initial screen configuration is received.
   bool WaitForDisplays();
 
+  const base::Optional<uint32_t>& id() const { return id_; }
+
+  WindowMus* GetWindowByServerId(ws::Id id);
+
   void SetCanFocus(Window* window, bool can_focus);
   void SetCanAcceptDrops(WindowMus* window, bool can_accept_drops);
   void SetEventTargetingPolicy(WindowMus* window,
@@ -194,6 +198,9 @@ class AURA_EXPORT WindowTreeClient
   // race the asynchronous initialization; but in that case we return (0, 0).
   gfx::Point GetCursorScreenPoint();
 
+  // May be called to do early shutdown.
+  void OnEarlyShutdown();
+
   // Called when the local aura::Env adds or removes EventObservers.
   void OnEventObserverAdded(ui::EventObserver* observer,
                             const std::set<ui::EventType>& types);
@@ -239,8 +246,6 @@ class AURA_EXPORT WindowTreeClient
       bool create_discardable_memory = true);
 
   void RegisterWindowMus(WindowMus* window);
-
-  WindowMus* GetWindowByServerId(ws::Id id);
 
   bool IsWindowKnown(aura::Window* window);
 
@@ -363,6 +368,7 @@ class AURA_EXPORT WindowTreeClient
                                   std::unique_ptr<ui::PropertyData> data);
 
   // Overridden from WindowTreeClient:
+  void OnClientId(uint32_t client_id) override;
   void OnEmbed(
       ws::mojom::WindowDataPtr root,
       ws::mojom::WindowTreePtr tree,
@@ -588,6 +594,9 @@ class AURA_EXPORT WindowTreeClient
 
   mojo::AssociatedBinding<ws::mojom::ScreenProviderObserver>
       screen_provider_observer_binding_{this};
+
+  // Id for this connection. The server provides this value in OnClientId().
+  base::Optional<uint32_t> id_;
 
   base::WeakPtrFactory<WindowTreeClient> weak_factory_;
 

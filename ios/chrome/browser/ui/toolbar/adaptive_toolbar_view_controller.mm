@@ -12,11 +12,11 @@
 #import "ios/chrome/browser/ui/toolbar/buttons/toolbar_button.h"
 #import "ios/chrome/browser/ui/toolbar/buttons/toolbar_button_factory.h"
 #import "ios/chrome/browser/ui/toolbar/buttons/toolbar_configuration.h"
-#import "ios/chrome/browser/ui/toolbar/buttons/toolbar_constants.h"
 #import "ios/chrome/browser/ui/toolbar/buttons/toolbar_tab_grid_button.h"
 #import "ios/chrome/browser/ui/toolbar/buttons/toolbar_tools_menu_button.h"
 #import "ios/chrome/browser/ui/toolbar/public/features.h"
 #import "ios/chrome/browser/ui/toolbar/public/omnibox_focuser.h"
+#import "ios/chrome/browser/ui/toolbar/public/toolbar_constants.h"
 #include "ios/chrome/browser/ui/util/animation_util.h"
 #import "ios/chrome/browser/ui/util/force_touch_long_press_gesture_recognizer.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
@@ -81,22 +81,11 @@ const CGFloat kTabGridAnimationsTotalDuration = 0.5;
   [super viewDidLoad];
   [self addStandardActionsForAllButtons];
 
-  if (@available(iOS 11.0, *)) {
-    [[NSNotificationCenter defaultCenter]
-        addObserver:self
-           selector:@selector(voiceOverChanged:)
-               name:UIAccessibilityVoiceOverStatusDidChangeNotification
-             object:nil];
-  }
-#if !defined(__IPHONE_11_0) || __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_11_0
-  else {
-    [[NSNotificationCenter defaultCenter]
-        addObserver:self
-           selector:@selector(voiceOverChanged:)
-               name:UIAccessibilityVoiceOverStatusChanged
-             object:nil];
-  }
-#endif
+  [[NSNotificationCenter defaultCenter]
+      addObserver:self
+         selector:@selector(voiceOverChanged:)
+             name:UIAccessibilityVoiceOverStatusDidChangeNotification
+           object:nil];
   [self makeViewAccessibilityTraitsContainer];
 
   // Adds the layout guide to the buttons.

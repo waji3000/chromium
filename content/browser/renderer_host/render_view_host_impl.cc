@@ -22,7 +22,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "base/task/post_task.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
@@ -79,10 +79,11 @@
 #include "media/base/media_switches.h"
 #include "net/base/url_util.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "services/network/public/cpp/features.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/device_form_factor.h"
-#include "ui/base/touch/touch_device.h"
+#include "ui/base/pointer/pointer_device.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/display/display_switches.h"
@@ -214,7 +215,6 @@ RenderViewHostImpl::RenderViewHostImpl(
       frames_ref_count_(0),
       delegate_(delegate),
       instance_(static_cast<SiteInstanceImpl*>(instance)),
-      is_active_(!swapped_out),
       is_swapped_out_(swapped_out),
       routing_id_(routing_id),
       main_frame_routing_id_(main_frame_routing_id),
@@ -245,15 +245,14 @@ RenderViewHostImpl::RenderViewHostImpl(
   // make their way to the new renderer once its restarted.
   GetProcess()->EnableSendQueue();
 
-  if (!is_active_)
+  if (!is_active())
     GetWidget()->UpdatePriority();
 
-  if (ResourceDispatcherHostImpl::Get()) {
+  if (!base::FeatureList::IsEnabled(network::features::kNetworkService)) {
     base::PostTaskWithTraits(
         FROM_HERE, {BrowserThread::IO},
         base::BindOnce(
             &ResourceDispatcherHostImpl::OnRenderViewHostCreated,
-            base::Unretained(ResourceDispatcherHostImpl::Get()),
             GetProcess()->GetID(), GetRoutingID(),
             base::RetainedRef(
                 GetProcess()->GetStoragePartition()->GetURLRequestContext())));
@@ -266,11 +265,10 @@ RenderViewHostImpl::RenderViewHostImpl(
 }
 
 RenderViewHostImpl::~RenderViewHostImpl() {
-  if (ResourceDispatcherHostImpl::Get()) {
+  if (!base::FeatureList::IsEnabled(network::features::kNetworkService)) {
     base::PostTaskWithTraits(
         FROM_HERE, {BrowserThread::IO},
         base::BindOnce(&ResourceDispatcherHostImpl::OnRenderViewHostDeleted,
-                       base::Unretained(ResourceDispatcherHostImpl::Get()),
                        GetProcess()->GetID(), GetRoutingID()));
   }
 
@@ -351,11 +349,10 @@ bool RenderViewHostImpl::CreateRenderView(
       delegate_->GetSessionStorageNamespace(instance_.get())->id();
   // Ensure the RenderView sets its opener correctly.
   params->opener_frame_route_id = opener_frame_route_id;
-  params->swapped_out = !is_active_;
   params->replicated_frame_state = replicated_frame_state;
   params->proxy_routing_id = proxy_route_id;
-  params->hidden = is_active_ ? GetWidget()->is_hidden()
-                              : GetWidget()->delegate()->IsHidden();
+  params->hidden = is_active() ? GetWidget()->is_hidden()
+                               : GetWidget()->delegate()->IsHidden();
   params->never_visible = delegate_->IsNeverVisible();
   params->window_was_created_with_opener = window_was_created_with_opener;
   if (main_rfh) {
@@ -386,10 +383,8 @@ bool RenderViewHostImpl::CreateRenderView(
   return true;
 }
 
-void RenderViewHostImpl::SetIsActive(bool is_active) {
-  if (is_active_ == is_active)
-    return;
-  is_active_ = is_active;
+void RenderViewHostImpl::SetMainFrameRoutingId(int routing_id) {
+  main_frame_routing_id_ = routing_id;
   GetWidget()->UpdatePriority();
 }
 
@@ -478,9 +473,6 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs() {
   } else if (autoplay_policy ==
              switches::autoplay::kUserGestureRequiredPolicy) {
     prefs.autoplay_policy = AutoplayPolicy::kUserGestureRequired;
-  } else if (autoplay_policy ==
-             switches::autoplay::kUserGestureRequiredForCrossOriginPolicy) {
-    prefs.autoplay_policy = AutoplayPolicy::kUserGestureRequiredForCrossOrigin;
   } else if (autoplay_policy ==
              switches::autoplay::kDocumentUserActivationRequiredPolicy) {
     prefs.autoplay_policy = AutoplayPolicy::kDocumentUserActivationRequired;
@@ -723,28 +715,13 @@ void RenderViewHostImpl::SetInitialFocus(bool reverse) {
   Send(new ViewMsg_SetInitialFocus(GetRoutingID(), reverse));
 }
 
-void RenderViewHostImpl::DirectoryEnumerationFinished(
-    int request_id,
-    const std::vector<base::FilePath>& files) {
-  // Grant the security access requested to the given files.
-  for (auto file = files.begin(); file != files.end(); ++file) {
-    ChildProcessSecurityPolicyImpl::GetInstance()->GrantReadFile(
-        GetProcess()->GetID(), *file);
-  }
-  Send(new ViewMsg_EnumerateDirectoryResponse(GetRoutingID(),
-                                              request_id,
-                                              files));
-}
-
 void RenderViewHostImpl::RenderWidgetWillSetIsLoading(bool is_loading) {
-  if (ResourceDispatcherHostImpl::Get()) {
-    base::PostTaskWithTraits(
-        FROM_HERE, {BrowserThread::IO},
-        base::BindOnce(
-            &ResourceDispatcherHostImpl::OnRenderViewHostSetIsLoading,
-            base::Unretained(ResourceDispatcherHostImpl::Get()),
-            GetProcess()->GetID(), GetRoutingID(), is_loading));
-  }
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService))
+    return;
+  base::PostTaskWithTraits(
+      FROM_HERE, {BrowserThread::IO},
+      base::BindOnce(&ResourceDispatcherHostImpl::OnRenderViewHostSetIsLoading,
+                     GetProcess()->GetID(), GetRoutingID(), is_loading));
 }
 
 void RenderViewHostImpl::RenderWidgetDidFirstVisuallyNonEmptyPaint() {
@@ -923,11 +900,11 @@ bool RenderViewHostImpl::MayRenderWidgetForwardKeyboardEvent(
 }
 
 bool RenderViewHostImpl::ShouldContributePriorityToProcess() {
-  return is_active_;
+  return is_active();
 }
 
 void RenderViewHostImpl::RequestSetBounds(const gfx::Rect& bounds) {
-  if (is_active_)
+  if (is_active())
     delegate_->RequestSetBounds(bounds);
 }
 
@@ -995,6 +972,30 @@ void RenderViewHostImpl::ClosePageTimeout() {
     return;
 
   ClosePageIgnoringUnloadEvents();
+}
+
+std::vector<viz::SurfaceId> RenderViewHostImpl::CollectSurfaceIdsForEviction() {
+  if (!is_active())
+    return {};
+  RenderFrameHostImpl* rfh = static_cast<RenderFrameHostImpl*>(GetMainFrame());
+  if (!rfh || !rfh->IsCurrent())
+    return {};
+  FrameTreeNode* root = rfh->frame_tree_node();
+  FrameTree* tree = root->frame_tree();
+  std::vector<viz::SurfaceId> ids;
+  for (FrameTreeNode* node : tree->SubtreeNodes(root)) {
+    if (!node->current_frame_host()->is_local_root())
+      continue;
+    RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
+        node->current_frame_host()->GetView());
+    if (!view)
+      continue;
+    viz::SurfaceId id = view->GetCurrentSurfaceId();
+    if (id.is_valid())
+      ids.push_back(id);
+    view->set_is_evicted();
+  }
+  return ids;
 }
 
 }  // namespace content

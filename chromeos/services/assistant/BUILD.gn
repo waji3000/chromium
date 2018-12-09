@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 
 import("//chromeos/assistant/assistant.gni")
-import("//services/catalog/public/tools/catalog.gni")
-import("//services/service_manager/public/cpp/service.gni")
 import("//services/service_manager/public/service_manifest.gni")
 
 assert(is_chromeos)
@@ -27,6 +25,7 @@ source_set("lib") {
     "//build/util:webkit_version",
     "//chromeos",
     "//chromeos/assistant:buildflags",
+    "//chromeos/services/assistant/public:feature_flags",
     "//chromeos/services/assistant/public/mojom",
     "//components/account_id",
     "//services/device/public/mojom",
@@ -47,6 +46,14 @@ source_set("lib") {
       "assistant_manager_service_impl.h",
       "assistant_settings_manager_impl.cc",
       "assistant_settings_manager_impl.h",
+      "chromium_api_delegate.cc",
+      "chromium_api_delegate.h",
+      "chromium_http_connection.cc",
+      "chromium_http_connection.h",
+      "default_url_request_context_getter.cc",
+      "default_url_request_context_getter.h",
+      "platform/audio_input_impl.cc",
+      "platform/audio_input_impl.h",
       "platform/audio_input_provider_impl.cc",
       "platform/audio_input_provider_impl.h",
       "platform/audio_media_data_source.cc",
@@ -70,17 +77,19 @@ source_set("lib") {
     deps += [
       "//chromeos/assistant/internal",
       "//chromeos/assistant/internal:build_libassistant",
-      "//chromeos/assistant/internal/action",
       "//chromeos/assistant/internal/proto/google3",
       "//chromeos/resources",
       "//chromeos/services/assistant/public/proto",
       "//chromeos/strings",
+      "//libassistant/shared/internal_api:fuchsia_api_helper",
       "//libassistant/shared/internal_api/c:api_wrappers_entrypoint",
       "//libassistant/shared/public",
       "//libassistant/shared/public:export",
+      "//net",
       "//services/network/public/cpp",
       "//services/network/public/mojom",
       "//ui/base",
+      "//url",
     ]
 
     libs = [ "$root_out_dir/libassistant.so" ]
@@ -103,7 +112,7 @@ source_set("tests") {
     "//services/device/public/mojom",
     "//services/identity/public/mojom",
     "//services/service_manager/public/cpp",
-    "//services/service_manager/public/cpp:service_test_support",
+    "//services/service_manager/public/cpp/test:test_support",
     "//testing/gmock",
     "//testing/gtest",
   ]
@@ -119,17 +128,6 @@ source_set("tests") {
 
     deps += [ "//libassistant/shared/public" ]
   }
-}
-
-service_manifest("unittest_manifest") {
-  name = "assistant_unittests"
-  source = "unittest_manifest.json"
-  packaged_services = [ ":manifest" ]
-}
-
-catalog("tests_catalog") {
-  testonly = true
-  embedded_services = [ ":unittest_manifest" ]
 }
 
 static_library("test_support") {

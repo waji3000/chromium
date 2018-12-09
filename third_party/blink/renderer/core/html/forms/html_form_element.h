@@ -45,6 +45,8 @@ class CORE_EXPORT HTMLFormElement final : public HTMLElement {
 
  public:
   static HTMLFormElement* Create(Document&);
+
+  explicit HTMLFormElement(Document&);
   ~HTMLFormElement() override;
   void Trace(blink::Visitor*) override;
 
@@ -105,16 +107,15 @@ class CORE_EXPORT HTMLFormElement final : public HTMLElement {
   void AnonymousNamedGetter(const AtomicString& name, RadioNodeListOrElement&);
   void InvalidateDefaultButtonStyle() const;
 
-  // 'construct the form data set'
+  // 'construct the entry list'
   // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-the-form-data-set
-  void ConstructFormDataSet(HTMLFormControlElement* submit_button,
-                            FormData& form_data);
+  // Returns false if this form is already running this function.
+  bool ConstructEntryList(HTMLFormControlElement* submit_button,
+                          FormData& form_data);
 
   unsigned UniqueRendererFormId() const { return unique_renderer_form_id_; }
 
  private:
-  explicit HTMLFormElement(Document&);
-
   InsertionNotificationRequest InsertedInto(ContainerNode&) override;
   void RemovedFrom(ContainerNode&) override;
   void FinishParsingChildren() override;
@@ -143,9 +144,7 @@ class CORE_EXPORT HTMLFormElement final : public HTMLElement {
   // Validates each of the controls, and stores controls of which 'invalid'
   // event was not canceled to the specified vector. Returns true if there
   // are any invalid controls in this form.
-  bool CheckInvalidControlsAndCollectUnhandled(
-      HeapVector<Member<HTMLFormControlElement>>*,
-      CheckValidityEventBehavior);
+  bool CheckInvalidControlsAndCollectUnhandled(ListedElement::List*);
 
   Element* ElementFromPastNamesMap(const AtomicString&);
   void AddToPastNamesMap(Element*, const AtomicString& past_name);
@@ -172,6 +171,7 @@ class CORE_EXPORT HTMLFormElement final : public HTMLElement {
 
   bool is_submitting_ = false;
   bool in_user_js_submit_event_ = false;
+  bool is_constructing_entry_list_ = false;
 
   bool listed_elements_are_dirty_ : 1;
   bool image_elements_are_dirty_ : 1;

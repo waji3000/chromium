@@ -31,6 +31,7 @@
 <translation id="1351937230027495976">Ahenda menüü</translation>
 <translation id="1383876407941801731">Otsi</translation>
 <translation id="1419738280318246476">Märguandetoimingu tegemiseks avage seade</translation>
+<translation id="1455242230282523554">Kuva keeleseaded</translation>
 <translation id="1467432559032391204">Vasakule</translation>
 <translation id="1484102317210609525"><ph name="DEVICE_NAME" /> (HDMI/DP)</translation>
 <translation id="1520303207432623762">{NUM_APPS,plural, =1{Kuvab märguandeseaded. Märguanded on rakenduse jaoks välja lülitatud}other{Kuvab märguandeseaded. Märguanded on # rakenduse jaoks välja lülitatud}}</translation>
@@ -38,7 +39,6 @@
 <translation id="1537254971476575106">Täisekraani luup</translation>
 <translation id="15373452373711364">Suur hiirekursor</translation>
 <translation id="1550523713251050646">Klõpsake lisavalikute nägemiseks</translation>
-<translation id="1567387640189251553">Pärast parooli viimast sisestamist on ühendatud teine klaviatuur. See võib üritada varastada teie klahvivajutusi.</translation>
 <translation id="1570871743947603115">Lülitab Bluetoothi sisse või välja. <ph name="STATE_TEXT" /></translation>
 <translation id="1608626060424371292">Eemalda see kasutaja</translation>
 <translation id="1621499497873603021">Aku tühjenemiseni on aega <ph name="TIME_LEFT" /></translation>
@@ -81,6 +81,7 @@
 <translation id="2268130516524549846">Bluetooth on keelatud</translation>
 <translation id="2268813581635650749">Logi kõik kasutajad välja</translation>
 <translation id="2292698582925480719">Ekraani skaala</translation>
+<translation id="2302092602801625023">Kontot haldab Family Link</translation>
 <translation id="2303600792989757991">Akna ülevaate sisse- ja väljalülitamine</translation>
 <translation id="2339073806695260576">Puudutage riiulil elektronpliiatsi nuppu, et teha märkmeid, jäädvustada ekraanipilt, kasutada laserkursorit või suurendusklaasi.</translation>
 <translation id="2341729377289034582">Lukustatud vertikaalasendisse</translation>
@@ -110,14 +111,12 @@
 <translation id="2727977024730340865">Ühendatud väikese energiakuluga laadijaga. Aku laadimine võib olla ebastabiilne.</translation>
 <translation id="2761704814324807722">Olekusalv, kellaaeg <ph name="TIME" />, <ph name="BATTERY" /></translation>
 <translation id="277257480934873581">Võrguga <ph name="NAME" /> uuesti ühendamine</translation>
-<translation id="2790844815106384441">Valige, kas veebisaidid tohivad kasutada asukohateenuseid ja seadme mikrofoni, kaamerat või muid funktsioone</translation>
 <translation id="2792498699870441125">Alt + otsinguklahv</translation>
 <translation id="2803734122639935495">Avamiseks sisestage parool</translation>
 <translation id="2819276065543622893">Teid logitakse nüüd välja.</translation>
 <translation id="2825619548187458965">Riiul</translation>
 <translation id="2844169650293029770">C-tüüpi USB-seade (eesmine vasakpoolne port)</translation>
 <translation id="2865888419503095837">Võrguteave</translation>
-<translation id="287224423103674444">Vajutasite ekraanikuva pööramise otseteed. Kas soovite ekraanikuva pöörata?</translation>
 <translation id="2872961005593481000">Lülita välja</translation>
 <translation id="2878884018241093801">Hiljutisi üksusi pole</translation>
 <translation id="2903844815300039659">Ühendatud võrguga <ph name="NAME" />, <ph name="STRENGTH" /></translation>
@@ -141,7 +140,9 @@
 <translation id="315116470104423982">Mobiilne andmeside</translation>
 <translation id="3151786313568798007">Suund</translation>
 <translation id="3153444934357957346">Saate korraga sisse logida kuni <ph name="MULTI_PROFILE_USER_LIMIT" /> kontole.</translation>
+<translation id="3154351730702813399">Seadme administraator võib jälgida teie sirvimistegevust.</translation>
 <translation id="3202010236269062730">{NUM_DEVICES,plural, =1{Ühendatud ühe seadmega}other{Ühendatud # seadmega}}</translation>
+<translation id="32244657276328332">Võrguga ühendamata</translation>
 <translation id="3236488194889173876">Ühtegi mobiilsidevõrku pole saadaval</translation>
 <translation id="3255483164551725916">Mida sa teha oskad?</translation>
 <translation id="3294437725009624529">Külaline</translation>
@@ -154,9 +155,9 @@
 <translation id="3413817803639110246">Veel ei ole midagi kuvada</translation>
 <translation id="3445925074670675829">C-tüüpi USB-seade</translation>
 <translation id="3454224730401036106">Teie ühendus on lülitatud turvalisemale võrgule</translation>
+<translation id="3465223694362104965">Pärast teie viimast sisselogimist lõi muu klaviatuur seadmega ühenduse. Enne klaviatuuri kasutamist veenduge, et see oleks usaldusväärne.</translation>
 <translation id="3477079411857374384">Ctrl + Tõstuklahv + Tühik</translation>
 <translation id="3510164367642747937">Hiirekursori esiletõstmine</translation>
-<translation id="3510503721818156981">Chromebook lõi ühenduse uue telefoniga</translation>
 <translation id="3513798432020909783">Kontohaldur: <ph name="MANAGER_EMAIL" /></translation>
 <translation id="3573179567135747900">Muuda tagasi seadele <ph name="FROM_LOCALE" /> (nõuab taaskäivitust)</translation>
 <translation id="3595596368722241419">Aku on täis</translation>
@@ -173,6 +174,7 @@ Jätkamiseks peavad kõik kasutajad välja logima.</translation>
 <translation id="3783640748446814672">alt</translation>
 <translation id="3784455785234192852">Lukusta</translation>
 <translation id="3798670284305777884">Kõlar (sisemine)</translation>
+<translation id="3799080171973636491">Vajutasite täisekraani luubi otseteed. Kas soovite luubi sisse lülitada?</translation>
 <translation id="380165613292957338">Tere! Kuidas saan aidata?</translation>
 <translation id="383629559565718788">Kuvab klaviatuuriseaded</translation>
 <translation id="3846575436967432996">Võrguteave ei ole saadaval</translation>
@@ -190,20 +192,21 @@ Jätkamiseks peavad kõik kasutajad välja logima.</translation>
 <translation id="4065525899979931964">{NUM_APPS,plural, =1{Rakenduse puhul välja lülitatud}other{# rakenduse puhul välja lülitatud}}</translation>
 <translation id="4072264167173457037">Keskmine signaal</translation>
 <translation id="4146833061457621061">Esita muusikat</translation>
-<translation id="4200057768455216496">Vajutasite dokitud luubi otseteed. Kas soovite luubi sisse lülitada?</translation>
+<translation id="4181841719683918333">Keeled</translation>
 <translation id="4217571870635786043">Dikteerimine</translation>
 <translation id="4261870227682513959">Kuvab märguandeseaded. Märguanded on välja lülitatud</translation>
 <translation id="4269883910223712419">Selle seadme administraator saab teha järgmist.</translation>
-<translation id="4274921305979314545">Ühendage Chromebook oma telefoniga</translation>
 <translation id="4279490309300973883">Peegeldamine</translation>
 <translation id="4292681942966152062">Võrgu <ph name="NETWORK_NAME" /> aktiveerimine</translation>
 <translation id="4321179778687042513">ctrl</translation>
+<translation id="4321776623976362024">Vajutasite suure kontrastsusega režiimi otseteed. Kas soovite režiimi sisse lülitada?</translation>
 <translation id="4331809312908958774">Chrome OS</translation>
 <translation id="4338109981321384717">Suurendusklaas</translation>
 <translation id="4351433414020964307">Assistenti laaditakse …</translation>
 <translation id="435527878592612277">Valige foto</translation>
 <translation id="4378551569595875038">Ühendamine ...</translation>
 <translation id="4379531060876907730">Need on teie elektronpliiatsi tööriistad</translation>
+<translation id="4389184120735010762">Vajutasite dokitud luubi otseteed. Kas soovite luubi sisse lülitada?</translation>
 <translation id="4421231901400348175">Ekraani juhtimise jagamine isikuga <ph name="HELPER_NAME" /> kaugabi kaudu.</translation>
 <translation id="4430019312045809116">Helitugevus</translation>
 <translation id="4450893287417543264">Ära kuva uuesti</translation>
@@ -219,7 +222,7 @@ Jätkamiseks peavad kõik kasutajad välja logima.</translation>
 <translation id="4628757576491864469">Seadmed</translation>
 <translation id="4659419629803378708">ChromeVox on lubatud</translation>
 <translation id="4734965478015604180">Horisontaalne</translation>
-<translation id="476166673298332917">Seadme aministraatoril on juurdepääs kõigile tegevustele, sh paroolidele ja sidele.</translation>
+<translation id="476166673298332917">Seadme administraator võib jälgida teie sirvimistegevust.</translation>
 <translation id="4774338217796918551">Tulge tagasi homme kell <ph name="COME_BACK_TIME" />.</translation>
 <translation id="4776917500594043016">Kasutaja <ph name="USER_EMAIL_ADDRESS" /> parool</translation>
 <translation id="4778095205580009397">Google'i assistent ei ole demoseansi puhul saadaval.</translation>
@@ -242,6 +245,7 @@ Jätkamiseks peavad kõik kasutajad välja logima.</translation>
 <translation id="5207949376430453814">Tekstisisestusmärgi esiletõstmine</translation>
 <translation id="5222676887888702881">Logi välja</translation>
 <translation id="523505283826916779">Juurdepääsuseaded</translation>
+<translation id="5302048478445481009">Keel</translation>
 <translation id="5313326810920013265">Bluetoothi seaded</translation>
 <translation id="5331975486040154427">C-tüüpi USB-seade (tagumine vasakpoolne port)</translation>
 <translation id="5379115545237091094">Liiga palju katseid</translation>
@@ -257,6 +261,7 @@ Jätkamiseks peavad kõik kasutajad välja logima.</translation>
 <translation id="5571066253365925590">Bluetooth on lubatud</translation>
 <translation id="5597451508971090205"><ph name="SHORT_WEEKDAY" />, <ph name="DATE" /></translation>
 <translation id="5600837773213129531">Vajutage suulise tagasiside keelamiseks klahvikombinatsiooni Ctrl + Alt + Z.</translation>
+<translation id="5626283214046138476">Teie jälgitava kasutaja konto aegub peagi.</translation>
 <translation id="5648021990716966815">Mikrofoni pistikupesa</translation>
 <translation id="5669267381087807207">Aktiveerimine</translation>
 <translation id="5673434351075758678">Pärast seadete sünkroonimist lokaadist „<ph name="FROM_LOCALE" />” lokaati „<ph name="TO_LOCALE" />”.</translation>
@@ -274,7 +279,6 @@ Jätkamiseks peavad kõik kasutajad välja logima.</translation>
 <translation id="5901316534475909376">Tõstuklahv + ESC</translation>
 <translation id="5911909173233110115"><ph name="USERNAME" /> (<ph name="MAIL" />)</translation>
 <translation id="5916664084637901428">Sees</translation>
-<translation id="592343074608792716">See Chromebook ja teie telefon ühendatakse automaatselt</translation>
 <translation id="5947494881799873997">Ennista</translation>
 <translation id="595202126637698455">Toimivuse jälgimine on lubatud</translation>
 <translation id="5957083217255311415">Mobiilne andmeside on välja lülitatud.</translation>
@@ -332,7 +336,6 @@ Jätkamiseks peavad kõik kasutajad välja logima.</translation>
 <translation id="6751826523481687655">Toimivuse jälgimine on sisse lülitatud</translation>
 <translation id="6785414152754474415">Aku on <ph name="PERCENTAGE" />% täis ja seda laetakse.</translation>
 <translation id="6803622936009808957">Ei saanud kuvasid peegeldada, kuna toetatud eraldusvõimeid ei leitud. Selle asemel siseneti laiendatud töölaua režiimi.</translation>
-<translation id="6814658242098378692">Rakenduste, laienduste ja teemade haldamine</translation>
 <translation id="6820676911989879663">Tehke paus!</translation>
 <translation id="683971173229319003">Otsing + L</translation>
 <translation id="6857811139397017780">Aktiveeri <ph name="NETWORKSERVICE" /></translation>
@@ -343,7 +346,6 @@ Jätkamiseks peavad kõik kasutajad välja logima.</translation>
 <translation id="698231206551913481">Kõik selle kasutajaga seotud failid ja kohalikud andmed kustutatakse jäädavalt kohe, kui see kasutaja eemaldatakse.</translation>
 <translation id="7015766095477679451">Tulge tagasi kell <ph name="COME_BACK_TIME" />.</translation>
 <translation id="7029814467594812963">Välju seansist</translation>
-<translation id="7037152028959403492">Vajutasite suure kontrastsusega režiimi otseteed. Kas soovite režiimi sisse lülitada?</translation>
 <translation id="7066646422045619941">Teie administraator on selle võrgu keelanud.</translation>
 <translation id="7067196344162293536">Automaatne pööramine</translation>
 <translation id="7068360136237591149">Ava failid</translation>
@@ -373,7 +375,6 @@ Jätkamiseks peavad kõik kasutajad välja logima.</translation>
 <translation id="7564874036684306347">Kui teisaldate aknad teisele töölauale, võib tagajärjeks olla ootamatu käitumine. Järgmised märguanded, aknad ja dialoogid võivad jaguneda eri töölaudade vahel.</translation>
 <translation id="7569509451529460200">Punktkiri ja ChromeVox on lubatud</translation>
 <translation id="7593891976182323525">Otsinguklahv või tõstuklahv</translation>
-<translation id="7604942372593434070">Juurdepääs teie sirvimistegevustele</translation>
 <translation id="7645176681409127223"><ph name="USER_NAME" /> (omanik)</translation>
 <translation id="7647488630410863958">Märguannete vaatamiseks avage seade</translation>
 <translation id="7649070708921625228">Abi</translation>
@@ -394,6 +395,7 @@ Jätkamiseks peavad kõik kasutajad välja logima.</translation>
 <translation id="7886169021410746335">Privaatsusseadete kohandamine</translation>
 <translation id="7886277072580235377">Teie Interneti-seanss kustutatakse väljalogimisel. <ph name="LEARN_MORE" /></translation>
 <translation id="788781083998633524">Saada meil</translation>
+<translation id="7897375687985782769">Vajutasite ekraanikuva pööramise otseteed. Kas soovite ekraanikuva pöörata?</translation>
 <translation id="7904094684485781019">Selle konto administraator on mitmesse kontosse sisselogimise keelanud.</translation>
 <translation id="7933084174919150729">Google'i assistent on saadaval ainult peamisel profiilil.</translation>
 <translation id="79341161159229895">Kontohaldurid: <ph name="FIRST_PARENT_EMAIL" /> ja <ph name="SECOND_PARENT_EMAIL" /></translation>
@@ -411,7 +413,6 @@ Jätkamiseks peavad kõik kasutajad välja logima.</translation>
 <translation id="8132793192354020517">Ühendus <ph name="NAME" />iga</translation>
 <translation id="813913629614996137">Lähtestamine …</translation>
 <translation id="8142699993796781067">Privaatvõrk</translation>
-<translation id="8152119955266188852">Vajutasite täisekraani luubi otseteed. Kas soovite luubi sisse lülitada?</translation>
 <translation id="8190698733819146287">Keelte ja sisendi kohandamine...</translation>
 <translation id="8192202700944119416">Märguanded on peidetud.</translation>
 <translation id="8236042855478648955">Aeg pausi pidada</translation>
@@ -460,6 +461,7 @@ Jätkamiseks peavad kõik kasutajad välja logima.</translation>
 <translation id="8921624153894383499">Google'i assistent ei räägi selles keeles.</translation>
 <translation id="8938800817013097409">C-tüüpi USB-seade (parempoolne port taga)</translation>
 <translation id="8940956008527784070">Aku tühjeneb (<ph name="PERCENTAGE" />%)</translation>
+<translation id="8990809378771970590">Kasutusel: <ph name="IME_NAME" /></translation>
 <translation id="899350903320462459">Märguandetoimingu tegemiseks avage seade kontoga <ph name="LOGIN_ID" /></translation>
 <translation id="8995603266996330174">Haldaja: <ph name="DOMAIN" /></translation>
 <translation id="9029474291399787231">Saadaval on Adobe Flash Playeri värskendus</translation>

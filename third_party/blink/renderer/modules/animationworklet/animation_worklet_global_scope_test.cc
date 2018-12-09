@@ -78,13 +78,15 @@ class AnimationWorkletGlobalScopeTest : public PageTestBase {
     Document* document = &GetDocument();
     thread->Start(
         std::make_unique<GlobalScopeCreationParams>(
-            document->Url(), ScriptType::kModule, document->UserAgent(),
-            Vector<CSPHeaderAndType>(), document->GetReferrerPolicy(),
-            document->GetSecurityOrigin(), document->IsSecureContext(),
-            document->GetHttpsState(), clients, document->AddressSpace(),
+            document->Url(), mojom::ScriptType::kModule, document->UserAgent(),
+            nullptr /* web_worker_fetch_context */, Vector<CSPHeaderAndType>(),
+            document->GetReferrerPolicy(), document->GetSecurityOrigin(),
+            document->IsSecureContext(), document->GetHttpsState(), clients,
+            document->AddressSpace(),
             OriginTrialContext::GetTokens(document).get(),
             base::UnguessableToken::Create(), nullptr /* worker_settings */,
-            kV8CacheOptionsDefault, new WorkletModuleResponsesMap),
+            kV8CacheOptionsDefault,
+            MakeGarbageCollected<WorkletModuleResponsesMap>()),
         base::nullopt, std::make_unique<WorkerDevToolsParams>(),
         ParentExecutionContextTaskRunners::Create());
     return thread;
@@ -255,15 +257,16 @@ class AnimationWorkletGlobalScopeTest : public PageTestBase {
     ASSERT_TRUE(isolate);
 
     ScriptState::Scope scope(script_state);
-    global_scope->ScriptController()->Evaluate(ScriptSourceCode(
-                                                   R"JS(
+    global_scope->ScriptController()->Evaluate(
+        ScriptSourceCode(
+            R"JS(
             registerAnimator('test', class {
               animate (currentTime, effect) {
                 effect.localTime = 123;
               }
             });
           )JS"),
-                                               kSharableCrossOrigin);
+        SanitizeScriptErrors::kDoNotSanitize);
 
     // Passing a new input state with a new animation id should cause the
     // worklet to create and animate an animator.
@@ -301,15 +304,16 @@ class AnimationWorkletGlobalScopeTest : public PageTestBase {
     EXPECT_EQ(global_scope->GetAnimatorsSizeForTest(), 0u);
 
     ScriptState::Scope scope(script_state);
-    global_scope->ScriptController()->Evaluate(ScriptSourceCode(
-                                                   R"JS(
+    global_scope->ScriptController()->Evaluate(
+        ScriptSourceCode(
+            R"JS(
             registerAnimator('test', class {
               animate (currentTime, effect) {
                 effect.localTime = 123;
               }
             });
           )JS"),
-                                               kSharableCrossOrigin);
+        SanitizeScriptErrors::kDoNotSanitize);
 
     cc::WorkletAnimationId animation_id = {1, 1};
     AnimationWorkletInput state;
@@ -350,15 +354,16 @@ class AnimationWorkletGlobalScopeTest : public PageTestBase {
     EXPECT_EQ(global_scope->GetAnimatorsSizeForTest(), 0u);
 
     ScriptState::Scope scope(script_state);
-    global_scope->ScriptController()->Evaluate(ScriptSourceCode(
-                                                   R"JS(
+    global_scope->ScriptController()->Evaluate(
+        ScriptSourceCode(
+            R"JS(
             registerAnimator('test', class {
               animate (currentTime, effect) {
                 effect.localTime = 123;
               }
             });
           )JS"),
-                                               kSharableCrossOrigin);
+        SanitizeScriptErrors::kDoNotSanitize);
 
     cc::WorkletAnimationId animation_id = {1, 1};
     AnimationWorkletInput state;
@@ -435,7 +440,7 @@ TEST_F(AnimationWorkletGlobalScopeTest, AnimatorInstanceUpdate) {
 TEST_F(AnimationWorkletGlobalScopeTest,
        ShouldRegisterItselfAfterFirstAnimatorRegistration) {
   MockAnimationWorkletProxyClient* proxy_client =
-      new MockAnimationWorkletProxyClient();
+      MakeGarbageCollected<MockAnimationWorkletProxyClient>();
   std::unique_ptr<WorkerThread> worklet =
       CreateAnimationAndPaintWorkletThread(proxy_client);
   // Animation worklet global scope (AWGS) should not register itself upon

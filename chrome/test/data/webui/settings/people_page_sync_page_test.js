@@ -54,9 +54,6 @@ cr.define('settings_people_page_sync_page', function() {
         typedUrlsEnforced: false,
         typedUrlsRegistered: true,
         typedUrlsSynced: true,
-        userEventsEnforced: false,
-        userEventsRegistered: true,
-        userEventsSynced: true,
       };
     }
 
@@ -77,10 +74,9 @@ cr.define('settings_people_page_sync_page', function() {
     // Tests the initial layout of the sync section and the personalize section,
     // depending on the sync state and the unified consent state.
     function testInitialLayout(
-        unifiedConsentGiven, signedIn, hasError, setupInProgress,
-        syncSectionExpanded, syncSectionDisabled, personalizeSectionExpanded) {
+        signedIn, hasError, setupInProgress, syncSectionExpanded,
+        syncSectionDisabled, personalizeSectionExpanded) {
       syncPage.unifiedConsentEnabled = true;
-      syncPage.prefs = {unified_consent_given: {value: unifiedConsentGiven}};
       syncPage.syncStatus = {
         signedIn: signedIn,
         disabled: false,
@@ -98,9 +94,7 @@ cr.define('settings_people_page_sync_page', function() {
           syncPage.$$('#personalize-section-toggle');
       const personalizeSectionExpandIcon =
           personalizeSectionToggle.querySelector('cr-expand-button');
-      const unifiedConsentToggle = syncPage.$$('#unifiedConsentToggle');
 
-      assertTrue(unifiedConsentToggle.checked == unifiedConsentGiven);
       assertTrue(syncSectionExpandIcon.expanded == syncSectionExpanded);
       assertTrue(syncSectionExpandIcon.disabled == syncSectionDisabled);
       assertTrue(
@@ -180,7 +174,6 @@ cr.define('settings_people_page_sync_page', function() {
       const ironCollapse = syncPage.$$('#sync-section');
       const otherItems = syncPage.$$('#other-sync-items');
       const syncSectionToggle = syncPage.$$('#sync-section-toggle');
-      const unifiedConsentToggle = syncPage.$$('#unifiedConsentToggle');
 
       // When unified-consent is disabled and signed in, sync-section should be
       // visible and open by default. Accordion toggle row should not be present
@@ -193,9 +186,6 @@ cr.define('settings_people_page_sync_page', function() {
       assertTrue(syncSectionToggle.hidden);
       assertFalse(otherItems.classList.contains('list-frame'));
       assertFalse(!!otherItems.querySelector('list-item'));
-
-      // The unified consent toggle should be hidden.
-      assertTrue(unifiedConsentToggle.hidden);
     });
 
     test('SyncSectionLayout_UnifiedConsentEnabled_SignedIn', function() {
@@ -203,7 +193,6 @@ cr.define('settings_people_page_sync_page', function() {
       const otherItems = syncPage.$$('#other-sync-items');
       const syncSectionToggle = syncPage.$$('#sync-section-toggle');
       const expandIcon = syncSectionToggle.querySelector('cr-expand-button');
-      const unifiedConsentToggle = syncPage.$$('#unifiedConsentToggle');
 
       // When unified-consent is enabled and signed in, sync-section should be
       // visible and open by default. Accordion toggle row should be present,
@@ -249,9 +238,6 @@ cr.define('settings_people_page_sync_page', function() {
       assertTrue(ironCollapse.opened);
       assertTrue(expandIcon.expanded);
 
-      // The unified consent toggle should be visible.
-      assertFalse(unifiedConsentToggle.hidden);
-
       // Test sync paused state.
       syncPage.syncStatus = {
         signedIn: true,
@@ -270,30 +256,6 @@ cr.define('settings_people_page_sync_page', function() {
       };
       assertFalse(ironCollapse.hidden);
     });
-
-    test(
-        'UnifiedConsentToggleNotifiesHandler_UnifiedConsentEnabled',
-        function() {
-          const unifiedConsentToggle = syncPage.$$('#unifiedConsentToggle');
-          syncPage.syncStatus = {
-            signedIn: true,
-            disabled: false,
-            hasError: false,
-            statusAction: settings.StatusAction.NO_ACTION,
-          };
-          syncPage.unifiedConsentEnabled = true;
-          Polymer.dom.flush();
-
-          assertFalse(unifiedConsentToggle.hidden);
-          assertFalse(unifiedConsentToggle.checked);
-
-          unifiedConsentToggle.click();
-
-          return browserProxy.whenCalled('unifiedConsentToggleChanged')
-              .then(toggleChecked => {
-                assertTrue(toggleChecked);
-              });
-        });
 
     test('SyncSectionLayout_UnifiedConsentEnabled_SignoutCollapse', function() {
       const ironCollapse = syncPage.$$('#sync-section');
@@ -337,7 +299,6 @@ cr.define('settings_people_page_sync_page', function() {
       const ironCollapse = syncPage.$$('#sync-section');
       const syncSectionToggle = syncPage.$$('#sync-section-toggle');
       const expandIcon = syncSectionToggle.querySelector('cr-expand-button');
-      const unifiedConsentToggle = syncPage.$$('#unifiedConsentToggle');
 
       // When unified-consent is enabled and signed out, sync-section should be
       // hidden, and the accordion toggle row should be visible not actionable.
@@ -354,15 +315,11 @@ cr.define('settings_people_page_sync_page', function() {
       assertFalse(syncSectionToggle.hasAttribute('actionable'));
       assertFalse(expandIcon.expanded);
       assertTrue(expandIcon.disabled);
-
-      // The unified consent toggle should be hidden.
-      assertTrue(unifiedConsentToggle.hidden);
     });
 
     test('SyncSectionLayout_UnifiedConsentEnabled_SyncDisabled', function() {
       const ironCollapse = syncPage.$$('#sync-section');
       const syncSectionToggle = syncPage.$$('#sync-section-toggle');
-      const unifiedConsentToggle = syncPage.$$('#unifiedConsentToggle');
 
       // When unified-consent is enabled and sync is disabled, the sync-section
       // should be hidden.
@@ -376,47 +333,10 @@ cr.define('settings_people_page_sync_page', function() {
       Polymer.dom.flush();
       assertTrue(ironCollapse.hidden);
       assertTrue(syncSectionToggle.hidden);
-
-      // The unified consent toggle should be hidden.
-      assertTrue(unifiedConsentToggle.hidden);
     });
 
-    test('InitialLayout_UnifiedConsentGiven_SignedIn', function() {
+    test('InitialLayout_UnifiedConsent_SignedIn', function() {
       testInitialLayout(
-          /*unifiedConsentGiven=*/true,
-          /*signedIn=*/true,
-          /*hasError=*/false,
-          /*setupInProgress=*/false,
-          /*syncSectionExpanded=*/false,
-          /*syncSectionDisabled=*/false,
-          /*personalizeSectionExpanded=*/false);
-    });
-
-    test('InitialLayout_UnifiedConsentGiven_SignedOut', function() {
-      testInitialLayout(
-          /*unifiedConsentGiven=*/true,
-          /*signedIn=*/false,
-          /*hasError=*/false,
-          /*setupInProgress=*/false,
-          /*syncSectionExpanded=*/false,
-          /*syncSectionDisabled=*/true,
-          /*personalizeSectionExpanded=*/false);
-    });
-
-    test('InitialLayout_UnifiedConsentGiven_SyncPaused', function() {
-      testInitialLayout(
-          /*unifiedConsentGiven=*/true,
-          /*signedIn=*/true,
-          /*hasError=*/true,
-          /*setupInProgress=*/false,
-          /*syncSectionExpanded=*/false,
-          /*syncSectionDisabled=*/true,
-          /*personalizeSectionExpanded=*/false);
-    });
-
-    test('InitialLayout_NoUnifiedConsentGiven_SignedIn', function() {
-      testInitialLayout(
-          /*unifiedConsentGiven=*/false,
           /*signedIn=*/true,
           /*hasError=*/false,
           /*setupInProgress=*/false,
@@ -425,9 +345,8 @@ cr.define('settings_people_page_sync_page', function() {
           /*personalizeSectionExpanded=*/true);
     });
 
-    test('InitialLayout_NoUnifiedConsentGiven_SignedOut', function() {
+    test('InitialLayout_UnifiedConsent_SignedOut', function() {
       testInitialLayout(
-          /*unifiedConsentGiven=*/false,
           /*signedIn=*/false,
           /*hasError=*/false,
           /*setupInProgress=*/false,
@@ -436,25 +355,13 @@ cr.define('settings_people_page_sync_page', function() {
           /*personalizeSectionExpanded=*/true);
     });
 
-    test('InitialLayout_NoUnifiedConsentGiven_SyncPaused', function() {
+    test('InitialLayout_UnifiedConsent_SyncPaused', function() {
       testInitialLayout(
-          /*unifiedConsentGiven=*/false,
           /*signedIn=*/true,
           /*hasError=*/true,
           /*setupInProgress=*/false,
           /*syncSectionExpanded=*/false,
           /*syncSectionDisabled=*/true,
-          /*personalizeSectionExpanded=*/true);
-    });
-
-    test('InitialLayout_SetupInProgress', function() {
-      testInitialLayout(
-          /*unifiedConsentGiven=*/true,
-          /*signedIn=*/true,
-          /*hasError=*/false,
-          /*setupInProgress=*/true,
-          /*syncSectionExpanded=*/true,
-          /*syncSectionDisabled=*/false,
           /*personalizeSectionExpanded=*/true);
     });
 
@@ -521,7 +428,7 @@ cr.define('settings_people_page_sync_page', function() {
         browserProxy.resetResolver('setSyncDatatypes');
 
         // Test an arbitrarily-selected control (extensions synced control).
-        datatypeControls[3].click();
+        datatypeControls[2].click();
         return browserProxy.whenCalled('setSyncDatatypes')
             .then(function(prefs) {
               const expected = getSyncAllPrefs();
@@ -677,76 +584,6 @@ cr.define('settings_people_page_sync_page', function() {
 
       assertTrue(syncPage.$.encryptionDescription.hidden);
       assertTrue(syncPage.$.encryptionRadioGroupContainer.hidden);
-    });
-
-    test('UserEvents_UnifiedConsent_Encrypted', function() {
-      const prefs = getSyncAllPrefs();
-      prefs.encryptAllData = true;
-      openDatatypeConfigurationWithUnifiedConsent(prefs);
-
-      const unifiedConsentToggle = syncPage.$$('#unifiedConsentToggle');
-      // The unified consent toggle is disabled when the data types are
-      // encrypted.
-      assertTrue(unifiedConsentToggle.disabled);
-
-      assertTrue(prefs.userEventsSynced);
-      // History.
-      historyToggle = syncPage.$$('#historyToggle');
-      assertFalse(historyToggle.disabled);
-      assertTrue(historyToggle.checked);
-      // User events.
-      userEventsToggle = syncPage.$$('#userEventsToggle');
-      assertTrue(userEventsToggle.disabled);
-      assertFalse(userEventsToggle.checked);
-      resetSyncMessageBox = syncPage.$$('#reset-sync-message-box-user-events');
-      assertFalse(resetSyncMessageBox.hidden);
-    });
-
-    test('UserEvents_UnifiedConsent_NotEncrypted', function() {
-      const prefs = getSyncAllPrefs();
-      openDatatypeConfigurationWithUnifiedConsent(prefs);
-
-      const unifiedConsentToggle = syncPage.$$('#unifiedConsentToggle');
-      // The unified consent toggle is enabled when the data types are not
-      // encrypted.
-      assertFalse(unifiedConsentToggle.disabled);
-
-      assertTrue(prefs.userEventsSynced);
-      // Check history toggle.
-      historyToggle = syncPage.$$('#historyToggle');
-      assertFalse(historyToggle.disabled);
-      assertTrue(historyToggle.checked);
-      // Check user events toggle.
-      userEventsToggle = syncPage.$$('#userEventsToggle');
-      assertFalse(userEventsToggle.disabled);
-      assertTrue(userEventsToggle.checked);
-      resetSyncMessageBox = syncPage.$$('#reset-sync-message-box-user-events');
-      assertTrue(resetSyncMessageBox.hidden);
-
-      // Toggling history also toggles user events.
-      // Turn history off.
-      historyToggle.click();
-      cr.webUIListenerCallback('sync-prefs-changed', prefs);
-      assertFalse(historyToggle.checked);
-      assertTrue(userEventsToggle.disabled);
-      assertFalse(userEventsToggle.checked);
-      assertTrue(resetSyncMessageBox.hidden);
-      assertTrue(prefs.userEventsSynced);
-      // Turn history on.
-      historyToggle.click();
-      cr.webUIListenerCallback('sync-prefs-changed', prefs);
-      assertTrue(historyToggle.checked);
-      assertFalse(userEventsToggle.disabled);
-      assertTrue(userEventsToggle.checked);
-      assertTrue(prefs.userEventsSynced);
-
-      // Toggling user events also toggles the sync preference.
-      userEventsToggle.click();
-      cr.webUIListenerCallback('sync-prefs-changed', prefs);
-      assertFalse(userEventsToggle.disabled);
-      assertFalse(userEventsToggle.checked);
-      assertFalse(prefs.userEventsSynced);
-      assertTrue(resetSyncMessageBox.hidden);
     });
 
     test(

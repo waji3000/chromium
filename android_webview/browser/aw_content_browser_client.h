@@ -34,6 +34,9 @@ namespace android_webview {
 class AwBrowserContext;
 class AwFeatureListCreator;
 
+std::string GetProduct();
+std::string GetUserAgent();
+
 class AwContentBrowserClient : public content::ContentBrowserClient {
  public:
   // This is what AwContentBrowserClient::GetAcceptLangs uses.
@@ -50,6 +53,11 @@ class AwContentBrowserClient : public content::ContentBrowserClient {
   // Allows AwBrowserMainParts to initialize a BrowserContext at the right
   // moment during startup. AwContentBrowserClient owns the result.
   AwBrowserContext* InitBrowserContext();
+
+  network::mojom::NetworkContextPtr CreateNetworkContext(
+      content::BrowserContext* context,
+      bool in_memory,
+      const base::FilePath& relative_partition_path) override;
 
   content::BrowserMainParts* CreateBrowserMainParts(
       const content::MainFunctionParams& parameters) override;
@@ -195,21 +203,30 @@ class AwContentBrowserClient : public content::ContentBrowserClient {
       content::NavigationUIData* navigation_data,
       bool is_main_frame,
       ui::PageTransition page_transition,
-      bool has_user_gesture) override;
+      bool has_user_gesture,
+      const std::string& method,
+      const net::HttpRequestHeaders& headers) override;
   void RegisterOutOfProcessServices(OutOfProcessServiceMap* services) override;
   bool ShouldIsolateErrorPage(bool in_main_frame) override;
   bool ShouldEnableStrictSiteIsolation() override;
   bool WillCreateURLLoaderFactory(
       content::BrowserContext* browser_context,
       content::RenderFrameHost* frame,
+      int render_process_id,
       bool is_navigation,
       const url::Origin& request_initiator,
       network::mojom::URLLoaderFactoryRequest* factory_request,
+      network::mojom::TrustedURLLoaderHeaderClientPtrInfo* header_client,
       bool* bypass_redirect_checks) override;
+  std::string GetProduct() const override;
+  std::string GetUserAgent() const override;
 
   AwFeatureListCreator* aw_feature_list_creator() {
     return aw_feature_list_creator_;
   }
+
+  content::SpeechRecognitionManagerDelegate*
+  CreateSpeechRecognitionManagerDelegate() override;
 
   static void DisableCreatingTaskScheduler();
 

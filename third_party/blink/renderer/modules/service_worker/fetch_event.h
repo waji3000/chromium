@@ -56,10 +56,17 @@ class MODULES_EXPORT FetchEvent final
                             WaitUntilObserver*,
                             bool navigation_preload_sent);
 
+  FetchEvent(ScriptState*,
+             const AtomicString& type,
+             const FetchEventInit*,
+             FetchRespondWithObserver*,
+             WaitUntilObserver*,
+             bool navigation_preload_sent);
   ~FetchEvent() override;
 
   Request* request() const;
   String clientId() const;
+  String resultingClientId() const;
   bool isReload() const;
 
   void respondWith(ScriptState*, ScriptPromise, ExceptionState&);
@@ -83,14 +90,6 @@ class MODULES_EXPORT FetchEvent final
 
   void Trace(blink::Visitor*) override;
 
- protected:
-  FetchEvent(ScriptState*,
-             const AtomicString& type,
-             const FetchEventInit*,
-             FetchRespondWithObserver*,
-             WaitUntilObserver*,
-             bool navigation_preload_sent);
-
  private:
   Member<FetchRespondWithObserver> observer_;
   TraceWrapperMember<Request> request_;
@@ -98,6 +97,7 @@ class MODULES_EXPORT FetchEvent final
   std::unique_ptr<WebURLResponse> preload_response_;
   Member<DataPipeBytesConsumer::CompletionNotifier> body_completion_notifier_;
   String client_id_;
+  String resulting_client_id_;
   bool is_reload_;
 };
 

@@ -30,26 +30,39 @@ Polymer({
   behaviors: [I18nBehavior],
 
   properties: {
+    /** @type {nux.stepIndicatorModel} */
+    indicatorModel: Object,
+
     /**
      * @type {!Array<!nuxGoogleApps.AppItem>}
      * @private
      */
     appList_: Array,
 
-    bookmarkBarWasShown: Boolean,
-
-    hasAppsSelected: {
+    hasAppsSelected_: {
       type: Boolean,
       notify: true,
       value: true,
     },
   },
 
+  /** @private */
+  finalized_: false,
+
   /** @private {nux.NuxGoogleAppsProxy} */
   appsProxy_: null,
 
   /** @private {nux.BookmarkProxy} */
   bookmarkProxy_: null,
+
+  /** @private {nux.BookmarkBarManager} */
+  bookmarkBarManager_: null,
+
+  /** @private {?nux.ModuleMetricsManager} */
+  metricsManager_: null,
+
+  /** @private {boolean} */
+  wasBookmarkBarShownOnInit_: false,
 
   /** @override */
   attached: function() {
@@ -62,10 +75,54 @@ Polymer({
   ready() {
     this.appsProxy_ = nux.NuxGoogleAppsProxyImpl.getInstance();
     this.bookmarkProxy_ = nux.BookmarkProxyImpl.getInstance();
+    this.bookmarkBarManager_ = nux.BookmarkBarManager.getInstance();
+    this.metricsManager_ = new nux.ModuleMetricsManager(
+        nux.GoogleAppsMetricsProxyImpl.getInstance());
+
+    window.addEventListener('beforeunload', () => {
+      if (this.finalized_)
+        return;
+      this.cleanUp_();
+      this.metricsManager_.recordNavigatedAway();
+    });
+  },
+
+  initializeSection() {
+    this.finalized_ = false;
+    this.metricsManager_.recordPageInitialized();
+    this.populateAllBookmarks();
+  },
+
+  finalizeSection() {
+    if (this.finalized_)
+      return;
+    this.cleanUp_();
+    this.metricsManager_.recordBrowserBackOrForward();
+  },
+
+  /** @private */
+  onNoThanksClicked_: function() {
+    this.cleanUp_();
+    this.metricsManager_.recordNoThanks();
+    welcome.navigateToNextStep();
+  },
+
+  /** @private */
+  onGetStartedClicked_: function() {
+    this.finalized_ = true;
+    this.appList_.forEach(app => {
+      if (app.selected) {
+        this.appsProxy_.recordProviderSelected(app.id);
+      }
+    });
+    this.metricsManager_.recordGetStarted();
+    welcome.navigateToNextStep();
   },
 
   /** Called when bookmarks should be created for all selected apps. */
   populateAllBookmarks() {
+    this.wasBookmarkBarShownOnInit_ = this.bookmarkBarManager_.getShown();
+
     if (this.appList_) {
       this.appList_.forEach(app => this.updateBookmark(app));
     } else {
@@ -82,15 +139,21 @@ Polymer({
     }
   },
 
-  /** Called when bookmarks should be removed for all selected apps. */
-  removeAllBookmarks() {
+  /**
+   * Called when bookmarks should be removed for all selected apps.
+   * @private
+   */
+  cleanUp_() {
+    this.finalized_ = true;
+
     if (!this.appList_)
       return;  // No apps to remove.
 
     let removedBookmarks = false;
     this.appList_.forEach(app => {
       if (app.selected && app.bookmarkId) {
-        // Don't call |updateBookmark| b/c we want to save the selection.
+        // Don't call |updateBookmark| b/c we want to save the selection in the
+        // event of a browser back/forward.
         this.bookmarkProxy_.removeBookmark(app.bookmarkId);
         app.bookmarkId = null;
         removedBookmarks = true;
@@ -98,7 +161,7 @@ Polymer({
     });
     // Only update and announce if we removed bookmarks.
     if (removedBookmarks) {
-      this.bookmarkProxy_.toggleBookmarkBar(this.bookmarkBarWasShown);
+      this.bookmarkBarManager_.setShown(this.wasBookmarkBarShownOnInit_);
       this.fire('iron-announce', {text: this.i18n('bookmarksRemoved')});
     }
   },
@@ -109,7 +172,7 @@ Polymer({
    */
   updateBookmark(item) {
     if (item.selected && !item.bookmarkId) {
-      this.bookmarkProxy_.toggleBookmarkBar(true);
+      this.bookmarkBarManager_.setShown(true);
       this.bookmarkProxy_.addBookmark(
           {
             title: item.name,
@@ -137,6 +200,9 @@ Polymer({
     e.model.set('item.selected', !item.selected);
     this.updateBookmark(item);
     this.updateHasAppsSelected();
+
+    this.metricsManager_.recordClickedOption();
+
     // Announcements should NOT be in |updateBookmark| because there should be a
     // different utterance when all app bookmarks are added/removed.
     if (item.selected)
@@ -162,12 +228,13 @@ Polymer({
   },
 
   /**
-   * Updates the value of hasAppsSelected.
+   * Updates the value of hasAppsSelected_.
    * @private
    */
   updateHasAppsSelected: function() {
-    this.hasAppsSelected = this.appList_ && this.appList_.some(a => a.selected);
-    if (!this.hasAppsSelected)
-      this.bookmarkProxy_.toggleBookmarkBar(this.bookmarkBarWasShown);
+    this.hasAppsSelected_ =
+        this.appList_ && this.appList_.some(a => a.selected);
+    if (!this.hasAppsSelected_)
+      this.bookmarkBarManager_.setShown(this.wasBookmarkBarShownOnInit_);
   },
 });

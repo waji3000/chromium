@@ -107,12 +107,12 @@ class NGInlineNodeTest : public NGLayoutTest {
   void CreateLine(
       NGInlineNode node,
       Vector<scoped_refptr<const NGPhysicalTextFragment>>* fragments_out) {
-    NGPhysicalSize icb_size(LayoutUnit(200), LayoutUnit(200));
-
     NGConstraintSpace constraint_space =
-        NGConstraintSpaceBuilder(WritingMode::kHorizontalTb, icb_size)
+        NGConstraintSpaceBuilder(WritingMode::kHorizontalTb,
+                                 WritingMode::kHorizontalTb,
+                                 /* is_new_fc */ false)
             .SetAvailableSize({LayoutUnit::Max(), LayoutUnit(-1)})
-            .ToConstraintSpace(WritingMode::kHorizontalTb);
+            .ToConstraintSpace();
     NGInlineChildLayoutContext context;
     scoped_refptr<NGLayoutResult> result =
         NGInlineLayoutAlgorithm(node, constraint_space,
@@ -393,7 +393,7 @@ TEST_F(NGInlineNodeTest, SegmentBidiIsolate) {
   NGInlineNodeForTest node = CreateInlineNode();
   node = CreateBidiIsolateNode(node, style_.get(), layout_object_);
   Vector<NGInlineItem>& items = node.Items();
-  ASSERT_EQ(10u, items.size());
+  EXPECT_EQ(9u, items.size());
   TEST_ITEM_OFFSET_DIR(items[0], 0u, 6u, TextDirection::kLtr);
   TEST_ITEM_OFFSET_DIR(items[1], 6u, 7u, TextDirection::kLtr);
   TEST_ITEM_OFFSET_DIR(items[2], 7u, 13u, TextDirection::kRtl);
@@ -402,8 +402,7 @@ TEST_F(NGInlineNodeTest, SegmentBidiIsolate) {
   TEST_ITEM_OFFSET_DIR(items[5], 15u, 16u, TextDirection::kRtl);
   TEST_ITEM_OFFSET_DIR(items[6], 16u, 21u, TextDirection::kRtl);
   TEST_ITEM_OFFSET_DIR(items[7], 21u, 22u, TextDirection::kLtr);
-  TEST_ITEM_OFFSET_DIR(items[8], 22u, 23u, TextDirection::kLtr);
-  TEST_ITEM_OFFSET_DIR(items[9], 23u, 28u, TextDirection::kLtr);
+  TEST_ITEM_OFFSET_DIR(items[8], 22u, 28u, TextDirection::kLtr);
 }
 
 #define TEST_TEXT_FRAGMENT(fragment, start_offset, end_offset) \
@@ -420,13 +419,12 @@ TEST_F(NGInlineNodeTest, CreateLineBidiIsolate) {
   node.ShapeText();
   Vector<scoped_refptr<const NGPhysicalTextFragment>> fragments;
   CreateLine(node, &fragments);
-  ASSERT_EQ(6u, fragments.size());
+  EXPECT_EQ(5u, fragments.size());
   TEST_TEXT_FRAGMENT(fragments[0], 0u, 6u);
   TEST_TEXT_FRAGMENT(fragments[1], 16u, 21u);
   TEST_TEXT_FRAGMENT(fragments[2], 14u, 15u);
   TEST_TEXT_FRAGMENT(fragments[3], 7u, 13u);
-  TEST_TEXT_FRAGMENT(fragments[4], 22u, 23u);
-  TEST_TEXT_FRAGMENT(fragments[5], 23u, 28u);
+  TEST_TEXT_FRAGMENT(fragments[4], 22u, 28u);
 }
 
 TEST_F(NGInlineNodeTest, MinMaxSize) {
@@ -488,6 +486,19 @@ TEST_F(NGInlineNodeTest, MinMaxSizeFloatsClearance) {
 
   EXPECT_EQ(50, sizes.min_size);
   EXPECT_EQ(160, sizes.max_size);
+}
+
+TEST_F(NGInlineNodeTest, AssociatedItemsWithControlItem) {
+  SetBodyInnerHTML(
+      "<pre id=t style='-webkit-rtl-ordering:visual'>ab\nde</pre>");
+  LayoutText* const layout_text = ToLayoutText(
+      GetDocument().getElementById("t")->firstChild()->GetLayoutObject());
+  ASSERT_TRUE(layout_text->HasValidInlineItems());
+  const Vector<NGInlineItem*>& items = layout_text->InlineItems();
+  ASSERT_EQ(3u, items.size());
+  TEST_ITEM_TYPE_OFFSET((*items[0]), kText, 1u, 3u);
+  TEST_ITEM_TYPE_OFFSET((*items[1]), kControl, 4u, 5u);
+  TEST_ITEM_TYPE_OFFSET((*items[2]), kText, 6u, 8u);
 }
 
 TEST_F(NGInlineNodeTest, InvalidateAddSpan) {
@@ -828,6 +839,75 @@ TEST_F(NGInlineNodeTest, MarkLineBoxesDirtyOnNeedsLayoutWithBox) {
   auto lines = MarkLineBoxesDirty();
   EXPECT_FALSE(lines[0]->IsDirty());
   EXPECT_TRUE(lines[1]->IsDirty());
+}
+
+// Test marking line boxes when a span inside a span has NeedsLayout.
+// The parent span has a box fragment, and wraps, so that its fragment
+// is seen earlier in pre-order DFS.
+TEST_F(NGInlineNodeTest, MarkLineBoxesDirtyOnChildOfWrappedBox) {
+  SetupHtml("container", R"HTML(
+    <div id=container style="font-size: 10px">
+      <span style="background: yellow">
+        <span id=t>target</span>
+        <br>
+        12345678
+      </span>
+    </div>
+  )HTML");
+
+  LayoutObject* span = GetLayoutObjectByElementId("t");
+  span->SetNeedsLayout("");
+
+  auto lines = MarkLineBoxesDirty();
+  EXPECT_TRUE(lines[0]->IsDirty());
+}
+
+TEST_F(NGInlineNodeTest, RemoveInlineNodeDataIfBlockBecomesEmpty1) {
+  SetupHtml("container", "<div id=container><b id=remove><i>foo</i></b></div>");
+  ASSERT_TRUE(layout_block_flow_->HasNGInlineNodeData());
+
+  Element* to_remove = GetElementById("remove");
+  to_remove->remove();
+  UpdateAllLifecyclePhasesForTest();
+
+  EXPECT_FALSE(layout_block_flow_->HasNGInlineNodeData());
+}
+
+TEST_F(NGInlineNodeTest, RemoveInlineNodeDataIfBlockBecomesEmpty2) {
+  SetupHtml("container", "<div id=container><b><i>foo</i></b></div>");
+  ASSERT_TRUE(layout_block_flow_->HasNGInlineNodeData());
+
+  GetElementById("container")->SetInnerHTMLFromString("");
+  UpdateAllLifecyclePhasesForTest();
+
+  EXPECT_FALSE(layout_block_flow_->HasNGInlineNodeData());
+}
+
+TEST_F(NGInlineNodeTest, RemoveInlineNodeDataIfBlockObtainsBlockChild) {
+  SetupHtml("container",
+            "<div id=container><b id=blockify><i>foo</i></b></div>");
+  ASSERT_TRUE(layout_block_flow_->HasNGInlineNodeData());
+
+  GetElementById("blockify")
+      ->SetInlineStyleProperty(CSSPropertyDisplay, CSSValueBlock);
+  UpdateAllLifecyclePhasesForTest();
+
+  EXPECT_FALSE(layout_block_flow_->HasNGInlineNodeData());
+}
+
+// https://crbug.com/911220
+TEST_F(NGInlineNodeTest, PreservedNewlineWithBidiAndRelayout) {
+  SetupHtml("container",
+            "<style>span{unicode-bidi:isolate}</style>"
+            "<pre id=container>foo<span>\n</span>bar<br></pre>");
+  EXPECT_EQ(String(u"foo\u2066\u2069\n\u2066\u2069bar\n"), GetText());
+
+  Node* new_text = Text::Create(GetDocument(), "baz");
+  GetElementById("container")->appendChild(new_text);
+  UpdateAllLifecyclePhasesForTest();
+
+  // The bidi context popping and re-entering should be preserved around '\n'.
+  EXPECT_EQ(String(u"foo\u2066\u2069\n\u2066\u2069bar\nbaz"), GetText());
 }
 
 }  // namespace blink

@@ -32,6 +32,7 @@
 <translation id="2008474315282236005">С устройства будет удален 1 объект. Чтобы восстановить данные позже, войдите в Chromium как <ph name="USER_EMAIL" />.</translation>
 <translation id="2117378023188580026">Администратор просит перезапустить Chromium для установки обновления</translation>
 <translation id="2119636228670142020">О &amp;Chromium OS</translation>
+<translation id="2178765360243863853">Перезапустите Chromium</translation>
 <translation id="2241627712206172106">Если, кроме вас, компьютером пользуется кто-то ещё, например родные или друзья, они тоже смогут настроить Chromium на свой вкус.</translation>
 <translation id="2265088490657775772">скачайте Chromium для iOS</translation>
 <translation id="2347108572062610441">Расширение изменило стартовую страницу Chromium.</translation>
@@ -106,6 +107,7 @@
 <translation id="4708774505295300557">Ранее вход в Chromium на этом компьютере выполнялся из аккаунта <ph name="ACCOUNT_EMAIL_LAST" />. Чтобы ваши данные хранились отдельно, создайте новый профиль Chromium.</translation>
 <translation id="4714956846925717402">Открывайте Chromium ещё быстрее</translation>
 <translation id="4746050847053251315">Завершить работу Chromium?</translation>
+<translation id="4748217263233248895">Установлено специальное обновление системы безопасности. Перезапустите Chromium (все вкладки будут восстановлены).</translation>
 <translation id="4888717733111232871">Разрешить в Chromium передачу входящего трафика по протоколу mDNS</translation>
 <translation id="4943838377383847465">Chromium работает в фоновом режиме</translation>
 <translation id="4987820182225656817">Используйте Chromium в гостевом режиме, если не хотите сохранять данные о посещенных сайтах.</translation>
@@ -140,7 +142,6 @@
 <translation id="5862307444128926510">Добро пожаловать в Chromium</translation>
 <translation id="5877064549588274448">Канал изменен. Чтобы изменения вступили в силу, перезапустите устройство.</translation>
 <translation id="5895138241574237353">Перезапустить</translation>
-<translation id="5902536751647951209">Ошибка сертификата аутентификации. Войдите в Chromium ещё раз или обратитесь за информацией к администратору. <ph name="ADDITIONAL_EXPLANATION" /></translation>
 <translation id="5906655207909574370">Чтобы завершить обновление, перезапустите устройство.</translation>
 <translation id="5987687638152509985">Чтобы начать синхронизацию, обновите Chromium</translation>
 <translation id="6013050204643758987">Chromium OS, как и <ph name="BEGIN_LINK_LINUX_OSS" />Linux (бета-версия)<ph name="END_LINK_LINUX_OSS" />, работает благодаря дополнительному <ph name="BEGIN_LINK_CROS_OSS" />программному обеспечению с открытым исходным кодом<ph name="END_LINK_CROS_OSS" />.</translation>
@@ -161,7 +162,6 @@
 <translation id="6333502561965082103">Chromium выполняет другую операцию. Повторите попытку позже.</translation>
 <translation id="6334986366598267305">Теперь с Chromium ещё удобнее работать в аккаунте Google, в том числе на общих компьютерах.</translation>
 <translation id="6373523479360886564">Вы действительно хотите удалить Chromium?</translation>
-<translation id="6394232988457703198">Перезапустите Chromium</translation>
 <translation id="6400072781405947421">В работе Chromium могут возникать сбои, так как браузер больше не поддерживает Mac OS X 10.9.</translation>
 <translation id="6403826409255603130">Chromium – браузер, который открывает веб-страницы и приложения за секунды. Он быстр, стабилен в работе и прост в использовании. Встроенная в Chromium защита от мошенничества и вредоносного ПО обеспечивает максимально безопасную работу в Интернете.</translation>
 <translation id="641451971369018375">Обмен информацией с Google для улучшения работы Chromium</translation>
@@ -209,7 +209,6 @@
 <translation id="7471302858145901434">{0,plural, =1{Перезапустите Chromium OS в течение 1 дня}one{Перезапустите Chromium OS в течение # дня}few{Перезапустите Chromium OS в течение # дней}many{Перезапустите Chromium OS в течение # дней}other{Перезапустите Chromium OS в течение # дня}}</translation>
 <translation id="7483335560992089831">Невозможно установить ту же версию Chromium, которая уже присутствует в системе. Закройте Chromium и повторите попытку.</translation>
 <translation id="7549178288319965365">О Chromium OS</translation>
-<translation id="7577193603922410712">Установлено специальное обновление системы безопасности. Перезапустите Chromium (все вкладки будут восстановлены).</translation>
 <translation id="761356813943268536">Chromium использует камеру и микрофон.</translation>
 <translation id="7617377681829253106">Chromium становится все лучше</translation>
 <translation id="7686590090926151193">Chromium не является браузером по умолчанию.</translation>
@@ -218,7 +217,6 @@
 <translation id="7745317241717453663">Данные о работе в браузере будут удалены с устройства. Чтобы восстановить их позже, войдите в Chromium как <ph name="USER_EMAIL" />.</translation>
 <translation id="7747138024166251722">Программе установки не удалось создать временный каталог. Возможно, у вас нет прав на установку приложений или недостаточно места на диске.</translation>
 <translation id="7773960292263897147">Внимание! Chromium не может запретить расширениям записывать историю просмотров. Чтобы отключить данное расширение в режиме инкогнито, снимите этот флажок.</translation>
-<translation id="7774736947049807614">Ошибка сертификата аутентификации. Войдите в Chromium как <ph name="USER_NAME" /> ещё раз или обратитесь за информацией к администратору. <ph name="ADDITIONAL_EXPLANATION" /></translation>
 <translation id="7790626492778995050"><ph name="PAGE_TITLE" /> – Chromium Canary</translation>
 <translation id="7867198900892795913">Не удалось установить последнюю версию Chromium, в которой добавлены новые функции и обновления системы безопасности.</translation>
 <translation id="7901117350626490574">Для Chromium доступно обновление. Оно будет установлено при перезапуске браузера.</translation>

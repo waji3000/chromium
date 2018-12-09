@@ -5,6 +5,7 @@
 #include "chromeos/services/multidevice_setup/multidevice_setup_impl.h"
 
 #include "base/memory/ptr_util.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/no_destructor.h"
 #include "base/time/default_clock.h"
 #include "chromeos/components/proximity_auth/logging/logging.h"
@@ -29,6 +30,25 @@ namespace multidevice_setup {
 
 namespace {
 const char kTestDeviceNameForDebugNotification[] = "Test Device";
+
+// This enum is tied directly to a UMA enum defined in
+// //tools/metrics/histograms/enums.xml, and should always reflect it (do not
+// change one without changing the other). Entries should be never modified
+// or deleted. Only additions possible.
+enum class VerifyAndForgetHostConfirmationState {
+  kButtonClickedState = 0,
+  kCompletedSetupState = 1,
+  kMaxValue = kCompletedSetupState,
+};
+
+static void LogForgetHostConfirmed(VerifyAndForgetHostConfirmationState state) {
+  UMA_HISTOGRAM_ENUMERATION("MultiDevice.ForgetHostConfirmed", state);
+}
+
+static void LogVerifyButtonClicked(VerifyAndForgetHostConfirmationState state) {
+  UMA_HISTOGRAM_ENUMERATION("MultiDevice.VerifyButtonClicked", state);
+}
+
 }  // namespace
 
 // static
@@ -155,7 +175,7 @@ void MultiDeviceSetupImpl::AddFeatureStateObserver(
 
 void MultiDeviceSetupImpl::GetEligibleHostDevices(
     GetEligibleHostDevicesCallback callback) {
-  std::vector<cryptauth::RemoteDevice> eligible_remote_devices;
+  std::vector<multidevice::RemoteDevice> eligible_remote_devices;
   for (const auto& remote_device_ref :
        eligible_host_devices_provider_->GetEligibleHostDevices()) {
     eligible_remote_devices.push_back(remote_device_ref.GetRemoteDevice());
@@ -187,6 +207,9 @@ void MultiDeviceSetupImpl::SetHostDevice(const std::string& host_device_id,
 }
 
 void MultiDeviceSetupImpl::RemoveHostDevice() {
+  LogForgetHostConfirmed(
+      VerifyAndForgetHostConfirmationState::kButtonClickedState);
+
   host_backend_delegate_->AttemptToSetMultiDeviceHostOnBackend(
       base::nullopt /* host_device */);
 }
@@ -195,9 +218,9 @@ void MultiDeviceSetupImpl::GetHostStatus(GetHostStatusCallback callback) {
   HostStatusProvider::HostStatusWithDevice host_status_with_device =
       host_status_provider_->GetHostWithStatus();
 
-  // The Mojo API requires a raw cryptauth::RemoteDevice instead of a
-  // cryptauth::RemoteDeviceRef.
-  base::Optional<cryptauth::RemoteDevice> device_for_callback;
+  // The Mojo API requires a raw multidevice::RemoteDevice instead of a
+  // multidevice::RemoteDeviceRef.
+  base::Optional<multidevice::RemoteDevice> device_for_callback;
   if (host_status_with_device.host_device()) {
     device_for_callback =
         host_status_with_device.host_device()->GetRemoteDevice();
@@ -227,6 +250,9 @@ void MultiDeviceSetupImpl::GetFeatureStates(GetFeatureStatesCallback callback) {
 }
 
 void MultiDeviceSetupImpl::RetrySetHostNow(RetrySetHostNowCallback callback) {
+  LogVerifyButtonClicked(
+      VerifyAndForgetHostConfirmationState::kButtonClickedState);
+
   HostStatusProvider::HostStatusWithDevice host_status_with_device =
       host_status_provider_->GetHostWithStatus();
 
@@ -259,8 +285,8 @@ void MultiDeviceSetupImpl::TriggerEventForDebugging(
     return;
   }
 
-  PA_LOG(INFO) << "MultiDeviceSetupImpl::TriggerEventForDebugging(" << type
-               << ") called.";
+  PA_LOG(VERBOSE) << "MultiDeviceSetupImpl::TriggerEventForDebugging(" << type
+                  << ") called.";
   mojom::AccountStatusChangeDelegate* delegate =
       delegate_notifier_->delegate_ptr_.get();
 
@@ -293,9 +319,9 @@ void MultiDeviceSetupImpl::OnHostStatusChange(
     const HostStatusProvider::HostStatusWithDevice& host_status_with_device) {
   mojom::HostStatus status_for_callback = host_status_with_device.host_status();
 
-  // The Mojo API requires a raw cryptauth::RemoteDevice instead of a
-  // cryptauth::RemoteDeviceRef.
-  base::Optional<cryptauth::RemoteDevice> device_for_callback;
+  // The Mojo API requires a raw multidevice::RemoteDevice instead of a
+  // multidevice::RemoteDeviceRef.
+  base::Optional<multidevice::RemoteDevice> device_for_callback;
   if (host_status_with_device.host_device()) {
     device_for_callback =
         host_status_with_device.host_device()->GetRemoteDevice();
@@ -317,7 +343,7 @@ void MultiDeviceSetupImpl::OnFeatureStatesChange(
 }
 
 bool MultiDeviceSetupImpl::AttemptSetHost(const std::string& host_device_id) {
-  cryptauth::RemoteDeviceRefList eligible_devices =
+  multidevice::RemoteDeviceRefList eligible_devices =
       eligible_host_devices_provider_->GetEligibleHostDevices();
   auto it =
       std::find_if(eligible_devices.begin(), eligible_devices.end(),
@@ -327,6 +353,12 @@ bool MultiDeviceSetupImpl::AttemptSetHost(const std::string& host_device_id) {
 
   if (it == eligible_devices.end())
     return false;
+
+  LogForgetHostConfirmed(
+      VerifyAndForgetHostConfirmationState::kCompletedSetupState);
+
+  LogVerifyButtonClicked(
+      VerifyAndForgetHostConfirmationState::kCompletedSetupState);
 
   host_backend_delegate_->AttemptToSetMultiDeviceHostOnBackend(*it);
 

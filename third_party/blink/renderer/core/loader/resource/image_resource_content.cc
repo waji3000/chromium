@@ -49,7 +49,6 @@ class NullImageResourceInfo final
     return false;
   }
   bool IsAccessAllowed(
-      const SecurityOrigin*,
       DoesCurrentFrameHaveSingleSecurityOrigin) const override {
     return true;
   }
@@ -77,7 +76,7 @@ int64_t EstimateOriginalImageSizeForPlaceholder(
   if (response.HttpHeaderField("chrome-proxy-content-transform") ==
       "empty-image") {
     const String& str = response.HttpHeaderField("chrome-proxy");
-    size_t index = str.Find("ofcl=");
+    wtf_size_t index = str.Find("ofcl=");
     if (index != kNotFound) {
       bool ok = false;
       int bytes = str.Substring(index + (sizeof("ofcl=") - 1)).ToInt(&ok);
@@ -105,14 +104,15 @@ ImageResourceContent::ImageResourceContent(scoped_refptr<blink::Image> image)
       has_device_pixel_ratio_header_value_(false),
       image_(std::move(image)) {
   DEFINE_STATIC_LOCAL(Persistent<NullImageResourceInfo>, null_info,
-                      (new NullImageResourceInfo()));
+                      (MakeGarbageCollected<NullImageResourceInfo>()));
   info_ = null_info;
 }
 
 ImageResourceContent* ImageResourceContent::CreateLoaded(
     scoped_refptr<blink::Image> image) {
   DCHECK(image);
-  ImageResourceContent* content = new ImageResourceContent(std::move(image));
+  ImageResourceContent* content =
+      MakeGarbageCollected<ImageResourceContent>(std::move(image));
   content->content_status_ = ResourceStatus::kCached;
   return content;
 }
@@ -294,7 +294,7 @@ void ImageResourceContent::NotifyObservers(
 scoped_refptr<Image> ImageResourceContent::CreateImage(bool is_multipart) {
   String content_dpr_value =
       info_->GetResponse().HttpHeaderField(http_names::kContentDPR);
-  size_t comma = content_dpr_value.ReverseFind(',');
+  wtf_size_t comma = content_dpr_value.ReverseFind(',');
   if (comma != kNotFound && comma < content_dpr_value.length() - 1) {
     content_dpr_value = content_dpr_value.Substring(comma + 1);
   }
@@ -501,8 +501,8 @@ bool ImageResourceContent::IsAcceptableContentType() {
 }
 
 // Return true if the image content is well-compressed (and not full of
-// extraneous metadata). This is currently defined as no using more than 10 bits
-// per pixel of image data.
+// extraneous metadata). This is currently defined as no using more than 0.5
+// byte per pixel of image data with approximate header size(1KB) removed.
 // TODO(crbug.com/838263): Support site-defined bit-per-pixel ratio through
 // feature policy declarations.
 bool ImageResourceContent::IsAcceptableCompressionRatio() {
@@ -510,9 +510,9 @@ bool ImageResourceContent::IsAcceptableCompressionRatio() {
   if (!pixels)
     return true;
   DCHECK(image_);
-  double resource_length = image_->Data() ? image_->Data()->size() : 0;
+  double resource_length = GetResponse().ExpectedContentLength();
   // Allow no more than 10 bits per compressed pixel
-  return resource_length / pixels <= 1.25;
+  return (resource_length - 1024) / pixels <= 0.5;
 }
 
 void ImageResourceContent::DecodedSizeChangedTo(const blink::Image* image,
@@ -569,12 +569,11 @@ void ImageResourceContent::Changed(const blink::Image* image) {
   NotifyObservers(kDoNotNotifyFinish, CanDeferInvalidation::kYes);
 }
 
-bool ImageResourceContent::IsAccessAllowed(
-    const SecurityOrigin* security_origin) {
+bool ImageResourceContent::IsAccessAllowed() {
   return info_->IsAccessAllowed(
-      security_origin, GetImage()->CurrentFrameHasSingleSecurityOrigin()
-                           ? ImageResourceInfo::kHasSingleSecurityOrigin
-                           : ImageResourceInfo::kHasMultipleSecurityOrigin);
+      GetImage()->CurrentFrameHasSingleSecurityOrigin()
+          ? ImageResourceInfo::kHasSingleSecurityOrigin
+          : ImageResourceInfo::kHasMultipleSecurityOrigin);
 }
 
 void ImageResourceContent::EmulateLoadStartedForInspector(

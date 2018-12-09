@@ -37,8 +37,8 @@ class VIZ_COMMON_EXPORT ParentLocalSurfaceIdAllocator {
   // needs to update its understanding of the last generated message so the
   // messages can continue to monotonically increase. Returns whether the
   // current LocalSurfaceId has been updated.
-  bool UpdateFromChild(const LocalSurfaceId& child_allocated_local_surface_id,
-                       base::TimeTicks child_local_surface_id_allocation_time);
+  bool UpdateFromChild(
+      const LocalSurfaceIdAllocation& child_local_surface_id_allocation);
 
   // Resets this allocator with the provided |local_surface_id| as a seed.
   void Reset(const LocalSurfaceId& local_surface_id);
@@ -50,18 +50,15 @@ class VIZ_COMMON_EXPORT ParentLocalSurfaceIdAllocator {
 
   void GenerateId();
 
-  const LocalSurfaceId& GetCurrentLocalSurfaceId() const;
+  const LocalSurfaceIdAllocation& GetCurrentLocalSurfaceIdAllocation() const;
 
-  static const LocalSurfaceId& InvalidLocalSurfaceId();
+  bool HasValidLocalSurfaceIdAllocation() const;
 
-  base::TimeTicks allocation_time() const {
-    return current_local_surface_id_allocation_.allocation_time();
-  }
+  static const LocalSurfaceIdAllocation& InvalidLocalSurfaceIdAllocation();
 
   bool is_allocation_suppressed() const { return is_allocation_suppressed_; }
 
  private:
-  static const LocalSurfaceId invalid_local_surface_id_;
   LocalSurfaceIdAllocation current_local_surface_id_allocation_;
 
   // When true, the last known LocalSurfaceId is an invalid LocalSurfaceId.

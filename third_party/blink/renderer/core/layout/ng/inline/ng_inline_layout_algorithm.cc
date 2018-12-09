@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "third_party/blink/renderer/core/layout/logical_values.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_baseline.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_bidi_paragraph.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_box_state.h"
@@ -31,6 +32,7 @@
 #include "third_party/blink/renderer/core/layout/ng/ng_unpositioned_float.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/shape_result_spacing.h"
+#include "third_party/blink/renderer/platform/fonts/shaping/shape_result_view.h"
 
 namespace blink {
 namespace {
@@ -237,12 +239,15 @@ void NGInlineLayoutAlgorithm::CreateLine(NGLineInfo* line_info,
 
   // Compute heights of all inline items by placing the dominant baseline at 0.
   // The baseline is adjusted after the height of the line box is computed.
+  box_states_->SetIsEmptyLine(line_info->IsEmptyLine());
   NGInlineBoxState* box =
       box_states_->OnBeginPlaceItems(&line_style, baseline_type_, quirks_mode_);
 #if DCHECK_IS_ON()
   if (is_box_states_from_context_)
     CheckBoxStates(*line_info, BreakToken());
 #endif
+
+  bool has_out_of_flow_positioned_items = false;
 
   // In order to match other browsers when list-style-type: none, pretend
   // there's an invisible marker here.
@@ -286,14 +291,20 @@ void NGInlineLayoutAlgorithm::CreateLine(NGLineInfo* line_info,
     } else if (item.Type() == NGInlineItem::kCloseTag) {
       box = HandleCloseTag(item, item_result, box);
     } else if (item.Type() == NGInlineItem::kAtomicInline) {
-      box = PlaceAtomicInline(item, &item_result, *line_info);
+      box = PlaceAtomicInline(item, *line_info, &item_result);
     } else if (item.Type() == NGInlineItem::kListMarker) {
       PlaceListMarker(item, &item_result, *line_info);
     } else if (item.Type() == NGInlineItem::kOutOfFlowPositioned) {
-      line_box_.AddChild(
-          item.GetLayoutObject(),
-          box_states_->ContainingLayoutObjectForAbsolutePositionObjects(),
-          item.BidiLevel());
+      // An inline-level OOF child positions itself based on its direction, a
+      // block-level OOF child positions itself based on the direction of its
+      // block-level container.
+      TextDirection direction =
+          item.GetLayoutObject()->StyleRef().IsOriginalDisplayInlineType()
+              ? item.Direction()
+              : ConstraintSpace().Direction();
+
+      line_box_.AddChild(item.GetLayoutObject(), item.BidiLevel(), direction);
+      has_out_of_flow_positioned_items = true;
     } else if (item.Type() == NGInlineItem::kBidiControl) {
       line_box_.AddChild(item.BidiLevel());
     }
@@ -326,18 +337,6 @@ void NGInlineLayoutAlgorithm::CreateLine(NGLineInfo* line_info,
   // always positive or 0.
   inline_size = inline_size.ClampNegativeToZero();
 
-  // Create box fragmetns if needed. After this point forward, |line_box_| is a
-  // tree structure.
-  if (box_states_->HasBoxFragments())
-    box_states_->CreateBoxFragments(&line_box_);
-
-  // Update item index of the box states in the context.
-  context_->SetItemIndex(line_info->ItemsData().items,
-                         line_info->EndItemIndex());
-
-  const NGLineHeightMetrics& line_box_metrics =
-      box_states_->LineBoxState().metrics;
-
   // Other 'text-align' values than 'justify' move line boxes as a whole, but
   // indivisual items do not change their relative position to the line box.
   LayoutUnit bfc_line_offset = line_info->BfcOffset().line_offset;
@@ -349,14 +348,35 @@ void NGInlineLayoutAlgorithm::CreateLine(NGLineInfo* line_info,
 
   container_builder_.SetBfcLineOffset(bfc_line_offset);
 
-  // Handle out-of-flow positioned objects. They need inline offsets for their
-  // static positions.
-  PlaceOutOfFlowObjects(*line_info, line_box_metrics, inline_size);
+  const NGLineHeightMetrics& line_box_metrics =
+      box_states_->LineBoxState().metrics;
+
+  // Place out-of-flow positioned objects.
+  // This adjusts the NGLineBoxFragmentBuilder::Child::offset member to contain
+  // the static position of the OOF positioned children relative to the linebox.
+  if (has_out_of_flow_positioned_items)
+    PlaceOutOfFlowObjects(*line_info, line_box_metrics);
+
+  // Create box fragments if needed. After this point forward, |line_box_| is a
+  // tree structure.
+  // The individual children don't move position within the |line_box_|, rather
+  // the children have their layout_result, fragment, (or similar) set to null,
+  // creating a "hole" in the array.
+  if (box_states_->HasBoxFragments())
+    box_states_->CreateBoxFragments(&line_box_);
+
+  // Update item index of the box states in the context.
+  context_->SetItemIndex(line_info->ItemsData().items,
+                         line_info->EndItemIndex());
 
   // Even if we have something in-flow, it may just be empty items that
   // shouldn't trigger creation of a line. Exit now if that's the case.
-  if (line_info->IsEmptyLine())
+  if (line_info->IsEmptyLine()) {
+    container_builder_.SetIsEmptyLineBox();
+    container_builder_.SetBaseDirection(line_info->BaseDirection());
+    container_builder_.AddChildren(line_box_);
     return;
+  }
 
   DCHECK(!line_box_metrics.IsEmpty());
 
@@ -367,9 +387,9 @@ void NGInlineLayoutAlgorithm::CreateLine(NGLineInfo* line_info,
 
   if (line_info->UseFirstLineStyle())
     container_builder_.SetStyleVariant(NGStyleVariant::kFirstLine);
+  container_builder_.SetBaseDirection(line_info->BaseDirection());
   container_builder_.AddChildren(line_box_);
   container_builder_.SetInlineSize(inline_size);
-  container_builder_.SetBaseDirection(line_info->BaseDirection());
   container_builder_.SetMetrics(line_box_metrics);
   container_builder_.SetBfcBlockOffset(line_info->BfcOffset().block_offset);
 }
@@ -445,8 +465,8 @@ void NGInlineLayoutAlgorithm::PlaceGeneratedContent(
 
 NGInlineBoxState* NGInlineLayoutAlgorithm::PlaceAtomicInline(
     const NGInlineItem& item,
-    NGInlineItemResult* item_result,
-    const NGLineInfo& line_info) {
+    const NGLineInfo& line_info,
+    NGInlineItemResult* item_result) {
   DCHECK(item_result->layout_result);
 
   // The input |position| is the line-left edge of the margin box.
@@ -484,57 +504,66 @@ void NGInlineLayoutAlgorithm::PlaceLayoutResult(NGInlineItemResult* item_result,
                      item_result->inline_size, item.BidiLevel());
 }
 
-// Place all out-of-flow objects in |line_box_| and clear them.
-// @return whether |line_box_| has any in-flow fragments.
+// Place all out-of-flow objects in |line_box_|.
 void NGInlineLayoutAlgorithm::PlaceOutOfFlowObjects(
     const NGLineInfo& line_info,
-    const NGLineHeightMetrics& line_box_metrics,
-    LayoutUnit inline_size) {
-  TextDirection line_direction = line_info.BaseDirection();
+    const NGLineHeightMetrics& line_box_metrics) {
+  DCHECK(line_info.IsEmptyLine() || !line_box_metrics.IsEmpty())
+      << "Non-empty lines must have a valid set of linebox metrics.";
+
+  LayoutUnit line_height =
+      line_info.IsEmptyLine() ? LayoutUnit() : line_box_metrics.LineHeight();
+
+  // All children within the linebox are positioned relative to the baseline,
+  // then shifted later using NGLineBoxFragmentBuilder::MoveInBlockDirection.
+  LayoutUnit baseline_adjustment =
+      line_info.IsEmptyLine() ? LayoutUnit() : -line_box_metrics.ascent;
+
+  // The location of the "next" line.
+  //
+  // This uses NGConstraintSpace::Direction rather than
+  // NGLineInfo::BaseDirection as this is for a block-level object rather than
+  // an inline-level object.
+  //
+  // Similarly this uses the available size to determine which edge to align
+  // to, and *does not* avoid floats.
+  LayoutUnit block_level_line_location =
+      IsLtr(ConstraintSpace().Direction())
+          ? LayoutUnit()
+          : ConstraintSpace().AvailableSize().inline_size;
+
+  // This offset represents the position of the "next" line, relative to the
+  // line we are currently creating, (this takes into account text-indent, etc).
+  LayoutUnit block_level_inline_offset =
+      block_level_line_location - (container_builder_.BfcLineOffset() -
+                                   ConstraintSpace().BfcOffset().line_offset);
+
+  // To correctly determine which "line" block-level out-of-flow positioned
+  // object is placed on, we need to keep track of if there is any inline-level
+  // content preceeding it.
+  bool has_preceeding_inline_level_content = false;
 
   for (NGLineBoxFragmentBuilder::Child& child : line_box_) {
-    if (LayoutObject* box = child.out_of_flow_positioned_box) {
-      // The static position is at the line-top. Ignore the block_offset.
-      NGLogicalOffset static_offset(child.offset.inline_offset, LayoutUnit());
+    has_preceeding_inline_level_content |= child.HasInFlowFragment();
 
-      // If a block-level box appears in the middle of a line, move the static
-      // position to where the next block will be placed.
-      if (!box->StyleRef().IsOriginalDisplayInlineType()) {
-        LayoutUnit inline_offset = container_builder_.BfcLineOffset() -
-                                   ConstraintSpace().BfcOffset().line_offset;
+    LayoutObject* box = child.out_of_flow_positioned_box;
+    if (!box)
+      continue;
 
-        // Flip the inline_offset if we are in RTL.
-        if (IsRtl(line_direction)) {
-          LayoutUnit container_inline_size =
-              ConstraintSpace().AvailableSize().inline_size;
-          inline_offset = container_inline_size - inline_offset + inline_size;
-        }
-
-        inline_offset += line_info.TextIndent();
-
-        // We need to subtract the line offset, in order to ignore
-        // floats and text-indent.
-        static_offset.inline_offset = -inline_offset;
-
-        if (child.offset.inline_offset && !line_box_metrics.IsEmpty())
-          static_offset.block_offset = line_box_metrics.LineHeight();
-      } else {
-        // Our child offset is line-relative, but the static offset is
-        // flow-relative, using the direction we give to
-        // |AddInlineOutOfFlowChildCandidate|.
-        if (IsRtl(line_direction)) {
-          static_offset.inline_offset =
-              inline_size - static_offset.inline_offset;
-        }
-      }
-
-      container_builder_.AddInlineOutOfFlowChildCandidate(
-          NGBlockNode(ToLayoutBox(box)), static_offset, line_direction,
-          child.out_of_flow_containing_box);
-
-      child.out_of_flow_positioned_box = child.out_of_flow_containing_box =
-          nullptr;
+    NGLogicalOffset static_offset(LayoutUnit(), baseline_adjustment);
+    if (box->StyleRef().IsOriginalDisplayInlineType()) {
+      // An inline-level OOF element positions itself within the line, at the
+      // position it would have been if it was in-flow.
+      static_offset.inline_offset = child.offset.inline_offset;
+    } else {
+      // A block-level OOF element positions itself on the "next" line. However
+      // only shifts down if there is inline-level content.
+      static_offset.inline_offset = block_level_inline_offset;
+      if (has_preceeding_inline_level_content)
+        static_offset.block_offset += line_height;
     }
+
+    child.offset = static_offset;
   }
 }
 
@@ -554,6 +583,10 @@ void NGInlineLayoutAlgorithm::PlaceListMarker(const NGInlineItem& item,
 // Justify the line. This changes the size of items by adding spacing.
 // Returns false if justification failed and should fall back to start-aligned.
 bool NGInlineLayoutAlgorithm::ApplyJustify(NGLineInfo* line_info) {
+  // Empty lines should align to start.
+  if (line_info->IsEmptyLine())
+    return false;
+
   NGLineAlign align(*line_info);
   if (align.space <= 0)
     return false;  // no expansion is needed.
@@ -567,6 +600,7 @@ bool NGInlineLayoutAlgorithm::ApplyJustify(NGLineInfo* line_info) {
   // Append a hyphen if the last word is hyphenated. The hyphen is in
   // |ShapeResult|, but not in text. |ShapeResultSpacing| needs the text that
   // matches to the |ShapeResult|.
+  DCHECK(!line_info->Results().IsEmpty());
   const NGInlineItemResult& last_item_result = line_info->Results().back();
   if (last_item_result.text_end_effect == NGTextEndEffect::kHyphen)
     line_text.append(last_item_result.item->Style()->HyphenString());
@@ -582,20 +616,18 @@ bool NGInlineLayoutAlgorithm::ApplyJustify(NGLineInfo* line_info) {
     if (item_result.has_only_trailing_spaces)
       break;
     if (item_result.shape_result) {
-      // Mutate the existing shape result if only used here, if not create a
-      // copy.
       scoped_refptr<ShapeResult> shape_result =
-          item_result.shape_result->MutableUnique();
+          item_result.shape_result->CreateShapeResult();
       DCHECK_GE(item_result.start_offset, line_info->StartOffset());
       // |shape_result| has more characters if it's hyphenated.
       DCHECK(item_result.text_end_effect != NGTextEndEffect::kNone ||
              shape_result->NumCharacters() ==
                  item_result.end_offset - item_result.start_offset);
-      shape_result->ApplySpacing(
-          spacing, item_result.start_offset - line_info->StartOffset() -
-                       shape_result->StartIndexForResult());
+      shape_result->ApplySpacing(spacing, item_result.start_offset -
+                                              line_info->StartOffset() -
+                                              shape_result->StartIndex());
       item_result.inline_size = shape_result->SnappedWidth();
-      item_result.shape_result = std::move(shape_result);
+      item_result.shape_result = ShapeResultView::Create(shape_result.get());
     } else if (item_result.item->Type() == NGInlineItem::kAtomicInline) {
       float offset = 0.f;
       DCHECK_LE(line_info->StartOffset(), item_result.start_offset);
@@ -645,8 +677,9 @@ LayoutUnit NGInlineLayoutAlgorithm::ComputeContentSize(
   if (layout_object && layout_object->IsBR()) {
     NGBfcOffset bfc_offset = {ContainerBfcOffset().line_offset,
                               ContainerBfcOffset().block_offset + content_size};
-    AdjustToClearance(exclusion_space.ClearanceOffset(item.Style()->Clear()),
-                      &bfc_offset);
+    AdjustToClearance(
+        exclusion_space.ClearanceOffset(ResolvedClear(*item.Style(), Style())),
+        &bfc_offset);
     content_size = bfc_offset.block_offset - ContainerBfcOffset().block_offset;
   }
 
@@ -837,7 +870,7 @@ scoped_refptr<NGLayoutResult> NGInlineLayoutAlgorithm::Layout() {
   DCHECK(unpositioned_floats_.IsEmpty() || is_empty_inline);
   container_builder_.SwapPositionedFloats(&positioned_floats_);
   container_builder_.SetExclusionSpace(std::move(exclusion_space));
-  container_builder_.MoveOutOfFlowDescendantCandidatesToDescendants(nullptr);
+  container_builder_.MoveOutOfFlowDescendantCandidatesToDescendants();
   return container_builder_.ToLineBoxFragment();
 }
 
@@ -854,9 +887,9 @@ unsigned NGInlineLayoutAlgorithm::PositionLeadingFloats(
     if (item.Type() == NGInlineItem::kFloating) {
       NGBlockNode node(ToLayoutBox(item.GetLayoutObject()));
 
-      AddUnpositionedFloat(
-          &unpositioned_floats_, &container_builder_,
-          NGUnpositionedFloat(node, /* break_token */ nullptr));
+      AddUnpositionedFloat(&unpositioned_floats_, &container_builder_,
+                           NGUnpositionedFloat(node, /* break_token */ nullptr),
+                           ConstraintSpace());
     }
 
     // Abort if we've found something that makes this a non-empty inline.
@@ -897,8 +930,8 @@ void NGInlineLayoutAlgorithm::PositionPendingFloats(
   PositionFloats(ConstraintSpace().AvailableSize(),
                  ConstraintSpace().PercentageResolutionSize(),
                  ConstraintSpace().ReplacedPercentageResolutionSize(),
-                 origin_bfc_offset, bfc_block_offset, unpositioned_floats_,
-                 ConstraintSpace(), exclusion_space, &positioned_floats);
+                 origin_bfc_offset, unpositioned_floats_, ConstraintSpace(),
+                 Style(), exclusion_space, &positioned_floats);
 
   positioned_floats_.AppendVector(positioned_floats);
   unpositioned_floats_.Shrink(0);

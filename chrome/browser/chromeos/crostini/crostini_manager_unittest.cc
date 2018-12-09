@@ -24,15 +24,20 @@ namespace crostini {
 namespace {
 const char kVmName[] = "vm_name";
 const char kContainerName[] = "container_name";
+constexpr int64_t kDiskSizeBytes = 4ll * 1024 * 1024 * 1024;  // 4 GiB
 }  // namespace
 
 class CrostiniManagerTest : public testing::Test {
  public:
-  void CreateDiskImageClientErrorCallback(base::OnceClosure closure,
-                                          CrostiniResult result,
-                                          const base::FilePath& file_path) {
+  void CreateDiskImageClientErrorCallback(
+      base::OnceClosure closure,
+      CrostiniResult result,
+      vm_tools::concierge::DiskImageStatus status,
+      const base::FilePath& file_path) {
     EXPECT_FALSE(fake_concierge_client_->create_disk_image_called());
     EXPECT_EQ(result, CrostiniResult::CLIENT_ERROR);
+    EXPECT_EQ(status,
+              vm_tools::concierge::DiskImageStatus::DISK_STATUS_UNKNOWN);
     std::move(closure).Run();
   }
 
@@ -65,9 +70,11 @@ class CrostiniManagerTest : public testing::Test {
     std::move(closure).Run();
   }
 
-  void CreateDiskImageSuccessCallback(base::OnceClosure closure,
-                                      CrostiniResult result,
-                                      const base::FilePath& file_path) {
+  void CreateDiskImageSuccessCallback(
+      base::OnceClosure closure,
+      CrostiniResult result,
+      vm_tools::concierge::DiskImageStatus status,
+      const base::FilePath& file_path) {
     EXPECT_TRUE(fake_concierge_client_->create_disk_image_called());
     std::move(closure).Run();
   }
@@ -171,7 +178,7 @@ TEST_F(CrostiniManagerTest, CreateDiskImageNameError) {
   const base::FilePath& disk_path = base::FilePath("");
 
   crostini_manager()->CreateDiskImage(
-      disk_path, vm_tools::concierge::STORAGE_CRYPTOHOME_ROOT,
+      disk_path, vm_tools::concierge::STORAGE_CRYPTOHOME_ROOT, kDiskSizeBytes,
       base::BindOnce(&CrostiniManagerTest::CreateDiskImageClientErrorCallback,
                      base::Unretained(this), run_loop()->QuitClosure()));
   run_loop()->Run();
@@ -183,6 +190,7 @@ TEST_F(CrostiniManagerTest, CreateDiskImageStorageLocationError) {
   crostini_manager()->CreateDiskImage(
       disk_path,
       vm_tools::concierge::StorageLocation_INT_MIN_SENTINEL_DO_NOT_USE_,
+      kDiskSizeBytes,
       base::BindOnce(&CrostiniManagerTest::CreateDiskImageClientErrorCallback,
                      base::Unretained(this), run_loop()->QuitClosure()));
   run_loop()->Run();
@@ -193,6 +201,7 @@ TEST_F(CrostiniManagerTest, CreateDiskImageSuccess) {
 
   crostini_manager()->CreateDiskImage(
       disk_path, vm_tools::concierge::STORAGE_CRYPTOHOME_DOWNLOADS,
+      kDiskSizeBytes,
       base::BindOnce(&CrostiniManagerTest::CreateDiskImageSuccessCallback,
                      base::Unretained(this), run_loop()->QuitClosure()));
   run_loop()->Run();
@@ -340,8 +349,6 @@ TEST_F(CrostiniManagerTest, InstallLinuxPackageSignalFailure) {
 class CrostiniManagerRestartTest : public CrostiniManagerTest,
                                    public CrostiniManager::RestartObserver {
  public:
-  void SetUp() override { CrostiniManagerTest::SetUp(); }
-
   void RestartCrostiniCallback(base::OnceClosure closure,
                                CrostiniResult result) {
     restart_crostini_callback_count_++;
@@ -361,7 +368,9 @@ class CrostiniManagerRestartTest : public CrostiniManagerTest,
     }
   }
 
-  void OnDiskImageCreated(CrostiniResult result) override {
+  void OnDiskImageCreated(CrostiniResult result,
+                          vm_tools::concierge::DiskImageStatus status,
+                          int64_t disk_size_available) override {
     if (abort_on_disk_image_created_) {
       Abort();
     }

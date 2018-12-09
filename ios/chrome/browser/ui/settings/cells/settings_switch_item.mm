@@ -47,6 +47,7 @@ const CGFloat kIconImageSize = 28;
   cell.switchView.on = self.on;
   cell.textLabel.textColor =
       [SettingsSwitchCell defaultTextColorForState:cell.switchView.state];
+  cell.selectionStyle = UITableViewCellSelectionStyleNone;
 
   // Update the icon image, if one is present.
   UIImage* iconImage = nil;
@@ -158,7 +159,7 @@ const CGFloat kIconImageSize = 28;
       _iconHiddenConstraint,
     ]];
 
-    if (ContentSizeCategoryIsAccessibilityCategory(
+    if (UIContentSizeCategoryIsAccessibilityCategory(
             self.traitCollection.preferredContentSizeCategory)) {
       [NSLayoutConstraint activateConstraints:_accessibilityConstraints];
     } else {
@@ -198,9 +199,9 @@ const CGFloat kIconImageSize = 28;
 - (void)traitCollectionDidChange:(UITraitCollection*)previousTraitCollection {
   [super traitCollectionDidChange:previousTraitCollection];
   BOOL isCurrentContentSizeAccessibility =
-      ContentSizeCategoryIsAccessibilityCategory(
+      UIContentSizeCategoryIsAccessibilityCategory(
           self.traitCollection.preferredContentSizeCategory);
-  if (ContentSizeCategoryIsAccessibilityCategory(
+  if (UIContentSizeCategoryIsAccessibilityCategory(
           previousTraitCollection.preferredContentSizeCategory) !=
       isCurrentContentSizeAccessibility) {
     if (isCurrentContentSizeAccessibility) {

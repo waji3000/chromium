@@ -27,9 +27,6 @@
 //
 // As with WTF::AtomicString, this class is *not* thread-safe, and strings
 // created on a thread must always be used on the same thread.
-//
-// Implementation note: the string content is not parked yet, it is merely
-// used to gather statistics.
 
 namespace blink {
 
@@ -52,6 +49,7 @@ class PLATFORM_EXPORT ParkableStringImpl final
   };
 
   enum class ParkableState { kParkable, kNotParkable };
+  enum class ParkingMode { kIfCompressedDataExists, kAlways };
 
   // Not all parkable strings can actually be parked. If |parkable| is
   // kNotParkable, then one cannot call |Park()|, and the underlying StringImpl
@@ -61,6 +59,8 @@ class PLATFORM_EXPORT ParkableStringImpl final
 
   void Lock();
   void Unlock();
+
+  void PurgeMemory();
 
   // The returned string may be used as a normal one, as long as the
   // returned value (or a copy of it) is alive.
@@ -72,14 +72,28 @@ class PLATFORM_EXPORT ParkableStringImpl final
   unsigned CharactersSizeInBytes() const;
 
   // A parked string cannot be accessed until it has been |Unpark()|-ed.
-  // Returns true iff the string has been parked.
-  bool Park();
+  //
+  // Parking may be synchronous, and will be if compressed data is already
+  // available. If |mode| is |kIfCompressedDataExists|, then parking will always
+  // be synchronous.
+  //
+  // Returns true if the string is being parked or has been parked.
+  bool Park(ParkingMode mode);
   // Returns true iff the string can be parked. This does not mean that the
   // string can be parked now, merely that it is eligible to be parked at some
   // point.
   bool may_be_parked() const { return may_be_parked_; }
   // Returns true if the string is parked.
   bool is_parked() const;
+  // Returns whether synchronous parking is possible, that is the string was
+  // parked in the past.
+  bool has_compressed_data() const { return !!compressed_; }
+  // Returns the compressed size, must not be called unless the string has a
+  // compressed representation.
+  size_t compressed_size() const {
+    DCHECK(has_compressed_data());
+    return compressed_->size();
+  }
 
  private:
   enum class State;
@@ -120,15 +134,8 @@ class PLATFORM_EXPORT ParkableStringImpl final
 #endif
   }
 
-  FRIEND_TEST_ALL_PREFIXES(ParkableStringTest, Park);
-  FRIEND_TEST_ALL_PREFIXES(ParkableStringTest, AbortParking);
-  FRIEND_TEST_ALL_PREFIXES(ParkableStringTest, Unpark);
   FRIEND_TEST_ALL_PREFIXES(ParkableStringTest, LockUnlock);
   FRIEND_TEST_ALL_PREFIXES(ParkableStringTest, LockParkedString);
-  FRIEND_TEST_ALL_PREFIXES(ParkableStringTest, TableSimple);
-  FRIEND_TEST_ALL_PREFIXES(ParkableStringTest, TableMultiple);
-  FRIEND_TEST_ALL_PREFIXES(ParkableStringTest, AsanPoisoning);
-  FRIEND_TEST_ALL_PREFIXES(ParkableStringTest, Compression);
   DISALLOW_COPY_AND_ASSIGN(ParkableStringImpl);
 };
 

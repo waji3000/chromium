@@ -17,6 +17,16 @@ class NGLineBoxFragmentBuilder;
 class CORE_EXPORT NGPhysicalLineBoxFragment final
     : public NGPhysicalContainerFragment {
  public:
+  enum NGLineBoxType {
+    kNormalLineBox,
+    // This is an "empty" line box, or "certain zero-height line boxes":
+    // https://drafts.csswg.org/css2/visuren.html#phantom-line-box
+    // that are ignored for margin collapsing and for other purposes.
+    // https://drafts.csswg.org/css2/box.html#collapsing-margins
+    // Also see |NGInlineItem::IsEmptyItem|.
+    kEmptyLineBox
+  };
+
   static scoped_refptr<const NGPhysicalLineBoxFragment> Create(
       NGLineBoxFragmentBuilder* builder);
 
@@ -25,10 +35,16 @@ class CORE_EXPORT NGPhysicalLineBoxFragment final
       child.fragment->Release();
   }
 
+  NGLineBoxType LineBoxType() const {
+    return static_cast<NGLineBoxType>(sub_type_);
+  }
+  bool IsEmptyLineBox() const { return LineBoxType() == kEmptyLineBox; }
+
   ChildLinkList Children() const final {
     return ChildLinkList(num_children_, &children_[0]);
   }
 
+  const ComputedStyle& Style() const { return *style_; }
   const NGLineHeightMetrics& Metrics() const { return metrics_; }
 
   // The base direction of this line. Also known as the paragraph direction.
@@ -66,6 +82,7 @@ class CORE_EXPORT NGPhysicalLineBoxFragment final
  private:
   NGPhysicalLineBoxFragment(NGLineBoxFragmentBuilder* builder);
 
+  scoped_refptr<const ComputedStyle> style_;
   NGLineHeightMetrics metrics_;
   NGLinkStorage children_[];
 };

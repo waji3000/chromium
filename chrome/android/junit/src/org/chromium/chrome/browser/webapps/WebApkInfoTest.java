@@ -114,6 +114,7 @@ public class WebApkInfoTest {
         bundle.putString(WebApkMetaDataKeys.START_URL, START_URL);
         bundle.putString(WebApkMetaDataKeys.ICON_URLS_AND_ICON_MURMUR2_HASHES,
                 ICON_URL + " " + ICON_MURMUR2_HASH);
+        bundle.putString(WebApkMetaDataKeys.SHARE_METHOD, "GET");
         WebApkTestHelper.registerWebApkWithMetaData(WEBAPK_PACKAGE_NAME, bundle);
 
         Intent intent = new Intent();
@@ -137,7 +138,7 @@ public class WebApkInfoTest {
         Assert.assertEquals(1L, info.themeColor());
         Assert.assertTrue(info.hasValidBackgroundColor());
         Assert.assertEquals(2L, info.backgroundColor());
-        Assert.assertEquals(WEBAPK_PACKAGE_NAME, info.apkPackageName());
+        Assert.assertEquals(WEBAPK_PACKAGE_NAME, info.webApkPackageName());
         Assert.assertEquals(SHELL_APK_VERSION, info.shellApkVersion());
         Assert.assertEquals(MANIFEST_URL, info.manifestUrl());
         Assert.assertEquals(START_URL, info.manifestStartUrl());
@@ -416,5 +417,25 @@ public class WebApkInfoTest {
         intent.putExtra(ShortcutHelper.EXTRA_URL, START_URL);
         info = WebApkInfo.create(intent);
         Assert.assertEquals(WebApkInfo.WebApkDistributor.OTHER, info.distributor());
+    }
+
+    // Test whether getSerializedShareTarget can handle special characters
+    @Test
+    public void testGetSerializedShareTarget() {
+        String serializedShareTarget =
+                WebApkInfo.getSerializedShareTarget("\n", "\\", "", "", "", "", "", "");
+        Assert.assertEquals("action: \"\n\", method: \"\\\", enctype: \"\", title: \"\""
+                        + "text: \"\", url: \"\", names: \"\", accepts: \"\"",
+                serializedShareTarget);
+    }
+
+    // Test that getSerializedShareTarget() returns the same result for empty and null parameters.
+    @Test
+    public void testGetSerializedShareTargetNullValues() {
+        String serializedShareTarget1 = WebApkInfo.getSerializedShareTarget(
+                "action", "", "", "awesome title", "", "", "", "");
+        String serializedShareTarget2 = WebApkInfo.getSerializedShareTarget(
+                "action", null, null, "awesome title", "", "", "", "");
+        Assert.assertEquals(serializedShareTarget1, serializedShareTarget2);
     }
 }

@@ -26,8 +26,8 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_INDEXEDDB_IDB_KEY_PATH_H_
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_INDEXEDDB_IDB_KEY_PATH_H_
 
-#include "third_party/blink/public/platform/modules/indexeddb/web_idb_key_path.h"
 #include "third_party/blink/renderer/bindings/core/v8/string_or_string_sequence.h"
+#include "third_party/blink/renderer/modules/indexeddb/web_idb_key_path.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
@@ -48,7 +48,7 @@ class MODULES_EXPORT IDBKeyPath {
   DISALLOW_NEW();
 
  public:
-  IDBKeyPath() : type_(kNullType) {}
+  IDBKeyPath() : type_(mojom::IDBKeyPathType::Null) {}
   explicit IDBKeyPath(const String&);
   explicit IDBKeyPath(const Vector<String>& array);
   explicit IDBKeyPath(const StringOrStringSequence& key_path);
@@ -56,26 +56,24 @@ class MODULES_EXPORT IDBKeyPath {
 
   operator WebIDBKeyPath() const;
 
-  enum Type { kNullType = 0, kStringType, kArrayType };
-
-  Type GetType() const { return type_; }
+  mojom::IDBKeyPathType GetType() const { return type_; }
 
   const Vector<String>& Array() const {
-    DCHECK_EQ(type_, kArrayType);
+    DCHECK_EQ(type_, mojom::IDBKeyPathType::Array);
     return array_;
   }
 
   const String& GetString() const {
-    DCHECK_EQ(type_, kStringType);
+    DCHECK_EQ(type_, mojom::IDBKeyPathType::String);
     return string_;
   }
 
-  bool IsNull() const { return type_ == kNullType; }
+  bool IsNull() const { return type_ == mojom::IDBKeyPathType::Null; }
   bool IsValid() const;
   bool operator==(const IDBKeyPath& other) const;
 
  private:
-  Type type_;
+  mojom::IDBKeyPathType type_;
   class String string_;
   Vector<class String> array_;
 };

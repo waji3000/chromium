@@ -152,8 +152,7 @@ void PictureInPictureWindowControllerImpl::UpdatePlaybackState(
     return;
 
   if (reached_end_of_stream) {
-    media_player_id_.reset();
-    window_->SetPlaybackState(OverlayWindow::PlaybackState::kNoVideo);
+    window_->SetPlaybackState(OverlayWindow::PlaybackState::kEndOfVideo);
     return;
   }
 
@@ -236,5 +235,7 @@ void PictureInPictureWindowControllerImpl::EnsureWindow() {
   window_ =
       GetContentClient()->browser()->CreateWindowForPictureInPicture(this);
 }
+
+WEB_CONTENTS_USER_DATA_KEY_IMPL(PictureInPictureWindowControllerImpl)
 
 }  // namespace content

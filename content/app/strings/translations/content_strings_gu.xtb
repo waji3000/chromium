@@ -103,7 +103,7 @@
 <translation id="4742539557769756338">કવર</translation>
 <translation id="4748357248530471599">ડિસ્પ્લેમાં જ સામેલ પૂર્ણસ્ક્રીન ટૉગલ કરો</translation>
 <translation id="4757246831282535685">ટેબ પેનલ</translation>
-<translation id="4763480195061959176">વિડિઓ</translation>
+<translation id="4763480195061959176">વીડિયો</translation>
 <translation id="479989351350248267">search</translation>
 <translation id="4812940957355064477">કૃપા કરીને એક નંબર દાખલ કરો.</translation>
 <translation id="4912536737030637138">ગ્રંથસૂચિની એન્ટ્રી</translation>
@@ -120,6 +120,7 @@
 <translation id="5307600278924710095">કૃપા કરીને '<ph name="ATSIGN" />' ની આગળનો ભાગ દાખલ કરો. '<ph name="INVALIDADDRESS" />' અપૂર્ણ છે.</translation>
 <translation id="5406322316791861025">આકૃતિ</translation>
 <translation id="5453733299334684579">ટ્રી આઇટમ</translation>
+<translation id="5457113250005438886">અમાન્ય</translation>
 <translation id="5466621249238537318">કૃપા કરીને એક અથવા વધુ ફાઇલ પસંદ કરો. </translation>
 <translation id="5468998798572797635">પૂર્ણ સ્ક્રીનથી બહાર નીકળો</translation>
 <translation id="5516424706154626233">તારીખ પીકર</translation>
@@ -150,6 +151,7 @@
 <translation id="6453774872122745852">સ્વીકૃતિઓ</translation>
 <translation id="648732519525291180">સમય પીકર</translation>
 <translation id="6550675742724504774">વિકલ્પો</translation>
+<translation id="6572309429103589720">અમાન્ય વ્યાકરણ</translation>
 <translation id="658823671542763450">પૂર્ણ સ્ક્રીનમાં દાખલ થાઓ</translation>
 <translation id="663493177488814956">ફીડ</translation>
 <translation id="6637586476836377253">લૉગ</translation>
@@ -199,6 +201,7 @@
 <translation id="8105797009065549151">નોંધ સંદર્ભ</translation>
 <translation id="8117451130807776954">આ અઠવાડિયે</translation>
 <translation id="8199524924445686405">yyyy</translation>
+<translation id="8261464734335370856">અમાન્ય જોડણી</translation>
 <translation id="8284326494547611709">કૅપ્શન્સ</translation>
 <translation id="835897206747267392">અમાન્ય મૂલ્ય.</translation>
 <translation id="8415319359811155763">ભાગ</translation>
@@ -220,7 +223,7 @@
 <translation id="8808573423886751634">પ્રકરણ</translation>
 <translation id="8845239796550121995">હમણાં તમારા TV પર કાસ્ટ કરી રહ્યાં છીએ</translation>
 <translation id="8851136666856101339">મુખ્ય</translation>
-<translation id="8875657656876809964">વીડિઓ પ્લેબૅક ભૂલ</translation>
+<translation id="8875657656876809964">વીડિયો પ્લેબૅક ભૂલ</translation>
 <translation id="8901569739625249689"><ph name="QUANTITY" /> KB</translation>
 <translation id="8987927404178983737">મહિનો</translation>
 <translation id="901493112792887934">સેકન્ડ્સમાં વર્તમાન સમય</translation>

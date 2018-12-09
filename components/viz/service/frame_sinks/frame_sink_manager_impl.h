@@ -22,13 +22,16 @@
 #include "base/threading/thread_checker.h"
 #include "components/viz/common/constants.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
+#include "components/viz/service/frame_sinks/compositor_frame_sink_impl.h"
 #include "components/viz/service/frame_sinks/frame_sink_observer.h"
 #include "components/viz/service/frame_sinks/primary_begin_frame_source.h"
+#include "components/viz/service/frame_sinks/root_compositor_frame_sink_impl.h"
 #include "components/viz/service/frame_sinks/video_capture/frame_sink_video_capturer_manager.h"
 #include "components/viz/service/frame_sinks/video_detector.h"
 #include "components/viz/service/hit_test/hit_test_aggregator_delegate.h"
 #include "components/viz/service/hit_test/hit_test_manager.h"
 #include "components/viz/service/surfaces/surface_manager.h"
+#include "components/viz/service/surfaces/surface_manager_delegate.h"
 #include "components/viz/service/surfaces/surface_observer.h"
 #include "components/viz/service/viz_service_export.h"
 #include "gpu/ipc/common/surface_handle.h"
@@ -50,7 +53,8 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
     : public SurfaceObserver,
       public FrameSinkVideoCapturerManager,
       public mojom::FrameSinkManager,
-      public HitTestAggregatorDelegate {
+      public HitTestAggregatorDelegate,
+      public SurfaceManagerDelegate {
  public:
   explicit FrameSinkManagerImpl(
       SharedBitmapManager* shared_bitmap_manager,
@@ -106,6 +110,10 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
   void EvictSurfaces(const std::vector<SurfaceId>& surface_ids) override;
   void RequestCopyOfOutput(const SurfaceId& surface_id,
                            std::unique_ptr<CopyOutputRequest> request) override;
+  void SetHitTestAsyncQueriedDebugRegions(
+      const FrameSinkId& root_frame_sink_id,
+      const std::vector<FrameSinkId>& hit_test_async_queried_debug_queue)
+      override;
 
   // SurfaceObserver implementation.
   void OnFirstSurfaceActivation(const SurfaceInfo& surface_info) override;
@@ -122,6 +130,10 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
   void OnAggregatedHitTestRegionListUpdated(
       const FrameSinkId& frame_sink_id,
       const std::vector<AggregatedHitTestRegion>& hit_test_data) override;
+
+  // SurfaceManagerDelegate implementation:
+  base::StringPiece GetFrameSinkDebugLabel(
+      const FrameSinkId& frame_sink_id) const override;
 
   // CompositorFrameSinkSupport, hierarchy, and BeginFrameSource can be
   // registered and unregistered in any order with respect to each other.
@@ -175,12 +187,6 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
   void AddObserver(FrameSinkObserver* obs);
   void RemoveObserver(FrameSinkObserver* obs);
 
-  // Returns the debug label associated with |frame_sink_id| if any.
-  base::StringPiece GetFrameSinkDebugLabel(
-      const FrameSinkId& frame_sink_id) const;
-
-  // Returns ids of all FrameSinks that were created.
-  std::vector<FrameSinkId> GetCreatedFrameSinkIds() const;
   // Returns ids of all FrameSinks that were registered.
   std::vector<FrameSinkId> GetRegisteredFrameSinkIds() const;
 
@@ -278,8 +284,10 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
   // on destruction.
   base::flat_map<FrameSinkId, CompositorFrameSinkSupport*> support_map_;
 
-  // [Root]CompositorFrameSinkImpls are owned in this map.
-  base::flat_map<FrameSinkId, std::unique_ptr<mojom::CompositorFrameSink>>
+  // [Root]CompositorFrameSinkImpls are owned in these maps.
+  base::flat_map<FrameSinkId, std::unique_ptr<RootCompositorFrameSinkImpl>>
+      root_sink_map_;
+  base::flat_map<FrameSinkId, std::unique_ptr<CompositorFrameSinkImpl>>
       sink_map_;
 
   base::flat_set<std::unique_ptr<FrameSinkVideoCapturerImpl>,

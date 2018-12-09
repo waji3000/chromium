@@ -72,6 +72,9 @@ class TestRequestPeer : public RequestPeer {
     context_->error_code = status.error_code;
     context_->run_loop_quit_closure.Run();
   }
+  scoped_refptr<base::TaskRunner> GetTaskRunner() override {
+    return blink::scheduler::GetSingleThreadTaskRunnerForTesting();
+  }
 
   struct Context {
     // Data received. If downloading to file, remains empty.
@@ -128,7 +131,7 @@ class URLResponseBodyConsumerTest : public ::testing::Test {
     request->url = GURL("http://www.example.com/");
     request->priority = net::LOW;
     request->appcache_host_id = 0;
-    request->fetch_request_mode = network::mojom::FetchRequestMode::kNoCORS;
+    request->fetch_request_mode = network::mojom::FetchRequestMode::kNoCors;
     request->fetch_frame_type = network::mojom::RequestContextFrameType::kNone;
 
     const RequestExtraData extra_data;

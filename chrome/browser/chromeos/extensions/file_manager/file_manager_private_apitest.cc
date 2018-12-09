@@ -25,12 +25,10 @@
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
-#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/extensions/api/file_system_provider_capabilities/file_system_provider_capabilities_handler.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chromeos/chromeos_features.h"
-#include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/concierge/service.pb.h"
 #include "chromeos/dbus/cros_disks_client.h"
 #include "chromeos/disks/disk.h"
@@ -38,7 +36,6 @@
 #include "components/drive/drive_pref_names.h"
 #include "components/drive/file_change.h"
 #include "components/prefs/pref_service.h"
-#include "components/signin/core/browser/signin_manager_base.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/install_warning.h"
 #include "google_apis/drive/test_util.h"
@@ -363,12 +360,11 @@ class FileManagerPrivateApiTest : public extensions::ExtensionApiTest {
     browser()->profile()->GetPrefs()->SetBoolean(
         crostini::prefs::kCrostiniEnabled, true);
     scoped_feature_list->InitWithFeatures(
-        {features::kCrostini, features::kExperimentalCrostiniUI}, {});
-    base::CommandLine::ForCurrentProcess()->AppendSwitch(
-        chromeos::switches::kCrostiniFiles);
+        {features::kCrostini, features::kExperimentalCrostiniUI,
+         chromeos::features::kCrostiniFiles},
+        {});
     // Profile must be signed in with email for crostini.
     identity::SetPrimaryAccount(
-        SigninManagerFactory::GetForProfileIfExists(browser()->profile()),
         IdentityManagerFactory::GetForProfileIfExists(browser()->profile()),
         "testuser@gmail.com");
   }

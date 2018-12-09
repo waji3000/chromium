@@ -87,7 +87,8 @@ bool ConstraintSetHasNonImageCapture(
          constraint_set->hasChannelCount() || constraint_set->hasDepthFar() ||
          constraint_set->hasDepthNear() || constraint_set->hasDeviceId() ||
          constraint_set->hasEchoCancellation() ||
-         constraint_set->hasFacingMode() || constraint_set->hasFocalLengthX() ||
+         constraint_set->hasFacingMode() || constraint_set->hasResizeMode() ||
+         constraint_set->hasFocalLengthX() ||
          constraint_set->hasFocalLengthY() || constraint_set->hasFrameRate() ||
          constraint_set->hasGroupId() || constraint_set->hasHeight() ||
          constraint_set->hasLatency() || constraint_set->hasSampleRate() ||
@@ -141,7 +142,7 @@ bool ConstraintsHaveImageCapture(const MediaTrackConstraints* constraints) {
 
 MediaStreamTrack* MediaStreamTrack::Create(ExecutionContext* context,
                                            MediaStreamComponent* component) {
-  return new MediaStreamTrack(context, component);
+  return MakeGarbageCollected<MediaStreamTrack>(context, component);
 }
 
 MediaStreamTrack::MediaStreamTrack(ExecutionContext* context,
@@ -310,9 +311,9 @@ void MediaStreamTrack::stopTrack(ExecutionContext* execution_context) {
 
 MediaStreamTrack* MediaStreamTrack::clone(ScriptState* script_state) {
   MediaStreamComponent* cloned_component = Component()->Clone();
-  MediaStreamTrack* cloned_track =
-      new MediaStreamTrack(ExecutionContext::From(script_state),
-                           cloned_component, ready_state_, stopped_);
+  MediaStreamTrack* cloned_track = MakeGarbageCollected<MediaStreamTrack>(
+      ExecutionContext::From(script_state), cloned_component, ready_state_,
+      stopped_);
   MediaStreamCenter::Instance().DidCloneMediaStreamTrack(Component(),
                                                          cloned_component);
   return cloned_track;
@@ -392,6 +393,8 @@ MediaTrackCapabilities* MediaStreamTrack::getCapabilities() const {
         break;
     }
     capabilities->setFacingMode(facing_mode);
+    capabilities->setResizeMode({WebMediaStreamTrack::kResizeModeNone,
+                                 WebMediaStreamTrack::kResizeModeRescale});
   }
   return capabilities;
 }
@@ -489,7 +492,7 @@ MediaTrackSettings* MediaStreamTrack::getSettings() const {
     settings->setAutoGainControl(*platform_settings.auto_gain_control);
   if (platform_settings.noise_supression)
     settings->setNoiseSuppression(*platform_settings.noise_supression);
-  if (OriginTrials::ExperimentalHardwareEchoCancellationEnabled(
+  if (origin_trials::ExperimentalHardwareEchoCancellationEnabled(
           GetExecutionContext()) &&
       !platform_settings.echo_cancellation_type.IsNull()) {
     settings->setEchoCancellationType(platform_settings.echo_cancellation_type);

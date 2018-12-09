@@ -32,6 +32,7 @@
 #include "base/strings/pattern.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/post_task.h"
@@ -40,10 +41,12 @@
 #include "base/test/test_timeouts.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
 #include "cc/input/touch_action.h"
 #include "components/network_session_configurator/common/network_switches.h"
+#include "components/viz/common/features.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/frame_host/cross_process_frame_connector.h"
 #include "content/browser/frame_host/frame_navigation_entry.h"
@@ -57,7 +60,9 @@
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/renderer_host/input/input_router.h"
+#include "content/browser/renderer_host/input/synthetic_gesture.h"
 #include "content/browser/renderer_host/input/synthetic_gesture_target.h"
+#include "content/browser/renderer_host/input/synthetic_smooth_scroll_gesture.h"
 #include "content/browser/renderer_host/input/synthetic_touchscreen_pinch_gesture.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_input_event_router.h"
@@ -66,6 +71,7 @@
 #include "content/browser/url_loader_factory_getter.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/frame_messages.h"
+#include "content/common/input/actions_parser.h"
 #include "content/common/input/synthetic_pinch_gesture_params.h"
 #include "content/common/input_messages.h"
 #include "content/common/renderer.mojom.h"
@@ -80,7 +86,6 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_widget_host_observer.h"
-#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
@@ -133,6 +138,7 @@
 #endif
 
 #if defined(OS_MACOSX)
+#include "content/browser/renderer_host/input/synthetic_touchpad_pinch_gesture.h"
 #include "ui/base/test/scoped_preferred_scroller_style_mac.h"
 #endif
 
@@ -160,6 +166,8 @@
 #endif
 
 using ::testing::SizeIs;
+using ::testing::WhenSorted;
+using ::testing::ElementsAre;
 
 namespace content {
 
@@ -475,9 +483,13 @@ blink::ParsedFeaturePolicy CreateFPHeader(
   blink::ParsedFeaturePolicy result(1);
   result[0].feature = feature;
   result[0].matches_all_origins = false;
+  result[0].disposition = blink::mojom::FeaturePolicyDisposition::kEnforce;
   DCHECK(!origins.empty());
   for (const GURL& origin : origins)
     result[0].origins.push_back(url::Origin::Create(origin));
+  // We expect the parsed features to be sorted so that they can reliably be
+  // compared.
+  std::sort(result[0].origins.begin(), result[0].origins.end());
   return result;
 }
 
@@ -488,6 +500,7 @@ blink::ParsedFeaturePolicy CreateFPHeaderMatchesAll(
   blink::ParsedFeaturePolicy result(1);
   result[0].feature = feature;
   result[0].matches_all_origins = true;
+  result[0].disposition = blink::mojom::FeaturePolicyDisposition::kEnforce;
   return result;
 }
 
@@ -618,6 +631,30 @@ class UpdateViewportIntersectionMessageFilter
   gfx::Rect viewport_intersection_;
   bool occluded_or_obscured_ = false;
   DISALLOW_COPY_AND_ASSIGN(UpdateViewportIntersectionMessageFilter);
+};
+
+void UnloadPrint(FrameTreeNode* node, const char* message) {
+  EXPECT_TRUE(
+      ExecJs(node, JsReplace("window.onunload = function() { "
+                             "  window.domAutomationController.send($1);"
+                             "}",
+                             message)));
+}
+
+// A BrowserMessageFilter that drops FrameHostMsg_Detach messages.
+class DetachMessageFilter : public BrowserMessageFilter {
+ public:
+  DetachMessageFilter() : BrowserMessageFilter(FrameMsgStart) {}
+
+ protected:
+  ~DetachMessageFilter() override {}
+
+ private:
+  // BrowserMessageFilter:
+  bool OnMessageReceived(const IPC::Message& message) override {
+    return message.type() == FrameHostMsg_Detach::ID;
+  }
+  DISALLOW_COPY_AND_ASSIGN(DetachMessageFilter);
 };
 
 }  // namespace
@@ -7901,14 +7938,16 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, FileChooserInSubframe) {
 
   // Use FileChooserDelegate to avoid showing the actual dialog and to respond
   // back to the renderer process with predefined file.
+  base::RunLoop run_loop;
   base::FilePath file;
   EXPECT_TRUE(base::PathService::Get(base::DIR_TEMP, &file));
   file = file.AppendASCII("bar");
-  std::unique_ptr<FileChooserDelegate> delegate(new FileChooserDelegate(file));
+  std::unique_ptr<FileChooserDelegate> delegate(
+      new FileChooserDelegate(file, run_loop.QuitClosure()));
   shell()->web_contents()->SetDelegate(delegate.get());
   EXPECT_TRUE(ExecuteScript(root->child_at(0),
                             "document.getElementById('fileinput').click();"));
-  EXPECT_TRUE(delegate->file_chosen());
+  run_loop.Run();
 
   // Also, extract the file from the renderer process to ensure that the
   // response made it over successfully and the proper filename is set.
@@ -9683,15 +9722,10 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, CrossProcessInertSubframe) {
   filter->Wait();
   EXPECT_TRUE(filter->is_inert());
 
-  // This yields the UI thread to ensure that the real SetIsInert message
+  // Yield the UI thread to ensure that the real SetIsInert message
   // handler runs, in order to guarantee that the update arrives at the
   // renderer process before the script below.
-  {
-    base::RunLoop loop;
-    base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE,
-                                                  loop.QuitClosure());
-    loop.Run();
-  }
+  base::RunLoop().RunUntilIdle();
 
   std::string focused_element;
 
@@ -9709,6 +9743,11 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, CrossProcessInertSubframe) {
   // process.
   GURL site_url(embedded_test_server()->GetURL("c.com", "/title1.html"));
   NavigateFrameToURL(iframe_node, site_url);
+
+  // NavigateFrameToURL returns when the navigation commits, at which point
+  // frame state has to be re-sent to the new frame.
+  // Yield the thread to prevent races with the inertness update.
+  base::RunLoop().RunUntilIdle();
 
   EXPECT_TRUE(ExecuteScript(
       iframe_node,
@@ -10639,8 +10678,13 @@ IN_PROC_BROWSER_TEST_F(TouchSelectionControllerClientAndroidSiteIsolationTest,
 
 // This test verifies that the handles associated with an active touch selection
 // are still correctly positioned after a pinch-zoom operation.
+#if defined(OS_ANDROID)  // Flaky on Android.  See https://crbug.com/906204.
+#define MAYBE_SelectionThenPinchInOOPIF DISABLED_SelectionThenPinchInOOPIF
+#else
+#define MAYBE_SelectionThenPinchInOOPIF SelectionThenPinchInOOPIF
+#endif
 IN_PROC_BROWSER_TEST_F(TouchSelectionControllerClientAndroidSiteIsolationTest,
-                       SelectionThenPinchInOOPIF) {
+                       MAYBE_SelectionThenPinchInOOPIF) {
   // Load test URL with cross-process child.
   SetupTest();
 
@@ -10705,6 +10749,86 @@ IN_PROC_BROWSER_TEST_F(TouchSelectionControllerClientAndroidSiteIsolationTest,
   ShutdownTest();
 }
 #endif  // defined(OS_ANDROID)
+
+// This test verifies that the main-frame's page scale factor propagates to
+// the compositor layertrees in each of the child processes.
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
+                       PageScaleFactorPropagatesToOOPIFs) {
+  GURL main_url(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b(c),d)"));
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+
+  FrameTreeNode* root = web_contents()->GetFrameTree()->root();
+  ASSERT_EQ(2u, root->child_count());
+  FrameTreeNode* child_b = root->child_at(0);
+  FrameTreeNode* child_c = root->child_at(1);
+  ASSERT_EQ(1U, child_b->child_count());
+  FrameTreeNode* child_d = child_b->child_at(0);
+
+  ASSERT_TRUE(child_b);
+  ASSERT_TRUE(child_c);
+  ASSERT_TRUE(child_d);
+
+  EXPECT_EQ(
+      " Site A ------------ proxies for B C D\n"
+      "   |--Site B ------- proxies for A C D\n"
+      "   |    +--Site C -- proxies for A B D\n"
+      "   +--Site D ------- proxies for A B C\n"
+      "Where A = http://a.com/\n"
+      "      B = http://b.com/\n"
+      "      C = http://c.com/\n"
+      "      D = http://d.com/",
+      DepictFrameTree(root));
+
+  RenderFrameSubmissionObserver observer_a(root);
+  RenderFrameSubmissionObserver observer_b(child_b);
+  RenderFrameSubmissionObserver observer_c(child_c);
+  RenderFrameSubmissionObserver observer_d(child_d);
+
+  // We need to observe a root frame submission to pick up the initial page
+  // scale factor.
+  observer_a.WaitForAnyFrameSubmission();
+
+  const float kPageScaleDelta = 2.f;
+  // On desktop systems we expect |current_page_scale| to be 1.f, but on
+  // Android it will typically be less than 1.f, and may take on arbitrary
+  // values.
+  float current_page_scale =
+      observer_a.LastRenderFrameMetadata().page_scale_factor;
+  float target_page_scale = current_page_scale * kPageScaleDelta;
+
+  SyntheticPinchGestureParams params;
+  auto* host = static_cast<RenderWidgetHostImpl*>(
+      root->current_frame_host()->GetRenderWidgetHost());
+  gfx::Rect bounds(host->GetView()->GetViewBounds().size());
+  // The synthetic gesture code expects a location in root-view coordinates.
+  params.anchor = gfx::PointF(bounds.CenterPoint());
+  // In SyntheticPinchGestureParams, |scale_factor| is really a delta.
+  params.scale_factor = kPageScaleDelta;
+#if defined(OS_MACOSX)
+  auto synthetic_pinch_gesture =
+      std::make_unique<SyntheticTouchpadPinchGesture>(params);
+#else
+  auto synthetic_pinch_gesture =
+      std::make_unique<SyntheticTouchscreenPinchGesture>(params);
+#endif
+
+  // Send pinch gesture and verify we receive the ack.
+  InputEventAckWaiter ack_waiter(host, blink::WebInputEvent::kGesturePinchEnd);
+  host->QueueSyntheticGesture(
+      std::move(synthetic_pinch_gesture),
+      base::BindOnce([](SyntheticGesture::Result result) {
+        EXPECT_EQ(SyntheticGesture::GESTURE_FINISHED, result);
+      }));
+  ack_waiter.Wait();
+
+  // Make sure all the page scale values behave as expected.
+  const float kScaleTolerance = 0.0001f;
+  observer_a.WaitForPageScaleFactor(target_page_scale, kScaleTolerance);
+  observer_b.WaitForExternalPageScaleFactor(target_page_scale, kScaleTolerance);
+  observer_c.WaitForExternalPageScaleFactor(target_page_scale, kScaleTolerance);
+  observer_d.WaitForExternalPageScaleFactor(target_page_scale, kScaleTolerance);
+}
 
 // Verify that sandbox flags specified by a CSP header are properly inherited by
 // child frames, but are removed when the frame navigates.
@@ -11639,17 +11763,8 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
 // Check that when A opens a new window with B which embeds an A subframe, the
 // subframe is visible and generates paint events.  See
 // https://crbug.com/638375.
-
-#if defined(OS_ANDROID)
-// Flaky on Android: https://crbug.com/897709
-#define MAYBE_SubframeVisibleAfterRenderViewBecomesSwappedOut \
-  DISABLED_SubframeVisibleAfterRenderViewBecomesSwappedOut
-#else
-#define MAYBE_SubframeVisibleAfterRenderViewBecomesSwappedOut \
-  SubframeVisibleAfterRenderViewBecomesSwappedOut
-#endif
 IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
-                       MAYBE_SubframeVisibleAfterRenderViewBecomesSwappedOut) {
+                       SubframeVisibleAfterRenderViewBecomesSwappedOut) {
   GURL main_url(embedded_test_server()->GetURL("a.com", "/title1.html"));
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
 
@@ -12460,11 +12575,16 @@ class SitePerProcessBrowserTouchActionTest : public SitePerProcessBrowserTest {
     ack_observer.Wait();
     effective_touch_action =
         input_router->touch_action_filter_.allowed_touch_action_;
-    // Whitelisted touch action is sent from a separate IPC channel, so it is
-    // not guaranteed to have value when the ACK for the touch start arrived
-    // because the ACK is from the main thread.
+    // Effective touch action are sent from a separate IPC
+    // channel, so it is not guaranteed to have value when the ACK for the
+    // touch start arrived because the ACK is from the main thread.
     whitelisted_touch_action =
         input_router->touch_action_filter_.white_listed_touch_action_;
+    while (!effective_touch_action.has_value()) {
+      GiveItSomeTime(TestTimeouts::tiny_timeout());
+      effective_touch_action =
+          input_router->touch_action_filter_.allowed_touch_action_;
+    }
 
     // Send a touch move and touch end to complete the sequence, this also
     // avoids triggering DCHECKs when sending followup events.
@@ -12479,6 +12599,13 @@ class SitePerProcessBrowserTouchActionTest : public SitePerProcessBrowserTest {
     router->RouteTouchEvent(rwhv_root, &touch_event,
                             ui::LatencyInfo(ui::SourceEventType::TOUCH));
     ack_observer.Wait();
+  }
+
+  void GiveItSomeTime(const base::TimeDelta& t) {
+    base::RunLoop run_loop;
+    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+        FROM_HERE, run_loop.QuitClosure(), t);
+    run_loop.Run();
   }
 
   // Waits until the parent frame has had enough time to propagate the effective
@@ -13690,6 +13817,122 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
             child->current_frame_host()->GetLastCommittedURL());
 }
 
+// Touchscreen DoubleTapZoom is only supported on Android & ChromeOS at present.
+#if defined(OS_CHROMEOS) || defined(OS_ANDROID)
+namespace {
+
+class SitePerProcessDoubleTapZoomBrowserTest
+    : public SitePerProcessBrowserTest {
+ public:
+  SitePerProcessDoubleTapZoomBrowserTest() {}
+
+ protected:
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    SitePerProcessBrowserTest::SetUpCommandLine(command_line);
+    feature_list_.InitAndEnableFeature(features::kEnableVizHitTestDrawQuad);
+  }
+
+  base::test::ScopedFeatureList feature_list_;
+};
+
+void EnableDoubleTapZoomInRenderView(FrameTreeNode* node) {
+  content::RenderViewHost* rvh =
+      node->current_frame_host()->GetRenderViewHost();
+  content::WebPreferences web_prefs = rvh->GetWebkitPreferences();
+  if (web_prefs.double_tap_to_zoom_enabled)
+    return;
+  web_prefs.double_tap_to_zoom_enabled = true;
+  rvh->UpdateWebkitPreferences(web_prefs);
+}
+
+}  // namespace
+
+IN_PROC_BROWSER_TEST_F(SitePerProcessDoubleTapZoomBrowserTest,
+                       TouchscreenAnimateDoubleTapZoomInOOPIF) {
+  GURL main_url(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b)"));
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+
+  FrameTreeNode* root = web_contents()->GetFrameTree()->root();
+  ASSERT_EQ(1u, root->child_count());
+  FrameTreeNode* child_b = root->child_at(0);
+  ASSERT_TRUE(child_b);
+
+  // Enable double-tap zoom. This must be done separately for the main frame and
+  // for the oopif frame since RenderViewHost::UpdateWebkitPreferences() only
+  // sends the IPC to its own RenderView.
+  EnableDoubleTapZoomInRenderView(root);
+  EnableDoubleTapZoomInRenderView(child_b);
+
+  RenderFrameSubmissionObserver observer_a(root);
+  // We need to observe a root frame submission to pick up the initial page
+  // scale factor.
+  observer_a.WaitForAnyFrameSubmission();
+  float original_page_scale =
+      observer_a.LastRenderFrameMetadata().page_scale_factor;
+
+  // Must do this before it's safe to use the coordinate transform functions.
+  WaitForHitTestDataOrChildSurfaceReady(child_b->current_frame_host());
+
+  // Select a tap point inside the OOPIF.
+  gfx::PointF tap_position =
+      child_b->current_frame_host()
+          ->GetRenderWidgetHost()
+          ->GetView()
+          ->TransformPointToRootCoordSpaceF(gfx::PointF(10, 10));
+
+  // Generate a double-tap.
+  std::string actions_template = R"HTML(
+      [{
+        "source" : "touch",
+        "actions" : [
+          { "name": "pointerDown", "x": %f, "y": %f},
+          { "name": "pointerUp"},
+          { "name": "pause", "duration": 0.05 },
+          { "name": "pointerDown", "x": %f, "y": %f},
+          { "name": "pointerUp"}
+        ]
+      }]
+  )HTML";
+  std::string double_tap_actions_json =
+      base::StringPrintf(actions_template.c_str(), tap_position.x(),
+                         tap_position.y(), tap_position.x(), tap_position.y());
+  base::JSONReader json_reader;
+  std::unique_ptr<base::Value> params =
+      json_reader.ReadToValue(double_tap_actions_json);
+  ASSERT_TRUE(params.get()) << json_reader.GetErrorMessage();
+  ActionsParser actions_parser(params.get());
+
+  ASSERT_TRUE(actions_parser.ParsePointerActionSequence());
+  auto synthetic_gesture_doubletap =
+      SyntheticGesture::Create(actions_parser.gesture_params());
+
+  // Queue the event and wait for it to be acked.
+  InputEventAckWaiter ack_waiter(
+      child_b->current_frame_host()->GetRenderWidgetHost(),
+      blink::WebInputEvent::kGestureDoubleTap);
+  auto* host = static_cast<RenderWidgetHostImpl*>(
+      root->current_frame_host()->GetRenderWidgetHost());
+  host->QueueSyntheticGesture(
+      std::move(synthetic_gesture_doubletap),
+      base::BindOnce([](SyntheticGesture::Result result) {
+        EXPECT_EQ(SyntheticGesture::GESTURE_FINISHED, result);
+      }));
+  // Waiting for the ack on the child frame ensures the event actually routed
+  // through the oopif.
+  ack_waiter.Wait();
+
+  // Wait for page scale to change. We'll assume the OOPIF is scaled up by
+  // at least 10%.
+  float target_scale = 1.1f * original_page_scale;
+  float new_page_scale = original_page_scale;
+  do {
+    observer_a.WaitForAnyFrameSubmission();
+    new_page_scale = observer_a.LastRenderFrameMetadata().page_scale_factor;
+  } while (new_page_scale < target_scale);
+}
+#endif  // defined(OS_CHROMEOS) || defined(OS_ANDROID)
+
 class CrossProcessNavigationObjectElementTest
     : public SitePerProcessBrowserTest,
       public testing::WithParamInterface<
@@ -13753,4 +13996,542 @@ INSTANTIATE_TEST_CASE_P(SitePerProcess,
                                         std::make_tuple("a", "b", "b"),
                                         std::make_tuple("a", "b", "c")));
 
+class ScrollingIntegrationTest : public SitePerProcessBrowserTest {
+ public:
+  ScrollingIntegrationTest() = default;
+  ~ScrollingIntegrationTest() override = default;
+
+  void DoScroll(const gfx::Point& point,
+                const gfx::Vector2d& distance,
+                SyntheticGestureParams::GestureSourceType source) {
+    SyntheticSmoothScrollGestureParams params;
+    params.gesture_source_type = source;
+    params.anchor = gfx::PointF(point);
+    params.distances.push_back(-distance);
+    params.precise_scrolling_deltas = true;
+
+    auto gesture = std::make_unique<SyntheticSmoothScrollGesture>(params);
+
+    // Runs until we get the SyntheticGestureCompleted callback
+    base::RunLoop run_loop;
+    GetRenderWidgetHostImpl()->QueueSyntheticGesture(
+        std::move(gesture),
+        base::BindLambdaForTesting([&](SyntheticGesture::Result result) {
+          EXPECT_EQ(SyntheticGesture::GESTURE_FINISHED, result);
+          run_loop.Quit();
+        }));
+    run_loop.Run();
+  }
+
+  double GetScrollTop() {
+    FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                              ->GetFrameTree()
+                              ->root();
+    return EvalJs(root, "window.scrollY").ExtractDouble();
+  }
+
+  void WaitForVerticalScroll() {
+    RenderFrameSubmissionObserver frame_observer(shell()->web_contents());
+    gfx::Vector2dF default_scroll_offset;
+    while (frame_observer.LastRenderFrameMetadata()
+               .root_scroll_offset.value_or(default_scroll_offset)
+               .y() <= 0) {
+      frame_observer.WaitForMetadataChange();
+    }
+  }
+
+  RenderWidgetHostImpl* GetRenderWidgetHostImpl() {
+    FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                              ->GetFrameTree()
+                              ->root();
+    return root->current_frame_host()->GetRenderWidgetHost();
+  }
+};
+
+// Tests basic scrolling after navigating to a new origin works. Guards against
+// bugs like https://crbug.com/899234 which are caused by invalid
+// initialization due to the cross-origin provisional frame swap.
+IN_PROC_BROWSER_TEST_F(ScrollingIntegrationTest,
+                       ScrollAfterCrossOriginNavigation) {
+  // Navigate to the a.com domain first.
+  GURL url_domain_a(
+      embedded_test_server()->GetURL("a.com", "/simple_page.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), url_domain_a));
+
+  // Now navigate to baz.com, this should cause a cross-origin navigation which
+  // will load into a provisional frame and then swap in as a local main frame.
+  // This test ensures all the correct initialization takes place in the
+  // renderer so that a basic scrolling smoke test works.
+  GURL url_domain_b(embedded_test_server()->GetURL(
+      "baz.com", "/scrollable_page_with_iframe.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), url_domain_b));
+  ASSERT_TRUE(WaitForLoadStop(shell()->web_contents()));
+
+  {
+    // TODO(bokan): We currently don't have a good way to know when the
+    // compositor's scrolling layers are ready after changes on the main thread.
+    // We wait a timeout but that's really a hack. Fixing is tracked in
+    // https://crbug.com/897520
+    base::RunLoop run_loop;
+    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+        FROM_HERE, run_loop.QuitClosure(),
+        base::TimeDelta::FromMilliseconds(3000));
+    run_loop.Run();
+  }
+
+  SyntheticGestureParams::GestureSourceType source;
+
+// TODO(bokan): Mac doesn't support touch events and for an unknown reason,
+// Android doesn't like mouse wheel here. https://crbug.com/897520.
+#if defined(OS_ANDROID)
+  source = SyntheticGestureParams::TOUCH_INPUT;
+#else
+  source = SyntheticGestureParams::TOUCHPAD_INPUT;
+#endif
+
+  // Perform the scroll (below the iframe), ensure it's correctly processed.
+  DoScroll(gfx::Point(100, 110), gfx::Vector2d(0, 500), source);
+  WaitForVerticalScroll();
+  EXPECT_GT(GetScrollTop(), 0);
+}
+
+// Test that unload handlers in iframes are run, even when the removed subtree
+// is complicated with nested iframes in different processes.
+//     A1                         A1
+//    / \                        / \
+//   B1  D  --- Navigate --->   E   D
+//  / \
+// C1  C2
+// |   |
+// B2  A2
+//     |
+//     C3
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, UnloadHandlerSubframes) {
+  GURL main_url(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b(c(b),c(a(c))),d)"));
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+
+  // Add a unload handler to every frames. It notifies the browser using the
+  // DomAutomationController it has been executed.
+  FrameTreeNode* root = web_contents()->GetFrameTree()->root();
+  UnloadPrint(root, "A1");
+  UnloadPrint(root->child_at(0), "B1");
+  UnloadPrint(root->child_at(0)->child_at(0), "C1");
+  UnloadPrint(root->child_at(0)->child_at(1), "C2");
+  UnloadPrint(root->child_at(0)->child_at(0)->child_at(0), "B2");
+  UnloadPrint(root->child_at(0)->child_at(1)->child_at(0), "A2");
+  UnloadPrint(root->child_at(0)->child_at(1)->child_at(0)->child_at(0), "C3");
+  DOMMessageQueue dom_message_queue(
+      WebContents::FromRenderFrameHost(web_contents()->GetMainFrame()));
+
+  // Disable the swap out timer on B1.
+  root->child_at(0)->current_frame_host()->DisableSwapOutTimerForTesting();
+
+  // Process B and C are expected to shutdown once every unload handler has
+  // run.
+  RenderProcessHostWatcher shutdown_B(
+      root->child_at(0)->current_frame_host()->GetProcess(),
+      RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
+  RenderProcessHostWatcher shutdown_C(
+      root->child_at(0)->child_at(0)->current_frame_host()->GetProcess(),
+      RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
+
+  // Navigate B to E.
+  GURL e_url(embedded_test_server()->GetURL("e.com", "/title1.html"));
+  NavigateFrameToURL(root->child_at(0), e_url);
+
+  // Collect unload handler messages.
+  std::string message;
+  std::vector<std::string> messages;
+  for (int i = 0; i < 6; ++i) {
+    EXPECT_TRUE(dom_message_queue.WaitForMessage(&message));
+    base::TrimString(message, "\"", &message);
+    messages.push_back(message);
+  }
+  EXPECT_FALSE(dom_message_queue.PopMessage(&message));
+
+  // Check every frame in the replaced subtree has executed its unload handler.
+  EXPECT_THAT(messages,
+              WhenSorted(ElementsAre("A2", "B1", "B2", "C1", "C2", "C3")));
+
+  // In every renderer process, check ancestors have executed their unload
+  // handler before their children. This is a slightly less restrictive
+  // condition than the specification which requires it to be global instead of
+  // per process.
+  // https://html.spec.whatwg.org/multipage/browsing-the-web.html#unloading-documents
+  //
+  // In process B:
+  auto B1 = std::find(messages.begin(), messages.end(), "B1");
+  auto B2 = std::find(messages.begin(), messages.end(), "B2");
+  EXPECT_LT(B1, B2);
+
+  // In process C:
+  auto C2 = std::find(messages.begin(), messages.end(), "C2");
+  auto C3 = std::find(messages.begin(), messages.end(), "C3");
+  EXPECT_LT(C2, C3);
+
+  // Make sure the processes are deleted at some point.
+  shutdown_B.Wait();
+  shutdown_C.Wait();
+}
+
+// Check that unload handlers in iframe don't prevents the main frame to be
+// deleted after a timeout.
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, SlowUnloadHandlerInIframe) {
+  GURL initial_url(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b)"));
+  GURL next_url(embedded_test_server()->GetURL("c.com", "/title1.html"));
+
+  // 1) Navigate on a page with an iframe.
+  EXPECT_TRUE(NavigateToURL(shell(), initial_url));
+
+  // 2) Act as if there was an infinite unload handler in B.
+  auto filter = base::MakeRefCounted<DetachMessageFilter>();
+  RenderFrameHost* rfh_b =
+      web_contents()->GetFrameTree()->root()->child_at(0)->current_frame_host();
+  rfh_b->GetProcess()->AddFilter(filter.get());
+
+  // 3) Navigate and check the old frame is deleted after some time.
+  FrameTreeNode* root = web_contents()->GetFrameTree()->root();
+  RenderFrameDeletedObserver deleted_observer(root->current_frame_host());
+  EXPECT_TRUE(NavigateToURL(shell(), next_url));
+  deleted_observer.WaitUntilDeleted();
+}
+
+// Navigate from A(B(A(B)) to C. Check the unload handler are executed, executed
+// in the right order and the processes for A and B are removed.
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, Unload_ABAB) {
+  GURL initial_url(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b(a(b)))"));
+  GURL next_url(embedded_test_server()->GetURL("c.com", "/title1.html"));
+
+  // 1) Navigate on a page with an iframe.
+  EXPECT_TRUE(NavigateToURL(shell(), initial_url));
+
+  // 2) Add unload handler on every frame.
+  FrameTreeNode* root = web_contents()->GetFrameTree()->root();
+  UnloadPrint(root, "A1");
+  UnloadPrint(root->child_at(0), "B1");
+  UnloadPrint(root->child_at(0)->child_at(0), "A2");
+  UnloadPrint(root->child_at(0)->child_at(0)->child_at(0), "B2");
+  root->current_frame_host()->DisableSwapOutTimerForTesting();
+
+  DOMMessageQueue dom_message_queue(
+      WebContents::FromRenderFrameHost(web_contents()->GetMainFrame()));
+  RenderProcessHostWatcher shutdown_A(
+      root->current_frame_host()->GetProcess(),
+      RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
+  RenderProcessHostWatcher shutdown_B(
+      root->child_at(0)->current_frame_host()->GetProcess(),
+      RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
+
+  // 3) Navigate cross process.
+  EXPECT_TRUE(NavigateToURL(shell(), next_url));
+
+  // 4) Wait for unload handler messages and check they are sent in order.
+  std::vector<std::string> messages;
+  std::string message;
+  for (int i = 0; i < 4; ++i) {
+    EXPECT_TRUE(dom_message_queue.WaitForMessage(&message));
+    base::TrimString(message, "\"", &message);
+    messages.push_back(message);
+  }
+  EXPECT_FALSE(dom_message_queue.PopMessage(&message));
+
+  EXPECT_THAT(messages, WhenSorted(ElementsAre("A1", "A2", "B1", "B2")));
+  auto A1 = std::find(messages.begin(), messages.end(), "A1");
+  auto A2 = std::find(messages.begin(), messages.end(), "A2");
+  auto B1 = std::find(messages.begin(), messages.end(), "B1");
+  auto B2 = std::find(messages.begin(), messages.end(), "B2");
+  EXPECT_LT(A1, A2);
+  EXPECT_LT(B1, B2);
+
+  // Make sure the processes are deleted at some point.
+  shutdown_A.Wait();
+  shutdown_B.Wait();
+}
+
+// Start with A(B(C)), navigate C to D and then B to E. By emulating a slow
+// unload handler in B,C and D, the end result is C is in pending deletion in B
+// and B is in pending deletion in A.
+//   (1)     (2)     (3)
+//|       |       |       |
+//|   A   |  A    |   A   |
+//|   |   |  |    |    \  |
+//|   B   |  B    |  B  E |
+//|   |   |   \   |   \   |
+//|   C   | C  D  | C  D  |
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, UnloadNestedPendingDeletion) {
+  std::string onunload_script = "window.onunload = function(){}";
+  GURL url_abc(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b(c))"));
+  GURL url_d(embedded_test_server()->GetURL("d.com", "/title1.html"));
+  GURL url_e(embedded_test_server()->GetURL("e.com", "/title1.html"));
+
+  // 1) Navigate to a page with an iframe.
+  EXPECT_TRUE(NavigateToURL(shell(), url_abc));
+  RenderFrameHostImpl* rfh_a = web_contents()->GetMainFrame();
+  RenderFrameHostImpl* rfh_b = rfh_a->child_at(0)->current_frame_host();
+  RenderFrameHostImpl* rfh_c = rfh_b->child_at(0)->current_frame_host();
+  EXPECT_EQ(RenderFrameHostImpl::UnloadState::NotRun, rfh_a->unload_state_);
+  EXPECT_EQ(RenderFrameHostImpl::UnloadState::NotRun, rfh_b->unload_state_);
+  EXPECT_EQ(RenderFrameHostImpl::UnloadState::NotRun, rfh_c->unload_state_);
+
+  // Act as if there was a slow unload handler on rfh_b and rfh_c.
+  // The navigating frames are waiting for FrameHostMsg_SwapoutACK.
+  auto swapout_ack_filter_b = base::MakeRefCounted<SwapoutACKMessageFilter>();
+  auto swapout_ack_filter_c = base::MakeRefCounted<SwapoutACKMessageFilter>();
+  rfh_b->GetProcess()->AddFilter(swapout_ack_filter_b.get());
+  rfh_c->GetProcess()->AddFilter(swapout_ack_filter_c.get());
+  EXPECT_TRUE(ExecuteScript(rfh_b->frame_tree_node(), onunload_script));
+  EXPECT_TRUE(ExecuteScript(rfh_c->frame_tree_node(), onunload_script));
+  rfh_b->DisableSwapOutTimerForTesting();
+  rfh_c->DisableSwapOutTimerForTesting();
+
+  RenderFrameDeletedObserver delete_B(rfh_b), delete_C(rfh_c);
+
+  // 2) Navigate rfh_c to D.
+  NavigateFrameToURL(rfh_c->frame_tree_node(), url_d);
+  EXPECT_EQ(RenderFrameHostImpl::UnloadState::NotRun, rfh_a->unload_state_);
+  EXPECT_EQ(RenderFrameHostImpl::UnloadState::NotRun, rfh_b->unload_state_);
+  EXPECT_EQ(RenderFrameHostImpl::UnloadState::InProgress, rfh_c->unload_state_);
+  RenderFrameHostImpl* rfh_d = rfh_b->child_at(0)->current_frame_host();
+
+  RenderFrameDeletedObserver delete_D(rfh_d);
+
+  // Act as if there was a slow unload handler on rfh_d.
+  // The non navigating frames are waiting for FrameHostMsg_Detach.
+  auto detach_filter = base::MakeRefCounted<DetachMessageFilter>();
+  rfh_d->GetProcess()->AddFilter(detach_filter.get());
+  EXPECT_TRUE(ExecuteScript(rfh_d->frame_tree_node(), onunload_script));
+
+  // 3) Navigate rfh_b to E.
+  NavigateFrameToURL(rfh_b->frame_tree_node(), url_e);
+  EXPECT_EQ(RenderFrameHostImpl::UnloadState::NotRun, rfh_a->unload_state_);
+  EXPECT_EQ(RenderFrameHostImpl::UnloadState::InProgress, rfh_b->unload_state_);
+  EXPECT_EQ(RenderFrameHostImpl::UnloadState::InProgress, rfh_c->unload_state_);
+  EXPECT_EQ(RenderFrameHostImpl::UnloadState::InProgress, rfh_d->unload_state_);
+
+  // rfh_d completes its unload event. It deletes the frame, including rfh_c.
+  EXPECT_FALSE(delete_C.deleted());
+  EXPECT_FALSE(delete_D.deleted());
+  rfh_d->OnDetach();
+  EXPECT_TRUE(delete_C.deleted());
+  EXPECT_TRUE(delete_D.deleted());
+
+  // rfh_b completes its unload event.
+  EXPECT_FALSE(delete_B.deleted());
+  rfh_b->OnSwapOutACK();
+  EXPECT_TRUE(delete_B.deleted());
+}
+
+// A set of nested frames A1(B1(A2)) are pending deletion because of a
+// navigation. This tests what happens if only A2 has an unload handler.
+// If B1 receives FrameHostMsg_OnDetach before A2, it should not destroy itself
+// and its children, but rather wait for A2.
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, PartialUnloadHandler) {
+  GURL url_aba(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b(a))"));
+  GURL url_c(embedded_test_server()->GetURL("c.com", "/title1.html"));
+
+  // 1) Navigate to A1(B1(A2))
+  EXPECT_TRUE(NavigateToURL(shell(), url_aba));
+
+  FrameTreeNode* root = web_contents()->GetFrameTree()->root();
+  RenderFrameHostImpl* a1 = root->current_frame_host();
+  RenderFrameHostImpl* b1 = a1->child_at(0)->current_frame_host();
+  RenderFrameHostImpl* a2 = b1->child_at(0)->current_frame_host();
+  RenderFrameDeletedObserver delete_a1(a1);
+  RenderFrameDeletedObserver delete_a2(a2);
+  RenderFrameDeletedObserver delete_b1(b1);
+
+  // Disable Detach and Swapout ACK. They will be called manually.
+  auto swapout_ack_filter = base::MakeRefCounted<SwapoutACKMessageFilter>();
+  auto detach_filter_a = base::MakeRefCounted<DetachMessageFilter>();
+  auto detach_filter_b = base::MakeRefCounted<DetachMessageFilter>();
+  a1->GetProcess()->AddFilter(swapout_ack_filter.get());
+  a1->GetProcess()->AddFilter(detach_filter_a.get());
+  b1->GetProcess()->AddFilter(detach_filter_b.get());
+
+  a1->DisableSwapOutTimerForTesting();
+
+  // Add unload handler on A2, but not on the other frames.
+  UnloadPrint(a2->frame_tree_node(), "A2");
+
+  DOMMessageQueue dom_message_queue(
+      WebContents::FromRenderFrameHost(web_contents()->GetMainFrame()));
+
+  // 2) Navigate cross process.
+  EXPECT_TRUE(NavigateToURL(shell(), url_c));
+
+  // Check that unload handlers are executed.
+  std::string message, message_unused;
+  EXPECT_TRUE(dom_message_queue.WaitForMessage(&message));
+  EXPECT_FALSE(dom_message_queue.PopMessage(&message_unused));
+  EXPECT_EQ("\"A2\"", message);
+
+  // No RenderFrameHost are deleted so far.
+  EXPECT_FALSE(delete_a1.deleted());
+  EXPECT_FALSE(delete_b1.deleted());
+  EXPECT_FALSE(delete_a2.deleted());
+  EXPECT_EQ(RenderFrameHostImpl::UnloadState::InProgress, a1->unload_state_);
+  EXPECT_EQ(RenderFrameHostImpl::UnloadState::Completed, b1->unload_state_);
+  EXPECT_EQ(RenderFrameHostImpl::UnloadState::InProgress, a2->unload_state_);
+
+  // 3) B1 receives confirmation it has been deleted. This has no effect,
+  //    because it is still waiting on A2 to be deleted.
+  b1->OnDetach();
+  EXPECT_FALSE(delete_a1.deleted());
+  EXPECT_FALSE(delete_b1.deleted());
+  EXPECT_FALSE(delete_a2.deleted());
+  EXPECT_EQ(RenderFrameHostImpl::UnloadState::InProgress, a1->unload_state_);
+  EXPECT_EQ(RenderFrameHostImpl::UnloadState::Completed, b1->unload_state_);
+  EXPECT_EQ(RenderFrameHostImpl::UnloadState::InProgress, a2->unload_state_);
+
+  // 4) A2 received confirmation that it has been deleted and destroy B1 and A2.
+  a2->OnDetach();
+  EXPECT_FALSE(delete_a1.deleted());
+  EXPECT_TRUE(delete_b1.deleted());
+  EXPECT_TRUE(delete_a2.deleted());
+  EXPECT_EQ(RenderFrameHostImpl::UnloadState::InProgress, a1->unload_state_);
+
+  // 5) A1 receives SwapOutACK and deletes itself.
+  a1->OnSwapOutACK();
+  EXPECT_TRUE(delete_a1.deleted());
+}
+
+// Test RenderFrameHostImpl::PendingDeletionCheckCompletedOnSubtree.
+//
+// After a navigation commit, some children with no unload handler may be
+// eligible for immediate deletion. Several configurations are tested:
+//
+// Before navigation commit
+//
+//              0               |  N  : No unload handler
+//   ‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑      | [N] : Unload handler
+//  |  |  |  |  |   |     |     |
+// [1] 2 [3] 5  7   9     12    |
+//        |  |  |  / \   / \    |
+//        4 [6] 8 10 11 13 [14] |
+//
+// After navigation commit (expected)
+//
+//              0               |  N  : No unload handler
+//   ---------------------      | [N] : Unload handler
+//  |     |  |            |     |
+// [1]   [3] 5            12    |
+//           |             \    |
+//          [6]            [14] |
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
+                       PendingDeletionCheckCompletedOnSubtree) {
+  GURL url_1(embedded_test_server()->GetURL(
+      "a.com",
+      "/cross_site_iframe_factory.html?a(a,a,a(a),a(a),a(a),a(a,a),a(a,a))"));
+  GURL url_2(embedded_test_server()->GetURL("b.com", "/title1.html"));
+
+  // 1) Navigate to 0(1,2,3(4),5(6),7(8),9(10,11),12(13,14));
+  EXPECT_TRUE(NavigateToURL(shell(), url_1));
+
+  FrameTreeNode* root = web_contents()->GetFrameTree()->root();
+  RenderFrameHostImpl* rfh_0 = root->current_frame_host();
+  RenderFrameHostImpl* rfh_1 = rfh_0->child_at(0)->current_frame_host();
+  RenderFrameHostImpl* rfh_2 = rfh_0->child_at(1)->current_frame_host();
+  RenderFrameHostImpl* rfh_3 = rfh_0->child_at(2)->current_frame_host();
+  RenderFrameHostImpl* rfh_4 = rfh_3->child_at(0)->current_frame_host();
+  RenderFrameHostImpl* rfh_5 = rfh_0->child_at(3)->current_frame_host();
+  RenderFrameHostImpl* rfh_6 = rfh_5->child_at(0)->current_frame_host();
+  RenderFrameHostImpl* rfh_7 = rfh_0->child_at(4)->current_frame_host();
+  RenderFrameHostImpl* rfh_8 = rfh_7->child_at(0)->current_frame_host();
+  RenderFrameHostImpl* rfh_9 = rfh_0->child_at(5)->current_frame_host();
+  RenderFrameHostImpl* rfh_10 = rfh_9->child_at(0)->current_frame_host();
+  RenderFrameHostImpl* rfh_11 = rfh_9->child_at(1)->current_frame_host();
+  RenderFrameHostImpl* rfh_12 = rfh_0->child_at(6)->current_frame_host();
+  RenderFrameHostImpl* rfh_13 = rfh_12->child_at(0)->current_frame_host();
+  RenderFrameHostImpl* rfh_14 = rfh_12->child_at(1)->current_frame_host();
+
+  RenderFrameDeletedObserver delete_a0(rfh_0), delete_a1(rfh_1),
+      delete_a2(rfh_2), delete_a3(rfh_3), delete_a4(rfh_4), delete_a5(rfh_5),
+      delete_a6(rfh_6), delete_a7(rfh_7), delete_a8(rfh_8), delete_a9(rfh_9),
+      delete_a10(rfh_10), delete_a11(rfh_11), delete_a12(rfh_12),
+      delete_a13(rfh_13), delete_a14(rfh_14);
+
+  // Add the unload handlers.
+  UnloadPrint(rfh_1->frame_tree_node(), "");
+  UnloadPrint(rfh_3->frame_tree_node(), "");
+  UnloadPrint(rfh_6->frame_tree_node(), "");
+  UnloadPrint(rfh_14->frame_tree_node(), "");
+
+  // Disable Detach and Swapout ACK.
+  auto swapout_ack_filter = base::MakeRefCounted<SwapoutACKMessageFilter>();
+  auto detach_filter = base::MakeRefCounted<DetachMessageFilter>();
+  rfh_0->GetProcess()->AddFilter(swapout_ack_filter.get());
+  rfh_0->GetProcess()->AddFilter(detach_filter.get());
+  rfh_0->DisableSwapOutTimerForTesting();
+
+  // 2) Navigate cross process and check the tree. See diagram above.
+  EXPECT_TRUE(NavigateToURL(shell(), url_2));
+
+  EXPECT_FALSE(delete_a0.deleted());
+  EXPECT_FALSE(delete_a1.deleted());
+  EXPECT_TRUE(delete_a2.deleted());
+  EXPECT_FALSE(delete_a3.deleted());
+  EXPECT_TRUE(delete_a4.deleted());
+  EXPECT_FALSE(delete_a5.deleted());
+  EXPECT_FALSE(delete_a6.deleted());
+  EXPECT_TRUE(delete_a7.deleted());
+  EXPECT_TRUE(delete_a8.deleted());
+  EXPECT_TRUE(delete_a9.deleted());
+  EXPECT_TRUE(delete_a10.deleted());
+  EXPECT_TRUE(delete_a11.deleted());
+  EXPECT_FALSE(delete_a12.deleted());
+  EXPECT_TRUE(delete_a13.deleted());
+  EXPECT_FALSE(delete_a14.deleted());
+}
+
+#if !defined(OS_ANDROID)
+// This test verifies that after occluding a WebContents the RAF inside a
+// cross-process child frame is throttled.
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
+                       OccludedRenderWidgetThrottlesRAF) {
+  GURL main_url(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b)"));
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+  FrameTreeNode* root = web_contents()->GetFrameTree()->root();
+  FrameTreeNode* subframe = root->child_at(0);
+  GURL page_with_raf_counter =
+      embedded_test_server()->GetURL("a.com", "/page_with_raf_counter.html");
+  NavigateFrameToURL(subframe, page_with_raf_counter);
+
+  // Initially page is visible - wait some time and then ensure a good number of
+  // rafs have been generated.
+  auto wait_for_half_a_second = []() {
+    base::RunLoop run_loop;
+    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+        FROM_HERE, run_loop.QuitClosure(),
+        base::TimeDelta::FromMilliseconds(500));
+    run_loop.Run();
+  };
+
+  ASSERT_TRUE(ExecuteScript(subframe, "reset_count();"));
+  wait_for_half_a_second();
+  int32_t default_raf_count = EvalJs(subframe, "raf_count").ExtractInt();
+  // On a 60 fps we should expect more than 30 counts - however purely for
+  // sanity checking and avoiding unnecessary flakes adding a comparison for a
+  // much lower value. This verifies that we did get *some* rAFs.
+  EXPECT_GT(default_raf_count, 5);
+  web_contents()->WasOccluded();
+  ASSERT_TRUE(ExecuteScript(subframe, "reset_count();"));
+  wait_for_half_a_second();
+  int32_t raf_count = EvalJs(subframe, "raf_count").ExtractInt();
+  // If the frame is throttled, we should expect 0 rAFs.
+  EXPECT_EQ(raf_count, 0);
+  // Sanity-check: unoccluding will reverse the effect.
+  web_contents()->WasShown();
+  ASSERT_TRUE(ExecuteScript(subframe, "reset_count();"));
+  wait_for_half_a_second();
+  ASSERT_TRUE(ExecuteScriptAndExtractInt(
+      subframe, "window.domAutomationController.send(raf_count)", &raf_count));
+  EXPECT_GT(raf_count, 5);
+}
+#endif
 }  // namespace content

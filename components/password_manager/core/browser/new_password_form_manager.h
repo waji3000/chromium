@@ -14,6 +14,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "components/autofill/core/common/form_data.h"
+#include "components/autofill/core/common/signatures_util.h"
 #include "components/password_manager/core/browser/form_fetcher.h"
 #include "components/password_manager/core/browser/form_parsing/form_parser.h"
 #include "components/password_manager/core/browser/form_parsing/password_field_prediction.h"
@@ -21,10 +22,6 @@
 #include "components/password_manager/core/browser/password_form_metrics_recorder.h"
 #include "components/password_manager/core/browser/password_form_user_action.h"
 #include "components/password_manager/core/browser/votes_uploader.h"
-
-namespace autofill {
-class FormStructure;
-}
 
 namespace password_manager {
 
@@ -74,8 +71,8 @@ class NewPasswordFormManager : public PasswordFormManagerInterface,
   // |submitted_form| and |driver|) then saves |submitted_form| to
   // |submitted_form_| field, sets |is_submitted| = true and returns true.
   // Otherwise returns false.
-  bool SetSubmittedFormIfIsManaged(const autofill::FormData& submitted_form,
-                                   const PasswordManagerDriver* driver);
+  bool ProvisionallySaveIfIsManaged(const autofill::FormData& submitted_form,
+                                    const PasswordManagerDriver* driver);
   bool is_submitted() { return is_submitted_; }
   void set_not_submitted() { is_submitted_ = false; }
 
@@ -87,10 +84,13 @@ class NewPasswordFormManager : public PasswordFormManagerInterface,
   // |observed_form_|, initiates filling and stores predictions in
   // |predictions_|.
   void ProcessServerPredictions(
-      const std::vector<autofill::FormStructure*>& predictions);
+      const std::map<autofill::FormSignature, FormPredictions>& predictions);
 
   // Sends fill data to the renderer.
   void Fill();
+
+  // Sends fill data to the renderer to fill |observed_form|.
+  void FillForm(const autofill::FormData& observed_form);
 
   // PasswordFormManagerForUI:
   FormFetcher* GetFormFetcher() override;
@@ -128,6 +128,7 @@ class NewPasswordFormManager : public PasswordFormManagerInterface,
   void SetGenerationElement(const base::string16& generation_element) override;
   bool IsPossibleChangePasswordFormWithoutUsername() const override;
   bool RetryPasswordFormPasswordUpdate() const override;
+  bool IsPasswordUpdate() const override;
   std::vector<base::WeakPtr<PasswordManagerDriver>> GetDrivers() const override;
   const autofill::PasswordForm* GetSubmittedForm() const override;
 
@@ -230,7 +231,7 @@ class NewPasswordFormManager : public PasswordFormManagerInterface,
 
   base::WeakPtr<PasswordManagerDriver> driver_;
 
-  const autofill::FormData observed_form_;
+  autofill::FormData observed_form_;
 
   // Set of nonblacklisted PasswordForms from the DB that best match the form
   // being managed by |this|, indexed by username. The PasswordForms are owned
@@ -294,8 +295,9 @@ class NewPasswordFormManager : public PasswordFormManagerInterface,
   // existing one.
   bool is_new_login_ = true;
 
-  // Whether this form has an auto generated password.
-  bool has_generated_password_ = false;
+  // Contains a generated password, empty if no password generation happened or
+  // a generated password removed by the user.
+  base::string16 generated_password_;
 
   // Whether the saved password was overridden.
   bool password_overridden_ = false;
@@ -316,6 +318,9 @@ class NewPasswordFormManager : public PasswordFormManagerInterface,
   // of times that Chrome will autofill to avoid being stuck in an infinite
   // loop.
   int autofills_left_ = kMaxTimesAutofill;
+
+  // True until server predictions received or waiting for them timed out.
+  bool waiting_for_server_predictions_ = false;
 
   // Controls whether to wait or not server before filling. It is used in tests.
   static bool wait_for_server_predictions_for_filling_;

@@ -78,10 +78,10 @@ ChromeNativeAppWindowViewsAuraAsh::ChromeNativeAppWindowViewsAuraAsh()
     TabletModeClient::Get()->AddObserver(this);
 
   if (features::IsSingleProcessMash()) {
-    // There is no MultiUserWindowManager at the login screen, but users can
-    // open the feedback app.
-    if (MultiUserWindowManager::GetInstance())
-      MultiUserWindowManager::GetInstance()->AddObserver(this);
+    // There is no MultiUserWindowManagerClient at the login screen, but users
+    // can open the feedback app.
+    if (MultiUserWindowManagerClient::GetInstance())
+      MultiUserWindowManagerClient::GetInstance()->AddObserver(this);
 
     ash_window_manager_ =
         views::MusClient::Get()
@@ -94,8 +94,10 @@ ChromeNativeAppWindowViewsAuraAsh::~ChromeNativeAppWindowViewsAuraAsh() {
   if (TabletModeClient::Get())
     TabletModeClient::Get()->RemoveObserver(this);
 
-  if (features::IsSingleProcessMash() && MultiUserWindowManager::GetInstance())
-    MultiUserWindowManager::GetInstance()->RemoveObserver(this);
+  if (features::IsSingleProcessMash() &&
+      MultiUserWindowManagerClient::GetInstance()) {
+    MultiUserWindowManagerClient::GetInstance()->RemoveObserver(this);
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -139,6 +141,14 @@ void ChromeNativeAppWindowViewsAuraAsh::OnBeforeWidgetInit(
 
   if (container_id.has_value())
     ash_util::SetupWidgetInitParamsForContainer(init_params, *container_id);
+
+  // Resizable lock screen apps will end up maximized by ash. Do it now to
+  // save back-and-forth communication with the window manager. Right now all
+  // lock screen apps either end up maximized (e.g. Keep) or are not resizable.
+  if (create_params.show_on_lock_screen && create_params.resizable) {
+    DCHECK_EQ(ui::SHOW_STATE_DEFAULT, init_params->show_state);
+    init_params->show_state = ui::SHOW_STATE_MAXIMIZED;
+  }
 
   if (HasFrameColor()) {
     init_params

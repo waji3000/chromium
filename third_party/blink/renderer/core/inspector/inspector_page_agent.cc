@@ -348,9 +348,7 @@ bool InspectorPageAgent::CachedResourceContent(Resource* cached_resource,
       return true;
     case blink::ResourceType::kScript:
       MaybeEncodeTextContent(
-          cached_resource->ResourceBuffer()
-              ? ToScriptResource(cached_resource)->DecodedText()
-              : ToScriptResource(cached_resource)->SourceText().ToString(),
+          ToScriptResource(cached_resource)->TextForInspector(),
           cached_resource->ResourceBuffer(), result, base64_encoded);
       return true;
     default:
@@ -371,8 +369,8 @@ InspectorPageAgent* InspectorPageAgent::Create(
     Client* client,
     InspectorResourceContentLoader* resource_content_loader,
     v8_inspector::V8InspectorSession* v8_session) {
-  return new InspectorPageAgent(inspected_frames, client,
-                                resource_content_loader, v8_session);
+  return MakeGarbageCollected<InspectorPageAgent>(
+      inspected_frames, client, resource_content_loader, v8_session);
 }
 
 String InspectorPageAgent::ResourceTypeJson(
@@ -873,7 +871,7 @@ void InspectorPageAgent::DidClearDocumentOfWindowObject(LocalFrame* frame) {
     // a foreign world.
     v8::HandleScope handle_scope(V8PerIsolateData::MainThreadIsolate());
     frame->GetScriptController().ExecuteScriptInIsolatedWorld(
-        world_id, source, KURL(), kOpaqueResource);
+        world_id, source, KURL(), SanitizeScriptErrors::kSanitize);
   }
 
   if (!script_to_evaluate_on_load_once_.IsEmpty()) {
@@ -1341,8 +1339,9 @@ protocol::Response InspectorPageAgent::generateTestReport(const String& message,
   Document* document = inspected_frames_->Root()->GetDocument();
 
   // Construct the test report.
-  TestReportBody* body = new TestReportBody(message);
-  Report* report = new Report("test", document->Url().GetString(), body);
+  TestReportBody* body = MakeGarbageCollected<TestReportBody>(message);
+  Report* report =
+      MakeGarbageCollected<Report>("test", document->Url().GetString(), body);
 
   // Send the test report to any ReportingObservers.
   ReportingContext::From(document)->QueueReport(report);

@@ -48,6 +48,8 @@ using content::WebContents;
 
 namespace {
 
+class RenderWidgetHostVisibilityTracker;
+
 // Returns true if the specified transition is one of the types that cause the
 // opener relationships for the tab in which the transition occurred to be
 // forgotten. This is generally any navigation that isn't a link click (i.e.
@@ -63,6 +65,21 @@ bool ShouldForgetOpenersForTransition(ui::PageTransition transition) {
                                       ui::PAGE_TRANSITION_KEYWORD) ||
          ui::PageTransitionCoreTypeIs(transition,
                                       ui::PAGE_TRANSITION_AUTO_TOPLEVEL);
+}
+
+// Intalls RenderWidgetVisibilityTracker when the active tab has changed.
+std::unique_ptr<RenderWidgetHostVisibilityTracker>
+InstallRenderWigetVisibilityTracker(const TabStripSelectionChange& selection) {
+  if (!selection.active_tab_changed())
+    return nullptr;
+
+  content::RenderWidgetHost* track_host = nullptr;
+  if (selection.new_contents &&
+      selection.new_contents->GetRenderWidgetHostView()) {
+    track_host = selection.new_contents->GetRenderWidgetHostView()
+                     ->GetRenderWidgetHost();
+  }
+  return std::make_unique<RenderWidgetHostVisibilityTracker>(track_host);
 }
 
 // This tracks (and reports via UMA and tracing) how long it takes before a
@@ -338,9 +355,6 @@ void TabStripModel::InsertWebContentsAt(int index,
 
   selection_model_.IncrementFrom(index);
 
-  for (auto& observer : observers_)
-    observer.TabInsertedAt(this, raw_contents, index, active);
-
   if (active) {
     ui::ListSelectionModel new_model = selection_model_;
     new_model.SetSelectedIndex(index);
@@ -370,20 +384,12 @@ std::unique_ptr<content::WebContents> TabStripModel::ReplaceWebContentsAt(
   std::unique_ptr<WebContents> old_contents =
       contents_data_[index]->ReplaceWebContents(std::move(new_contents));
 
-  for (auto& observer : observers_)
-    observer.TabReplacedAt(this, old_contents.get(), raw_new_contents, index);
-
   // When the active WebContents is replaced send out a selection notification
   // too. We do this as nearly all observers need to treat a replacement of the
   // selected contents as the selection changing.
   if (active_index() == index) {
     selection.new_contents = raw_new_contents;
     selection.reason = TabStripModelObserver::CHANGE_REASON_REPLACED;
-    for (auto& observer : observers_) {
-      observer.ActiveTabChanged(selection.old_contents, selection.new_contents,
-                                index,
-                                TabStripModelObserver::CHANGE_REASON_REPLACED);
-    }
   }
 
   TabStripModelChange change(TabStripModelChange::kReplaced,
@@ -464,7 +470,6 @@ std::unique_ptr<content::WebContents> TabStripModel::DetachWebContentsImpl(
 
 void TabStripModel::SendDetachWebContentsNotifications(
     DetachNotifications* notifications) {
-  bool was_any_tab_selected = false;
   std::vector<TabStripModelChange::Delta> deltas;
 
   // Sort the DetachedWebContents in decreasing order of
@@ -479,24 +484,6 @@ void TabStripModel::SendDetachWebContentsNotifications(
                      dwc2->index_before_any_removals;
             });
   for (auto& dwc : notifications->detached_web_contents) {
-    // TabClosingAt() must be sent before TabDetachedAt(), since some observers
-    // use the former to change the behavior of the latter.
-    // TODO(erikchen): Combine these notifications. https://crbug.com/842194.
-    if (notifications->will_delete) {
-      for (auto& observer : observers_) {
-        observer.TabClosingAt(this, dwc->contents.get(),
-                              dwc->index_before_any_removals);
-      }
-    }
-
-    // TabDetachedAt() allows observers that keep their own model of
-    // |contents_data_| to keep that model in sync.
-    for (auto& observer : observers_) {
-      observer.TabDetachedAt(
-          dwc->contents.get(), dwc->index_before_any_removals,
-          notifications->initially_active_web_contents == dwc->contents.get());
-    }
-
     deltas.push_back(TabStripModelChange::CreateRemoveDelta(
         dwc->contents.get(), dwc->index_before_any_removals,
         notifications->will_delete));
@@ -508,38 +495,27 @@ void TabStripModel::SendDetachWebContentsNotifications(
   selection.old_model = notifications->selection_model;
   selection.new_model = selection_model_;
   selection.reason = TabStripModelObserver::CHANGE_REASON_NONE;
+  selection.selected_tabs_were_removed = std::any_of(
+      notifications->detached_web_contents.begin(),
+      notifications->detached_web_contents.end(), [&notifications](auto& dwc) {
+        return notifications->selection_model.IsSelected(
+            dwc->index_before_any_removals);
+      });
 
   TabStripModelChange change(TabStripModelChange::kRemoved, deltas);
-  for (auto& observer : observers_)
-    observer.OnTabStripModelChanged(this, change, selection);
+  {
+    auto visibility_tracker =
+        empty() ? nullptr : InstallRenderWigetVisibilityTracker(selection);
+    for (auto& observer : observers_)
+      observer.OnTabStripModelChanged(this, change, selection);
+  }
 
   for (auto& dwc : notifications->detached_web_contents) {
-    if (notifications->selection_model.IsSelected(
-            dwc->index_before_any_removals)) {
-      was_any_tab_selected = true;
-    }
-
-    if (notifications->initially_active_web_contents &&
-        dwc->contents.get() == notifications->initially_active_web_contents) {
-      for (auto& observer : observers_)
-        observer.TabDeactivated(notifications->initially_active_web_contents);
-
-      if (!empty()) {
-        NotifyIfActiveTabChanged(selection);
-      }
-      notifications->initially_active_web_contents = nullptr;
-    }
-
     if (notifications->will_delete) {
       // This destroys the WebContents, which will also send
       // WebContentsDestroyed notifications.
       dwc->contents.reset();
     }
-  }
-
-  if (!empty() && was_any_tab_selected) {
-    for (auto& observer : observers_)
-      observer.TabSelectionChanged(this, notifications->selection_model);
   }
 
   if (empty()) {
@@ -1397,34 +1373,6 @@ WebContents* TabStripModel::GetWebContentsAtImpl(int index) const {
   return contents_data_[index]->web_contents();
 }
 
-void TabStripModel::NotifyIfActiveTabChanged(
-    const TabStripSelectionChange& selection) {
-  if (!selection.active_tab_changed())
-    return;
-
-  content::RenderWidgetHost* track_host = nullptr;
-  if (selection.new_contents &&
-      selection.new_contents->GetRenderWidgetHostView()) {
-    track_host = selection.new_contents->GetRenderWidgetHostView()
-                     ->GetRenderWidgetHost();
-  }
-  RenderWidgetHostVisibilityTracker tracker(track_host);
-
-  for (auto& observer : observers_) {
-    observer.ActiveTabChanged(selection.old_contents, selection.new_contents,
-                              active_index(), selection.reason);
-  }
-}
-
-void TabStripModel::NotifyIfActiveOrSelectionChanged(
-    const TabStripSelectionChange& selection) {
-  NotifyIfActiveTabChanged(selection);
-
-  if (selection.selection_changed()) {
-    for (auto& observer : observers_)
-      observer.TabSelectionChanged(this, selection.old_model);
-  }
-}
 
 TabStripSelectionChange TabStripModel::SetSelection(
     ui::ListSelectionModel new_model,
@@ -1436,23 +1384,16 @@ TabStripSelectionChange TabStripModel::SetSelection(
   selection.new_model = new_model;
   selection.reason = reason;
 
-  if (selection.old_contents &&
-      selection.old_model.active() != selection.new_model.active()) {
-    for (auto& observer : observers_)
-      observer.TabDeactivated(selection.old_contents);
-  }
-
   // This is done after notifying TabDeactivated() because caller can assume
   // that TabStripModel::active_index() would return the index for
   // |selection.old_contents|.
   selection_model_ = new_model;
   selection.new_contents = GetActiveWebContents();
 
-  NotifyIfActiveOrSelectionChanged(selection);
-
   if (!triggered_by_other_operation &&
       (selection.active_tab_changed() || selection.selection_changed())) {
     TabStripModelChange change;
+    auto visibility_tracker = InstallRenderWigetVisibilityTracker(selection);
     for (auto& observer : observers_)
       observer.OnTabStripModelChanged(this, change, selection);
   }
@@ -1487,14 +1428,9 @@ void TabStripModel::MoveWebContentsAtImpl(int index,
                         std::move(moved_data));
 
   selection_model_.Move(index, to_position, 1);
-  if (!selection_model_.IsSelected(to_position) && select_after_move) {
-    // TODO(sky): why doesn't this code notify observers?
+  if (!selection_model_.IsSelected(to_position) && select_after_move)
     selection_model_.SetSelectedIndex(to_position);
-  }
   selection.new_model = selection_model_;
-
-  for (auto& observer : observers_)
-    observer.TabMoved(web_contents, index, to_position);
 
   TabStripModelChange change(
       TabStripModelChange::kMoved,

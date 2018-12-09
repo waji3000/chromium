@@ -16,6 +16,7 @@
 #include "chrome/browser/ui/toolbar/back_forward_menu_model.h"
 #include "chrome/browser/ui/views/frame/browser_root_view.h"
 #include "chrome/browser/ui/views/frame/toolbar_button_provider.h"
+#include "chrome/browser/ui/views/location_bar/custom_tab_bar_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/views/profiles/avatar_toolbar_button.h"
 #include "chrome/browser/ui/views/toolbar/browser_actions_container.h"
@@ -57,6 +58,7 @@ class CastToolbarButton;
 class ToolbarView : public views::AccessiblePaneView,
                     public views::MenuButtonListener,
                     public ui::AcceleratorProvider,
+                    public gfx::AnimationDelegate,
                     public LocationBarView::Delegate,
                     public BrowserActionsContainer::Delegate,
                     public CommandObserver,
@@ -67,6 +69,15 @@ class ToolbarView : public views::AccessiblePaneView,
                     public BrowserRootView::DropTarget,
                     public ui::MaterialDesignControllerObserver {
  public:
+  // Types of display mode this toolbar can have.
+  enum class DisplayMode {
+    NORMAL,     // Normal toolbar with buttons, etc.
+    LOCATION,   // Slimline toolbar showing only compact location
+                // bar, used for popups.
+    CUSTOM_TAB  // Custom tab bar, used in PWAs when a location
+                // needs to be displayed.
+  };
+
   // The view class name.
   static const char kViewClassName[];
 
@@ -81,6 +92,10 @@ class ToolbarView : public views::AccessiblePaneView,
   // and should restore any previous location bar state (such as user editing)
   // as well.
   void Update(content::WebContents* tab);
+
+  // Updates the visibility of the toolbar, potentially animating the
+  // transition.
+  void UpdateToolbarVisibility(bool visible, bool animate);
 
   // Clears the current state for |tab|.
   void ResetTabState(content::WebContents* tab);
@@ -117,6 +132,7 @@ class ToolbarView : public views::AccessiblePaneView,
   ToolbarButton* back_button() const { return back_; }
   ReloadButton* reload_button() const { return reload_; }
   LocationBarView* location_bar() const { return location_bar_; }
+  CustomTabBarView* custom_tab_bar() { return custom_tab_bar_; }
   media_router::CastToolbarButton* cast_button() const { return cast_; }
   AvatarToolbarButton* avatar_button() const { return avatar_; }
   BrowserAppMenuButton* app_menu_button() const { return app_menu_button_; }
@@ -177,21 +193,19 @@ class ToolbarView : public views::AccessiblePaneView,
   // ui::MaterialDesignControllerObserver:
   void OnTouchUiChanged() override;
 
-  bool is_display_mode_normal() const {
-    return display_mode_ == DISPLAYMODE_NORMAL;
-  }
+  // This controls Toolbar, LocationBar and CustomTabBar visibility.
+  // If we don't set all three, tab navigation from the app menu breaks
+  // on Chrome OS.
+  void SetToolbarVisibility(bool visible);
 
  private:
-  // Types of display mode this toolbar can have.
-  enum DisplayMode {
-    DISPLAYMODE_NORMAL,       // Normal toolbar with buttons, etc.
-    DISPLAYMODE_LOCATION      // Slimline toolbar showing only compact location
-                              // bar, used for popups.
-  };
+  // AnimationDelegate:
+  void AnimationEnded(const gfx::Animation* animation) override;
+  void AnimationProgressed(const gfx::Animation* animation) override;
 
   // AppMenuIconController::Delegate:
-  void UpdateSeverity(AppMenuIconController::IconType type,
-                      AppMenuIconController::Severity severity) override;
+  void UpdateTypeAndSeverity(
+      AppMenuIconController::TypeAndSeverity type_and_severity) override;
 
   // ToolbarButtonProvider:
   BrowserActionsContainer* GetBrowserActionsContainer() override;
@@ -200,6 +214,7 @@ class ToolbarView : public views::AccessiblePaneView,
   gfx::Rect GetFindBarBoundingBox(int contents_height) const override;
   void FocusToolbar() override;
   views::AccessiblePaneView* GetAsAccessiblePaneView() override;
+  views::View* GetAnchorView() override;
 
   // BrowserRootView::DropTarget
   BrowserRootView::DropIndex GetDropIndex(
@@ -227,6 +242,8 @@ class ToolbarView : public views::AccessiblePaneView,
 
   void OnShowHomeButtonChanged();
 
+  gfx::SlideAnimation size_animation_{this};
+
   // Controls. Most of these can be null, e.g. in popup windows. Only
   // |location_bar_| is guaranteed to exist. These pointers are owned by the
   // view hierarchy.
@@ -234,6 +251,7 @@ class ToolbarView : public views::AccessiblePaneView,
   ToolbarButton* forward_ = nullptr;
   ReloadButton* reload_ = nullptr;
   HomeButton* home_ = nullptr;
+  CustomTabBarView* custom_tab_bar_ = nullptr;
   LocationBarView* location_bar_ = nullptr;
   BrowserActionsContainer* browser_actions_ = nullptr;
   media_router::CastToolbarButton* cast_ = nullptr;

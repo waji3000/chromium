@@ -25,7 +25,7 @@
 #include "chrome/browser/profiles/storage_partition_descriptor.h"
 #include "chrome/common/buildflags.h"
 #include "components/content_settings/core/common/content_settings_types.h"
-#include "components/signin/core/browser/profile_management_switches.h"
+#include "components/signin/core/browser/account_consistency_method.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/resource_context.h"
 #include "net/http/http_cache.h"
@@ -55,10 +55,6 @@ namespace data_reduction_proxy {
 class DataReductionProxyIOData;
 }
 
-namespace domain_reliability {
-class DomainReliabilityMonitor;
-}
-
 namespace extensions {
 class InfoMap;
 }
@@ -71,11 +67,6 @@ class CookieStore;
 class HttpTransactionFactory;
 class URLRequestContextBuilder;
 class URLRequestJobFactoryImpl;
-
-#if BUILDFLAG(ENABLE_REPORTING)
-class NetworkErrorLoggingService;
-class ReportingService;
-#endif  // BUILDFLAG(ENABLE_REPORTING)
 }  // namespace net
 
 namespace network {
@@ -126,7 +117,7 @@ class ProfileIOData {
 
   // Initializes the ProfileIOData object and primes the RequestContext
   // generation. Must be called prior to any of the Get*() methods other than
-  // GetResouceContext or GetMetricsEnabledStateOnIOThread.
+  // GetResouceContext.
   void Init(
       content::ProtocolHandlerMap* protocol_handlers,
       content::URLRequestInterceptorScopedVector request_interceptors) const;
@@ -136,7 +127,6 @@ class ProfileIOData {
   virtual net::CookieStore* GetExtensionsCookieStore() const = 0;
   net::URLRequestContext* GetIsolatedAppRequestContext(
       IOThread* io_thread,
-      net::URLRequestContext* main_context,
       const StoragePartitionDescriptor& partition_descriptor,
       std::unique_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
           protocol_handler_interceptor,
@@ -223,15 +213,6 @@ class ProfileIOData {
   }
 #endif
 
-  // Initialize the member needed to track the metrics enabled state. This is
-  // only to be called on the UI thread.
-  void InitializeMetricsEnabledStateOnUIThread();
-
-  // Returns whether or not metrics reporting is enabled in the browser instance
-  // on which this profile resides. This is safe for use from the IO thread, and
-  // should only be called from there.
-  bool GetMetricsEnabledStateOnIOThread() const;
-
   void set_client_cert_store_factory_for_testing(
       const base::Callback<std::unique_ptr<net::ClientCertStore>()>& factory) {
     client_cert_store_factory_ = factory;
@@ -296,13 +277,6 @@ class ProfileIOData {
     void SetHttpTransactionFactory(
         std::unique_ptr<net::HttpTransactionFactory> http_factory);
     void SetJobFactory(std::unique_ptr<net::URLRequestJobFactory> job_factory);
-#if BUILDFLAG(ENABLE_REPORTING)
-    void SetReportingService(
-        std::unique_ptr<net::ReportingService> reporting_service);
-    void SetNetworkErrorLoggingService(
-        std::unique_ptr<net::NetworkErrorLoggingService>
-            network_error_logging_service);
-#endif  // BUILDFLAG(ENABLE_REPORTING)
 
    private:
     ~AppRequestContext() override;
@@ -312,11 +286,6 @@ class ProfileIOData {
     std::unique_ptr<net::HttpNetworkSession> http_network_session_;
     std::unique_ptr<net::HttpTransactionFactory> http_factory_;
     std::unique_ptr<net::URLRequestJobFactory> job_factory_;
-#if BUILDFLAG(ENABLE_REPORTING)
-    std::unique_ptr<net::ReportingService> reporting_service_;
-    std::unique_ptr<net::NetworkErrorLoggingService>
-        network_error_logging_service_;
-#endif  // BUILDFLAG(ENABLE_REPORTING)
   };
 
   // Created on the UI thread, read on the IO thread during ProfileIOData lazy
@@ -444,15 +413,10 @@ class ProfileIOData {
     explicit ResourceContext(ProfileIOData* io_data);
     ~ResourceContext() override;
 
-    // ResourceContext implementation:
-    net::URLRequestContext* GetRequestContext() override;
-
    private:
     friend class ProfileIOData;
 
     ProfileIOData* const io_data_;
-
-    net::URLRequestContext* request_context_;
   };
 
   typedef std::map<StoragePartitionDescriptor,
@@ -555,8 +519,6 @@ class ProfileIOData {
   mutable BooleanPrefMember account_consistency_mirror_required_pref_;
 #endif
 
-  BooleanPrefMember enable_metrics_;
-
   // Pointed to by URLRequestContext.
 #if BUILDFLAG(ENABLE_EXTENSIONS)
   mutable scoped_refptr<extensions::InfoMap> extension_info_map_;
@@ -595,9 +557,6 @@ class ProfileIOData {
   // Owned (possibly with one or more layers of LayeredNetworkDelegate) by the
   // URLRequestContext, which is owned by the |main_network_context_|.
   mutable ChromeNetworkDelegate* chrome_network_delegate_unowned_;
-  // Owned by |chrome_network_delegate_unowned_|.
-  mutable domain_reliability::DomainReliabilityMonitor*
-      domain_reliability_monitor_unowned_;
 
   const Profile::ProfileType profile_type_;
 

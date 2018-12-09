@@ -62,7 +62,8 @@ inline SliderThumbElement::SliderThumbElement(Document& document)
 }
 
 SliderThumbElement* SliderThumbElement::Create(Document& document) {
-  SliderThumbElement* element = new SliderThumbElement(document);
+  SliderThumbElement* element =
+      MakeGarbageCollected<SliderThumbElement>(document);
   element->setAttribute(kIdAttr, shadow_element_names::SliderThumb());
   return element;
 }
@@ -71,9 +72,10 @@ void SliderThumbElement::SetPositionFromValue() {
   // Since the code to calculate position is in the LayoutSliderThumb layout
   // path, we don't actually update the value here. Instead, we poke at the
   // layoutObject directly to trigger layout.
-  if (GetLayoutObject())
+  if (GetLayoutObject()) {
     GetLayoutObject()->SetNeedsLayoutAndFullPaintInvalidation(
-        LayoutInvalidationReason::kSliderValueChanged);
+        layout_invalidation_reason::kSliderValueChanged);
+  }
 }
 
 LayoutObject* SliderThumbElement::CreateLayoutObject(
@@ -179,9 +181,10 @@ void SliderThumbElement::SetPositionFromPoint(const LayoutPoint& point) {
   // FIXME: This is no longer being set from renderer. Consider updating the
   // method name.
   input->SetValueFromRenderer(value_string);
-  if (GetLayoutObject())
+  if (GetLayoutObject()) {
     GetLayoutObject()->SetNeedsLayoutAndFullPaintInvalidation(
-        LayoutInvalidationReason::kSliderValueChanged);
+        layout_invalidation_reason::kSliderValueChanged);
+  }
 }
 
 void SliderThumbElement::StartDragging() {
@@ -204,9 +207,10 @@ void SliderThumbElement::StopDragging() {
         PointerEventFactory::kMouseId, this);
   }
   in_drag_mode_ = false;
-  if (GetLayoutObject())
+  if (GetLayoutObject()) {
     GetLayoutObject()->SetNeedsLayoutAndFullPaintInvalidation(
-        LayoutInvalidationReason::kSliderValueChanged);
+        layout_invalidation_reason::kSliderValueChanged);
+  }
   if (HostInput())
     HostInput()->DispatchFormControlChangeEvent();
 }

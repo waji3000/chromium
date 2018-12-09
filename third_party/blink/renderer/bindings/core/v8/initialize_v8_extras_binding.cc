@@ -44,14 +44,14 @@ constexpr WebFeatureIdNameLookupEntry web_feature_id_name_lookup_table[] = {
 class CountUseForBindings : public ScriptFunction {
  public:
   static v8::Local<v8::Function> CreateFunction(ScriptState* script_state) {
-    auto* self = new CountUseForBindings(script_state);
+    auto* self = MakeGarbageCollected<CountUseForBindings>(script_state);
     return self->BindToV8Function();
   }
 
- private:
   explicit CountUseForBindings(ScriptState* script_state)
       : ScriptFunction(script_state) {}
 
+ private:
   ScriptValue Call(ScriptValue value) override {
     String string_id;
     if (!value.ToString(string_id)) {
@@ -130,29 +130,21 @@ void AddOriginals(ScriptState* script_state, v8::Local<v8::Object> binding) {
     DCHECK(result);
   };
 
-  v8::Local<v8::Value> message_channel = ObjectGet(global, "MessageChannel");
+  v8::Local<v8::Value> message_port = ObjectGet(global, "MessagePort");
+  v8::Local<v8::Value> dom_exception = ObjectGet(global, "DOMException");
 
-  // Some Worklets don't have MessageChannel. In this case, serialization will
-  // be disabled.
-  if (message_channel->IsUndefined())
+  // Most Worklets don't have MessagePort. In this case, serialization will
+  // fail. AudioWorklet has MessagePort but no DOMException, so it can't use
+  // serialization for now.
+  if (message_port->IsUndefined() || dom_exception->IsUndefined())
     return;
-
-  Bind("MessageChannel", message_channel);
-
-  v8::Local<v8::Value> message_channel_prototype =
-      GetPrototype(message_channel);
-  Bind("MessageChannel_port1_get",
-       GetOwnPDGet(message_channel_prototype, "port1"));
-  Bind("MessageChannel_port2_get",
-       GetOwnPDGet(message_channel_prototype, "port2"));
 
   v8::Local<v8::Value> event_target_prototype =
       GetPrototype(ObjectGet(global, "EventTarget"));
   Bind("EventTarget_addEventListener",
        ObjectGet(event_target_prototype, "addEventListener"));
 
-  v8::Local<v8::Value> message_port_prototype =
-      GetPrototype(ObjectGet(global, "MessagePort"));
+  v8::Local<v8::Value> message_port_prototype = GetPrototype(message_port);
   Bind("MessagePort_postMessage",
        ObjectGet(message_port_prototype, "postMessage"));
   Bind("MessagePort_close", ObjectGet(message_port_prototype, "close"));
@@ -163,7 +155,6 @@ void AddOriginals(ScriptState* script_state, v8::Local<v8::Object> binding) {
 
   Bind("MessageEvent_data_get", GetOwnPDGet(message_event_prototype, "data"));
 
-  v8::Local<v8::Value> dom_exception = ObjectGet(global, "DOMException");
   Bind("DOMException", dom_exception);
 
   v8::Local<v8::Value> dom_exception_prototype = GetPrototype(dom_exception);

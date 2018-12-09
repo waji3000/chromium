@@ -27,13 +27,13 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_STYLE_COMPUTED_STYLE_H_
 
 #include <memory>
-#include "third_party/blink/renderer/core/computed_style_base.h"
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/css/properties/css_property.h"
 #include "third_party/blink/renderer/core/css/style_auto_color.h"
 #include "third_party/blink/renderer/core/css/style_color.h"
-#include "third_party/blink/renderer/core/css_property_names.h"
 #include "third_party/blink/renderer/core/style/border_value.h"
+#include "third_party/blink/renderer/core/style/computed_style_base.h"
 #include "third_party/blink/renderer/core/style/computed_style_constants.h"
 #include "third_party/blink/renderer/core/style/computed_style_initial_values.h"
 #include "third_party/blink/renderer/core/style/cursor_list.h"
@@ -89,7 +89,7 @@ class TransformationMatrix;
 
 typedef Vector<scoped_refptr<ComputedStyle>, 4> PseudoStyleCache;
 
-namespace CSSLonghand {
+namespace css_longhand {
 
 class BackgroundColor;
 class BorderBottomColor;
@@ -111,7 +111,7 @@ class WebkitTextEmphasisColor;
 class WebkitTextFillColor;
 class WebkitTextStrokeColor;
 
-}  // namespace CSSLonghand
+}  // namespace css_longhand
 
 // ComputedStyle stores the computed value [1] for every CSS property on an
 // element and provides the interface between the style engine and the rest of
@@ -183,25 +183,25 @@ class ComputedStyle : public ComputedStyleBase,
   // Accesses GetColor().
   friend class ComputedStyleUtils;
   // These get visited and unvisited colors separately.
-  friend class CSSLonghand::BackgroundColor;
-  friend class CSSLonghand::BorderBottomColor;
-  friend class CSSLonghand::BorderLeftColor;
-  friend class CSSLonghand::BorderRightColor;
-  friend class CSSLonghand::BorderTopColor;
-  friend class CSSLonghand::CaretColor;
-  friend class CSSLonghand::Color;
-  friend class CSSLonghand::ColumnRuleColor;
-  friend class CSSLonghand::FloodColor;
-  friend class CSSLonghand::Fill;
-  friend class CSSLonghand::LightingColor;
-  friend class CSSLonghand::OutlineColor;
-  friend class CSSLonghand::StopColor;
-  friend class CSSLonghand::Stroke;
-  friend class CSSLonghand::TextDecorationColor;
-  friend class CSSLonghand::WebkitTapHighlightColor;
-  friend class CSSLonghand::WebkitTextEmphasisColor;
-  friend class CSSLonghand::WebkitTextFillColor;
-  friend class CSSLonghand::WebkitTextStrokeColor;
+  friend class css_longhand::BackgroundColor;
+  friend class css_longhand::BorderBottomColor;
+  friend class css_longhand::BorderLeftColor;
+  friend class css_longhand::BorderRightColor;
+  friend class css_longhand::BorderTopColor;
+  friend class css_longhand::CaretColor;
+  friend class css_longhand::Color;
+  friend class css_longhand::ColumnRuleColor;
+  friend class css_longhand::FloodColor;
+  friend class css_longhand::Fill;
+  friend class css_longhand::LightingColor;
+  friend class css_longhand::OutlineColor;
+  friend class css_longhand::StopColor;
+  friend class css_longhand::Stroke;
+  friend class css_longhand::TextDecorationColor;
+  friend class css_longhand::WebkitTapHighlightColor;
+  friend class css_longhand::WebkitTextEmphasisColor;
+  friend class css_longhand::WebkitTextFillColor;
+  friend class css_longhand::WebkitTextStrokeColor;
   // Editing has to only reveal unvisited info.
   friend class ApplyStyleCommand;
   // Editing has to only reveal unvisited info.
@@ -376,11 +376,6 @@ class ComputedStyle : public ComputedStyleBase,
   }
   bool HasFixedAttachmentBackgroundImage() const {
     return BackgroundInternal().AnyLayerHasFixedAttachmentImage();
-  }
-  bool HasOnlyFixedAttachmentBackgroundImage() const {
-    return BackgroundInternal().AnyLayerHasFixedAttachmentImage() &&
-           !BackgroundInternal().AnyLayerHasLocalAttachmentImage() &&
-           !BackgroundInternal().AnyLayerHasDefaultAttachment();
   }
 
   // background-clip
@@ -1348,7 +1343,7 @@ class ComputedStyle : public ComputedStyleBase,
   bool HasWillChangeOpacityHint() const {
     return WillChangeProperties().Contains(CSSPropertyOpacity);
   }
-  CORE_EXPORT bool HasWillChangeTransformHint() const;
+  bool HasWillChangeTransformHint() const;
 
   // Hyphen utility functions.
   Hyphenation* GetHyphenation() const;
@@ -1711,10 +1706,9 @@ class ComputedStyle : public ComputedStyleBase,
     return BorderImage().Outset() == o.BorderImage().Outset();
   }
 
-  bool BackgroundVisuallyEqual(const ComputedStyle& o) const {
-    return BackgroundColorInternal() == o.BackgroundColorInternal() &&
-           BackgroundInternal().VisuallyEqual(o.BackgroundInternal());
-  }
+  CORE_EXPORT void AdjustDiffForBackgroundVisuallyEqual(
+      const ComputedStyle& o,
+      StyleDifference& diff) const;
 
   void ResetBorder() {
     ResetBorderImage();
@@ -1879,6 +1873,7 @@ class ComputedStyle : public ComputedStyleBase,
   bool ContainsStyle() const { return Contain() & kContainsStyle; }
   bool ContainsLayout() const { return Contain() & kContainsLayout; }
   bool ContainsSize() const { return Contain() & kContainsSize; }
+  bool ContainsContent() const { return Contain() & kContainsContent; }
 
   // Display utility functions.
   bool IsDisplayReplacedType() const {
@@ -2080,10 +2075,9 @@ class ComputedStyle : public ComputedStyleBase,
   // will-change:transform should result in the same rendering behavior as
   // having a transform, including the creation of a containing block for fixed
   // position descendants.
-  CORE_EXPORT bool HasTransformRelatedProperty() const {
+  bool HasTransformRelatedProperty() const {
     return HasTransform() || Preserves3D() || HasPerspective() ||
-           HasWillChangeTransformHint() ||
-           HasTransformAnimationWithForwardsOrBothFillMode();
+           HasWillChangeTransformHint();
   }
 
   // Paint utility functions.
@@ -2252,8 +2246,6 @@ class ComputedStyle : public ComputedStyleBase,
   bool HasAppearance() const { return Appearance() != kNoControlPart; }
 
   // Other utility functions.
-  bool IsStyleAvailable() const;
-
   bool RequireTransformOrigin(ApplyTransformOrigin apply_origin,
                               ApplyMotionPath) const;
 
@@ -2518,7 +2510,8 @@ class ComputedStyle : public ComputedStyleBase,
       const Document&,
       const ComputedStyle& other) const;
   bool DiffNeedsPaintInvalidationSubtree(const ComputedStyle& other) const;
-  bool DiffNeedsPaintInvalidationObject(const ComputedStyle& other) const;
+  void AdjustDiffForNeedsPaintInvalidationObject(const ComputedStyle& other,
+                                                 StyleDifference&) const;
   bool DiffNeedsPaintInvalidationObjectForPaintImage(
       const StyleImage&,
       const ComputedStyle& other) const;
@@ -2608,6 +2601,8 @@ class ComputedStyle : public ComputedStyleBase,
   FRIEND_TEST_ALL_PREFIXES(
       ComputedStyleTest,
       UpdatePropertySpecificDifferencesCompositingReasonsContainsPaint);
+  FRIEND_TEST_ALL_PREFIXES(ComputedStyleTest,
+                           UpdatePropertySpecificDifferencesHasAlpha);
 };
 
 inline bool ComputedStyle::SetEffectiveZoom(float f) {

@@ -142,7 +142,6 @@ Please check your email at <ph name="ACCOUNT_EMAIL" /> for further instructions.
 <translation id="4600710005438004015">Chrome couldn't update to the latest version, so you're missing out on new features and security fixes.</translation>
 <translation id="4631713731678262610">Hide in Chrome menu</translation>
 <translation id="4633000520311261472">To make Chrome safer, we disabled some extensions that aren't listed in the <ph name="IDS_EXTENSION_WEB_STORE_TITLE" /> and may have been added without your knowledge.</translation>
-<translation id="4664415150087723341">A special security update for Google Chrome was just applied; you should restart now for it to take effect (we'll restore your tabs).</translation>
 <translation id="4700157086864140907">Google Chrome can provide smarter spell-checking by sending what you type in the browser to Google servers, allowing you to use the same spell-checking technology used by Google search.</translation>
 <translation id="4728575227883772061">Installation failed due to unspecified error. If Google Chrome is currently running, please close it and try again.</translation>
 <translation id="4750550185319565338">Restart Chrome to enable <ph name="PLUGIN_NAME" /></translation>
@@ -222,7 +221,6 @@ Google Chrome is unable to recover your settings.</translation>
 <translation id="7242029209006116544">You are signing in with a managed account and giving its administrator control over your Google Chrome profile. Your Chrome data, such as your apps, bookmarks, history, passwords and other settings will become permanently tied to <ph name="USER_NAME" />. You will be able to delete this data via the Google Accounts Dashboard, but you will not be able to associate this data with another account. You can optionally create a new profile to keep your existing Chrome data separate. <ph name="LEARN_MORE" /></translation>
 <translation id="7296210096911315575">Important use and safety information</translation>
 <translation id="7308322188646931570">Chrome needs storage access to download files</translation>
-<translation id="7330164299247909639">Authentication certificate failed. Please sign in to Google Chrome again as <ph name="USER_NAME" />, or contact your administrator for more information. <ph name="ADDITIONAL_EXPLANATION" /></translation>
 <translation id="7339898014177206373">New window</translation>
 <translation id="7398801000654795464">You were signed in to Chrome as <ph name="USER_EMAIL_ADDRESS" />. Please use the same account to sign in again.</translation>
 <translation id="7408085963519505752">Chrome OS terms</translation>
@@ -267,8 +265,10 @@ Google Chrome is unable to recover your settings.</translation>
 <translation id="8380166467911888159">To fix spelling errors, Chrome sends the text that you type in text fields to Google</translation>
 <translation id="840084489713044809">Google Chrome wants to export your passwords.</translation>
 <translation id="8406086379114794905">Help make Chrome better</translation>
+<translation id="8432724323949790809">You should restart Google Chrome now</translation>
 <translation id="8455999171311319804">Optional: Help make Chrome OS better by automatically sending diagnostic and usage data to Google.</translation>
 <translation id="8478823064122749032">Install Chrome on your phone. We’ll send an SMS to your account recovery phone number: <ph name="PHONE_NUMBER" /></translation>
+<translation id="8498858610309223613">A special security update for Google Chrome was just applied. Restart now and we'll restore your tabs.</translation>
 <translation id="8521348052903287641">Inbound rule for Google Chrome Dev to allow mDNS traffic.</translation>
 <translation id="8540666473246803645">Google Chrome</translation>
 <translation id="8547799825197623713">Chrome App Launcher Canary</translation>
@@ -283,14 +283,12 @@ Google Chrome is unable to recover your settings.</translation>
 <translation id="873133009373065397">Google Chrome cannot determine or set the default browser</translation>
 <translation id="8736674169840206667">Your administrator requires that you relaunch Chrome to apply an update</translation>
 <translation id="8791470158600044404">{0,plural, =1{Chrome OS will restart in 1 minute}other{Chrome OS will restart in # minutes}}</translation>
-<translation id="8796108026289707191">You should restart Google Chrome now.</translation>
 <translation id="8823341990149967727">Chrome is Out of Date</translation>
 <translation id="884296878221830158">It also controls what page is shown when you start Chrome or click the Home button.</translation>
 <translation id="8862326446509486874">You do not have appropriate rights for system-level installation. Try running the installer again as Administrator.</translation>
 <translation id="8914504000324227558">Relaunch Chrome</translation>
 <translation id="9026991721384951619">Chrome OS could not sync your data because your account sign-in details are out of date.</translation>
 <translation id="9067395829937117663">Google Chrome requires Windows 7 or higher.</translation>
-<translation id="9084668267983921457">Authentication certificate failed. Please sign in to Google Chrome again or contact your administrator for more information. <ph name="ADDITIONAL_EXPLANATION" /></translation>
 <translation id="909149346112452267">{0,plural, =1{Chrome OS will restart in an hour}other{Chrome OS will restart in # hours}}</translation>
 <translation id="911206726377975832">Also delete your browsing data?</translation>
 <translation id="9138603949443464873">To apply your changes, relaunch Chrome</translation>

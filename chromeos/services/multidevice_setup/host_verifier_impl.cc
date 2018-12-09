@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/no_destructor.h"
+#include "chromeos/components/multidevice/software_feature.h"
 #include "chromeos/components/proximity_auth/logging/logging.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
@@ -18,10 +19,10 @@ namespace multidevice_setup {
 namespace {
 
 // Software features which, when enabled, represent a verified host.
-constexpr const cryptauth::SoftwareFeature kPotentialHostFeatures[] = {
-    cryptauth::SoftwareFeature::EASY_UNLOCK_HOST,
-    cryptauth::SoftwareFeature::MAGIC_TETHER_HOST,
-    cryptauth::SoftwareFeature::SMS_CONNECT_HOST};
+constexpr const multidevice::SoftwareFeature kPotentialHostFeatures[] = {
+    multidevice::SoftwareFeature::kSmartLockHost,
+    multidevice::SoftwareFeature::kInstantTetheringHost,
+    multidevice::SoftwareFeature::kMessagesForWebHost};
 
 // Name of the preference containing the time (in milliseconds since Unix
 // epoch) at which a verification attempt should be retried. If the preference
@@ -108,7 +109,7 @@ HostVerifierImpl::~HostVerifierImpl() {
 }
 
 bool HostVerifierImpl::IsHostVerified() {
-  base::Optional<cryptauth::RemoteDeviceRef> current_host =
+  base::Optional<multidevice::RemoteDeviceRef> current_host =
       host_backend_delegate_->GetMultiDeviceHostFromBackend();
   if (!current_host)
     return false;
@@ -124,7 +125,7 @@ bool HostVerifierImpl::IsHostVerified() {
   // considered verified.
   for (const auto& software_feature : kPotentialHostFeatures) {
     if (current_host->GetSoftwareFeatureState(software_feature) ==
-        cryptauth::SoftwareFeatureState::kEnabled) {
+        multidevice::SoftwareFeatureState::kEnabled) {
       return true;
     }
   }
@@ -231,7 +232,7 @@ void HostVerifierImpl::StartTimer(const base::Time& time_to_fire) {
 }
 
 void HostVerifierImpl::AttemptHostVerification() {
-  base::Optional<cryptauth::RemoteDeviceRef> current_host =
+  base::Optional<multidevice::RemoteDeviceRef> current_host =
       host_backend_delegate_->GetMultiDeviceHostFromBackend();
   if (!current_host) {
     PA_LOG(WARNING) << "HostVerifierImpl::AttemptHostVerification(): Cannot "
@@ -239,10 +240,10 @@ void HostVerifierImpl::AttemptHostVerification() {
     return;
   }
 
-  PA_LOG(INFO) << "HostVerifierImpl::AttemptHostVerification(): Attempting "
-               << "host verification now.";
+  PA_LOG(VERBOSE) << "HostVerifierImpl::AttemptHostVerification(): Attempting "
+                  << "host verification now.";
   device_sync_client_->FindEligibleDevices(
-      cryptauth::SoftwareFeature::BETTER_TOGETHER_HOST, base::DoNothing());
+      multidevice::SoftwareFeature::kBetterTogetherHost, base::DoNothing());
 }
 
 }  // namespace multidevice_setup

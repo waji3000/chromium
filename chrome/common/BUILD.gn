@@ -146,6 +146,8 @@ static_library("common") {
     "mac/cfbundle_blocker.mm",
     "mac/launchd.h",
     "mac/launchd.mm",
+    "mac/service_management.h",
+    "mac/service_management.mm",
     "media/media_resource_provider.cc",
     "media/media_resource_provider.h",
     "media/webrtc_logging_message_data.cc",
@@ -175,8 +177,6 @@ static_library("common") {
     "prerender_url_loader_throttle.h",
     "prerender_util.cc",
     "prerender_util.h",
-    "profiling.cc",
-    "profiling.h",
     "ref_counted_util.h",
     "render_messages.h",
     "search/instant_types.cc",
@@ -467,6 +467,8 @@ static_library("common") {
       "//third_party/google_toolbox_for_mac",
       "//third_party/mach_override",
     ]
+
+    libs = [ "ServiceManagement.framework" ]
   }
 
   if (enable_plugins) {
@@ -714,6 +716,7 @@ mojom("mojo_bindings") {
     "navigation_corrector.mojom",
     "net_benchmarking.mojom",
     "network_diagnostics.mojom",
+    "network_easter_egg.mojom",
     "open_search_description_document_handler.mojom",
     "plugin.mojom",
     "prerender.mojom",

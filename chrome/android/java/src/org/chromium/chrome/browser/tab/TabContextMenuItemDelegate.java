@@ -6,6 +6,7 @@ package org.chromium.chrome.browser.tab;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.MailTo;
 import android.net.Uri;
 import android.provider.Browser;
@@ -21,7 +22,6 @@ import org.chromium.chrome.browser.UrlConstants;
 import org.chromium.chrome.browser.contextmenu.ContextMenuItemDelegate;
 import org.chromium.chrome.browser.document.ChromeLauncherActivity;
 import org.chromium.chrome.browser.download.ChromeDownloadDelegate;
-import org.chromium.chrome.browser.experiments.EphemeralTab;
 import org.chromium.chrome.browser.multiwindow.MultiWindowUtils;
 import org.chromium.chrome.browser.net.spdyproxy.DataReductionProxySettings;
 import org.chromium.chrome.browser.preferences.PrefServiceBridge;
@@ -222,16 +222,25 @@ public class TabContextMenuItemDelegate implements ContextMenuItemDelegate {
     }
 
     @Override
+    public void onOpenInEphemeralTab(String url, String title) {
+        mTab.getActivity().getEphemeralTabPanel().requestOpenPanel(url, title);
+    }
+
+    @Override
     public void onOpenInChrome(String linkUrl, String pageUrl) {
         Context applicationContext = ContextUtils.getApplicationContext();
         Intent chromeIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(linkUrl));
         chromeIntent.setPackage(applicationContext.getPackageName());
         chromeIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        if (applicationContext.getPackageManager()
-                        .queryIntentActivities(chromeIntent, 0)
-                        .isEmpty()) {
+        PackageManager packageManager = applicationContext.getPackageManager();
+
+        if (packageManager.queryIntentActivities(chromeIntent, 0).isEmpty()) {
             // If Chrome can't handle intent fallback to using any other VIEW handlers.
             chromeIntent.setPackage(null);
+
+            // Query again without the package name set and if there are still no handlers for the
+            // URI fail gracefully, and do nothing, since this will still cause a crash if launched.
+            if (packageManager.queryIntentActivities(chromeIntent, 0).isEmpty()) return;
         }
 
         // For "Open in Chrome" from the context menu in FullscreenActivity we want to bypass
@@ -286,11 +295,6 @@ public class TabContextMenuItemDelegate implements ContextMenuItemDelegate {
         Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
         CustomTabsIntent.setAlwaysUseBrowserUI(intent);
         IntentUtils.safeStartActivity(mTab.getActivity(), intent);
-    }
-
-    @Override
-    public void onOpenInEphemeralTab(String url, Referrer referrer) {
-        EphemeralTab.onOpen(url, referrer, isIncognito());
     }
 
     /**

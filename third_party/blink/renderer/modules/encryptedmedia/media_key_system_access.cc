@@ -105,21 +105,6 @@ static HeapVector<Member<MediaKeySystemMediaCapability>> ConvertCapabilities(
   return result;
 }
 
-static String ConvertMediaKeysRequirement(
-    WebMediaKeySystemConfiguration::Requirement requirement) {
-  switch (requirement) {
-    case WebMediaKeySystemConfiguration::Requirement::kRequired:
-      return "required";
-    case WebMediaKeySystemConfiguration::Requirement::kOptional:
-      return "optional";
-    case WebMediaKeySystemConfiguration::Requirement::kNotAllowed:
-      return "not-allowed";
-  }
-
-  NOTREACHED();
-  return "not-allowed";
-}
-
 static Vector<String> ConvertSessionTypes(
     const WebVector<WebEncryptedMediaSessionType>& session_types) {
   Vector<String> result(SafeCast<wtf_size_t>(session_types.size()));
@@ -131,9 +116,8 @@ static Vector<String> ConvertSessionTypes(
 }  // namespace
 
 MediaKeySystemAccess::MediaKeySystemAccess(
-    const String& key_system,
     std::unique_ptr<WebContentDecryptionModuleAccess> access)
-    : key_system_(key_system), access_(std::move(access)) {}
+    : access_(std::move(access)) {}
 
 MediaKeySystemAccess::~MediaKeySystemAccess() = default;
 
@@ -155,9 +139,11 @@ MediaKeySystemConfiguration* MediaKeySystemAccess::getConfiguration() const {
   // |distinctiveIdentifier|, |persistentState|, and |sessionTypes| are always
   // set by requestMediaKeySystemAccess().
   result->setDistinctiveIdentifier(
-      ConvertMediaKeysRequirement(configuration.distinctive_identifier));
+      EncryptedMediaUtils::ConvertMediaKeysRequirementToString(
+          configuration.distinctive_identifier));
   result->setPersistentState(
-      ConvertMediaKeysRequirement(configuration.persistent_state));
+      EncryptedMediaUtils::ConvertMediaKeysRequirementToString(
+          configuration.persistent_state));
   result->setSessionTypes(ConvertSessionTypes(configuration.session_types));
 
   // |label| will (and should) be a null string if it was not set.
@@ -174,9 +160,9 @@ ScriptPromise MediaKeySystemAccess::createMediaKeys(ScriptState* script_state) {
   WebMediaKeySystemConfiguration configuration = access_->GetConfiguration();
 
   // 1. Let promise be a new promise.
-  NewCdmResultPromise* helper =
-      new NewCdmResultPromise(script_state, configuration.session_types,
-                              "MediaKeySystemAccess", "createMediaKeys");
+  NewCdmResultPromise* helper = MakeGarbageCollected<NewCdmResultPromise>(
+      script_state, configuration.session_types, "MediaKeySystemAccess",
+      "createMediaKeys");
   ScriptPromise promise = helper->Promise();
 
   // 2. Asynchronously create and initialize the MediaKeys object.

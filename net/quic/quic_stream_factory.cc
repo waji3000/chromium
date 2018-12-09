@@ -113,24 +113,19 @@ std::unique_ptr<base::Value> NetLogQuicStreamFactoryJobCallback(
   return std::move(dict);
 }
 
-std::unique_ptr<base::Value> NetLogQuicConnectionMigrationTriggerCallback(
-    std::string trigger,
-    NetLogCaptureMode capture_mode) {
-  std::unique_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
-  dict->SetString("trigger", trigger);
-  return std::move(dict);
+NetLogParametersCallback NetLogQuicConnectionMigrationTriggerCallback(
+    const char* trigger) {
+  return NetLog::StringCallback("trigger", trigger);
 }
-
 // Helper class that is used to log a connection migration event.
 class ScopedConnectionMigrationEventLog {
  public:
-  ScopedConnectionMigrationEventLog(NetLog* net_log, std::string trigger)
+  ScopedConnectionMigrationEventLog(NetLog* net_log, const char* trigger)
       : net_log_(NetLogWithSource::Make(
             net_log,
             NetLogSourceType::QUIC_CONNECTION_MIGRATION)) {
-    net_log_.BeginEvent(
-        NetLogEventType::QUIC_CONNECTION_MIGRATION_TRIGGERED,
-        base::Bind(&NetLogQuicConnectionMigrationTriggerCallback, trigger));
+    net_log_.BeginEvent(NetLogEventType::QUIC_CONNECTION_MIGRATION_TRIGGERED,
+                        NetLogQuicConnectionMigrationTriggerCallback(trigger));
   }
 
   ~ScopedConnectionMigrationEventLog() {
@@ -372,9 +367,23 @@ class QuicStreamFactory::Job {
     stream_requests_.erase(request_iter);
   }
 
+  void SetPriority(RequestPriority priority) {
+    if (priority_ == priority)
+      return;
+
+    priority_ = priority;
+    if (io_state_ == STATE_RESOLVE_HOST_COMPLETE &&
+        !host_resolution_finished_) {
+      DCHECK(request_);
+      request_->ChangeRequestPriority(priority);
+    }
+  }
+
   const std::set<QuicStreamRequest*>& stream_requests() {
     return stream_requests_;
   }
+
+  RequestPriority priority() const { return priority_; }
 
   bool IsHostResolutionComplete() const { return host_resolution_finished_; }
 
@@ -418,7 +427,7 @@ class QuicStreamFactory::Job {
   HostResolver* host_resolver_;
   std::unique_ptr<HostResolver::Request> request_;
   const QuicSessionAliasKey key_;
-  const RequestPriority priority_;
+  RequestPriority priority_;
   const int cert_verify_flags_;
   const bool was_alternative_service_recently_broken_;
   const bool retry_on_alternate_network_before_handshake_;
@@ -427,6 +436,7 @@ class QuicStreamFactory::Job {
   int num_sent_client_hellos_;
   bool dns_race_ongoing_;
   bool host_resolution_finished_;
+  bool connection_retried_;
   QuicChromiumClientSession* session_;
   // If connection migraiton is supported, |network_| denotes the network on
   // which |session_| is created.
@@ -471,6 +481,7 @@ QuicStreamFactory::Job::Job(QuicStreamFactory* factory,
       num_sent_client_hellos_(0),
       dns_race_ongoing_(false),
       host_resolution_finished_(false),
+      connection_retried_(false),
       session_(nullptr),
       network_(NetworkChangeNotifier::kInvalidNetworkHandle),
       weak_factory_(this) {
@@ -501,7 +512,7 @@ int QuicStreamFactory::Job::Run(CompletionOnceCallback callback) {
 }
 
 int QuicStreamFactory::Job::DoLoop(int rv) {
-  TRACE_EVENT0(kNetTracingCategory, "QuicStreamFactory::Job::DoLoop");
+  TRACE_EVENT0(NetTracingCategory(), "QuicStreamFactory::Job::DoLoop");
 
   do {
     IoState state = io_state_;
@@ -774,12 +785,22 @@ int QuicStreamFactory::Job::DoConfirmConnection(int rv) {
       // with network idle time out or handshake time out.
       DCHECK(network_ != NetworkChangeNotifier::kInvalidNetworkHandle);
       network_ = factory_->FindAlternateNetwork(network_);
-      bool should_attempt_migration =
+      connection_retried_ =
           network_ != NetworkChangeNotifier::kInvalidNetworkHandle;
       UMA_HISTOGRAM_BOOLEAN(
           "Net.QuicStreamFactory.AttemptMigrationBeforeHandshake",
-          should_attempt_migration);
-      if (should_attempt_migration) {
+          connection_retried_);
+      UMA_HISTOGRAM_ENUMERATION(
+          "Net.QuicStreamFactory.AttemptMigrationBeforeHandshake."
+          "FailedConnectionType",
+          NetworkChangeNotifier::GetNetworkConnectionType(
+              factory_->default_network()),
+          NetworkChangeNotifier::ConnectionType::CONNECTION_LAST + 1);
+      if (connection_retried_) {
+        UMA_HISTOGRAM_ENUMERATION(
+            "Net.QuicStreamFactory.MigrationBeforeHandshake.NewConnectionType",
+            NetworkChangeNotifier::GetNetworkConnectionType(network_),
+            NetworkChangeNotifier::ConnectionType::CONNECTION_LAST + 1);
         net_log_.AddEvent(
             NetLogEventType::
                 QUIC_STREAM_FACTORY_JOB_RETRY_ON_ALTERNATE_NETWORK);
@@ -793,6 +814,23 @@ int QuicStreamFactory::Job::DoConfirmConnection(int rv) {
         return OK;
       }
     }
+  }
+
+  if (connection_retried_) {
+    UMA_HISTOGRAM_BOOLEAN("Net.QuicStreamFactory.MigrationBeforeHandshake2",
+                          rv == OK);
+    if (rv == OK) {
+      UMA_HISTOGRAM_BOOLEAN(
+          "Net.QuicStreamFactory.NetworkChangeDuringMigrationBeforeHandshake",
+          network_ == factory_->default_network());
+    } else {
+      base::UmaHistogramSparse(
+          "Net.QuicStreamFactory.MigrationBeforeHandshakeFailedReason", -rv);
+    }
+  } else if (network_ != NetworkChangeNotifier::kInvalidNetworkHandle &&
+             network_ != factory_->default_network()) {
+    UMA_HISTOGRAM_BOOLEAN("Net.QuicStreamFactory.ConnectionOnNonDefaultNetwork",
+                          rv == OK);
   }
 
   if (rv != OK)
@@ -903,6 +941,11 @@ base::TimeDelta QuicStreamRequest::GetTimeDelayForWaitingJob() const {
   if (!factory_)
     return base::TimeDelta();
   return factory_->GetTimeDelayForWaitingJob(session_key_.server_id());
+}
+
+void QuicStreamRequest::SetPriority(RequestPriority priority) {
+  if (factory_)
+    factory_->SetRequestPriority(this, priority);
 }
 
 std::unique_ptr<QuicChromiumClientSession::Handle>
@@ -1398,6 +1441,14 @@ void QuicStreamFactory::CancelRequest(QuicStreamRequest* request) {
   job_iter->second->RemoveRequest(request);
 }
 
+void QuicStreamFactory::SetRequestPriority(QuicStreamRequest* request,
+                                           RequestPriority priority) {
+  auto job_iter = active_jobs_.find(request->session_key());
+  if (job_iter == active_jobs_.end())
+    return;
+  job_iter->second->SetPriority(priority);
+}
+
 void QuicStreamFactory::CloseAllSessions(int error,
                                          quic::QuicErrorCode quic_error) {
   base::UmaHistogramSparse("Net.QuicSession.CloseAllSessionsError", -error);
@@ -1658,7 +1709,7 @@ int QuicStreamFactory::CreateSession(
     const NetLogWithSource& net_log,
     QuicChromiumClientSession** session,
     NetworkChangeNotifier::NetworkHandle* network) {
-  TRACE_EVENT0(kNetTracingCategory, "QuicStreamFactory::CreateSession");
+  TRACE_EVENT0(NetTracingCategory(), "QuicStreamFactory::CreateSession");
   IPEndPoint addr = *address_list.begin();
   const quic::QuicServerId& server_id = key.server_id();
   std::unique_ptr<DatagramClientSocket> socket(

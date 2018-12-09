@@ -8,8 +8,8 @@ cr.define('downloads', function() {
       /** @private {!Array<string>} */
       this.searchTerms_ = [];
 
-      /** @private {!downloads.BrowserProxy} */
-      this.browserProxy_ = downloads.BrowserProxy.getInstance();
+      /** @private {mdDownloads.mojom.PageHandlerInterface} */
+      this.mojoHandler_ = downloads.BrowserProxy.getInstance().handler;
     }
 
     /**
@@ -24,14 +24,14 @@ cr.define('downloads', function() {
     /** Instructs the browser to clear all finished downloads. */
     clearAll() {
       if (loadTimeData.getBoolean('allowDeletingHistory')) {
-        this.browserProxy_.clearAll();
+        this.mojoHandler_.clearAll();
         this.search('');
       }
     }
 
     /** Loads more downloads with the current search terms. */
     loadMore() {
-      this.browserProxy_.getDownloads(this.searchTerms_);
+      this.mojoHandler_.getDownloads(this.searchTerms_);
     }
 
     /**

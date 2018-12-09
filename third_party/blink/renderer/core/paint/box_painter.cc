@@ -28,6 +28,7 @@
 #include "third_party/blink/renderer/platform/graphics/graphics_context_state_saver.h"
 #include "third_party/blink/renderer/platform/graphics/paint/display_item_cache_skipper.h"
 #include "third_party/blink/renderer/platform/graphics/paint/drawing_recorder.h"
+#include "third_party/blink/renderer/platform/graphics/paint/hit_test_display_item.h"
 #include "third_party/blink/renderer/platform/graphics/paint/scoped_paint_chunk_properties.h"
 
 namespace blink {
@@ -90,7 +91,7 @@ void BoxPainter::PaintBoxDecorationBackground(const PaintInfo& paint_info,
   }
 
   if (RuntimeEnabledFeatures::PaintTouchActionRectsEnabled())
-    RecordHitTestData(paint_info, paint_offset, paint_rect, *background_client);
+    RecordHitTestData(paint_info, paint_rect, *background_client);
 }
 
 bool BoxPainter::BackgroundIsKnownToBeOpaque(const PaintInfo& paint_info) {
@@ -133,17 +134,22 @@ void BoxPainter::PaintBoxDecorationBackgroundWithRect(
   BoxDecorationData box_decoration_data(layout_box_);
   GraphicsContextStateSaver state_saver(paint_info.context, false);
 
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled() &&
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled() &&
       LayoutRect(EnclosingIntRect(paint_rect)) == paint_rect &&
       BackgroundIsKnownToBeOpaque(paint_info))
     recorder.SetKnownToBeOpaque();
+
+  const auto skip_background = layout_box_.BackgroundTransfersToView() ||
+                               (paint_info.SkipRootBackground() &&
+                                paint_info.PaintContainer() == &layout_box_);
 
   bool needs_end_layer = false;
   if (!painting_scrolling_background) {
     // FIXME: Should eventually give the theme control over whether the box
     // shadow should paint, since controls could have custom shadows of their
     // own.
-    BoxPainterBase::PaintNormalBoxShadow(paint_info, paint_rect, style);
+    BoxPainterBase::PaintNormalBoxShadow(paint_info, paint_rect, style, true,
+                                         true, skip_background);
 
     if (BleedAvoidanceIsClipping(box_decoration_data.bleed_avoidance)) {
       state_saver.Save();
@@ -165,10 +171,7 @@ void BoxPainter::PaintBoxDecorationBackgroundWithRect(
   bool theme_painted =
       box_decoration_data.has_appearance &&
       !theme_painter.Paint(layout_box_, paint_info, snapped_paint_rect);
-  bool should_paint_background =
-      !theme_painted && (!paint_info.SkipRootBackground() ||
-                         paint_info.PaintContainer() != &layout_box_);
-  if (should_paint_background) {
+  if (!theme_painted && !skip_background) {
     PaintBackground(paint_info, paint_rect,
                     box_decoration_data.background_color,
                     box_decoration_data.bleed_avoidance);
@@ -251,15 +254,8 @@ void BoxPainter::PaintMaskImages(const PaintInfo& paint_info,
 }
 
 void BoxPainter::RecordHitTestData(const PaintInfo& paint_info,
-                                   const LayoutPoint& paint_offset,
                                    const LayoutRect& paint_rect,
                                    const DisplayItemClient& background_client) {
-  // TODO(sunxd): ReplacedPainter only record hit test data for svg root which
-  // skips clip. We should move the conditions and ReplacedPainter's
-  // RecordHitTestData here.
-  if (layout_box_.IsLayoutReplaced())
-    return;
-
   // Hit test display items are only needed for compositing. This flag is used
   // for for printing and drag images which do not need hit testing.
   if (paint_info.GetGlobalPaintFlags() & kGlobalPaintFlattenCompositingLayers)
@@ -273,8 +269,8 @@ void BoxPainter::RecordHitTestData(const PaintInfo& paint_info,
   if (touch_action == TouchAction::kTouchActionAuto)
     return;
 
-  HitTestData::RecordHitTestRect(paint_info.context, background_client,
-                                 HitTestRect(paint_rect, touch_action));
+  HitTestDisplayItem::Record(paint_info.context, background_client,
+                             HitTestRect(paint_rect, touch_action));
 }
 
 }  // namespace blink

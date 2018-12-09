@@ -25,6 +25,7 @@ CHROME_SPECIFIC = BuildFileMatchRegex(
     r'lib/.*/libchrome\.\d{4}\.\d{2,3}\.so', # libchrome placeholders
     r'lib/.*/libchromium_android_linker\.so',
     r'lib/.*/libchromeview\.so', # placeholder library
+    r'lib/.*/libcrashpad_handler\.so',
     r'lib/.*/crazy\.libchrome\.so',
     r'lib/.*/crazy\.libchrome\.align',
     r'lib/.*/gdbserver',
@@ -38,6 +39,7 @@ CHROME_SPECIFIC = BuildFileMatchRegex(
 
 # WebView specific files which are not in Monochrome.apk
 WEBVIEW_SPECIFIC = BuildFileMatchRegex(
+    r'lib/.*/libcrashpad_handler\.so',
     r'lib/.*/libwebviewchromium\.so',
     r'assets/webview_licenses.notice',
     r'res/.*/icon_webview.webp',
@@ -53,6 +55,7 @@ CHROME_CHANGES = BuildFileMatchRegex(
     r'AndroidManifest\.xml',
     r'resources\.arsc',
     r'classes\.dex',
+    r'classes2\.dex',
     r'res/.*\.xml', # Resource id isn't same
     r'assets/unwind_cfi_32', # Generated from apk's shared library
      # All pak files except chrome_100_percent.pak are different

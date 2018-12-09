@@ -4,13 +4,10 @@
 
 let mockChrome;
 
-loadTimeData.data = {
-  DRIVE_DIRECTORY_LABEL: 'My Drive',
-  DOWNLOADS_DIRECTORY_LABEL: 'Downloads',
-  ANDROID_FILES_ROOT_LABEL: 'Play files'
-};
-
 function setUp() {
+  window.loadTimeData.getString = id => id;
+  window.loadTimeData.data = {};
+
   // Set up mock of chrome.fileManagerPrivate APIs.
   mockChrome = {
     runtime: {lastError: undefined},
@@ -353,7 +350,7 @@ function testGetLocationInfo(callback) {
             VolumeManagerCommon.RootType.COMPUTER,
             computerLocationInfo.rootType);
         assertFalse(computerLocationInfo.hasFixedLabel);
-        assertFalse(computerLocationInfo.isReadOnly);
+        assertTrue(computerLocationInfo.isReadOnly);
         assertTrue(computerLocationInfo.isRootEntry);
       }),
       callback);

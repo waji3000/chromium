@@ -9,13 +9,13 @@
 namespace blink {
 
 RTCQuicStreamEvent* RTCQuicStreamEvent::Create(RTCQuicStream* stream) {
-  return new RTCQuicStreamEvent(stream);
+  return MakeGarbageCollected<RTCQuicStreamEvent>(stream);
 }
 
 RTCQuicStreamEvent* RTCQuicStreamEvent::Create(
     const AtomicString& type,
     const RTCQuicStreamEventInit* initializer) {
-  return new RTCQuicStreamEvent(type, initializer);
+  return MakeGarbageCollected<RTCQuicStreamEvent>(type, initializer);
 }
 
 RTCQuicStreamEvent::RTCQuicStreamEvent(RTCQuicStream* stream)
@@ -34,7 +34,7 @@ RTCQuicStream* RTCQuicStreamEvent::stream() const {
 }
 
 const AtomicString& RTCQuicStreamEvent::InterfaceName() const {
-  return EventNames::RTCQuicStreamEvent;
+  return event_interface_names::kRTCQuicStreamEvent;
 }
 
 void RTCQuicStreamEvent::Trace(blink::Visitor* visitor) {

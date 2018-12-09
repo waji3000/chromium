@@ -222,6 +222,12 @@ chrome.fileManagerPrivate.InstallLinuxPackageResponse = {
   INSTALL_ALREADY_ACTIVE: 'install_already_active',
 };
 
+/** @enum {string} */
+chrome.fileManagerPrivate.CrostiniSharedPathsChangedEventType = {
+  SHARE: 'share',
+  UNSHARE: 'unshare',
+};
+
 /**
  * @typedef {{
  *   taskId: string,
@@ -262,7 +268,10 @@ chrome.fileManagerPrivate.FileTask;
  *   canDelete: (boolean|undefined),
  *   canRename: (boolean|undefined),
  *   canAddChildren: (boolean|undefined),
- *   canShare: (boolean|undefined)
+ *   canShare: (boolean|undefined),
+ *   isMachineRoot: (boolean|undefined),
+ *   isExternalMedia: (boolean|undefined),
+ *   isArbitrarySyncFolder: (boolean|undefined)
  * }}
  */
 chrome.fileManagerPrivate.EntryProperties;
@@ -380,7 +389,6 @@ chrome.fileManagerPrivate.FileWatchEvent;
  * @typedef {{
  *   driveEnabled: boolean,
  *   cellularDisabled: boolean,
- *   hostedFilesDisabled: boolean,
  *   searchSuggestEnabled: boolean,
  *   use24hourClock: boolean,
  *   allowRedeemOffers: boolean,
@@ -392,7 +400,6 @@ chrome.fileManagerPrivate.Preferences;
 /**
  * @typedef {{
  *   cellularDisabled: (boolean|undefined),
- *   hostedFilesDisabled: (boolean|undefined)
  * }}
  */
 chrome.fileManagerPrivate.PreferencesChange;
@@ -461,6 +468,14 @@ chrome.fileManagerPrivate.Provider;
  * }}
  */
 chrome.fileManagerPrivate.LinuxPackageInfo;
+
+/**
+ * @typedef {{
+ * eventType: chrome.fileManagerPrivate.CrostiniSharedPathsChangedEventType,
+ * entries: !Array<!Entry>,
+ * }}
+ */
+chrome.fileManagerPrivate.CrostiniSharedPathsChangedEvent;
 
 /**
  * Logout the current user for navigating to the re-authentication screen for
@@ -946,18 +961,28 @@ chrome.fileManagerPrivate.isCrostiniEnabled = function(callback) {};
 chrome.fileManagerPrivate.mountCrostini = function(callback) {};
 
 /**
- * Shares directory with crostini container.
+ * Shares paths with crostini container.
  * @param {!Array<!Entry>} entries Entries of the files and directories to share.
  * @param {boolean} persist If true, share will persist across restarts.
- * @param {function()} callback Callback called after the folder is shared.
+ * @param {function()} callback Callback called after the paths are shared.
  *     chrome.runtime.lastError will be set if there was an error.
  */
 chrome.fileManagerPrivate.sharePathsWithCrostini = function(
     entries, persist, callback) {};
 
 /**
- * Returns list of paths shared with the crostini container.
- * @param {function(!Array<!Entry>)} callback
+ * Unshares path with crostini container.
+ * @param {!Entry} entry Entry of the file or directory to unshare.
+ * @param {function()} callback Callback called after the path is unshared.
+ *     chrome.runtime.lastError will be set if there was an error.
+ */
+chrome.fileManagerPrivate.unsharePathWithCrostini = function(
+    entry, callback) {};
+
+/**
+ * Returns list of paths shared with the crostini container, and whether this is
+ * the first time this function is called for this session.
+ * @param {function(!Array<!Entry>, boolean)} callback
  */
 chrome.fileManagerPrivate.getCrostiniSharedPaths = function(callback) {};
 
@@ -1030,3 +1055,6 @@ chrome.fileManagerPrivate.onDriveSyncError;
 
 /** @type {!ChromeEvent} */
 chrome.fileManagerPrivate.onAppsUpdated;
+
+/** @type {!ChromeEvent} */
+chrome.fileManagerPrivate.onCrostiniSharedPathsChanged;

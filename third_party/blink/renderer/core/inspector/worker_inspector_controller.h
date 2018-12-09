@@ -54,7 +54,7 @@ struct WorkerDevToolsParams;
 
 class WorkerInspectorController final
     : public GarbageCollectedFinalized<WorkerInspectorController>,
-      public TraceEvent::EnabledStateObserver,
+      public trace_event::EnabledStateObserver,
       public DevToolsAgent::Client,
       private Thread::TaskObserver {
  public:
@@ -62,6 +62,11 @@ class WorkerInspectorController final
       WorkerThread*,
       scoped_refptr<InspectorTaskRunner>,
       std::unique_ptr<WorkerDevToolsParams>);
+
+  WorkerInspectorController(WorkerThread*,
+                            WorkerThreadDebugger*,
+                            scoped_refptr<InspectorTaskRunner>,
+                            std::unique_ptr<WorkerDevToolsParams>);
   ~WorkerInspectorController() override;
   void Trace(blink::Visitor*);
 
@@ -69,18 +74,14 @@ class WorkerInspectorController final
   DevToolsAgent* GetDevToolsAgent() const { return agent_.Get(); }
   void Dispose();
   void FlushProtocolNotifications();
+  void WaitForDebuggerIfNeeded();
 
  private:
-  WorkerInspectorController(WorkerThread*,
-                            WorkerThreadDebugger*,
-                            scoped_refptr<InspectorTaskRunner>,
-                            std::unique_ptr<WorkerDevToolsParams>);
-
   // Thread::TaskObserver implementation.
   void WillProcessTask(const base::PendingTask&) override;
   void DidProcessTask(const base::PendingTask&) override;
 
-  // blink::TraceEvent::EnabledStateObserver implementation:
+  // blink::trace_event::EnabledStateObserver implementation:
   void OnTraceLogEnabled() override;
   void OnTraceLogDisabled() override;
 
@@ -99,6 +100,7 @@ class WorkerInspectorController final
   Member<InspectedFrames> inspected_frames_;
   Member<CoreProbeSink> probe_sink_;
   int session_count_ = 0;
+  bool wait_for_debugger_ = false;
 
   // These fields are set up in the constructor and then read
   // on a random thread from EmitTraceEvent().

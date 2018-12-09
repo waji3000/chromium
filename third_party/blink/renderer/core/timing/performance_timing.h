@@ -47,7 +47,7 @@ class DocumentTiming;
 class InteractiveDetector;
 class LocalFrame;
 class PaintTiming;
-class PaintTracker;
+class PaintTimingDetector;
 class ResourceLoadTiming;
 class ScriptState;
 class ScriptValue;
@@ -60,8 +60,10 @@ class CORE_EXPORT PerformanceTiming final : public ScriptWrappable,
 
  public:
   static PerformanceTiming* Create(LocalFrame* frame) {
-    return new PerformanceTiming(frame);
+    return MakeGarbageCollected<PerformanceTiming>(frame);
   }
+
+  explicit PerformanceTiming(LocalFrame*);
 
   unsigned long long navigationStart() const;
   unsigned long long inputStart() const;
@@ -92,8 +94,6 @@ class CORE_EXPORT PerformanceTiming final : public ScriptWrappable,
   unsigned long long FirstLayout() const;
   // The time the first paint operation was performed.
   unsigned long long FirstPaint() const;
-  // The time the first paint operation for visible text was performed.
-  unsigned long long FirstTextPaint() const;
   // The time the first paint operation for image was performed.
   unsigned long long FirstImagePaint() const;
   // The time of the first 'contentful' paint. A contentful paint is a paint
@@ -156,13 +156,11 @@ class CORE_EXPORT PerformanceTiming final : public ScriptWrappable,
   unsigned long long MonotonicTimeToIntegerMilliseconds(TimeTicks) const;
 
  private:
-  explicit PerformanceTiming(LocalFrame*);
-
   const DocumentTiming* GetDocumentTiming() const;
   const CSSTiming* CssTiming() const;
   const DocumentParserTiming* GetDocumentParserTiming() const;
   const PaintTiming* GetPaintTiming() const;
-  PaintTracker* GetPaintTracker() const;
+  PaintTimingDetector* GetPaintTimingDetector() const;
   DocumentLoader* GetDocumentLoader() const;
   DocumentLoadTiming* GetDocumentLoadTiming() const;
   ResourceLoadTiming* GetResourceLoadTiming() const;

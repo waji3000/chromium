@@ -12,6 +12,8 @@
 #include "chrome/browser/feature_engagement/tracker_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/in_product_help/in_product_help.h"
 #include "components/feature_engagement/public/event_constants.h"
 #include "components/feature_engagement/public/feature_constants.h"
 #include "components/feature_engagement/public/tracker.h"
@@ -48,12 +50,12 @@ void ReopenTabInProductHelp::NewTabOpened() {
   trigger_.NewTabOpened();
 }
 
-void ReopenTabInProductHelp::OmniboxFocused() {
-  trigger_.OmniboxFocused();
-}
-
 void ReopenTabInProductHelp::TabReopened() {
   GetTracker()->NotifyEvent(feature_engagement::events::kTabReopened);
+}
+
+void ReopenTabInProductHelp::HelpDismissed() {
+  trigger_.HelpDismissed();
 }
 
 void ReopenTabInProductHelp::OnActiveTabClosed(
@@ -63,10 +65,9 @@ void ReopenTabInProductHelp::OnActiveTabClosed(
 }
 
 void ReopenTabInProductHelp::OnShowHelp() {
-  // Here, we would get the last active browser and trigger our IPH in it. For
-  // now, we just say IPH was immediately dismissed. TODO(collinbaker):
-  // implement call into views-side to display IPH.
-  trigger_.HelpDismissed();
+  auto* browser = BrowserList::GetInstance()->GetLastActive();
+  DCHECK(browser);
+  browser->window()->ShowInProductHelpPromo(InProductHelpFeature::kReopenTab);
 }
 
 void ReopenTabInProductHelp::OnBrowserAdded(Browser* browser) {

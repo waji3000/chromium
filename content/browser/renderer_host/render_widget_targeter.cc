@@ -8,6 +8,8 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/rand_util.h"
 #include "components/viz/common/features.h"
+#include "components/viz/host/host_frame_sink_manager.h"
+#include "content/browser/compositor/surface_utils.h"
 #include "content/browser/renderer_host/input/one_shot_timeout_monitor.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
@@ -46,17 +48,18 @@ gfx::PointF ComputeEventLocation(const blink::WebInputEvent& event) {
   return gfx::PointF();
 }
 
+constexpr const char kTracingCategory[] = "input,latency";
+
 }  // namespace
 
 class TracingUmaTracker {
  public:
-  TracingUmaTracker(const char* metric_name, const char* tracing_category)
+  explicit TracingUmaTracker(const char* metric_name)
       : id_(next_id_++),
         start_time_(base::TimeTicks::Now()),
-        metric_name_(metric_name),
-        tracing_category_(tracing_category) {
+        metric_name_(metric_name) {
     TRACE_EVENT_ASYNC_BEGIN0(
-        tracing_category_, metric_name_,
+        kTracingCategory, metric_name_,
         TRACE_ID_WITH_SCOPE(metric_name_, TRACE_ID_LOCAL(id_)));
   }
   ~TracingUmaTracker() = default;
@@ -69,7 +72,7 @@ class TracingUmaTracker {
 
   void Stop() {
     TRACE_EVENT_ASYNC_END0(
-        tracing_category_, metric_name_,
+        kTracingCategory, metric_name_,
         TRACE_ID_WITH_SCOPE(metric_name_, TRACE_ID_LOCAL(id_)));
   }
 
@@ -80,7 +83,6 @@ class TracingUmaTracker {
   // These variables must be string literals and live for the duration
   // of the program since tracing stores pointers.
   const char* metric_name_;
-  const char* tracing_category_;
 
   static int next_id_;
 
@@ -127,6 +129,8 @@ RenderWidgetTargeter::TargetingRequest::~TargetingRequest() = default;
 
 RenderWidgetTargeter::RenderWidgetTargeter(Delegate* delegate)
     : trace_id_(base::RandUint64()),
+      is_viz_hit_testing_debug_enabled_(
+          features::IsVizHitTestingDebugEnabled()),
       delegate_(delegate),
       weak_ptr_factory_(this) {
   DCHECK(delegate_);
@@ -157,8 +161,8 @@ void RenderWidgetTargeter::FindTargetAndDispatch(
     request.root_view = root_view->GetWeakPtr();
     request.event = ui::WebInputEventTraits::Clone(event);
     request.latency = latency;
-    request.tracker = std::make_unique<TracingUmaTracker>(
-        "Event.AsyncTargeting.TimeInQueue", "input,latency");
+    request.tracker =
+        std::make_unique<TracingUmaTracker>("Event.AsyncTargeting.TimeInQueue");
     requests_.push(std::move(request));
     return;
   }
@@ -235,8 +239,7 @@ void RenderWidgetTargeter::QueryClientInternal(
     request_in_flight_ = true;
     async_depth_++;
   }
-  TracingUmaTracker tracker("Event.AsyncTargeting.ResponseTime",
-                            "input,latency");
+  TracingUmaTracker tracker("Event.AsyncTargeting.ResponseTime");
   auto& hit_test_timeout =
       is_verifying ? async_verify_hit_test_timeout_ : async_hit_test_timeout_;
   hit_test_timeout.reset(new OneShotTimeoutMonitor(
@@ -369,15 +372,21 @@ void RenderWidgetTargeter::FoundFrameSinkId(
   } else {
     request_in_flight_ = false;
     async_hit_test_timeout_.reset(nullptr);
+
+    if (is_viz_hit_testing_debug_enabled_ &&
+        event->GetType() == blink::WebInputEvent::Type::kMouseDown) {
+      hit_test_async_queried_debug_queue_.push_back(target->GetFrameSinkId());
+    }
   }
   auto* view = delegate_->FindViewFromFrameSinkId(frame_sink_id);
   if (!view)
     view = target.get();
 
-  // If a client was asked to find a target, then it is necessary to keep
-  // asking the clients until a client claims an event for itself.
+  // If a client returned an embedded target, then it might be necessary to
+  // continue asking the clients until a client claims an event for itself.
   if (view == target.get() ||
-      unresponsive_views_.find(view) != unresponsive_views_.end()) {
+      unresponsive_views_.find(view) != unresponsive_views_.end() ||
+      !delegate_->ShouldContinueHitTesting(view)) {
     // Reduced scope is required since FoundTarget can trigger another query
     // which would end up linked to the current query.
     {
@@ -386,8 +395,8 @@ void RenderWidgetTargeter::FoundFrameSinkId(
                              TRACE_EVENT_FLAG_FLOW_IN, "step", "FoundTarget");
     }
 
-    FoundTarget(root_view.get(), view, *event, latency, target_location, false,
-                expected_frame_sink_id);
+    FoundTarget(root_view.get(), view, *event, latency, transformed_location,
+                false, expected_frame_sink_id);
   } else {
     QueryClientInternal(root_view.get(), view, *event, latency,
                         transformed_location, target.get(), target_location,
@@ -413,6 +422,13 @@ void RenderWidgetTargeter::FoundTarget(
   // View will be valid but there will no longer be a RenderWidgetHostImpl.
   if (!root_view || !root_view->GetRenderWidgetHost())
     return;
+
+  if (is_viz_hit_testing_debug_enabled_ &&
+      !hit_test_async_queried_debug_queue_.empty()) {
+    GetHostFrameSinkManager()->SetHitTestAsyncQueriedDebugRegions(
+        root_view->GetRootFrameSinkId(), hit_test_async_queried_debug_queue_);
+    hit_test_async_queried_debug_queue_.clear();
+  }
 
   if (features::IsVizHitTestingSurfaceLayerEnabled() &&
       expected_frame_sink_id.is_valid()) {

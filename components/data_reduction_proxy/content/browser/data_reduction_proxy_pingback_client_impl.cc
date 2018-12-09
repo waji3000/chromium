@@ -11,7 +11,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/optional.h"
 #include "base/rand_util.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "base/task/post_task.h"
 #include "base/task/task_traits.h"
 #include "base/time/time.h"
@@ -131,6 +131,22 @@ void AddDataToPageloadMetrics(const DataReductionProxyData& request_data,
             timing.page_end_time.value())
             .release());
   }
+  // Only set the lite page info if both the penalty and status have values.
+  if (timing.lite_page_redirect_penalty.has_value() &&
+      timing.lite_page_redirect_status.has_value()) {
+    HTTPSLitePagePreviewInfo* info = request->mutable_https_litepage_info();
+    info->set_allocated_navigation_restart_penalty(
+        protobuf_parser::CreateDurationFromTimeDelta(
+            timing.lite_page_redirect_penalty.value())
+            .release());
+    info->set_status(
+        protobuf_parser::ProtoLitePageRedirectStatusFromLitePageRedirectStatus(
+            timing.lite_page_redirect_status.value()));
+  }
+  request->set_allocated_navigation_start_to_main_frame_fetch_start(
+      protobuf_parser::CreateDurationFromTimeDelta(
+          timing.navigation_start_to_main_frame_fetch_start)
+          .release());
 
   request->set_effective_connection_type(
       protobuf_parser::ProtoEffectiveConnectionTypeFromEffectiveConnectionType(
@@ -146,6 +162,7 @@ void AddDataToPageloadMetrics(const DataReductionProxyData& request_data,
   request->set_renderer_memory_usage_kb(timing.renderer_memory_usage_kb);
   request->set_touch_count(timing.touch_count);
   request->set_scroll_count(timing.scroll_count);
+  request->set_redirect_count(timing.redirect_count);
 
   request->set_renderer_crash_type(crash_type);
 
@@ -165,25 +182,6 @@ void AddDataToPageloadMetrics(const DataReductionProxyData& request_data,
         PageloadMetrics_PreviewsType_CLIENT_BLACKLIST_PREVENTED_PREVIEW);
   } else {
     request->set_previews_type(PageloadMetrics_PreviewsType_NONE);
-  }
-
-  for (auto request_info_data : request_data.request_info()) {
-    RequestInfo* request_info = request->add_main_frame_network_request();
-    request_info->set_protocol(
-        protobuf_parser::ProtoRequestInfoProtocolFromRequestInfoProtocol(
-            request_info_data.protocol));
-    request_info->set_proxy_bypass(request_info_data.proxy_bypass);
-    request_info->set_allocated_dns_time(
-        protobuf_parser::CreateDurationFromTimeDelta(request_info_data.dns_time)
-            .release());
-    request_info->set_allocated_connect_time(
-        protobuf_parser::CreateDurationFromTimeDelta(
-            request_info_data.connect_time)
-            .release());
-    request_info->set_allocated_http_time(
-        protobuf_parser::CreateDurationFromTimeDelta(
-            request_info_data.http_time)
-            .release());
   }
 
   // Only report opt out information if a server preview was shown (otherwise,

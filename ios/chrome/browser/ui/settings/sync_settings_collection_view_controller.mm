@@ -43,8 +43,8 @@
 #import "ios/chrome/browser/ui/settings/cells/sync_switch_item.h"
 #import "ios/chrome/browser/ui/settings/cells/text_and_error_item.h"
 #import "ios/chrome/browser/ui/settings/settings_navigation_controller.h"
-#import "ios/chrome/browser/ui/settings/sync_encryption_collection_view_controller.h"
 #import "ios/chrome/browser/ui/settings/sync_encryption_passphrase_collection_view_controller.h"
+#import "ios/chrome/browser/ui/settings/sync_encryption_table_view_controller.h"
 #import "ios/chrome/browser/ui/settings/sync_utils/sync_util.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
 #include "ios/chrome/grit/ios_strings.h"
@@ -332,10 +332,6 @@ typedef NS_ENUM(NSInteger, ItemType) {
   for (int i = 0; i < SyncSetupService::kNumberOfSyncableDatatypes; ++i) {
     SyncSetupService::SyncableDatatype dataType =
         static_cast<SyncSetupService::SyncableDatatype>(i);
-    if (dataType == SyncSetupService::kSyncUserEvent) {
-      // This data type should only be used with the unified consent UI.
-      continue;
-    }
     [model addItem:[self switchItemForDataType:dataType]
         toSectionWithIdentifier:SectionIdentifierSyncServices];
   }
@@ -766,14 +762,14 @@ typedef NS_ENUM(NSInteger, ItemType) {
       [self shouldDisableSettingsOnSyncError])
     return;
 
-  SettingsRootCollectionViewController* controllerToPush;
+  UIViewController<SettingsRootViewControlling>* controllerToPush;
   // If there was a sync error, prompt the user to enter the passphrase.
   // Otherwise, show the full encryption options.
   if (syncService->IsPassphraseRequired()) {
     controllerToPush = [[SyncEncryptionPassphraseCollectionViewController alloc]
         initWithBrowserState:_browserState];
   } else {
-    controllerToPush = [[SyncEncryptionCollectionViewController alloc]
+    controllerToPush = [[SyncEncryptionTableViewController alloc]
         initWithBrowserState:_browserState];
   }
   controllerToPush.dispatcher = self.dispatcher;
@@ -838,10 +834,6 @@ typedef NS_ENUM(NSInteger, ItemType) {
        index < SyncSetupService::kNumberOfSyncableDatatypes; ++index) {
     SyncSetupService::SyncableDatatype dataType =
         static_cast<SyncSetupService::SyncableDatatype>(index);
-    if (dataType == SyncSetupService::kSyncUserEvent) {
-      // This data type should only be used with the unified consent UI.
-      continue;
-    }
     NSIndexPath* indexPath = [self.collectionViewModel
         indexPathForItemType:ItemTypeSyncableDataType
            sectionIdentifier:SectionIdentifierSyncServices
@@ -977,8 +969,6 @@ typedef NS_ENUM(NSInteger, ItemType) {
       return IDS_SYNC_DATATYPE_PREFERENCES;
     case SyncSetupService::kSyncReadingList:
       return IDS_SYNC_DATATYPE_READING_LIST;
-    case SyncSetupService::kSyncUserEvent:
-    // Not supported for the code before the unified consent.
     case SyncSetupService::kNumberOfSyncableDatatypes:
       NOTREACHED();
   }

@@ -24,6 +24,7 @@ namespace {
 // in other locations in the code base (e.g. content/, components/, etc).
 const base::Feature* kFeaturesExposedToJava[] = {
     &features::kWebViewConnectionlessSafeBrowsing,
+    &features::kWebViewPageStartedOnCommit,
 };
 
 const base::Feature* FindFeatureExposedToJava(const std::string& feature_name) {
@@ -47,11 +48,19 @@ namespace features {
 const base::Feature kWebViewConnectionlessSafeBrowsing{
     "WebViewConnectionlessSafeBrowsing", base::FEATURE_DISABLED_BY_DEFAULT};
 
+// Kill switch for feature to call onPageFinished for browser-initiated
+// navigations when the navigation commits.
+const base::Feature kWebViewPageStartedOnCommit{
+    "WebViewPageStartedOnCommit", base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Whether the application package name is logged in UMA.
+const base::Feature kWebViewUmaLogAppPackageName{
+    "WebViewUmaLogAppPackageName", base::FEATURE_DISABLED_BY_DEFAULT};
+
 }  // namespace features
 
 static jboolean JNI_AwFeatureList_IsEnabled(
     JNIEnv* env,
-    const JavaParamRef<jclass>& clazz,
     const JavaParamRef<jstring>& jfeature_name) {
   const base::Feature* feature =
       FindFeatureExposedToJava(ConvertJavaStringToUTF8(env, jfeature_name));

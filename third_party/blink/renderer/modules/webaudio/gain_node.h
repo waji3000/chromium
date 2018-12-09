@@ -47,8 +47,8 @@ class GainHandler final : public AudioHandler {
                                            AudioParamHandler& gain);
 
   // AudioHandler
-  void Process(size_t frames_to_process) override;
-  void ProcessOnlyAudioParams(size_t frames_to_process) override;
+  void Process(uint32_t frames_to_process) override;
+  void ProcessOnlyAudioParams(uint32_t frames_to_process) override;
 
   // Called in the main thread when the number of channels for the input may
   // have changed.
@@ -75,13 +75,14 @@ class GainNode final : public AudioNode {
   static GainNode* Create(BaseAudioContext*,
                           const GainOptions*,
                           ExceptionState&);
+
+  GainNode(BaseAudioContext&);
+
   void Trace(blink::Visitor*) override;
 
   AudioParam* gain() const;
 
  private:
-  GainNode(BaseAudioContext&);
-
   Member<AudioParam> gain_;
 };
 

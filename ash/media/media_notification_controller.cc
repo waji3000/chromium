@@ -6,8 +6,12 @@
 
 #include "ash/media/media_notification_constants.h"
 #include "ash/media/media_notification_view.h"
+#include "ash/public/cpp/notification_utils.h"
 #include "base/strings/string16.h"
+#include "base/time/time.h"
 #include "services/media_session/public/mojom/constants.mojom.h"
+#include "services/media_session/public/mojom/media_controller.mojom.h"
+#include "services/media_session/public/mojom/media_session.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "ui/gfx/image/image.h"
 #include "ui/message_center/public/cpp/notification.h"
@@ -18,7 +22,12 @@
 
 namespace ash {
 
+using media_session::mojom::MediaSessionAction;
+
 namespace {
+
+constexpr base::TimeDelta kDefaultSeekTime =
+    base::TimeDelta::FromSeconds(media_session::mojom::kDefaultSeekTimeSeconds);
 
 std::unique_ptr<message_center::MessageView> CreateCustomMediaNotificationView(
     const message_center::Notification& notification) {
@@ -50,27 +59,42 @@ MediaNotificationController::MediaNotificationController(
   media_session::mojom::AudioFocusManagerPtr audio_focus_ptr;
   connector->BindInterface(media_session::mojom::kServiceName,
                            mojo::MakeRequest(&audio_focus_ptr));
+  connector->BindInterface(media_session::mojom::kServiceName,
+                           mojo::MakeRequest(&media_controller_ptr_));
 
-  media_session::mojom::AudioFocusObserverPtr observer;
-  binding_.Bind(mojo::MakeRequest(&observer));
-  audio_focus_ptr->AddObserver(std::move(observer));
+  media_session::mojom::AudioFocusObserverPtr audio_focus_observer;
+  audio_focus_observer_binding_.Bind(mojo::MakeRequest(&audio_focus_observer));
+  audio_focus_ptr->AddObserver(std::move(audio_focus_observer));
+
+  media_session::mojom::MediaSessionObserverPtr media_session_observer;
+  media_session_observer_binding_.Bind(
+      mojo::MakeRequest(&media_session_observer));
+  media_controller_ptr_->AddObserver(std::move(media_session_observer));
 }
 
 MediaNotificationController::~MediaNotificationController() = default;
 
-void MediaNotificationController::OnFocusGained(
-    media_session::mojom::MediaSessionInfoPtr media_session,
-    media_session::mojom::AudioFocusType type) {
+void MediaNotificationController::OnActiveSessionChanged(
+    media_session::mojom::AudioFocusRequestStatePtr session) {
+  // Hide the notification if the active session is null.
+  if (session.is_null()) {
+    message_center::MessageCenter::Get()->RemoveNotification(
+        kMediaSessionNotificationId, false);
+    return;
+  }
+
   if (IsMediaSessionNotificationVisible())
     return;
 
+  session_info_ = std::move(session->session_info);
+
   std::unique_ptr<message_center::Notification> notification =
-      message_center::Notification::CreateSystemNotification(
+      ash::CreateSystemNotification(
           message_center::NotificationType::NOTIFICATION_TYPE_CUSTOM,
           kMediaSessionNotificationId, base::string16(), base::string16(),
           base::string16(), GURL(),
           message_center::NotifierId(
-              message_center::NotifierId::SYSTEM_COMPONENT,
+              message_center::NotifierType::SYSTEM_COMPONENT,
               kMediaSessionNotifierId),
           message_center::RichNotificationData(),
           base::MakeRefCounted<message_center::HandleNotificationClickDelegate>(
@@ -90,18 +114,62 @@ void MediaNotificationController::OnFocusGained(
       std::move(notification));
 }
 
-void MediaNotificationController::OnFocusLost(
-    media_session::mojom::MediaSessionInfoPtr media_session) {
-  if (!IsMediaSessionNotificationVisible())
-    return;
+void MediaNotificationController::MediaSessionInfoChanged(
+    media_session::mojom::MediaSessionInfoPtr session_info) {
+  session_info_ = std::move(session_info);
 
-  message_center::MessageCenter::Get()->RemoveNotification(
-      kMediaSessionNotificationId, false);
+  if (view_)
+    view_->UpdateWithMediaSessionInfo(session_info_);
+}
+
+void MediaNotificationController::MediaSessionMetadataChanged(
+    const base::Optional<media_session::MediaMetadata>& metadata) {
+  session_metadata_ = metadata.value_or(media_session::MediaMetadata());
+
+  if (view_)
+    view_->UpdateWithMediaMetadata(session_metadata_);
+}
+
+void MediaNotificationController::FlushForTesting() {
+  media_controller_ptr_.FlushForTesting();
+}
+
+void MediaNotificationController::SetView(MediaNotificationView* view) {
+  DCHECK(view_ || view);
+
+  view_ = view;
+
+  if (view) {
+    DCHECK(!session_info_.is_null());
+    view_->UpdateWithMediaSessionInfo(session_info_);
+    view_->UpdateWithMediaMetadata(session_metadata_);
+  }
 }
 
 void MediaNotificationController::OnNotificationClicked(
     base::Optional<int> button_id) {
-  NOTIMPLEMENTED();
+  DCHECK(button_id.has_value());
+
+  switch (static_cast<MediaSessionAction>(*button_id)) {
+    case MediaSessionAction::kPreviousTrack:
+      media_controller_ptr_->PreviousTrack();
+      break;
+    case MediaSessionAction::kSeekBackward:
+      media_controller_ptr_->Seek(kDefaultSeekTime * -1);
+      break;
+    case MediaSessionAction::kPlay:
+      media_controller_ptr_->Resume();
+      break;
+    case MediaSessionAction::kPause:
+      media_controller_ptr_->Suspend();
+      break;
+    case MediaSessionAction::kSeekForward:
+      media_controller_ptr_->Seek(kDefaultSeekTime);
+      break;
+    case MediaSessionAction::kNextTrack:
+      media_controller_ptr_->NextTrack();
+      break;
+  }
 }
 
 }  // namespace ash

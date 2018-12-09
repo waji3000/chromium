@@ -30,9 +30,14 @@ class MODULES_EXPORT PaintRenderingContext2D : public ScriptWrappable,
       const CanvasColorParams& color_params,
       const PaintRenderingContext2DSettings* context_settings,
       float zoom) {
-    return new PaintRenderingContext2D(container_size, color_params,
-                                       context_settings, zoom);
+    return MakeGarbageCollected<PaintRenderingContext2D>(
+        container_size, color_params, context_settings, zoom);
   }
+
+  PaintRenderingContext2D(const IntSize& container_size,
+                          const CanvasColorParams&,
+                          const PaintRenderingContext2DSettings*,
+                          float zoom);
 
   void Trace(blink::Visitor* visitor) override {
     visitor->Trace(context_settings_);
@@ -44,9 +49,7 @@ class MODULES_EXPORT PaintRenderingContext2D : public ScriptWrappable,
   // is always clean, and unable to taint it.
   bool OriginClean() const final { return true; }
   void SetOriginTainted() final {}
-  bool WouldTaintOrigin(CanvasImageSource*, ExecutionContext*) final {
-    return false;
-  }
+  bool WouldTaintOrigin(CanvasImageSource*) final { return false; }
 
   int Width() const final;
   int Height() const final;
@@ -91,11 +94,6 @@ class MODULES_EXPORT PaintRenderingContext2D : public ScriptWrappable,
   void WillOverwriteCanvas() override;
 
  private:
-  PaintRenderingContext2D(const IntSize& container_size,
-                          const CanvasColorParams&,
-                          const PaintRenderingContext2DSettings*,
-                          float zoom);
-
   void InitializePaintRecorder();
   cc::PaintCanvas* Canvas() const;
 

@@ -46,6 +46,7 @@ CompositorFrameSinkSupport::~CompositorFrameSinkSupport() {
   // BeginFrameSource does not call into |this| after it's deleted.
   callback_received_begin_frame_ = true;
   callback_received_receive_ack_ = true;
+  presentation_feedbacks_.clear();
   SetNeedsBeginFrame(false);
 
   // For display root surfaces the surface is no longer going to be visible.
@@ -71,6 +72,7 @@ CompositorFrameSinkSupport::~CompositorFrameSinkSupport() {
   // No video capture clients should remain after calling
   // UnregisterCompositorFrameSinkSupport().
   DCHECK(capture_clients_.empty());
+  DCHECK(!added_frame_observer_);
 }
 
 void CompositorFrameSinkSupport::SetUpHitTest(
@@ -225,6 +227,7 @@ CompositorFrameSinkSupport::TakeCopyOutputRequests(
 void CompositorFrameSinkSupport::EvictSurface(const LocalSurfaceId& id) {
   DCHECK_GE(id.parent_sequence_number(), last_evicted_parent_sequence_number_);
   last_evicted_parent_sequence_number_ = id.parent_sequence_number();
+  surface_manager_->DropTemporaryReference(SurfaceId(frame_sink_id_, id));
   MaybeEvictSurfaces();
 }
 
@@ -451,15 +454,16 @@ SubmitResult CompositorFrameSinkSupport::MaybeSubmitCompositorFrameInternal(
         child_initiated_synchronization_event &&
         !last_surface_has_dependent_frame;
 
-    current_surface = CreateSurface(surface_info, block_activation_on_parent);
-    last_created_surface_id_ = SurfaceId(frame_sink_id_, local_surface_id);
-    MaybeEvictSurfaces();
-    // If the surface was immediately evicted, don't accept the CompositorFrame.
-    if (!last_created_surface_id_.is_valid()) {
+    // Don't recreate a surface that was previously evicted. Drop the
+    // CompositorFrame and return all its resources.
+    if (local_surface_id.parent_sequence_number() <=
+        last_evicted_parent_sequence_number_) {
       TRACE_EVENT_INSTANT0("viz", "Submit rejected to evicted surface",
                            TRACE_EVENT_SCOPE_THREAD);
       return SubmitResult::ACCEPTED;
     }
+    current_surface = CreateSurface(surface_info, block_activation_on_parent);
+    last_created_surface_id_ = SurfaceId(frame_sink_id_, local_surface_id);
 
     if (!current_surface) {
       TRACE_EVENT_INSTANT0("viz", "Surface Invariants Violation",
@@ -538,9 +542,9 @@ void CompositorFrameSinkSupport::DidPresentCompositorFrame(
     uint32_t presentation_token,
     const gfx::PresentationFeedback& feedback) {
   DCHECK(presentation_token);
-  if (client_) {
-    client_->DidPresentCompositorFrame(presentation_token, feedback);
-  }
+  DCHECK(!presentation_feedbacks_.count(presentation_token));
+  presentation_feedbacks_.emplace(presentation_token, feedback);
+  UpdateNeedsBeginFramesInternal();
 }
 
 void CompositorFrameSinkSupport::DidRejectCompositorFrame(
@@ -583,14 +587,16 @@ void CompositorFrameSinkSupport::OnBeginFrame(const BeginFrameArgs& args) {
     HandleCallback();
   }
 
-  if (client_ && client_needs_begin_frame_) {
+  if (client_ &&
+      (client_needs_begin_frame_ || !presentation_feedbacks_.empty())) {
     BeginFrameArgs copy_args = args;
     copy_args.trace_id = ComputeTraceId();
     TRACE_EVENT_WITH_FLOW1("viz,benchmark", "Graphics.Pipeline",
                            TRACE_ID_GLOBAL(copy_args.trace_id),
                            TRACE_EVENT_FLAG_FLOW_OUT, "step",
                            "IssueBeginFrame");
-    client_->OnBeginFrame(copy_args);
+    client_->OnBeginFrame(copy_args, std::move(presentation_feedbacks_));
+    presentation_feedbacks_.clear();
   }
 }
 
@@ -609,9 +615,9 @@ void CompositorFrameSinkSupport::UpdateNeedsBeginFramesInternal() {
     return;
 
   // We require a begin frame if there's a callback pending, or if the client
-  // requested it.
+  // requested it, or if the client needs to get some presentation feedbacks.
   bool needs_begin_frame =
-      client_needs_begin_frame_ ||
+      client_needs_begin_frame_ || !presentation_feedbacks_.empty() ||
       (compositor_frame_callback_ && !callback_received_begin_frame_);
 
   if (needs_begin_frame == added_frame_observer_)

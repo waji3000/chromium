@@ -74,11 +74,10 @@ void TriggerManager::set_trigger_throttler(TriggerThrottler* throttler) {
 // static
 SBErrorOptions TriggerManager::GetSBErrorDisplayOptions(
     const PrefService& pref_service,
-    const content::WebContents& web_contents) {
+    content::WebContents* web_contents) {
   return SBErrorOptions(/*is_main_frame_load_blocked=*/false,
                         IsExtendedReportingOptInAllowed(pref_service),
-                        web_contents.GetBrowserContext()->IsOffTheRecord(),
-                        /*is_unified_consent_enabled=*/false,
+                        web_contents->GetBrowserContext()->IsOffTheRecord(),
                         IsExtendedReportingEnabled(pref_service),
                         IsExtendedReportingPolicyManaged(pref_service),
                         /*is_proceed_anyway_disabled=*/false,
@@ -244,5 +243,7 @@ void TriggerManagerWebContentsHelper::CreateForWebContents(
 void TriggerManagerWebContentsHelper::WebContentsDestroyed() {
   trigger_manager_->WebContentsDestroyed(web_contents());
 }
+
+WEB_CONTENTS_USER_DATA_KEY_IMPL(TriggerManagerWebContentsHelper)
 
 }  // namespace safe_browsing

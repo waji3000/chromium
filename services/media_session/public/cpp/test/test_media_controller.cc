@@ -17,8 +17,20 @@ mojom::MediaControllerPtr TestMediaController::CreateMediaControllerPtr() {
   return ptr;
 }
 
+void TestMediaController::Suspend() {
+  ++suspend_count_;
+}
+
+void TestMediaController::Resume() {
+  ++resume_count_;
+}
+
 void TestMediaController::ToggleSuspendResume() {
   ++toggle_suspend_resume_count_;
+}
+
+void TestMediaController::AddObserver(mojom::MediaSessionObserverPtr observer) {
+  ++add_observer_count_;
 }
 
 void TestMediaController::PreviousTrack() {
@@ -27,6 +39,16 @@ void TestMediaController::PreviousTrack() {
 
 void TestMediaController::NextTrack() {
   ++next_track_count_;
+}
+
+void TestMediaController::Seek(base::TimeDelta seek_time) {
+  DCHECK(!seek_time.is_zero());
+
+  if (seek_time > base::TimeDelta()) {
+    ++seek_forward_count_;
+  } else if (seek_time < base::TimeDelta()) {
+    ++seek_backward_count_;
+  }
 }
 
 }  // namespace test

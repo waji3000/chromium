@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/buildflag_header.gni")
 import("//build/config/ui.gni")
 import("//chromecast/chromecast.gni")
 import("//media/media_options.gni")
@@ -11,6 +12,11 @@ import("//tools/grit/grit_rule.gni")
 
 if (is_android) {
   import("//build/config/android/rules.gni")
+}
+
+buildflag_header("browser_buildflags") {
+  header = "browser_buildflags.h"
+  flags = [ "ENABLE_CAST_AUDIO_MANAGER_MIXER=$enable_cast_audio_manager_mixer" ]
 }
 
 cast_source_set("browser") {
@@ -33,6 +39,8 @@ cast_source_set("browser") {
     "cast_content_gesture_handler.h",
     "cast_download_manager_delegate.cc",
     "cast_download_manager_delegate.h",
+    "cast_feature_list_creator.cc",
+    "cast_feature_list_creator.h",
     "cast_http_user_agent_settings.cc",
     "cast_http_user_agent_settings.h",
     "cast_media_blocker.cc",
@@ -51,6 +59,8 @@ cast_source_set("browser") {
     "cast_quota_permission_context.h",
     "cast_resource_dispatcher_host_delegate.cc",
     "cast_resource_dispatcher_host_delegate.h",
+    "cast_session_id_map.cc",
+    "cast_session_id_map.h",
     "cast_web_contents_impl.cc",
     "cast_web_contents_impl.h",
     "cast_web_contents_manager.cc",
@@ -110,6 +120,7 @@ cast_source_set("browser") {
   ]
 
   deps = [
+    ":browser_buildflags",
     "//base",
     "//base:i18n",
     "//cc",
@@ -259,6 +270,8 @@ cast_source_set("browser") {
       "extensions/api/identity/identity_api.h",
       "extensions/api/notifications/notifications_api.cc",
       "extensions/api/notifications/notifications_api.h",
+      "extensions/api/settings_private/settings_private_api.cc",
+      "extensions/api/settings_private/settings_private_api.h",
       "extensions/api/tabs/tabs_api.cc",
       "extensions/api/tabs/tabs_api.h",
       "extensions/api/tabs/tabs_constants.cc",
@@ -324,6 +337,20 @@ cast_source_set("browser") {
       "//ui/events:gesture_detection",
       "//ui/views:views",
       "//ui/wm/public:public",
+    ]
+  }
+
+  if (enable_cast_wayland_server) {
+    sources += [
+      "exo/wayland_server_controller.cc",
+      "exo/wayland_server_controller.h",
+      "exo/wm_helper_cast_shell.cc",
+      "exo/wm_helper_cast_shell.h",
+    ]
+    deps += [
+      "//components/exo",
+      "//components/exo/wayland",
+      "//ui/display/manager",
     ]
   }
 
@@ -482,7 +509,7 @@ cast_source_set("unittests") {
     "bluetooth/cast_bluetooth_chooser_unittest.cc",
     "cast_media_blocker_unittest.cc",
     "cast_network_delegate_unittest.cc",
-    "cast_touch_device_manager_unittest.cc",
+    "cast_session_id_map_unittest.cc",
     "devtools/cast_devtools_manager_delegate_unittest.cc",
     "lru_renderer_cache_test.cc",
     "network_context_manager_unittest.cc",
@@ -499,6 +526,10 @@ cast_source_set("unittests") {
     "//ui/events/devices:devices",
     "//ui/gl:test_support",
   ]
+
+  if (!is_android) {
+    sources += [ "cast_touch_device_manager_unittest.cc" ]
+  }
 
   if (enable_chromecast_extensions && use_aura) {
     sources += [ "accessibility/touch_exploration_controller_unittest.cc" ]
@@ -518,10 +549,16 @@ if (is_android) {
       "android/apk/src/org/chromium/chromecast/shell/CastSysInfoAndroid.java",
     ]
 
-    if (is_android_things_non_public) {
+    if (is_android_things_non_public && !build_for_android_things_n) {
       sources += [ "android/apk/src/org/chromium/chromecast/shell/CastSysInfoAndroidThings.java" ]
     }
 
     jni_package = "chromecast"
+  }
+
+  java_cpp_enum("java_enums") {
+    sources = [
+      "cast_content_window.h",
+    ]
   }
 }

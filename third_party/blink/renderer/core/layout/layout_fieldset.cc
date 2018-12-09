@@ -23,7 +23,7 @@
 
 #include "third_party/blink/renderer/core/layout/layout_fieldset.h"
 
-#include "third_party/blink/renderer/core/css_property_names.h"
+#include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/html/forms/html_legend_element.h"
 #include "third_party/blink/renderer/core/paint/fieldset_painter.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
@@ -62,9 +62,10 @@ LayoutObject* LayoutFieldset::LayoutSpecialExcludedChild(bool relayout_children,
   if (legend) {
     LayoutRect old_legend_frame_rect = legend->FrameRect();
 
-    if (relayout_children)
+    if (relayout_children) {
       legend->SetNeedsLayoutAndFullPaintInvalidation(
-          LayoutInvalidationReason::kFieldsetChanged);
+          layout_invalidation_reason::kFieldsetChanged);
+    }
     legend->LayoutIfNeeded();
 
     LayoutUnit logical_left;

@@ -15,6 +15,7 @@
 #include "base/containers/span.h"
 #include "base/macros.h"
 #include "base/optional.h"
+#include "device/fido/fido_constants.h"
 #include "device/fido/public_key_credential_descriptor.h"
 #include "device/fido/public_key_credential_params.h"
 #include "device/fido/public_key_credential_rp_entity.h"
@@ -45,9 +46,11 @@ class COMPONENT_EXPORT(DEVICE_FIDO) CtapMakeCredentialRequest {
   // https://drafts.fidoalliance.org/fido-2/latest/fido-client-to-authenticator-protocol-v2.0-wd-20180305.html#authenticatorMakeCredential
   std::vector<uint8_t> EncodeAsCBOR() const;
 
-  CtapMakeCredentialRequest& SetUserVerificationRequired(
-      bool user_verfication_required);
-  CtapMakeCredentialRequest& SetResidentKeySupported(bool resident_key);
+  CtapMakeCredentialRequest& SetAuthenticatorAttachment(
+      AuthenticatorAttachment authenticator_attachment);
+  CtapMakeCredentialRequest& SetUserVerification(
+      UserVerificationRequirement user_verification);
+  CtapMakeCredentialRequest& SetResidentKeyRequired(bool resident_key);
   CtapMakeCredentialRequest& SetExcludeList(
       std::vector<PublicKeyCredentialDescriptor> exclude_list);
   CtapMakeCredentialRequest& SetPinAuth(std::vector<uint8_t> pin_auth);
@@ -65,10 +68,13 @@ class COMPONENT_EXPORT(DEVICE_FIDO) CtapMakeCredentialRequest {
   const PublicKeyCredentialParams& public_key_credential_params() const {
     return public_key_credential_params_;
   }
-  bool user_verification_required() const {
-    return user_verification_required_;
+  UserVerificationRequirement user_verification() const {
+    return user_verification_;
   }
-  bool resident_key_supported() const { return resident_key_supported_; }
+  AuthenticatorAttachment authenticator_attachment() const {
+    return authenticator_attachment_;
+  }
+  bool resident_key_required() const { return resident_key_required_; }
   bool is_individual_attestation() const { return is_individual_attestation_; }
   bool hmac_secret() const { return hmac_secret_; }
   const base::Optional<std::vector<PublicKeyCredentialDescriptor>>&
@@ -79,18 +85,34 @@ class COMPONENT_EXPORT(DEVICE_FIDO) CtapMakeCredentialRequest {
     return pin_auth_;
   }
 
+  void set_is_u2f_only(bool is_u2f_only) { is_u2f_only_ = is_u2f_only; }
+  bool is_u2f_only() { return is_u2f_only_; }
+
+  bool is_incognito_mode() const { return is_incognito_mode_; }
+  void set_is_incognito_mode(bool is_incognito_mode) {
+    is_incognito_mode_ = is_incognito_mode;
+  }
+
  private:
   std::string client_data_json_;
   std::array<uint8_t, kClientDataHashLength> client_data_hash_;
   PublicKeyCredentialRpEntity rp_;
   PublicKeyCredentialUserEntity user_;
   PublicKeyCredentialParams public_key_credential_params_;
-  bool user_verification_required_ = false;
-  bool resident_key_supported_ = false;
+  UserVerificationRequirement user_verification_ =
+      UserVerificationRequirement::kPreferred;
+  AuthenticatorAttachment authenticator_attachment_ =
+      AuthenticatorAttachment::kAny;
+  bool resident_key_required_ = false;
   bool is_individual_attestation_ = false;
   // hmac_secret_ indicates whether the "hmac-secret" extension should be
   // asserted to CTAP2 authenticators.
   bool hmac_secret_ = false;
+
+  // If true, instruct the request handler only to dispatch this request via
+  // U2F.
+  bool is_u2f_only_ = false;
+  bool is_incognito_mode_ = false;
 
   base::Optional<std::vector<PublicKeyCredentialDescriptor>> exclude_list_;
   base::Optional<std::vector<uint8_t>> pin_auth_;

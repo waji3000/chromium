@@ -10,20 +10,22 @@
 
 namespace data_reduction_proxy {
 
+class DataReductionProxyThrottleManager;
+
 // Handles Data Reduction Proxy logic that needs to be applied to each request.
 //
 // This includes:
 //   * Setting request headers for the data reduction proxy.
 //   * Processing response headers from a data reduction proxy.
-//   * Restarting the URL loader in order to use a different
-//     proxy.
-//   * Marking data reduction proxies to be bypassed for future
-//     requests.
+//   * Restarting the URL loader in order to use a different proxy.
+//   * Marking data reduction proxies to be bypassed for future requests.
 class DataReductionProxyURLLoaderThrottle : public content::URLLoaderThrottle {
  public:
+  // |manager| is shared between all the DRP Throttles and used to access shared
+  // state such as the current DRP configuration.
   DataReductionProxyURLLoaderThrottle(
       const net::HttpRequestHeaders& post_cache_headers,
-      mojom::DataReductionProxy* data_reduction_proxy);
+      DataReductionProxyThrottleManager* manager);
   ~DataReductionProxyURLLoaderThrottle() override;
 
   // content::URLLoaderThrottle:
@@ -31,7 +33,7 @@ class DataReductionProxyURLLoaderThrottle : public content::URLLoaderThrottle {
   void WillStartRequest(network::ResourceRequest* request,
                         bool* defer) override;
   void WillRedirectRequest(
-      const net::RedirectInfo& redirect_info,
+      net::RedirectInfo* redirect_info,
       const network::ResourceResponseHead& response_head,
       bool* defer,
       std::vector<std::string>* to_be_removed_request_headers,
@@ -40,13 +42,15 @@ class DataReductionProxyURLLoaderThrottle : public content::URLLoaderThrottle {
       const GURL& response_url,
       const network::ResourceResponseHead& response_head,
       bool* defer) override;
+  void WillProcessResponse(const GURL& response_url,
+                           network::ResourceResponseHead* response_head,
+                           bool* defer) override;
 
  private:
   // Marks |bad_proxies| to be bypassed for |bypass_duration|. Once that action
   // has completed will call OnMarkProxiesAsBadComplete().
   void MarkProxiesAsBad(const std::vector<net::ProxyServer>& bad_proxies,
-                        base::TimeDelta bypass_duration,
-                        bool bypass_all);
+                        base::TimeDelta bypass_duration);
   void OnMarkProxiesAsBadComplete();
 
   // Tells |delegate_| to restart the URL loader if |pending_restart_| was set.
@@ -59,10 +63,7 @@ class DataReductionProxyURLLoaderThrottle : public content::URLLoaderThrottle {
   std::vector<GURL> url_chain_;
   std::string request_method_;
 
-  // Shared controller for the Data Reduction Proxy. When the throttle is
-  // running in the renderer process, this is a channel for sending commands to
-  // browser process.
-  mojom::DataReductionProxy* data_reduction_proxy_ = nullptr;
+  DataReductionProxyThrottleManager* manager_ = nullptr;
 
   // |pending_restart_| is set to true if the URL loader needs to be restarted
   // using |pending_restart_load_flags_|.
@@ -71,6 +72,12 @@ class DataReductionProxyURLLoaderThrottle : public content::URLLoaderThrottle {
 
   // Set to true while waiting for OnMarkProxiesAsBadComplete to run.
   bool waiting_for_mark_proxies_ = false;
+
+  // Whether this throttle is intercepting a main frame request.
+  bool is_main_frame_ = false;
+
+  // The final load flags used to complete the request.
+  int final_load_flags_ = 0;
 };
 
 }  // namespace data_reduction_proxy

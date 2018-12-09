@@ -16,14 +16,11 @@
 #include "build/build_config.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/video_types.h"
+#include "media/gpu/macros.h"
 #include "media/gpu/v4l2/generic_v4l2_device.h"
 #if defined(ARCH_CPU_ARMEL)
 #include "media/gpu/v4l2/tegra_v4l2_device.h"
 #endif
-
-#define DVLOGF(level) DVLOG(level) << __func__ << "(): "
-#define VLOGF(level) VLOG(level) << __func__ << "(): "
-#define VPLOGF(level) VPLOG(level) << __func__ << "(): "
 
 namespace media {
 
@@ -847,7 +844,7 @@ VideoPixelFormat V4L2Device::V4L2PixFmtToVideoPixelFormat(uint32_t pix_fmt) {
     case V4L2_PIX_FMT_NV12M:
       return PIXEL_FORMAT_NV12;
 
-    case V4L2_PIX_FMT_MT21:
+    case V4L2_PIX_FMT_MT21C:
       return PIXEL_FORMAT_MT21;
 
     case V4L2_PIX_FMT_YUV420:
@@ -855,6 +852,7 @@ VideoPixelFormat V4L2Device::V4L2PixFmtToVideoPixelFormat(uint32_t pix_fmt) {
       return PIXEL_FORMAT_I420;
 
     case V4L2_PIX_FMT_YVU420:
+    case V4L2_PIX_FMT_YVU420M:
       return PIXEL_FORMAT_YV12;
 
     case V4L2_PIX_FMT_YUV422M:
@@ -870,24 +868,33 @@ VideoPixelFormat V4L2Device::V4L2PixFmtToVideoPixelFormat(uint32_t pix_fmt) {
 }
 
 // static
-uint32_t V4L2Device::VideoPixelFormatToV4L2PixFmt(VideoPixelFormat format) {
+uint32_t V4L2Device::VideoPixelFormatToV4L2PixFmt(const VideoPixelFormat format,
+                                                  bool single_planar) {
   switch (format) {
     case PIXEL_FORMAT_NV12:
-      return V4L2_PIX_FMT_NV12M;
-
+      return single_planar ? V4L2_PIX_FMT_NV12 : V4L2_PIX_FMT_NV12M;
     case PIXEL_FORMAT_MT21:
-      return V4L2_PIX_FMT_MT21;
-
+      // No single plane format for MT21.
+      return single_planar ? 0 : V4L2_PIX_FMT_MT21C;
     case PIXEL_FORMAT_I420:
-      return V4L2_PIX_FMT_YUV420M;
-
+      return single_planar ? V4L2_PIX_FMT_YUV420 : V4L2_PIX_FMT_YUV420M;
     case PIXEL_FORMAT_YV12:
-      return V4L2_PIX_FMT_YVU420;
-
+      return single_planar ? V4L2_PIX_FMT_YVU420 : V4L2_PIX_FMT_YVU420M;
     default:
       LOG(FATAL) << "Add more cases as needed";
       return 0;
   }
+}
+
+// static
+uint32_t V4L2Device::VideoFrameLayoutToV4L2PixFmt(
+    const VideoFrameLayout& layout) {
+  if (layout.num_buffers() == 0) {
+    VLOGF(1) << "layout.num_buffers() must be more than 0: " << layout;
+    return 0;
+  }
+  return VideoPixelFormatToV4L2PixFmt(layout.format(),
+                                      layout.num_buffers() == 1);
 }
 
 // static
@@ -1014,7 +1021,7 @@ uint32_t V4L2Device::V4L2PixFmtToDrmFormat(uint32_t format) {
     case V4L2_PIX_FMT_RGB32:
       return DRM_FORMAT_ARGB8888;
 
-    case V4L2_PIX_FMT_MT21:
+    case V4L2_PIX_FMT_MT21C:
       return DRM_FORMAT_MT21;
 
     default:
@@ -1288,9 +1295,26 @@ base::Optional<VideoFrameLayout> V4L2Device::V4L2FormatToVideoFrameLayout(
         return base::nullopt;
     }
   }
+
+  // Some V4L2 devices expect buffers to be page-aligned. We cannot detect
+  // such devices individually, so set this as a video frame layout property.
+  constexpr size_t buffer_alignment = 0x1000;
+
   return VideoFrameLayout::CreateWithPlanes(
       video_format, gfx::Size(pix_mp.width, pix_mp.height), std::move(planes),
-      std::move(buffer_sizes));
+      std::move(buffer_sizes), buffer_alignment);
+}
+
+// static
+bool V4L2Device::IsMultiPlanarV4L2PixFmt(uint32_t pix_fmt) {
+  constexpr uint32_t kMultiV4L2PixFmts[] = {
+      V4L2_PIX_FMT_NV12M,
+      V4L2_PIX_FMT_MT21C,
+      V4L2_PIX_FMT_YUV420M,
+      V4L2_PIX_FMT_YVU420M,
+  };
+  return std::find(std::cbegin(kMultiV4L2PixFmts), std::cend(kMultiV4L2PixFmts),
+                   pix_fmt) != std::cend(kMultiV4L2PixFmts);
 }
 
 void V4L2Device::GetSupportedResolution(uint32_t pixelformat,

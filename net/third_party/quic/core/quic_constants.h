@@ -45,6 +45,9 @@ const QuicByteCount kMaxGsoPacketSize = 65535 - 40 - 8;
 // Used in QUIC for congestion window computations in bytes.
 const QuicByteCount kDefaultTCPMSS = 1460;
 const QuicByteCount kMaxSegmentSize = kDefaultTCPMSS;
+// The minimum size of a packet which can elicit a version negotiation packet,
+// as per section 8.1 of the QUIC spec.
+const QuicByteCount kMinPacketSizeForVersionNegotiation = 1200;
 
 // We match SPDY's use of 32 (since we'd compete with SPDY).
 const QuicPacketCount kInitialCongestionWindow = 32;
@@ -81,15 +84,9 @@ const size_t kDefaultMaxStreamsPerConnection = 100;
 const size_t kPublicFlagsSize = 1;
 // Number of bytes reserved for version number in the packet header.
 const size_t kQuicVersionSize = 4;
-// Number of bytes reserved for path id in the packet header.
-const size_t kQuicPathIdSize = 1;
-// Number of bytes reserved for private flags in the packet header.
-const size_t kPrivateFlagsSize = 1;
 
 // Signifies that the QuicPacket will contain version of the protocol.
 const bool kIncludeVersion = true;
-// Signifies that the QuicPacket will contain path id.
-const bool kIncludePathId = true;
 // Signifies that the QuicPacket will include a diversification nonce.
 const bool kIncludeDiversificationNonce = true;
 
@@ -206,6 +203,7 @@ const QuicByteCount kMaxStreamLength = (UINT64_C(1) << 62) - 1;
 const uint64_t kMaxIetfVarInt = UINT64_C(0x3fffffffffffffff);
 
 // The maximum stream id value that is supported - (2^32)-1
+// TODO(fkastenholz): Should update this to 64 bits for IETF Quic.
 const QuicStreamId kMaxQuicStreamId = 0xffffffff;
 
 // Number of bytes reserved for packet header type.

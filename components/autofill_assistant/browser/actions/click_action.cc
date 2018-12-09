@@ -22,8 +22,8 @@ ClickAction::~ClickAction() {}
 void ClickAction::InternalProcessAction(ActionDelegate* delegate,
                                         ProcessActionCallback callback) {
   DCHECK_GT(proto_.click().element_to_click().selectors_size(), 0);
-  delegate->WaitForElement(
-      ExtractSelectors(proto_.click().element_to_click().selectors()),
+  delegate->ShortWaitForElementExist(
+      Selector(proto_.click().element_to_click()),
       base::BindOnce(&ClickAction::OnWaitForElement,
                      weak_ptr_factory_.GetWeakPtr(), base::Unretained(delegate),
                      std::move(callback)));
@@ -38,8 +38,8 @@ void ClickAction::OnWaitForElement(ActionDelegate* delegate,
     return;
   }
 
-  delegate->ClickElement(
-      ExtractSelectors(proto_.click().element_to_click().selectors()),
+  delegate->ClickOrTapElement(
+      Selector(proto_.click().element_to_click()),
       base::BindOnce(&::autofill_assistant::ClickAction::OnClick,
                      weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
 }

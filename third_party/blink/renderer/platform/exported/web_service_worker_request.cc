@@ -4,6 +4,7 @@
 
 #include "third_party/blink/public/platform/modules/service_worker/web_service_worker_request.h"
 
+#include "base/unguessable_token.h"
 #include "third_party/blink/public/platform/web_http_body.h"
 #include "third_party/blink/public/platform/web_http_header_visitor.h"
 #include "third_party/blink/public/platform/web_string.h"
@@ -25,7 +26,7 @@ class WebServiceWorkerRequestPrivate
   scoped_refptr<BlobDataHandle> blob_data_handle;
   Referrer referrer_;
   network::mojom::FetchRequestMode mode_ =
-      network::mojom::FetchRequestMode::kNoCORS;
+      network::mojom::FetchRequestMode::kNoCors;
   bool is_main_resource_load_ = false;
   network::mojom::FetchCredentialsMode credentials_mode_ =
       network::mojom::FetchCredentialsMode::kOmit;
@@ -42,6 +43,7 @@ class WebServiceWorkerRequestPrivate
   WebString client_id_;
   bool is_reload_ = false;
   bool is_history_navigation_ = false;
+  base::UnguessableToken window_id_;
 };
 
 WebServiceWorkerRequest::WebServiceWorkerRequest()
@@ -153,8 +155,7 @@ void WebServiceWorkerRequest::SetReferrer(
   DCHECK_EQ(Referrer::NoReferrer(), String());
   String referrer =
       web_referrer.IsEmpty() ? Referrer::NoReferrer() : String(web_referrer);
-  private_->referrer_ =
-      Referrer(referrer, static_cast<ReferrerPolicy>(referrer_policy));
+  private_->referrer_ = Referrer(referrer, referrer_policy);
 }
 
 WebURL WebServiceWorkerRequest::ReferrerUrl() const {
@@ -163,8 +164,7 @@ WebURL WebServiceWorkerRequest::ReferrerUrl() const {
 
 network::mojom::ReferrerPolicy WebServiceWorkerRequest::GetReferrerPolicy()
     const {
-  return static_cast<network::mojom::ReferrerPolicy>(
-      private_->referrer_.referrer_policy);
+  return private_->referrer_.referrer_policy;
 }
 
 const Referrer& WebServiceWorkerRequest::GetReferrer() const {
@@ -269,6 +269,14 @@ void WebServiceWorkerRequest::SetIsHistoryNavigation(bool b) {
 
 bool WebServiceWorkerRequest::IsHistoryNavigation() const {
   return private_->is_history_navigation_;
+}
+
+void WebServiceWorkerRequest::SetWindowId(const base::UnguessableToken& id) {
+  private_->window_id_ = id;
+}
+
+const base::UnguessableToken& WebServiceWorkerRequest::GetWindowId() const {
+  return private_->window_id_;
 }
 
 }  // namespace blink

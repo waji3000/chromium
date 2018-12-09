@@ -24,8 +24,8 @@
 #include "ui/events/devices/input_device_manager.h"
 #include "ui/events/devices/touchscreen_device.h"
 #include "ui/keyboard/keyboard_controller.h"
-#include "ui/keyboard/keyboard_switches.h"
 #include "ui/keyboard/keyboard_util.h"
+#include "ui/keyboard/public/keyboard_switches.h"
 
 namespace ash {
 namespace {
@@ -103,9 +103,10 @@ VirtualKeyboardController::VirtualKeyboardController()
 
   keyboard::KeyboardController::Get()->AddObserver(this);
 
-  bluetooth_devices_observer_ = std::make_unique<BluetoothDevicesObserver>(
-      base::BindRepeating(&VirtualKeyboardController::UpdateBluetoothDevice,
-                          base::Unretained(this)));
+  bluetooth_devices_observer_ =
+      std::make_unique<BluetoothDevicesObserver>(base::BindRepeating(
+          &VirtualKeyboardController::OnBluetoothAdapterOrDeviceChanged,
+          base::Unretained(this)));
 }
 
 VirtualKeyboardController::~VirtualKeyboardController() {
@@ -301,16 +302,15 @@ void VirtualKeyboardController::OnActiveUserSessionChanged(
     Shell::Get()->EnableKeyboard();
 }
 
-void VirtualKeyboardController::UpdateBluetoothDevice(
+void VirtualKeyboardController::OnBluetoothAdapterOrDeviceChanged(
     device::BluetoothDevice* device) {
   // We only care about keyboard type bluetooth device change.
-  if (device->GetDeviceType() != device::BluetoothDeviceType::KEYBOARD &&
-      device->GetDeviceType() !=
+  if (!device ||
+      device->GetDeviceType() == device::BluetoothDeviceType::KEYBOARD ||
+      device->GetDeviceType() ==
           device::BluetoothDeviceType::KEYBOARD_MOUSE_COMBO) {
-    return;
+    UpdateDevices();
   }
-
-  UpdateDevices();
 }
 
 }  // namespace ash

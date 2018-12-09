@@ -8,6 +8,8 @@ source_set("cpp") {
     "access_token_fetcher.h",
     "access_token_info.cc",
     "access_token_info.h",
+    "accounts_mutator.cc",
+    "accounts_mutator.h",
     "identity_manager.cc",
     "identity_manager.h",
     "primary_account_access_token_fetcher.cc",
@@ -25,8 +27,10 @@ source_set("cpp") {
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
 
   public_deps = [
-    "//components/signin/core/browser",
+    "//components/signin/core/browser:internals",
+    "//components/signin/core/browser:shared",
     "//services/identity/public/cpp:cpp_types",
+    "//services/network/public/cpp",
   ]
 }
 
@@ -58,7 +62,22 @@ source_set("test_support") {
   ]
 
   deps = [
-    "//components/signin/core/browser:test_support",
+    "//components/signin/core/browser:internals_test_support",
     "//components/sync_preferences:test_support",
+  ]
+}
+
+source_set("tests") {
+  testonly = true
+  sources = [
+    "primary_account_mutator_unittest.cc",
+  ]
+
+  deps = [
+    ":cpp",
+    ":test_support",
+    "//base",
+    "//base/test:test_support",
+    "//testing/gtest",
   ]
 }

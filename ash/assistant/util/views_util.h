@@ -19,6 +19,9 @@ class ImageButton;
 }  // namespace views
 
 namespace ash {
+
+enum class AssistantButtonId;
+
 namespace assistant {
 namespace util {
 
@@ -28,7 +31,8 @@ views::ImageButton* CreateImageButton(views::ButtonListener* listener,
                                       int size_in_dip,
                                       int icon_size_in_dip,
                                       int accessible_name_id,
-                                      SkColor icon_color = gfx::kGoogleGrey600);
+                                      AssistantButtonId button_id,
+                                      SkColor icon_color = gfx::kGoogleGrey700);
 
 }  // namespace util
 }  // namespace assistant

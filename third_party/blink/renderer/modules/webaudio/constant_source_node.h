@@ -27,7 +27,7 @@ class ConstantSourceHandler final : public AudioScheduledSourceHandler {
   ~ConstantSourceHandler() override;
 
   // AudioHandler
-  void Process(size_t frames_to_process) override;
+  void Process(uint32_t frames_to_process) override;
 
  private:
   ConstantSourceHandler(AudioNode&,
@@ -49,12 +49,13 @@ class ConstantSourceNode final : public AudioScheduledSourceNode {
   static ConstantSourceNode* Create(BaseAudioContext*,
                                     const ConstantSourceOptions*,
                                     ExceptionState&);
+
+  ConstantSourceNode(BaseAudioContext&);
   void Trace(blink::Visitor*) override;
 
   AudioParam* offset();
 
  private:
-  ConstantSourceNode(BaseAudioContext&);
   ConstantSourceHandler& GetConstantSourceHandler() const;
 
   Member<AudioParam> offset_;

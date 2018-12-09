@@ -256,7 +256,8 @@ void SignedExchangeLoader::OnComplete(
 void SignedExchangeLoader::FollowRedirect(
     const base::Optional<std::vector<std::string>>&
         to_be_removed_request_headers,
-    const base::Optional<net::HttpRequestHeaders>& modified_request_headers) {
+    const base::Optional<net::HttpRequestHeaders>& modified_request_headers,
+    const base::Optional<GURL>& new_url) {
   NOTREACHED();
 }
 
@@ -346,6 +347,8 @@ void SignedExchangeLoader::OnHTTPExchangeFound(
         network::mojom::kURLLoadOptionSendSSLInfoWithResponse)) {
     inner_response_head_shown_to_client.ssl_info = base::nullopt;
   }
+  inner_response_head_shown_to_client.was_fetched_via_cache =
+      outer_response_.was_fetched_via_cache;
   client_->OnReceiveResponse(inner_response_head_shown_to_client);
 
   // Currently we always assume that we have body.

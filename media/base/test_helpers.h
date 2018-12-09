@@ -88,6 +88,9 @@ class TestVideoConfig {
   static VideoDecoderConfig Invalid();
 
   static VideoDecoderConfig Normal(VideoCodec codec = kCodecVP8);
+  static VideoDecoderConfig NormalWithColorSpace(
+      VideoCodec codec,
+      const VideoColorSpace& color_space);
   static VideoDecoderConfig NormalH264(
       VideoCodecProfile = VIDEO_CODEC_PROFILE_UNKNOWN);
   static VideoDecoderConfig NormalCodecProfile(
@@ -203,6 +206,14 @@ MATCHER_P(HasTimestamp, timestamp_in_ms, "") {
 
 MATCHER(IsEndOfStream, "") {
   return arg.get() && arg->end_of_stream();
+}
+
+MATCHER(EosBeforeHaveMetadata, "") {
+  return CONTAINS_STRING(
+      arg,
+      "MediaSource endOfStream before demuxer initialization completes (before "
+      "HAVE_METADATA) is treated as an error. This may also occur as "
+      "consequence of other MediaSource errors before HAVE_METADATA.");
 }
 
 MATCHER_P(SegmentMissingFrames, track_id, "") {

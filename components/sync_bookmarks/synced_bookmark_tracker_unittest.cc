@@ -7,8 +7,10 @@
 #include "base/base64.h"
 #include "base/sha1.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_node.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/bookmarks/test/test_bookmark_client.h"
 #include "components/sync/base/time.h"
 #include "components/sync/base/unique_position.h"
@@ -23,6 +25,18 @@ using testing::NotNull;
 namespace sync_bookmarks {
 
 namespace {
+
+// Redefinition of |enum CorruptionReason| in synced_bookmark_tracker.cc to be
+// used in tests.
+enum class ExpectedCorruptionReason {
+  NO_CORRUPTION = 0,
+  MISSING_SERVER_ID = 1,
+  BOOKMARK_ID_IN_TOMBSTONE = 2,
+  MISSING_BOOKMARK_ID = 3,
+  COUNT_MISMATCH = 4,
+  IDS_MISMATCH = 5,
+  kMaxValue = IDS_MISMATCH
+};
 
 sync_pb::EntitySpecifics GenerateSpecifics(const std::string& title,
                                            const std::string& url) {
@@ -442,8 +456,40 @@ TEST(SyncedBookmarkTrackerTest, ShouldMatchModelAndMetadata) {
   tombstone->mutable_metadata()->set_server_id("tombstoneId");
   tombstone->mutable_metadata()->set_is_deleted(true);
 
+  base::HistogramTester histogram_tester;
   EXPECT_TRUE(SyncedBookmarkTracker::BookmarkModelMatchesMetadata(
       model.get(), model_metadata));
+  histogram_tester.ExpectUniqueSample(
+      "Sync.BookmarksModelMetadataCorruptionReason",
+      /*sample=*/ExpectedCorruptionReason::NO_CORRUPTION, /*count=*/1);
+}
+
+TEST(SyncedBookmarkTrackerTest,
+     ShouldMatchModelAndMetadataEvenIfMissingMobileFolder) {
+  std::unique_ptr<bookmarks::BookmarkModel> model =
+      bookmarks::TestBookmarkClient::CreateModel();
+
+  sync_pb::BookmarkModelMetadata model_metadata;
+  model_metadata.mutable_model_type_state()->set_initial_sync_done(true);
+  // Add entries for all the permanent nodes except for the Mobile bookmarks
+  // folder. This simulates a user who has never signed it to sync on a mobile
+  // device, and hence the Mobile bookmarks folder has never be created on the
+  // server.
+  sync_pb::BookmarkMetadata* bookmark_metadata =
+      model_metadata.add_bookmarks_metadata();
+  bookmark_metadata->set_id(model->bookmark_bar_node()->id());
+  bookmark_metadata->mutable_metadata()->set_server_id("BookmarkBarId");
+
+  bookmark_metadata = model_metadata.add_bookmarks_metadata();
+  bookmark_metadata->set_id(model->other_node()->id());
+  bookmark_metadata->mutable_metadata()->set_server_id("OtherBookmarksId");
+
+  base::HistogramTester histogram_tester;
+  EXPECT_TRUE(SyncedBookmarkTracker::BookmarkModelMatchesMetadata(
+      model.get(), model_metadata));
+  histogram_tester.ExpectUniqueSample(
+      "Sync.BookmarksModelMetadataCorruptionReason",
+      /*sample=*/ExpectedCorruptionReason::NO_CORRUPTION, /*count=*/1);
 }
 
 TEST(SyncedBookmarkTrackerTest, ShouldNotMatchModelAndCorruptedMetadata) {
@@ -459,30 +505,40 @@ TEST(SyncedBookmarkTrackerTest, ShouldNotMatchModelAndCorruptedMetadata) {
   bookmark_metadata->set_id(model->bookmark_bar_node()->id());
   bookmark_metadata->mutable_metadata()->set_server_id("BookmarkBarId");
 
+  base::HistogramTester histogram_tester;
+  // The entry for the Other bookmarks is missing.
+  EXPECT_FALSE(SyncedBookmarkTracker::BookmarkModelMatchesMetadata(
+      model.get(), model_metadata));
+  histogram_tester.ExpectBucketCount(
+      "Sync.BookmarksModelMetadataCorruptionReason",
+      /*sample=*/ExpectedCorruptionReason::COUNT_MISMATCH, /*count=*/1);
+
+  // The entry for the Other bookmarks is missing a server id.
   bookmark_metadata = model_metadata.add_bookmarks_metadata();
   bookmark_metadata->set_id(model->other_node()->id());
-  bookmark_metadata->mutable_metadata()->set_server_id("OtherBookmarksId");
-
-  // The entry for the Mobile bookmarks is missing.
   EXPECT_FALSE(SyncedBookmarkTracker::BookmarkModelMatchesMetadata(
       model.get(), model_metadata));
 
-  // The entry for the Mobile bookmarks is missing a server id.
-  bookmark_metadata = model_metadata.add_bookmarks_metadata();
-  bookmark_metadata->set_id(model->mobile_node()->id());
-  EXPECT_FALSE(SyncedBookmarkTracker::BookmarkModelMatchesMetadata(
-      model.get(), model_metadata));
+  histogram_tester.ExpectBucketCount(
+      "Sync.BookmarksModelMetadataCorruptionReason",
+      /*sample=*/ExpectedCorruptionReason::MISSING_SERVER_ID, /*count=*/1);
 
-  // The entry for the Mobile bookmarks is missing a node id.
+  // The entry for the Other bookmarks is missing a node id.
   bookmark_metadata->clear_id();
   bookmark_metadata->mutable_metadata()->set_server_id("OtherBookmarksId");
   EXPECT_FALSE(SyncedBookmarkTracker::BookmarkModelMatchesMetadata(
       model.get(), model_metadata));
+  histogram_tester.ExpectBucketCount(
+      "Sync.BookmarksModelMetadataCorruptionReason",
+      /*sample=*/ExpectedCorruptionReason::MISSING_BOOKMARK_ID, /*count=*/1);
 
-  // The entry for the Mobile bookmarks is having a wrong node id.
-  bookmark_metadata->set_id(model->mobile_node()->id() + 1);
+  // The entry for the Other bookmarks is having a wrong node id.
+  bookmark_metadata->set_id(model->other_node()->id() + 1000);
   EXPECT_FALSE(SyncedBookmarkTracker::BookmarkModelMatchesMetadata(
       model.get(), model_metadata));
+  histogram_tester.ExpectBucketCount(
+      "Sync.BookmarksModelMetadataCorruptionReason",
+      /*sample=*/ExpectedCorruptionReason::IDS_MISMATCH, /*count=*/1);
 
   // A tombstone shouldn't have a node id.
   sync_pb::BookmarkMetadata* tombstone =
@@ -492,6 +548,52 @@ TEST(SyncedBookmarkTrackerTest, ShouldNotMatchModelAndCorruptedMetadata) {
   tombstone->set_id(10);
   EXPECT_FALSE(SyncedBookmarkTracker::BookmarkModelMatchesMetadata(
       model.get(), model_metadata));
+  histogram_tester.ExpectBucketCount(
+      "Sync.BookmarksModelMetadataCorruptionReason",
+      /*sample=*/ExpectedCorruptionReason::BOOKMARK_ID_IN_TOMBSTONE,
+      /*count=*/1);
+}
+
+TEST(SyncedBookmarkTrackerTest,
+     ShouldMatchModelWithUnsyncableNodesAndMetadata) {
+  // Add a managed node with an arbitrary id 100.
+  const int64_t kManagedNodeId = 100;
+  bookmarks::BookmarkPermanentNodeList extra_nodes;
+  extra_nodes.push_back(
+      std::make_unique<bookmarks::BookmarkPermanentNode>(kManagedNodeId));
+  bookmarks::BookmarkPermanentNode* extra_node = extra_nodes.back().get();
+  auto client = std::make_unique<bookmarks::TestBookmarkClient>();
+  client->SetExtraNodesToLoad(std::move(extra_nodes));
+
+  std::unique_ptr<bookmarks::BookmarkModel> model =
+      bookmarks::TestBookmarkClient::CreateModelWithClient(std::move(client));
+
+  // The model should contain the managed node now.
+  ASSERT_THAT(GetBookmarkNodeByID(model.get(), kManagedNodeId), Eq(extra_node));
+
+  sync_pb::BookmarkModelMetadata model_metadata;
+  model_metadata.mutable_model_type_state()->set_initial_sync_done(true);
+  // Add entries for all the permanent nodes. TestBookmarkClient creates all the
+  // 3 permanent nodes.
+  sync_pb::BookmarkMetadata* bookmark_metadata =
+      model_metadata.add_bookmarks_metadata();
+  bookmark_metadata->set_id(model->bookmark_bar_node()->id());
+  bookmark_metadata->mutable_metadata()->set_server_id("BookmarkBarId");
+
+  bookmark_metadata = model_metadata.add_bookmarks_metadata();
+  bookmark_metadata->set_id(model->other_node()->id());
+  bookmark_metadata->mutable_metadata()->set_server_id("OtherBookmarksId");
+
+  bookmark_metadata = model_metadata.add_bookmarks_metadata();
+  bookmark_metadata->set_id(model->mobile_node()->id());
+  bookmark_metadata->mutable_metadata()->set_server_id("MobileBookmarksId");
+
+  base::HistogramTester histogram_tester;
+  EXPECT_TRUE(SyncedBookmarkTracker::BookmarkModelMatchesMetadata(
+      model.get(), model_metadata));
+  histogram_tester.ExpectUniqueSample(
+      "Sync.BookmarksModelMetadataCorruptionReason",
+      /*sample=*/ExpectedCorruptionReason::NO_CORRUPTION, /*count=*/1);
 }
 
 }  // namespace

@@ -133,6 +133,7 @@ class CONTENT_EXPORT DownloadManagerImpl
       base::OnceClosure load_history_downloads_cb) override;
   download::DownloadItem* GetDownload(uint32_t id) override;
   download::DownloadItem* GetDownloadByGuid(const std::string& guid) override;
+  void GetNextId(GetNextIdCallback callback) override;
 
   // UrlDownloadHandler::Delegate implementation.
   void OnUrlDownloadStarted(
@@ -215,11 +216,6 @@ class CONTENT_EXPORT DownloadManagerImpl
       download::InProgressDownloadManager::StartDownloadItemCallback callback,
       uint32_t id);
 
-  using GetNextIdCallback = base::OnceCallback<void(uint32_t)>;
-  // Called to get an ID for a new download. |callback| may be called
-  // synchronously.
-  void GetNextId(GetNextIdCallback callback);
-
   // Sets the |next_download_id_| if the |next_id| is larger. Runs all the
   // |id_callbacks_| if both the ID from both history db and in-progress db
   // are retrieved.
@@ -261,6 +257,7 @@ class CONTENT_EXPORT DownloadManagerImpl
   base::Optional<download::DownloadEntry> GetInProgressEntry(
       download::DownloadItemImpl* download) override;
   bool IsOffTheRecord() const override;
+  bool IsActiveNetworkMetered() const override;
   void ReportBytesWasted(download::DownloadItemImpl* download) override;
 
   // Drops a download before it is created.
@@ -292,11 +289,19 @@ class CONTENT_EXPORT DownloadManagerImpl
   // Whether |next_download_id_| is initialized.
   bool IsNextIdInitialized() const;
 
+  // Called when a new download is created.
+  void OnDownloadCreated(std::unique_ptr<download::DownloadItemImpl> download);
+
+  // Retrieves a download from |in_progress_downloads_|.
+  std::unique_ptr<download::DownloadItemImpl> RetrieveInProgressDownload(
+      uint32_t id);
+
 #if defined(OS_ANDROID)
   // Check whether a download should be cleared from history. On Android,
   // cancelled and non-resumable interrupted download will be cleaned up to
   // save memory.
-  bool ShouldClearDownloadFromDB(download::DownloadItem::DownloadState state,
+  bool ShouldClearDownloadFromDB(const GURL& url,
+                                 download::DownloadItem::DownloadState state,
                                  download::DownloadInterruptReason reason);
 #endif  // defined(OS_ANDROID)
 
@@ -366,6 +371,11 @@ class CONTENT_EXPORT DownloadManagerImpl
   std::set<std::string> cleared_download_guids_on_startup_;
   int cancelled_download_cleared_from_history_;
   int interrupted_download_cleared_from_history_;
+
+  // In progress downloads returned by |in_progress_manager_| that are not yet
+  // added to |downloads_|.
+  std::unordered_map<uint32_t, std::unique_ptr<download::DownloadItemImpl>>
+      in_progress_downloads_;
 
   // Callbacks to run once download ID is determined.
   using IdCallbackVector = std::vector<std::unique_ptr<GetNextIdCallback>>;

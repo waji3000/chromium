@@ -46,6 +46,8 @@ class CORE_EXPORT HTMLSlotElement final : public HTMLElement {
   static HTMLSlotElement* CreateUserAgentDefaultSlot(Document&);
   static HTMLSlotElement* CreateUserAgentCustomAssignSlot(Document&);
 
+  HTMLSlotElement(Document&);
+
   const HeapVector<Member<Node>>& AssignedNodes() const;
   const HeapVector<Member<Node>> AssignedNodesForBinding(
       const AssignedNodesOptions*);
@@ -69,7 +71,13 @@ class CORE_EXPORT HTMLSlotElement final : public HTMLElement {
   void ClearAssignedNodes();
 
   const HeapVector<Member<Node>> FlattenedAssignedNodes();
-  void RecalcFlatTreeChildren();
+
+  void WillRecalcAssignedNodes() { ClearAssignedNodes(); }
+  void DidRecalcAssignedNodes() {
+    if (RuntimeEnabledFeatures::FastFlatTreeTraversalEnabled())
+      UpdateFlatTreeNodeDataForAssignedNodes();
+    RecalcFlatTreeChildren();
+  }
 
   void AttachLayoutTree(AttachContext&) final;
   void DetachLayoutTree(const AttachContext& = AttachContext()) final;
@@ -112,8 +120,6 @@ class CORE_EXPORT HTMLSlotElement final : public HTMLElement {
   void Trace(blink::Visitor*) override;
 
  private:
-  HTMLSlotElement(Document&);
-
   InsertionNotificationRequest InsertedInto(ContainerNode&) final;
   void RemovedFrom(ContainerNode&) final;
   void DidRecalcStyle(StyleRecalcChange) final;
@@ -134,9 +140,12 @@ class CORE_EXPORT HTMLSlotElement final : public HTMLElement {
 
   const HeapVector<Member<Node>>& GetDistributedNodes();
 
+  void RecalcFlatTreeChildren();
+  void UpdateFlatTreeNodeDataForAssignedNodes();
   void ClearAssignedNodesAndFlatTreeChildren();
 
   HeapVector<Member<Node>> assigned_nodes_;
+  HeapHashMap<Member<const Node>, unsigned> assigned_nodes_index_;
   HeapVector<Member<Node>> flat_tree_children_;
 
   bool slotchange_event_enqueued_ = false;

@@ -222,7 +222,7 @@ void LayoutBox::StyleWillChange(StyleDifference diff,
         // mark the current containing block chain for preferred widths
         // recalculation.
         SetNeedsLayoutAndPrefWidthsRecalc(
-            LayoutInvalidationReason::kStyleChange);
+            layout_invalidation_reason::kStyleChange);
       } else {
         MarkContainerChainForLayout();
       }
@@ -387,21 +387,9 @@ void LayoutBox::UpdateBackgroundAttachmentFixedStatusAfterStyleChange() {
   if (ignore_fixed_background_attachment)
     return;
 
-  // An object needs to be repainted on frame scroll when it has background-
-  // attachment:fixed, unless the background will be separately composited.
-  // LayoutView is responsible for painting root background, thus the root
-  // element (and the body element if html element has no background) skips
-  // painting backgrounds.
-  bool is_background_attachment_fixed_object =
+  SetIsBackgroundAttachmentFixedObject(
       !BackgroundTransfersToView() &&
-      StyleRef().HasFixedAttachmentBackgroundImage();
-  if (IsLayoutView() &&
-      View()->Compositor()->PreferCompositingToLCDTextEnabled() &&
-      StyleRef().HasOnlyFixedAttachmentBackgroundImage()) {
-    is_background_attachment_fixed_object = false;
-  }
-
-  SetIsBackgroundAttachmentFixedObject(is_background_attachment_fixed_object);
+      StyleRef().HasFixedAttachmentBackgroundImage());
 }
 
 void LayoutBox::UpdateShapeOutsideInfoAfterStyleChange(
@@ -511,6 +499,9 @@ void LayoutBox::UpdateLayout() {
   DCHECK(NeedsLayout());
   LayoutAnalyzer::Scope analyzer(*this);
 
+  if (LayoutBlockedByDisplayLock())
+    return;
+
   LayoutObject* child = SlowFirstChild();
   if (!child) {
     ClearNeedsLayout();
@@ -525,6 +516,7 @@ void LayoutBox::UpdateLayout() {
   }
   UpdateAfterLayout();
   ClearNeedsLayout();
+  NotifyDisplayLockDidLayout();
 }
 
 // ClientWidth and ClientHeight represent the interior of an object excluding
@@ -779,9 +771,10 @@ LayoutUnit LayoutBox::LogicalHeightWithVisibleOverflow() const {
   return overflow.MaxX();
 }
 
-LayoutUnit LayoutBox::ConstrainLogicalWidthByMinMax(LayoutUnit logical_width,
-                                                    LayoutUnit available_width,
-                                                    LayoutBlock* cb) const {
+LayoutUnit LayoutBox::ConstrainLogicalWidthByMinMax(
+    LayoutUnit logical_width,
+    LayoutUnit available_width,
+    const LayoutBlock* cb) const {
   const ComputedStyle& style_to_use = StyleRef();
   if (!style_to_use.LogicalMaxWidth().IsMaxSizeNone())
     logical_width = std::min(
@@ -3472,6 +3465,7 @@ LayoutUnit LayoutBox::ContainingBlockLogicalHeightForPercentageResolution(
     LayoutBlock** out_cb,
     bool* out_skipped_auto_height_containing_block) const {
   LayoutBlock* cb = ContainingBlock();
+  const LayoutBlock* const real_cb = cb;
   const LayoutBox* containing_block_child = this;
   bool skipped_auto_height_containing_block = false;
   LayoutUnit root_margin_border_padding_height;
@@ -3505,11 +3499,15 @@ LayoutUnit LayoutBox::ContainingBlockLogicalHeightForPercentageResolution(
       cb->HasOverrideContainingBlockPercentageResolutionLogicalHeight()) {
     available_height =
         cb->OverrideContainingBlockPercentageResolutionLogicalHeight();
+  } else if (HasOverrideContainingBlockContentLogicalWidth() &&
+             IsHorizontalWritingMode() != real_cb->IsHorizontalWritingMode()) {
+    available_height = OverrideContainingBlockContentLogicalWidth();
+  } else if (HasOverrideContainingBlockContentLogicalHeight() &&
+             IsHorizontalWritingMode() == real_cb->IsHorizontalWritingMode()) {
+    available_height = OverrideContainingBlockContentLogicalHeight();
   } else if (IsHorizontalWritingMode() != cb->IsHorizontalWritingMode()) {
     available_height =
         containing_block_child->ContainingBlockLogicalWidthForContent();
-  } else if (HasOverrideContainingBlockContentLogicalHeight()) {
-    available_height = OverrideContainingBlockContentLogicalHeight();
   } else if (cb->IsTableCell()) {
     if (!skipped_auto_height_containing_block) {
       // Table cells violate what the CSS spec says to do with heights.
@@ -5287,6 +5285,15 @@ void LayoutBox::AddLayoutOverflowFromChild(const LayoutBox& child,
   AddLayoutOverflow(child_layout_overflow_rect);
 }
 
+void LayoutBox::SetLayoutClientAfterEdge(LayoutUnit client_after_edge) {
+  if (overflow_)
+    overflow_->SetLayoutClientAfterEdge(client_after_edge);
+}
+
+LayoutUnit LayoutBox::LayoutClientAfterEdge() const {
+  return overflow_ ? overflow_->LayoutClientAfterEdge() : ClientLogicalBottom();
+}
+
 bool LayoutBox::HasTopOverflow() const {
   return !StyleRef().IsLeftToRightDirection() && !IsHorizontalWritingMode();
 }
@@ -5384,6 +5391,19 @@ void LayoutBox::ClearLayoutOverflow() {
   }
 
   overflow_->SetLayoutOverflow(NoOverflowRect());
+}
+
+void LayoutBox::ClearVisualOverflow() {
+  if (!overflow_)
+    return;
+
+  if (!HasLayoutOverflow()) {
+    ClearAllOverflows();
+    return;
+  }
+
+  overflow_->ClearContentsVisualOverflow();
+  overflow_->SetSelfVisualOverflow(BorderBoxRect());
 }
 
 bool LayoutBox::PercentageLogicalHeightIsResolvable() const {
@@ -5653,7 +5673,7 @@ static void MarkBoxForRelayoutAfterSplit(LayoutBox* box) {
   }
 
   box->SetNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(
-      LayoutInvalidationReason::kAnonymousBlockChange);
+      layout_invalidation_reason::kAnonymousBlockChange);
 }
 
 static void CollapseLoneAnonymousBlockChild(LayoutBox* parent,
@@ -5982,7 +6002,8 @@ void LayoutBox::AddCustomLayoutChildIfNeeded() {
   if (!definition)
     return;
 
-  EnsureRareData().layout_child_ = new CustomLayoutChild(*definition, this);
+  EnsureRareData().layout_child_ =
+      MakeGarbageCollected<CustomLayoutChild>(*definition, this);
 }
 
 void LayoutBox::ClearCustomLayoutChild() {

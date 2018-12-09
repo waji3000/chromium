@@ -7,26 +7,31 @@ package org.chromium.chrome.browser.toolbar;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.drawable.Drawable;
-import android.support.v7.widget.AppCompatImageButton;
 import android.util.AttributeSet;
 import android.view.View;
 import android.widget.FrameLayout;
+import android.widget.ImageButton;
 import android.widget.ImageView;
 
 import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.omaha.UpdateMenuItemHelper;
+import org.chromium.chrome.browser.toolbar.ThemeColorProvider.ThemeColorObserver;
+import org.chromium.chrome.browser.util.ColorUtils;
 
 /**
  * The overflow menu button.
  */
-class MenuButton extends FrameLayout {
-    /** The {@link android.support.v7.widget.AppCompatImageButton} for the menu button. */
-    private AppCompatImageButton mMenuImageButton;
+public class MenuButton extends FrameLayout implements ThemeColorObserver {
+    /** The {@link ImageButton} for the menu button. */
+    private ImageButton mMenuImageButton;
 
     /** The view for the update badge. */
     private ImageView mUpdateBadgeView;
     private boolean mUseLightDrawables;
+
+    /** A provider that notifies components when the theme color changes.*/
+    private ThemeColorProvider mThemeColorProvider;
 
     public MenuButton(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -43,7 +48,7 @@ class MenuButton extends FrameLayout {
      * @param onTouchListener An {@link OnTouchListener} that is triggered when the menu button is
      *                        clicked.
      */
-    void setTouchListener(OnTouchListener onTouchListener) {
+    public void setTouchListener(OnTouchListener onTouchListener) {
         mMenuImageButton.setOnTouchListener(onTouchListener);
     }
 
@@ -63,7 +68,7 @@ class MenuButton extends FrameLayout {
      *                if the update type does not require a badge.
      * TODO(crbug.com/865801): Clean this up when MenuButton and UpdateMenuItemHelper is MVCed.
      */
-    void setUpdateBadgeVisibilityIfValidState(boolean visible) {
+    public void setUpdateBadgeVisibilityIfValidState(boolean visible) {
         switch (UpdateMenuItemHelper.getInstance().getUpdateType()) {
             case UpdateMenuItemHelper.UpdateType.UPDATE_AVAILABLE:
             // Intentional fall through.
@@ -87,12 +92,12 @@ class MenuButton extends FrameLayout {
      * Sets the visual type of update badge to use (if any).
      * @param useLightDrawables Whether the light drawable should be used.
      */
-    void setUseLightDrawables(boolean useLightDrawables) {
+    public void setUseLightDrawables(boolean useLightDrawables) {
         mUseLightDrawables = useLightDrawables;
         updateImageResources();
     }
 
-    void updateImageResources() {
+    public void updateImageResources() {
         Drawable drawable;
         if (mUseLightDrawables) {
             drawable = UpdateMenuItemHelper.getInstance().getLightBadgeDrawable(
@@ -108,7 +113,7 @@ class MenuButton extends FrameLayout {
     /**
      * @return Whether the update badge is showing.
      */
-    boolean isShowingAppMenuUpdateBadge() {
+    public boolean isShowingAppMenuUpdateBadge() {
         return mUpdateBadgeView.getVisibility() == View.VISIBLE;
     }
 
@@ -116,7 +121,7 @@ class MenuButton extends FrameLayout {
      * Sets the content description for the menu button.
      * @param isUpdateBadgeVisible Whether the update menu badge is visible.
      */
-    void updateContentDescription(boolean isUpdateBadgeVisible) {
+    public void updateContentDescription(boolean isUpdateBadgeVisible) {
         if (isUpdateBadgeVisible) {
             switch (UpdateMenuItemHelper.getInstance().getUpdateType()) {
                 case UpdateMenuItemHelper.UpdateType.UPDATE_AVAILABLE:
@@ -140,15 +145,25 @@ class MenuButton extends FrameLayout {
         }
     }
 
-    AppCompatImageButton getImageButton() {
+    ImageButton getImageButton() {
         return mMenuImageButton;
     }
 
-    /**
-     * @param tintList The {@link ColorStateList} that will tint the menu button (the badge is not
-     *                 tinted).
-     */
-    void setTint(ColorStateList tintList) {
+    public void setThemeColorProvider(ThemeColorProvider themeColorProvider) {
+        mThemeColorProvider = themeColorProvider;
+        mThemeColorProvider.addObserver(this);
+    }
+
+    @Override
+    public void onThemeColorChanged(ColorStateList tintList, int primaryColor) {
         ApiCompatibilityUtils.setImageTintList(mMenuImageButton, tintList);
+        setUseLightDrawables(ColorUtils.shouldUseLightForegroundOnBackground(primaryColor));
+    }
+
+    public void destroy() {
+        if (mThemeColorProvider != null) {
+            mThemeColorProvider.removeObserver(this);
+            mThemeColorProvider = null;
+        }
     }
 }

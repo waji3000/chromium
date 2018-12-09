@@ -54,8 +54,11 @@ struct HttpResponse {
     SERVER_CONNECTION_OK,
   };
 
+  // The network error code.
+  int net_error_code;
+
   // The HTTP Status code.
-  int64_t response_code;
+  int http_status_code;
 
   // The value of the Content-length header.
   int64_t content_length;
@@ -163,6 +166,11 @@ class ServerConnectionManager {
     return server_status_;
   }
 
+  inline int net_error_code() const {
+    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+    return net_error_code_;
+  }
+
   const std::string client_id() const { return client_id_; }
 
   // Factory method to create an Connection object we can use for
@@ -230,6 +238,11 @@ class ServerConnectionManager {
   base::ObserverList<ServerConnectionEventListener>::Unchecked listeners_;
 
   HttpResponse::ServerConnectionCode server_status_;
+
+  // Contains the network error code if there is an error when making the
+  // connection with the server in which case |server_status_| is set to
+  // HttpResponse::CONNECTION_UNAVAILABLE.
+  int net_error_code_;
 
   SEQUENCE_CHECKER(sequence_checker_);
 

@@ -10,6 +10,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/ax_node_data.h"
+#include "ui/accessibility/platform/ax_unique_id.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window.h"
 #include "ui/display/display.h"
@@ -21,16 +22,13 @@ AXRootObjWrapper::AXRootObjWrapper(views::AXAuraObjCache::Delegate* delegate)
     : alert_window_(std::make_unique<aura::Window>(nullptr)),
       delegate_(delegate) {
   alert_window_->Init(ui::LAYER_NOT_DRAWN);
-#if !defined(IS_CHROMECAST)
   aura::Env::GetInstance()->AddObserver(this);
 
   if (display::Screen::GetScreen())
     display::Screen::GetScreen()->AddObserver(this);
-#endif
 }
 
 AXRootObjWrapper::~AXRootObjWrapper() {
-#if !defined(IS_CHROMECAST)
   if (display::Screen::GetScreen())
     display::Screen::GetScreen()->RemoveObserver(this);
 
@@ -40,7 +38,6 @@ AXRootObjWrapper::~AXRootObjWrapper() {
     return;
 
   aura::Env::GetInstance()->RemoveObserver(this);
-#endif
   alert_window_.reset();
 }
 
@@ -80,12 +77,14 @@ void AXRootObjWrapper::Serialize(ui::AXNodeData* out_node_data) {
   out_node_data->id = unique_id_.Get();
   out_node_data->role = ax::mojom::Role::kDesktop;
 
-#if !defined(IS_CHROMECAST)
   display::Screen* screen = display::Screen::GetScreen();
   if (!screen)
     return;
 
   const display::Display& display = screen->GetPrimaryDisplay();
+
+  out_node_data->relative_bounds.bounds =
+      gfx::RectF(display.bounds().width(), display.bounds().height());
 
   // Utilize the display bounds to figure out if this screen is in landscape or
   // portrait. We use this rather than |rotation| because some devices default
@@ -95,11 +94,10 @@ void AXRootObjWrapper::Serialize(ui::AXNodeData* out_node_data) {
     out_node_data->AddState(ax::mojom::State::kHorizontal);
   else
     out_node_data->AddState(ax::mojom::State::kVertical);
-#endif
 }
 
-const ui::AXUniqueId& AXRootObjWrapper::GetUniqueId() const {
-  return unique_id_;
+int32_t AXRootObjWrapper::GetUniqueId() const {
+  return unique_id_.Get();
 }
 
 void AXRootObjWrapper::OnDisplayMetricsChanged(const display::Display& display,

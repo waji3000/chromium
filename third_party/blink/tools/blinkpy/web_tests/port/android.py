@@ -37,6 +37,7 @@ import time
 
 from blinkpy.common import exit_codes
 from blinkpy.common.path_finder import RELATIVE_WEB_TESTS
+from blinkpy.common.path_finder import WEB_TESTS_LAST_COMPONENT
 from blinkpy.common.path_finder import get_chromium_src_dir
 from blinkpy.common.system.executive import ScriptError
 from blinkpy.common.system.profiler import SingleFileOutputProfiler
@@ -112,8 +113,11 @@ KPTR_RESTRICT_PATH = '/proc/sys/kernel/kptr_restrict'
 # but we use a file-to-http feature to bridge the file request to host's http
 # server to get the real test files and corresponding resources.
 # See webkit/support/platform_support_android.cc for the other side of this bridge.
+# WEB_TEST_PATH_PREFIX should be matched to the local directory name of
+# web_tests because some tests and test_runner find test root directory
+# with it.
 PERF_TEST_PATH_PREFIX = '/PerformanceTests'
-LAYOUT_TEST_PATH_PREFIX = '/LayoutTests'
+WEB_TESTS_PATH_PREFIX = '/' + WEB_TESTS_LAST_COMPONENT
 
 # We start netcat processes for each of the three stdio streams. In doing so,
 # we attempt to use ports starting from 10201. This starting value is
@@ -456,7 +460,7 @@ class AndroidPort(base.Port):
     def num_workers(self, requested_num_workers):
         return min(len(self._options.prepared_devices), requested_num_workers)
 
-    def check_sys_deps(self, needs_http):
+    def check_sys_deps(self):
         # _get_font_files() will throw if any of the required fonts is missing.
         self._get_font_files()
         return exit_codes.OK_EXIT_STATUS
@@ -469,7 +473,7 @@ class AndroidPort(base.Port):
 
     def start_http_server(self, additional_dirs, number_of_drivers):
         additional_dirs[PERF_TEST_PATH_PREFIX] = self._perf_tests_dir()
-        additional_dirs[LAYOUT_TEST_PATH_PREFIX] = self.layout_tests_dir()
+        additional_dirs[WEB_TESTS_PATH_PREFIX] = self.layout_tests_dir()
         super(AndroidPort, self).start_http_server(additional_dirs, number_of_drivers)
 
     def create_driver(self, worker_number, no_timeout=False):
@@ -1042,7 +1046,7 @@ class ChromiumAndroidDriver(driver.Driver):
     def _command_from_driver_input(self, driver_input):
         command = super(ChromiumAndroidDriver, self)._command_from_driver_input(driver_input)
         if command.startswith('/'):
-            command = 'http://127.0.0.1:8000' + LAYOUT_TEST_PATH_PREFIX + \
+            command = 'http://127.0.0.1:8000' + WEB_TESTS_PATH_PREFIX + \
                 '/' + self._port.relative_test_filename(command)
         return command
 

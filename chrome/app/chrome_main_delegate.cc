@@ -36,7 +36,6 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/crash_keys.h"
 #include "chrome/common/logging_chrome.h"
-#include "chrome/common/profiling.h"
 #include "chrome/common/trace_event_args_whitelist.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/gpu/chrome_content_gpu_client.h"
@@ -47,6 +46,7 @@
 #include "components/crash/content/app/crash_reporter_client.h"
 #include "components/crash/core/common/crash_key.h"
 #include "components/crash/core/common/crash_keys.h"
+#include "components/gwp_asan/client/gwp_asan.h"
 #include "components/nacl/common/buildflags.h"
 #include "components/services/heap_profiling/public/cpp/allocator_shim.h"
 #include "components/services/heap_profiling/public/cpp/stream.h"
@@ -55,6 +55,7 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/profiling.h"
 #include "content/public/common/service_names.mojom.h"
 #include "extensions/common/constants.h"
 #include "net/url_request/url_request.h"
@@ -106,7 +107,7 @@
 #endif
 
 #if defined(OS_CHROMEOS)
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "chrome/browser/chromeos/boot_times_recorder.h"
 #include "chromeos/chromeos_paths.h"
 #include "chromeos/chromeos_switches.h"
@@ -129,7 +130,7 @@
 #include "ui/base/x/x11_util.h"  // nogncheck
 #endif
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
 #include "components/crash/content/app/breakpad_linux.h"
 #include "v8/include/v8.h"
 #endif
@@ -138,7 +139,7 @@
 #include "base/environment.h"
 #endif
 
-#if defined(OS_MACOSX) || defined(OS_WIN)
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(OS_ANDROID)
 #include "chrome/browser/policy/policy_path_parser.h"
 #include "components/crash/content/app/crashpad.h"
 #endif
@@ -217,7 +218,7 @@ bool IsSandboxedProcess() {
 }
 
 bool UseHooks() {
-#if defined(ARCH_CPU_X86_64)
+#if defined(ARCH_CPU_64_BITS)
   return false;
 #elif defined(NDEBUG)
   version_info::Channel channel = chrome::GetChannel();
@@ -352,7 +353,7 @@ void HandleHelpSwitches(const base::CommandLine& command_line) {
 
 #if !defined(OS_MACOSX) && !defined(OS_ANDROID)
 void SIGTERMProfilingShutdown(int signal) {
-  Profiling::Stop();
+  content::Profiling::Stop();
   struct sigaction sigact;
   memset(&sigact, 0, sizeof(sigact));
   sigact.sa_handler = SIG_DFL;
@@ -515,13 +516,12 @@ void ChromeMainDelegate::PostEarlyInitialization(bool is_running_tests) {
 
   DCHECK(chrome_feature_list_creator_);
   chrome_feature_list_creator_->CreateFeatureList();
+  PostFieldTrialInitialization();
 
-  // Initializes the resouce bundle and determines the locale.
+  // Initializes the resource bundle and determines the locale.
   std::string actual_locale =
       LoadLocalState(chrome_feature_list_creator_.get(), is_running_tests);
   chrome_feature_list_creator_->SetApplicationLocale(actual_locale);
-
-  tracing_sampler_profiler_->OnMessageLoopStarted();
 }
 
 bool ChromeMainDelegate::ShouldCreateFeatureList() {
@@ -529,6 +529,12 @@ bool ChromeMainDelegate::ShouldCreateFeatureList() {
   return false;
 }
 #endif
+
+void ChromeMainDelegate::PostFieldTrialInitialization() {
+#if defined(OS_WIN)
+  gwp_asan::EnableForMalloc();
+#endif
+}
 
 bool ChromeMainDelegate::BasicStartupComplete(int* exit_code) {
 #if defined(OS_CHROMEOS)
@@ -556,14 +562,14 @@ bool ChromeMainDelegate::BasicStartupComplete(int* exit_code) {
   chrome::common::mac::EnableCFBundleBlocker();
 #endif
 
-  Profiling::ProcessStarted();
+  content::Profiling::ProcessStarted();
 
   base::trace_event::TraceLog::GetInstance()->SetArgumentFilterPredicate(
       base::Bind(&IsTraceEventArgsWhitelisted));
 
   // Setup tracing sampler profiler as early as possible at startup if needed.
-  tracing_sampler_profiler_ = std::make_unique<tracing::TracingSamplerProfiler>(
-      base::PlatformThread::CurrentId());
+  tracing_sampler_profiler_ =
+      tracing::TracingSamplerProfiler::CreateOnMainThread();
 
 #if defined(OS_WIN) && !defined(CHROME_MULTIPLE_DLL_BROWSER)
   v8_crashpad_support::SetUp();
@@ -805,12 +811,11 @@ void ChromeMainDelegate::PreSandboxStartup() {
   if (chrome::ProcessNeedsProfileDir(process_type)) {
     InitializeUserDataDir(base::CommandLine::ForCurrentProcess());
 #if defined(OS_WIN) && !defined(CHROME_MULTIPLE_DLL_CHILD)
-    if (downgrade::IsMSIInstall()) {
-      downgrade::MoveUserDataForFirstRunAfterDowngrade();
-      base::FilePath user_data_dir;
-      if (base::PathService::Get(chrome::DIR_USER_DATA, &user_data_dir))
-        downgrade::UpdateLastVersion(user_data_dir);
-    }
+    // TODO(grt): Enable this codepath for all desktop platforms.
+    downgrade::MoveUserDataForFirstRunAfterDowngrade();
+    base::FilePath user_data_dir;
+    if (base::PathService::Get(chrome::DIR_USER_DATA, &user_data_dir))
+      downgrade::UpdateLastVersion(user_data_dir);
 #endif
   }
 
@@ -922,12 +927,11 @@ void ChromeMainDelegate::PreSandboxStartup() {
   // Zygote needs to call InitCrashReporter() in RunZygote().
   if (process_type != service_manager::switches::kZygoteProcess) {
 #if defined(OS_ANDROID)
+    crash_reporter::InitializeCrashpad(process_type.empty(), process_type);
     if (process_type.empty()) {
-      breakpad::InitCrashReporter(process_type);
       base::android::InitJavaExceptionReporter();
       UninstallPureJavaExceptionHandler();
     } else {
-      breakpad::InitNonBrowserCrashReporterForAndroid(process_type);
       base::android::InitJavaExceptionReporterForChildProcess();
     }
 #else  // !defined(OS_ANDROID)
@@ -1055,8 +1059,8 @@ void ChromeMainDelegate::ZygoteStarting(
 }
 
 void ChromeMainDelegate::ZygoteForked() {
-  Profiling::ProcessStarted();
-  if (Profiling::BeingProfiled()) {
+  content::Profiling::ProcessStarted();
+  if (content::Profiling::BeingProfiled()) {
     base::debug::RestartProfilingAfterFork();
     SetUpProfilingShutdownHandler();
   }
@@ -1116,20 +1120,6 @@ ChromeMainDelegate::CreateContentUtilityClient() {
 #else
   return g_chrome_content_utility_client.Pointer();
 #endif
-}
-
-bool ChromeMainDelegate::ShouldEnableProfilerRecording() {
-  switch (chrome::GetChannel()) {
-    case version_info::Channel::UNKNOWN:
-    case version_info::Channel::CANARY:
-      return true;
-    case version_info::Channel::DEV:
-    case version_info::Channel::BETA:
-    case version_info::Channel::STABLE:
-    default:
-      // Don't enable instrumentation.
-      return false;
-  }
 }
 
 service_manager::ProcessType ChromeMainDelegate::OverrideProcessType() {

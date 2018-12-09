@@ -26,6 +26,7 @@
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/common/fetch/fetch_api_request_headers_map.h"
 #include "third_party/blink/public/common/messaging/message_port_channel.h"
 #include "third_party/blink/public/common/service_worker/service_worker_utils.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
@@ -50,7 +51,7 @@ namespace {
 struct ContextClientPipes {
   // From the browser to ServiceWorkerContextClient.
   mojom::ServiceWorkerPtr service_worker;
-  mojom::ControllerServiceWorkerPtr controller;
+  blink::mojom::ControllerServiceWorkerPtr controller;
   blink::mojom::ServiceWorkerRegistrationObjectAssociatedPtr registration;
 
   // From ServiceWorkerContextClient to the browser.
@@ -346,8 +347,7 @@ TEST_F(ServiceWorkerContextClientTest, DispatchFetchEvent) {
   params->request = *request;
   pipes.service_worker->DispatchFetchEvent(
       std::move(params), std::move(fetch_callback_ptr),
-      base::BindOnce(
-          [](blink::mojom::ServiceWorkerEventStatus, base::TimeTicks) {}));
+      base::BindOnce([](blink::mojom::ServiceWorkerEventStatus) {}));
   task_runner()->RunUntilIdle();
 
   ASSERT_EQ(1u, mock_proxy.fetch_events().size());
@@ -386,19 +386,18 @@ TEST_F(ServiceWorkerContextClientTest, DispatchFetchEvent_Headers) {
   params->request = *request;
   pipes.service_worker->DispatchFetchEvent(
       std::move(params), std::move(fetch_callback_ptr),
-      base::BindOnce(
-          [](blink::mojom::ServiceWorkerEventStatus, base::TimeTicks) {}));
+      base::BindOnce([](blink::mojom::ServiceWorkerEventStatus) {}));
   task_runner()->RunUntilIdle();
 
   ASSERT_EQ(1u, mock_proxy.fetch_events().size());
   const blink::WebServiceWorkerRequest& received_request =
       mock_proxy.fetch_events()[0].second;
-  ServiceWorkerHeaderMap header_map;
+  blink::FetchAPIRequestHeadersMap header_map;
   GetServiceWorkerHeaderMapFromWebRequest(received_request, &header_map);
 
   EXPECT_EQ(expected_url, static_cast<GURL>(received_request.Url()));
-  EXPECT_TRUE(header_map.find("x-bye-bye") == header_map.end());
-  auto iter = header_map.find("x-hi-hi");
+  EXPECT_TRUE(header_map.find(std::string("x-bye-bye")) == header_map.end());
+  auto iter = header_map.find(std::string("x-hi-hi"));
   ASSERT_TRUE(iter != header_map.end());
   EXPECT_EQ("present", iter->second);
 
@@ -433,8 +432,7 @@ TEST_F(ServiceWorkerContextClientTest,
   params->request = *request;
   context_client->DispatchOrQueueFetchEvent(
       std::move(params), std::move(fetch_callback_ptr),
-      base::BindOnce(
-          [](blink::mojom::ServiceWorkerEventStatus, base::TimeTicks) {}));
+      base::BindOnce([](blink::mojom::ServiceWorkerEventStatus) {}));
   task_runner()->RunUntilIdle();
 
   EXPECT_FALSE(context_client->RequestedTermination());
@@ -470,7 +468,7 @@ TEST_F(ServiceWorkerContextClientTest,
   const GURL expected_url("https://example.com/expected");
 
   // FetchEvent dispatched directly from the controlled clients through
-  // mojom::ControllerServiceWorker should be queued in the idle state.
+  // blink::mojom::ControllerServiceWorker should be queued in the idle state.
   {
     blink::mojom::ServiceWorkerFetchResponseCallbackPtr fetch_callback_ptr;
     blink::mojom::ServiceWorkerFetchResponseCallbackRequest
@@ -481,8 +479,7 @@ TEST_F(ServiceWorkerContextClientTest,
     params->request = *request;
     pipes.controller->DispatchFetchEvent(
         std::move(params), std::move(fetch_callback_ptr),
-        base::BindOnce(
-            [](blink::mojom::ServiceWorkerEventStatus, base::TimeTicks) {}));
+        base::BindOnce([](blink::mojom::ServiceWorkerEventStatus) {}));
     task_runner()->RunUntilIdle();
   }
   EXPECT_TRUE(mock_proxy.fetch_events().empty());
@@ -522,7 +519,7 @@ TEST_F(ServiceWorkerContextClientTest,
       fetch_callback_request_2;
 
   // FetchEvent dispatched directly from the controlled clients through
-  // mojom::ControllerServiceWorker should be queued in the idle state.
+  // blink::mojom::ControllerServiceWorker should be queued in the idle state.
   {
     blink::mojom::ServiceWorkerFetchResponseCallbackPtr fetch_callback_ptr;
     fetch_callback_request_1 = mojo::MakeRequest(&fetch_callback_ptr);
@@ -532,8 +529,7 @@ TEST_F(ServiceWorkerContextClientTest,
     params->request = *request;
     pipes.controller->DispatchFetchEvent(
         std::move(params), std::move(fetch_callback_ptr),
-        base::BindOnce(
-            [](blink::mojom::ServiceWorkerEventStatus, base::TimeTicks) {}));
+        base::BindOnce([](blink::mojom::ServiceWorkerEventStatus) {}));
     task_runner()->RunUntilIdle();
   }
   EXPECT_TRUE(mock_proxy.fetch_events().empty());
@@ -549,8 +545,7 @@ TEST_F(ServiceWorkerContextClientTest,
     params->request = *request;
     pipes.service_worker->DispatchFetchEvent(
         std::move(params), std::move(fetch_callback_ptr),
-        base::BindOnce(
-            [](blink::mojom::ServiceWorkerEventStatus, base::TimeTicks) {}));
+        base::BindOnce([](blink::mojom::ServiceWorkerEventStatus) {}));
     task_runner()->RunUntilIdle();
   }
   EXPECT_FALSE(context_client->RequestedTermination());

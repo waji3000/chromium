@@ -69,7 +69,10 @@ ASH_EXPORT constexpr SkColor kShelfIconColor = SK_ColorWHITE;
 // The alpha value for the shelf background.
 ASH_EXPORT constexpr int kShelfTranslucentOverAppList = 51;            // 20%
 ASH_EXPORT constexpr int kShelfTranslucentAlpha = 153;                 // 60%
-ASH_EXPORT constexpr int kShelfTranslucentMaximizedWindow = 255;       // 100%
+// Using 0xFF causes clipping on the overlay candidate content, which prevent
+// HW overlay, probably due to a bug in compositor. Fix it and use 0xFF.
+// crbug.com/901538
+ASH_EXPORT constexpr int kShelfTranslucentMaximizedWindow = 254;       // ~100%
 
 // The alpha value used to darken a colorized shelf when the shelf is
 // translucent.
@@ -104,17 +107,6 @@ class ShelfConstants {
 
   // Size of the icons within shelf buttons.
   static int button_icon_size() { return kShelfButtonIconSize; }
-
-  // The width and height of the material design overflow button.
-  static int overflow_button_size() { return kShelfControlSize; }
-
-  // The radius of the rounded corners of the overflow button.
-  static int overflow_button_corner_radius() {
-    return overflow_button_size() / 2;
-  }
-
-  // The radius of the circular material design app list button.
-  static int app_list_button_radius() { return control_border_radius(); }
 
   // The radius of shelf control buttons.
   static int control_border_radius() { return kShelfControlSize / 2; }

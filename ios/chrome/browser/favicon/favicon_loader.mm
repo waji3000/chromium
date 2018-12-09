@@ -16,6 +16,7 @@
 #include "components/favicon_base/favicon_callback.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
 #import "ios/chrome/common/favicon/favicon_attributes.h"
+#include "net/traffic_annotation/network_traffic_annotation.h"
 #include "skia/ext/skia_utils_ios.h"
 #include "url/gurl.h"
 
@@ -82,7 +83,9 @@ FaviconAttributes* FaviconLoader::FaviconForUrl(
       FaviconAttributes* attributes =
           [FaviconAttributes attributesWithImage:favicon];
       [favicon_cache_ setObject:attributes forKey:key];
-      block(attributes);
+      if (block) {
+        block(attributes);
+      }
       return;
     } else if (fallback_to_google_server) {
       void (^favicon_loaded_from_server_block)(
@@ -129,7 +132,9 @@ FaviconAttributes* FaviconLoader::FaviconForUrl(
                                is_default_background_color];
 
     [favicon_cache_ setObject:attributes forKey:key];
-    block(attributes);
+    if (block) {
+      block(attributes);
+    }
   };
 
   CGFloat favicon_size_in_pixels = [UIScreen mainScreen].scale * size;

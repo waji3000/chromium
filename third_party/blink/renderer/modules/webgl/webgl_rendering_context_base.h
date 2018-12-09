@@ -632,6 +632,9 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
   friend class WebGLCompressedTexturePVRTC;
   friend class WebGLCompressedTextureS3TC;
   friend class WebGLCompressedTextureS3TCsRGB;
+  friend class WebGLMultiDraw;
+  friend class WebGLMultiDrawCommon;
+  friend class WebGLMultiDrawInstanced;
   friend class WebGLMultiview;
   friend class WebGLRenderingContextErrorMessageCallback;
   friend class WebGLVertexArrayObjectBase;
@@ -871,8 +874,15 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
     static TypedExtensionTracker<T>* Create(Member<T>& extension_field,
                                             ExtensionFlags flags,
                                             const char* const* prefixes) {
-      return new TypedExtensionTracker<T>(extension_field, flags, prefixes);
+      return MakeGarbageCollected<TypedExtensionTracker<T>>(extension_field,
+                                                            flags, prefixes);
     }
+
+    TypedExtensionTracker(Member<T>& extension_field,
+                          ExtensionFlags flags,
+                          const char* const* prefixes)
+        : ExtensionTracker(flags, prefixes),
+          extension_field_(extension_field) {}
 
     WebGLExtension* GetExtension(WebGLRenderingContextBase* context) override {
       if (!extension_) {
@@ -907,12 +917,6 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
     }
 
    private:
-    TypedExtensionTracker(Member<T>& extension_field,
-                          ExtensionFlags flags,
-                          const char* const* prefixes)
-        : ExtensionTracker(flags, prefixes),
-          extension_field_(extension_field) {}
-
     GC_PLUGIN_IGNORE("http://crbug.com/519953")
     Member<T>& extension_field_;
     // ExtensionTracker holds it's own reference to the extension to ensure

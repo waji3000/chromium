@@ -63,10 +63,11 @@
 #include "components/printing/common/cloud_print_cdd_conversion.h"
 #include "components/printing/common/print_messages.h"
 #include "components/printing/common/printer_capabilities.h"
+#include "components/signin/core/browser/account_consistency_method.h"
 #include "components/signin/core/browser/gaia_cookie_manager_service.h"
-#include "components/signin/core/browser/profile_management_switches.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "components/url_formatter/url_formatter.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
@@ -593,10 +594,6 @@ void PrintPreviewHandler::RegisterMessages() {
       base::BindRepeating(&PrintPreviewHandler::HandleGetAccessToken,
                           base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
-      "managePrinters",
-      base::BindRepeating(&PrintPreviewHandler::HandleManagePrinters,
-                          base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
       "closePrintPreviewDialog",
       base::BindRepeating(&PrintPreviewHandler::HandleClosePreviewDialog,
                           base::Unretained(this)));
@@ -615,10 +612,6 @@ void PrintPreviewHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "getInitialSettings",
       base::BindRepeating(&PrintPreviewHandler::HandleGetInitialSettings,
-                          base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
-      "forceOpenNewTab",
-      base::BindRepeating(&PrintPreviewHandler::HandleForceOpenNewTab,
                           base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "grantExtensionPrinterAccess",
@@ -806,7 +799,8 @@ void PrintPreviewHandler::HandleGetPreview(const base::ListValue* args) {
     url_sanitizer.ClearPassword();
     const GURL& initiator_url = initiator->GetLastCommittedURL();
     settings->SetString(printing::kSettingHeaderFooterURL,
-                        initiator_url.ReplaceComponents(url_sanitizer).spec());
+                        url_formatter::FormatUrl(
+                            initiator_url.ReplaceComponents(url_sanitizer)));
   }
 
   VLOG(1) << "Print preview request start";
@@ -977,16 +971,6 @@ void PrintPreviewHandler::HandleGetAccessToken(const base::ListValue* args) {
   token_service_->RequestToken(type, callback_id);
 }
 
-// TODO(rbpotter): Remove this when the old Print Preview page is deleted.
-void PrintPreviewHandler::HandleManagePrinters(const base::ListValue* args) {
-  GURL local_printers_manage_url(
-      chrome::GetSettingsUrl(chrome::kPrintingSettingsSubPage));
-  preview_web_contents()->OpenURL(
-      content::OpenURLParams(local_printers_manage_url, content::Referrer(),
-                             WindowOpenDisposition::NEW_FOREGROUND_TAB,
-                             ui::PAGE_TRANSITION_LINK, false));
-}
-
 #if BUILDFLAG(ENABLE_BASIC_PRINT_DIALOG)
 void PrintPreviewHandler::HandleShowSystemDialog(
     const base::ListValue* /*args*/) {
@@ -1050,19 +1034,6 @@ void PrintPreviewHandler::HandleGetInitialSettings(
   GetPrinterHandler(PrinterType::kLocalPrinter)
       ->GetDefaultPrinter(base::Bind(&PrintPreviewHandler::SendInitialSettings,
                                      weak_factory_.GetWeakPtr(), callback_id));
-}
-
-// TODO(rbpotter): Remove this when the old Print Preview page is deleted.
-void PrintPreviewHandler::HandleForceOpenNewTab(const base::ListValue* args) {
-  std::string url;
-  if (!args->GetString(0, &url))
-    return;
-  Browser* browser = chrome::FindBrowserWithWebContents(GetInitiator());
-  if (!browser)
-    return;
-  chrome::AddSelectedTabWithURL(browser,
-                                GURL(url),
-                                ui::PAGE_TRANSITION_LINK);
 }
 
 void PrintPreviewHandler::SendInitialSettings(

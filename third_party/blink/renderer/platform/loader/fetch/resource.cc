@@ -129,7 +129,7 @@ class CachedMetadataSenderImpl : public CachedMetadataSender {
 };
 
 CachedMetadataSenderImpl::CachedMetadataSenderImpl(const Resource* resource)
-    : response_url_(resource->GetResponse().Url()),
+    : response_url_(resource->GetResponse().CurrentRequestUrl()),
       response_time_(resource->GetResponse().ResponseTime()),
       resource_type_(resource->GetType()) {
   DCHECK(resource->GetResponse().CacheStorageCacheName().IsNull());
@@ -171,7 +171,7 @@ class ServiceWorkerCachedMetadataSender : public CachedMetadataSender {
 ServiceWorkerCachedMetadataSender::ServiceWorkerCachedMetadataSender(
     const Resource* resource,
     const SecurityOrigin* security_origin)
-    : response_url_(resource->GetResponse().Url()),
+    : response_url_(resource->GetResponse().CurrentRequestUrl()),
       response_time_(resource->GetResponse().ResponseTime()),
       cache_storage_cache_name_(
           resource->GetResponse().CacheStorageCacheName()),
@@ -272,7 +272,7 @@ void Resource::CheckResourceIntegrity() {
 }
 
 void Resource::NotifyFinished() {
-  DCHECK(IsLoaded());
+  CHECK(IsFinishedInternal());
 
   ResourceClientWalker<ResourceClient> w(clients_);
   while (ResourceClient* c = w.Next()) {
@@ -299,6 +299,10 @@ void Resource::AppendData(const char* data, size_t length) {
       data_ = SharedBuffer::Create(data, length);
     SetEncodedSize(data_->size());
   }
+  NotifyDataReceived(data, length);
+}
+
+void Resource::NotifyDataReceived(const char* data, size_t length) {
   ResourceClientWalker<ResourceClient> w(Clients());
   while (ResourceClient* c = w.Next())
     c->DataReceived(this, data, length);
@@ -448,13 +452,13 @@ static double FreshnessLifetime(const ResourceResponse& response,
                                 double response_timestamp) {
 #if !defined(OS_ANDROID)
   // On desktop, local files should be reloaded in case they change.
-  if (response.Url().IsLocalFile())
+  if (response.CurrentRequestUrl().IsLocalFile())
     return 0;
 #endif
 
   // Cache other non-http / non-filesystem resources liberally.
-  if (!response.Url().ProtocolIsInHTTPFamily() &&
-      !response.Url().ProtocolIs("filesystem"))
+  if (!response.CurrentRequestUrl().ProtocolIsInHTTPFamily() &&
+      !response.CurrentRequestUrl().ProtocolIs("filesystem"))
     return std::numeric_limits<double>::max();
 
   // RFC2616 13.2.4
@@ -535,7 +539,7 @@ void Resource::SetResponse(const ResourceResponse& response) {
 
   // Currently we support the metadata caching only for HTTP family.
   if (!GetResourceRequest().Url().ProtocolIsInHTTPFamily() ||
-      !GetResponse().Url().ProtocolIsInHTTPFamily()) {
+      !GetResponse().CurrentRequestUrl().ProtocolIsInHTTPFamily()) {
     cache_handler_.Clear();
     return;
   }
@@ -618,7 +622,7 @@ void Resource::DidAddClient(ResourceClient* c) {
   }
   if (!HasClient(c))
     return;
-  if (IsLoaded()) {
+  if (IsFinishedInternal()) {
     c->NotifyFinished(this);
     if (clients_.Contains(c)) {
       finished_clients_.insert(c);
@@ -690,6 +694,12 @@ void Resource::AddFinishObserver(ResourceFinishObserver* client,
 
   WillAddClientOrObserver();
   finish_observers_.insert(client);
+  // Despite these being "Finish" observers, what they actually care about is
+  // whether the resource is "Loaded", not "Finished" (e.g. link onload). Hence
+  // we check IsLoaded directly here, rather than IsFinishedInternal.
+  //
+  // TODO(leszeks): Either rename FinishObservers to LoadedObservers, or the
+  // NotifyFinished method of ResourceClient to NotifyProcessed (or similar).
   if (IsLoaded())
     TriggerNotificationForFinishObservers(task_runner);
 }
@@ -799,7 +809,7 @@ Resource::MatchStatus Resource::CanReuse(const FetchParameters& params) const {
   if (GetResponse().WasFetchedViaServiceWorker() &&
       GetResponse().GetType() == network::mojom::FetchResponseType::kOpaque &&
       new_request.GetFetchRequestMode() !=
-          network::mojom::FetchRequestMode::kNoCORS) {
+          network::mojom::FetchRequestMode::kNoCors) {
     return MatchStatus::kUnknownFailure;
   }
 
@@ -885,13 +895,13 @@ Resource::MatchStatus Resource::CanReuse(const FetchParameters& params) const {
     return MatchStatus::kRequestModeDoesNotMatch;
 
   switch (new_mode) {
-    case network::mojom::FetchRequestMode::kNoCORS:
+    case network::mojom::FetchRequestMode::kNoCors:
     case network::mojom::FetchRequestMode::kNavigate:
       break;
 
-    case network::mojom::FetchRequestMode::kCORS:
+    case network::mojom::FetchRequestMode::kCors:
     case network::mojom::FetchRequestMode::kSameOrigin:
-    case network::mojom::FetchRequestMode::kCORSWithForcedPreflight:
+    case network::mojom::FetchRequestMode::kCorsWithForcedPreflight:
       // We have two separate CORS handling logics in ThreadableLoader
       // and ResourceLoader and sharing resources is difficult when they are
       // handled differently.
@@ -965,7 +975,7 @@ void Resource::OnMemoryDump(WebMemoryDumpLevelOfDetail level_of_detail,
               WTF::CodePointCompareLessThan);
 
     StringBuilder builder;
-    for (size_t i = 0;
+    for (wtf_size_t i = 0;
          i < client_names.size() && i < kMaxResourceClientToShowInMemoryInfra;
          ++i) {
       if (i > 0)
@@ -1011,8 +1021,9 @@ void Resource::ClearRangeRequestHeader() {
 void Resource::RevalidationSucceeded(
     const ResourceResponse& validating_response) {
   SECURITY_CHECK(redirect_chain_.IsEmpty());
-  SECURITY_CHECK(EqualIgnoringFragmentIdentifier(validating_response.Url(),
-                                                 GetResponse().Url()));
+  SECURITY_CHECK(
+      EqualIgnoringFragmentIdentifier(validating_response.CurrentRequestUrl(),
+                                      GetResponse().CurrentRequestUrl()));
   response_.SetResourceLoadTiming(validating_response.GetResourceLoadTiming());
 
   // RFC2616 10.3.5
@@ -1129,6 +1140,17 @@ bool Resource::StaleRevalidationRequested() const {
 
   for (auto& redirect : redirect_chain_) {
     if (redirect.redirect_response_.AsyncRevalidationRequested())
+      return true;
+  }
+  return false;
+}
+
+bool Resource::NetworkAccessed() const {
+  if (GetResponse().NetworkAccessed())
+    return true;
+
+  for (auto& redirect : redirect_chain_) {
+    if (redirect.redirect_response_.NetworkAccessed())
       return true;
   }
   return false;

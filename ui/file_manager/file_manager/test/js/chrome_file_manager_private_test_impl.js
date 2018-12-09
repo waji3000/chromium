@@ -35,7 +35,6 @@ chrome.fileManagerPrivate = {
     allowRedeemOffers: true,
     cellularDisabled: true,
     driveEnabled: true,
-    hostedFilesDisabled: true,
     searchSuggestEnabled: true,
     timezone: 'Australia/Sydney',
     use24hourClock: false,
@@ -90,8 +89,8 @@ chrome.fileManagerPrivate = {
     setTimeout(callback, 0, results);
   },
   getCrostiniSharedPaths: (callback) => {
-    // Returns Entry[].
-    setTimeout(callback, 0, []);
+    // Returns Entry[], firstForSession.
+    setTimeout(callback, 0, true, []);
   },
   getLinuxPackageInfo: (entry, callback) => {
     // Returns chrome.fileManagerPrivate.LinuxPackageInfo.
@@ -154,6 +153,7 @@ chrome.fileManagerPrivate = {
   },
   onAppsUpdated: new test.Event(),
   onCopyProgress: new test.Event(),
+  onCrostiniSharedPathsChanged: new test.Event(),
   onDeviceChanged: new test.Event(),
   onDirectoryChanged: new test.Event(),
   onDriveConnectionStatusChanged: new test.Event(),
@@ -188,6 +188,9 @@ chrome.fileManagerPrivate = {
     setTimeout(callback, 0, []);
   },
   sharePathsWithCrostini: (entries, persist, callback) => {
+    setTimeout(callback, 0);
+  },
+  unsharePathWithCrostini: (entry, callback) => {
     setTimeout(callback, 0);
   },
   nextCopyId_: 0,

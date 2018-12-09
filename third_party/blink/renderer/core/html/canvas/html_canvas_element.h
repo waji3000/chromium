@@ -102,6 +102,8 @@ class CORE_EXPORT HTMLCanvasElement final
   using Node::GetExecutionContext;
 
   DECLARE_NODE_FACTORY(HTMLCanvasElement);
+
+  explicit HTMLCanvasElement(Document&);
   ~HTMLCanvasElement() override;
 
   // Attributes and functions exposed to script
@@ -195,7 +197,7 @@ class CORE_EXPORT HTMLCanvasElement final
   scoped_refptr<Image> GetSourceImageForCanvas(SourceImageStatus*,
                                                AccelerationHint,
                                                const FloatSize&) override;
-  bool WouldTaintOrigin(const SecurityOrigin*) const override;
+  bool WouldTaintOrigin() const override;
   FloatSize ElementSize(const FloatSize&) const override;
   bool IsCanvasElement() const override { return true; }
   bool IsOpaque() const override;
@@ -303,7 +305,6 @@ class CORE_EXPORT HTMLCanvasElement final
   void DidMoveToNewDocument(Document& old_document) override;
 
  private:
-  explicit HTMLCanvasElement(Document&);
   void Dispose();
 
   using ContextFactoryVector =

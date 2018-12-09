@@ -24,9 +24,6 @@
         "font_cache": [
           "content.mojom.FontCacheWin"
         ],
-        "font_loader": [
-          "content.mojom.FontLoaderMac"
-        ],
         "gpu": [
           "discardable_memory.mojom.DiscardableSharedMemoryManager",
           "media.mojom.AndroidOverlayProvider"
@@ -75,12 +72,16 @@
           "media.mojom.VideoDecodePerfHistory",
           "memory_coordinator.mojom.MemoryCoordinatorHandle",
           "metrics.mojom.SingleSampleMetricsProvider",
+          "midi.mojom.MidiSessionProvider",
           "network.mojom.P2PSocketManager",
           "network.mojom.MdnsResponder",
           "network.mojom.URLLoaderFactory",
           "resource_coordinator.mojom.ProcessCoordinationUnit",
           "viz.mojom.CompositingModeReporter",
           "ws.mojom.Gpu"
+        ],
+        "sandbox_support": [
+          "content.mojom.SandboxSupportMac"
         ],
         "service_manager:service_factory": [
           "service_manager.mojom.ServiceFactory"
@@ -164,9 +165,11 @@
           "blink.mojom.BackgroundFetchService",
           "blink.mojom.CacheStorage",
           "blink.mojom.ColorChooserFactory",
+          "blink.mojom.ContactsManager",
           "blink.mojom.CredentialManager",
           "blink.mojom.DisplayCutoutHost",
           "blink.mojom.DedicatedWorkerFactory",
+          "blink.mojom.FileChooser",
           "blink.mojom.FileSystemManager",
           "blink.mojom.LockManager",
           "blink.mojom.GeolocationService",
@@ -180,9 +183,11 @@
           "blink.mojom.PrefetchURLLoaderService",
           "blink.mojom.PresentationService",
           "blink.mojom.QuotaDispatcherHost",
+          "blink.mojom.SharedWorkerConnector",
           "blink.mojom.SpeechRecognizer",
           "blink.mojom.TextSuggestionHost",
           "blink.mojom.UnhandledTapNotifier",
+          "blink.mojom.WakeLockService",
           "blink.mojom.WebBluetoothService",
           "blink.mojom.WebUsbService",
           "blink.test.mojom.VirtualAuthenticatorManager",
@@ -197,7 +202,6 @@
           "content.mojom.MediaStreamDispatcherHost",
           "content.mojom.RendererAudioInputStreamFactory",
           "content.mojom.RendererAudioOutputStreamFactory",
-          "content.mojom.SharedWorkerConnector",
           "device.mojom.GamepadMonitor",
           "device.mojom.Geolocation",
           "device.mojom.NFC",

@@ -34,7 +34,6 @@
 #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
 #include "third_party/blink/renderer/core/dom/context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
-#include "third_party/blink/renderer/core/fileapi/file_error.h"
 #include "third_party/blink/renderer/modules/event_target_modules.h"
 #include "third_party/blink/renderer/modules/filesystem/file_writer_base.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
@@ -42,8 +41,10 @@
 namespace blink {
 
 class Blob;
+class DOMException;
 class ExceptionState;
 class ExecutionContext;
+enum class FileErrorCode;
 
 class FileWriter final : public EventTargetWithInlineData,
                          public FileWriterBase,
@@ -55,6 +56,8 @@ class FileWriter final : public EventTargetWithInlineData,
 
  public:
   static FileWriter* Create(ExecutionContext*);
+
+  explicit FileWriter(ExecutionContext*);
   ~FileWriter() override;
 
   enum ReadyState { kInit = 0, kWriting = 1, kDone = 2 };
@@ -105,8 +108,6 @@ class FileWriter final : public EventTargetWithInlineData,
     kOperationAbort
   };
 
-  explicit FileWriter(ExecutionContext*);
-
   void CompleteAbort();
 
   void DoOperation(Operation);
@@ -115,7 +116,7 @@ class FileWriter final : public EventTargetWithInlineData,
 
   void FireEvent(const AtomicString& type);
 
-  void SetError(file_error::ErrorCode, ExceptionState&);
+  void SetError(FileErrorCode, ExceptionState&);
 
   void Dispose();
 

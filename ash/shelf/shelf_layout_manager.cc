@@ -24,6 +24,7 @@
 #include "ash/shelf/shelf_layout_manager_observer.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
+#include "ash/system/locale/locale_update_controller.h"
 #include "ash/system/status_area_widget.h"
 #include "ash/wallpaper/wallpaper_controller.h"
 #include "ash/wm/fullscreen_window_finder.h"
@@ -95,10 +96,10 @@ bool IsTabletModeEnabled() {
       ->IsTabletModeWindowManagerEnabled();
 }
 
-// TODO(sammiequon): This should be the same as IsTabletModeEnabled once home
-// launcher flag is removed.
 bool IsHomeLauncherEnabledInTabletMode() {
-  return app_list_features::IsHomeLauncherEnabled() && IsTabletModeEnabled();
+  // Home launcher flag is enabled by default and removed, so this is the same
+  // as checking tablet mode state.
+  return IsTabletModeEnabled();
 }
 
 }  // namespace
@@ -166,8 +167,7 @@ bool ShelfLayoutManager::State::Equals(const State& other) const {
 // ShelfLayoutManager ----------------------------------------------------------
 
 ShelfLayoutManager::ShelfLayoutManager(ShelfWidget* shelf_widget, Shelf* shelf)
-    : updating_bounds_(false),
-      shelf_widget_(shelf_widget),
+    : shelf_widget_(shelf_widget),
       shelf_(shelf),
       is_background_blur_enabled_(
           app_list_features::IsBackgroundBlurEnabled()) {
@@ -176,6 +176,7 @@ ShelfLayoutManager::ShelfLayoutManager(ShelfWidget* shelf_widget, Shelf* shelf)
   Shell::Get()->AddShellObserver(this);
   Shell::Get()->lock_state_controller()->AddObserver(this);
   Shell::Get()->activation_client()->AddObserver(this);
+  Shell::Get()->locale_update_controller()->AddObserver(this);
   state_.session_state = Shell::Get()->session_controller()->GetSessionState();
   keyboard::KeyboardController::Get()->AddObserver(this);
   wallpaper_controller_observer_.Add(Shell::Get()->wallpaper_controller());
@@ -190,6 +191,7 @@ ShelfLayoutManager::~ShelfLayoutManager() {
     observer.WillDeleteShelfLayoutManager();
   display::Screen::GetScreen()->RemoveObserver(this);
   keyboard::KeyboardController::Get()->RemoveObserver(this);
+  Shell::Get()->locale_update_controller()->RemoveObserver(this);
   Shell::Get()->RemoveShellObserver(this);
   Shell::Get()->lock_state_controller()->RemoveObserver(this);
 }
@@ -342,21 +344,32 @@ void ShelfLayoutManager::UpdateAutoHideForMouseEvent(ui::MouseEvent* event,
   if (visibility_state() != SHELF_AUTO_HIDE || in_shutdown_)
     return;
 
-  if (event->type() == ui::ET_MOUSE_MOVED ||
-      event->type() == ui::ET_MOUSE_ENTERED ||
-      event->type() == ui::ET_MOUSE_EXITED) {
+  if (event->type() == ui::ET_MOUSE_PRESSED ||
+      (event->type() == ui::ET_MOUSE_MOVED &&
+       GetVisibleShelfBounds().Contains(
+           display::Screen::GetScreen()->GetCursorScreenPoint()))) {
     UpdateAutoHideState();
   }
 }
 
-void ShelfLayoutManager::ProcessGestureEventOnWindow(ui::GestureEvent* event,
-                                                     aura::Window* target) {
+void ShelfLayoutManager::ProcessGestureEventOfAutoHideShelf(
+    ui::GestureEvent* event,
+    aura::Window* target) {
+  const bool is_shelf_window = IsShelfWindow(target);
   // Skip event processing if shelf widget is fully visible to let the default
   // event dispatching do its work.
-  if (IsVisible() || in_shutdown_)
+  if (IsVisible() || in_shutdown_) {
+    // Tap outside of the AUTO_HIDE_SHOWN shelf should hide it.
+    if (!is_shelf_window && !IsStatusAreaWindow(target) &&
+        visibility_state() == SHELF_AUTO_HIDE &&
+        state_.auto_hide_state == SHELF_AUTO_HIDE_SHOWN &&
+        event->type() == ui::ET_GESTURE_TAP) {
+      UpdateAutoHideState();
+    }
     return;
+  }
 
-  if (IsShelfWindow(target)) {
+  if (is_shelf_window) {
     ui::GestureEvent event_in_screen(*event);
     gfx::Point location_in_screen(event->location());
     ::wm::ConvertPointToScreen(target, &location_in_screen);
@@ -394,13 +407,6 @@ bool ShelfLayoutManager::ProcessGestureEvent(
 
   if (gesture_drag_status_ != GESTURE_DRAG_IN_PROGRESS &&
       gesture_drag_status_ != GESTURE_DRAG_APPLIST_IN_PROGRESS) {
-    if ((shelf_->GetVisibilityState() == SHELF_AUTO_HIDE &&
-         shelf_->GetAutoHideState() == SHELF_AUTO_HIDE_HIDDEN) ||
-        shelf_->GetVisibilityState() == SHELF_HIDDEN) {
-      // Do not allow children to handle events while the shelf is hidden.
-      return true;
-    }
-
     return false;
   }
 
@@ -444,8 +450,75 @@ bool ShelfLayoutManager::IsDraggingWindowFromTopOrCaptionArea() const {
   return false;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// ShelfLayoutManager, wm::WmSnapToPixelLayoutManager implementation:
+ShelfBackgroundType ShelfLayoutManager::GetShelfBackgroundType() const {
+  if (state_.pre_lock_screen_animation_active)
+    return SHELF_BACKGROUND_DEFAULT;
+
+  // Handle all other non active screen states, including OOBE and pre-login.
+  if (state_.session_state == session_manager::SessionState::OOBE)
+    return SHELF_BACKGROUND_OOBE;
+  if (state_.session_state != session_manager::SessionState::ACTIVE) {
+    if (Shell::Get()->wallpaper_controller()->HasShownAnyWallpaper() &&
+        !Shell::Get()->wallpaper_controller()->IsWallpaperBlurred()) {
+      return SHELF_BACKGROUND_LOGIN_NONBLURRED_WALLPAPER;
+    }
+    return SHELF_BACKGROUND_LOGIN;
+  }
+
+  // If the app list is active and the home launcher is not shown, hide the
+  // shelf background to prevent overlap.
+  if (is_app_list_visible_ && !IsHomeLauncherEnabledInTabletMode())
+    return SHELF_BACKGROUND_APP_LIST;
+
+  if (state_.visibility_state != SHELF_AUTO_HIDE &&
+      state_.window_state == wm::WORKSPACE_WINDOW_STATE_MAXIMIZED) {
+    return SHELF_BACKGROUND_MAXIMIZED;
+  }
+
+  if (gesture_drag_status_ == GESTURE_DRAG_IN_PROGRESS ||
+      window_overlaps_shelf_ || state_.visibility_state == SHELF_AUTO_HIDE) {
+    return SHELF_BACKGROUND_OVERLAP;
+  }
+
+  if (Shell::Get()->window_selector_controller() &&
+      Shell::Get()->window_selector_controller()->IsSelecting()) {
+    return SHELF_BACKGROUND_OVERLAP;
+  }
+
+  // If split view mode is active, make the shelf fully opapue.
+  if (Shell::Get()->IsSplitViewModeActive())
+    return SHELF_BACKGROUND_SPLIT_VIEW;
+
+  return SHELF_BACKGROUND_DEFAULT;
+}
+
+void ShelfLayoutManager::SetAccessibilityPanelHeight(int height) {
+  accessibility_panel_height_ = height;
+  LayoutShelf();
+}
+
+void ShelfLayoutManager::SetDockedMagnifierHeight(int height) {
+  docked_magnifier_height_ = height;
+  LayoutShelf();
+}
+
+void ShelfLayoutManager::MaybeUpdateShelfBackground(AnimationChangeType type) {
+  const ShelfBackgroundType new_background_type(GetShelfBackgroundType());
+
+  if (new_background_type == shelf_background_type_)
+    return;
+
+  shelf_background_type_ = new_background_type;
+  for (auto& observer : observers_)
+    observer.OnBackgroundUpdated(shelf_background_type_, type);
+}
+
+bool ShelfLayoutManager::ShouldBlurShelfBackground() {
+  return IsBackgroundBlurEnabled() &&
+         (shelf_background_type_ == SHELF_BACKGROUND_DEFAULT ||
+          shelf_background_type_ == SHELF_BACKGROUND_OVERLAP) &&
+         state_.session_state == session_manager::SessionState::ACTIVE;
+}
 
 void ShelfLayoutManager::OnWindowResized() {
   LayoutShelf();
@@ -532,67 +605,65 @@ void ShelfLayoutManager::OnKeyboardVisibilityStateChanged(
   }
 }
 
-ShelfBackgroundType ShelfLayoutManager::GetShelfBackgroundType() const {
-  if (state_.pre_lock_screen_animation_active)
-    return SHELF_BACKGROUND_DEFAULT;
-
-  // Handle all other non active screen states, including OOBE and pre-login.
-  if (state_.session_state == session_manager::SessionState::OOBE)
-    return SHELF_BACKGROUND_OOBE;
-  if (state_.session_state != session_manager::SessionState::ACTIVE) {
-    if (Shell::Get()->wallpaper_controller()->HasShownAnyWallpaper() &&
-        !Shell::Get()->wallpaper_controller()->IsWallpaperBlurred()) {
-      return SHELF_BACKGROUND_LOGIN_NONBLURRED_WALLPAPER;
-    }
-    return SHELF_BACKGROUND_LOGIN;
+void ShelfLayoutManager::OnLockStateEvent(LockStateObserver::EventType event) {
+  if (event == EVENT_LOCK_ANIMATION_STARTED) {
+    // Enter the screen locked state and update the visibility to avoid an odd
+    // animation when transitioning the orientation from L/R to bottom.
+    state_.pre_lock_screen_animation_active = true;
+    UpdateShelfVisibilityAfterLoginUIChange();
+  } else {
+    state_.pre_lock_screen_animation_active = false;
   }
-
-  // If the app list is active and the home launcher is not shown, hide the
-  // shelf background to prevent overlap.
-  if (is_app_list_visible_ && !IsHomeLauncherEnabledInTabletMode())
-    return SHELF_BACKGROUND_APP_LIST;
-
-  if (state_.visibility_state != SHELF_AUTO_HIDE &&
-      state_.window_state == wm::WORKSPACE_WINDOW_STATE_MAXIMIZED) {
-    return SHELF_BACKGROUND_MAXIMIZED;
-  }
-
-  if (gesture_drag_status_ == GESTURE_DRAG_IN_PROGRESS ||
-      window_overlaps_shelf_ || state_.visibility_state == SHELF_AUTO_HIDE) {
-    return SHELF_BACKGROUND_OVERLAP;
-  }
-
-  if (Shell::Get()->window_selector_controller() &&
-      Shell::Get()->window_selector_controller()->IsSelecting()) {
-    return SHELF_BACKGROUND_OVERLAP;
-  }
-
-  // If split view mode is active, make the shelf fully opapue.
-  if (Shell::Get()->IsSplitViewModeActive())
-    return SHELF_BACKGROUND_SPLIT_VIEW;
-
-  return SHELF_BACKGROUND_DEFAULT;
+  MaybeUpdateShelfBackground(AnimationChangeType::ANIMATE);
 }
 
-void ShelfLayoutManager::SetAccessibilityPanelHeight(int height) {
-  accessibility_panel_height_ = height;
-  LayoutShelf();
-}
-
-void ShelfLayoutManager::SetDockedMagnifierHeight(int height) {
-  docked_magnifier_height_ = height;
-  LayoutShelf();
-}
-
-void ShelfLayoutManager::MaybeUpdateShelfBackground(AnimationChangeType type) {
-  const ShelfBackgroundType new_background_type(GetShelfBackgroundType());
-
-  if (new_background_type == shelf_background_type_)
+void ShelfLayoutManager::OnSessionStateChanged(
+    session_manager::SessionState state) {
+  // Check transition changes to/from the add user to session and change the
+  // shelf alignment accordingly
+  const bool was_adding_user = state_.IsAddingSecondaryUser();
+  const bool was_locked = state_.IsScreenLocked();
+  state_.session_state = state;
+  MaybeUpdateShelfBackground(AnimationChangeType::ANIMATE);
+  if (was_adding_user != state_.IsAddingSecondaryUser()) {
+    UpdateShelfVisibilityAfterLoginUIChange();
     return;
+  }
 
-  shelf_background_type_ = new_background_type;
-  for (auto& observer : observers_)
-    observer.OnBackgroundUpdated(shelf_background_type_, type);
+  // Force the shelf to layout for alignment (bottom if locked, restore the
+  // previous alignment otherwise).
+  if (was_locked != state_.IsScreenLocked())
+    UpdateShelfVisibilityAfterLoginUIChange();
+
+  TargetBounds target_bounds;
+  CalculateTargetBounds(state_, &target_bounds);
+  UpdateBoundsAndOpacity(target_bounds, true /* animate */, nullptr);
+  UpdateVisibilityState();
+}
+
+void ShelfLayoutManager::OnLoginStatusChanged(LoginStatus loing_status) {
+  UpdateVisibilityState();
+}
+
+void ShelfLayoutManager::OnWallpaperBlurChanged() {
+  MaybeUpdateShelfBackground(AnimationChangeType::ANIMATE);
+}
+
+void ShelfLayoutManager::OnFirstWallpaperShown() {
+  MaybeUpdateShelfBackground(AnimationChangeType::ANIMATE);
+}
+
+void ShelfLayoutManager::OnDisplayMetricsChanged(
+    const display::Display& display,
+    uint32_t changed_metrics) {
+  // Update |user_work_area_bounds_| for the new display arrangement.
+  TargetBounds target_bounds;
+  CalculateTargetBounds(state_, &target_bounds);
+}
+
+void ShelfLayoutManager::OnLocaleChanged() {
+  // Layout update is needed when language changes between LTR and RTL.
+  LayoutShelfAndUpdateBounds();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -942,7 +1013,8 @@ gfx::Rect ShelfLayoutManager::GetVisibleShelfBounds() const {
   gfx::Rect shelf_region = shelf_widget_->GetWindowBoundsInScreen();
   DCHECK(!display_.bounds().IsEmpty());
   shelf_region.Intersect(display_.bounds());
-  return shelf_region;
+  return screen_util::SnapBoundsToDisplayEdge(shelf_region,
+                                              shelf_widget_->GetNativeWindow());
 }
 
 gfx::Rect ShelfLayoutManager::GetAutoHideShowShelfRegionInScreen() const {
@@ -961,7 +1033,8 @@ gfx::Rect ShelfLayoutManager::GetAutoHideShowShelfRegionInScreen() const {
 
   // TODO(pkotwicz): Figure out if we need any special handling when the
   // keyboard is visible.
-  return show_shelf_region_in_screen;
+  return screen_util::SnapBoundsToDisplayEdge(show_shelf_region_in_screen,
+                                              shelf_widget_->GetNativeWindow());
 }
 
 bool ShelfLayoutManager::HasVisibleWindow() const {
@@ -994,10 +1067,11 @@ ShelfAutoHideState ShelfLayoutManager::CalculateAutoHideState(
     return SHELF_AUTO_HIDE_SHOWN;
 
   if (shelf_widget_->status_area_widget() &&
-      shelf_widget_->status_area_widget()->ShouldShowShelf())
+      shelf_widget_->status_area_widget()->ShouldShowShelf()) {
     return SHELF_AUTO_HIDE_SHOWN;
+  }
 
-  if (shelf_widget_->IsShowingContextMenu())
+  if (shelf_widget_->IsShowingMenu())
     return SHELF_AUTO_HIDE_SHOWN;
 
   if (shelf_widget_->IsShowingOverflowBubble())
@@ -1047,8 +1121,12 @@ ShelfAutoHideState ShelfLayoutManager::CalculateAutoHideState(
 
   gfx::Point cursor_position_in_screen =
       display::Screen::GetScreen()->GetCursorScreenPoint();
-  if (shelf_region.Contains(cursor_position_in_screen))
+  // Cursor is invisible in talbet mode and plug in an external mouse in tablet
+  // mode will switch to clamshell mode.
+  if (shelf_region.Contains(cursor_position_in_screen) &&
+      !IsTabletModeEnabled()) {
     return SHELF_AUTO_HIDE_SHOWN;
+  }
 
   // When the shelf is auto hidden and the shelf is on the boundary between two
   // displays, it is hard to trigger showing the shelf. For instance, if a
@@ -1093,54 +1171,6 @@ int ShelfLayoutManager::GetWorkAreaInsets(const State& state, int size) const {
   return 0;
 }
 
-void ShelfLayoutManager::OnLockStateEvent(LockStateObserver::EventType event) {
-  if (event == EVENT_LOCK_ANIMATION_STARTED) {
-    // Enter the screen locked state and update the visibility to avoid an odd
-    // animation when transitioning the orientation from L/R to bottom.
-    state_.pre_lock_screen_animation_active = true;
-    UpdateShelfVisibilityAfterLoginUIChange();
-  } else {
-    state_.pre_lock_screen_animation_active = false;
-  }
-  MaybeUpdateShelfBackground(AnimationChangeType::ANIMATE);
-}
-
-void ShelfLayoutManager::OnSessionStateChanged(
-    session_manager::SessionState state) {
-  // Check transition changes to/from the add user to session and change the
-  // shelf alignment accordingly
-  const bool was_adding_user = state_.IsAddingSecondaryUser();
-  const bool was_locked = state_.IsScreenLocked();
-  state_.session_state = state;
-  MaybeUpdateShelfBackground(AnimationChangeType::ANIMATE);
-  if (was_adding_user != state_.IsAddingSecondaryUser()) {
-    UpdateShelfVisibilityAfterLoginUIChange();
-    return;
-  }
-
-  // Force the shelf to layout for alignment (bottom if locked, restore the
-  // previous alignment otherwise).
-  if (was_locked != state_.IsScreenLocked())
-    UpdateShelfVisibilityAfterLoginUIChange();
-
-  TargetBounds target_bounds;
-  CalculateTargetBounds(state_, &target_bounds);
-  UpdateBoundsAndOpacity(target_bounds, true /* animate */, nullptr);
-  UpdateVisibilityState();
-}
-
-void ShelfLayoutManager::OnWallpaperBlurChanged() {
-  MaybeUpdateShelfBackground(AnimationChangeType::ANIMATE);
-}
-
-void ShelfLayoutManager::OnFirstWallpaperShown() {
-  MaybeUpdateShelfBackground(AnimationChangeType::ANIMATE);
-}
-
-void ShelfLayoutManager::OnLoginStatusChanged(LoginStatus loing_status) {
-  UpdateVisibilityState();
-}
-
 void ShelfLayoutManager::UpdateShelfVisibilityAfterLoginUIChange() {
   UpdateVisibilityState();
   LayoutShelf();
@@ -1172,16 +1202,6 @@ bool ShelfLayoutManager::IsShelfAutoHideForFullscreenMaximized() const {
   return active_window &&
          active_window->autohide_shelf_when_maximized_or_fullscreen();
 }
-
-bool ShelfLayoutManager::ShouldBlurShelfBackground() {
-  return IsBackgroundBlurEnabled() &&
-         (shelf_background_type_ == SHELF_BACKGROUND_DEFAULT ||
-          shelf_background_type_ == SHELF_BACKGROUND_OVERLAP) &&
-         state_.session_state == session_manager::SessionState::ACTIVE;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// ShelfLayoutManager, Gesture functions:
 
 bool ShelfLayoutManager::ShouldHomeGestureHandleEvent(float scroll_y) const {
   HomeLauncherGestureHandler* home_launcher_handler =
@@ -1236,6 +1256,10 @@ bool ShelfLayoutManager::StartGestureDrag(
 
   // Disable the shelf dragging if the fullscreen app list is opened.
   if (is_app_list_visible_ && !IsHomeLauncherEnabledInTabletMode())
+    return false;
+
+  // Also disable shelf drags until the overflow shelf is closed.
+  if (shelf_widget_->IsShowingOverflowBubble())
     return false;
 
   gesture_drag_status_ = GESTURE_DRAG_IN_PROGRESS;
@@ -1316,16 +1340,8 @@ void ShelfLayoutManager::CompleteAppListDrag(
 
   HomeLauncherGestureHandler* home_launcher_handler =
       Shell::Get()->app_list_controller()->home_launcher_gesture_handler();
-  bool dragged_down;
   if (home_launcher_handler &&
-      home_launcher_handler->OnReleaseEvent(gesture_in_screen.location(),
-                                            &dragged_down)) {
-    if (dragged_down && visibility_state() == SHELF_AUTO_HIDE) {
-      DCHECK_EQ(SHELF_AUTO_HIDE_SHOWN, gesture_drag_auto_hide_state_);
-      gesture_drag_auto_hide_state_ = SHELF_AUTO_HIDE_HIDDEN;
-      gesture_drag_status_ = GESTURE_DRAG_COMPLETE_IN_PROGRESS;
-      UpdateVisibilityState();
-    }
+      home_launcher_handler->OnReleaseEvent(gesture_in_screen.location())) {
     gesture_drag_status_ = GESTURE_DRAG_NONE;
     return;
   }
@@ -1392,6 +1408,11 @@ bool ShelfLayoutManager::CanStartFullscreenAppListDrag(
 
   // If the shelf is not visible, swiping up should show the shelf.
   if (!IsVisible())
+    return false;
+
+  // Do not show the fullscreen app list until the overflow bubble has been
+  // closed.
+  if (shelf_widget_->IsShowingOverflowBubble())
     return false;
 
   // If app list is already opened, swiping up on the shelf should keep the app
@@ -1474,14 +1495,6 @@ bool ShelfLayoutManager::ShouldChangeVisibilityAfterDrag(
     return IsSwipingCorrectDirection();
 
   return false;
-}
-
-void ShelfLayoutManager::OnDisplayMetricsChanged(
-    const display::Display& display,
-    uint32_t changed_metrics) {
-  // Update |user_work_area_bounds_| for the new display arrangement.
-  TargetBounds target_bounds;
-  CalculateTargetBounds(state_, &target_bounds);
 }
 
 void ShelfLayoutManager::UpdateWorkspaceMask(

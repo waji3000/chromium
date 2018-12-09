@@ -26,11 +26,10 @@ js_type_check("closure_compile_module") {
     ":lru_cache",
     ":metrics",
     ":metrics_base",
-    ":metrics_events",
     ":mock_entry",
     ":progress_center_common",
     ":util",
-    ":volume_manager_common",
+    "//ui/file_manager/base/js:volume_manager_types",
   ]
 }
 
@@ -62,16 +61,17 @@ js_library("files_app_entry_types") {
 js_unittest("files_app_entry_types_unittest") {
   deps = [
     ":files_app_entry_types",
+    ":mock_entry",
     ":util",
-    ":volume_manager_common",
     "//ui/file_manager/base/js:test_error_reporting",
+    "//ui/file_manager/base/js:volume_manager_types",
   ]
 }
 
 js_library("file_type") {
   deps = [
     ":files_app_entry_types",
-    ":volume_manager_common",
+    "//ui/file_manager/base/js:volume_manager_types",
   ]
 }
 
@@ -83,11 +83,10 @@ js_library("importer_common") {
   visibility = [ "//ui/file_manager/file_manager/*" ]
   deps = [
     ":file_type",
-    ":volume_manager_common",
     "../../../externs:volume_manager",
+    "//ui/file_manager/base/js:volume_manager_types",
   ]
   externs_list = [
-    "//third_party/analytics/externs.js",
     "../../../externs/background_window.js",
     "../../../externs/background/file_browser_background.js",
   ]
@@ -125,8 +124,6 @@ js_unittest("lru_cache_unittest") {
 }
 
 js_library("metrics") {
-  # |metrics| and |metrics_events| are for analytics. Don't leak this dependency
-  # outside of the core files app.
   visibility = []
   visibility = [ "//ui/file_manager/file_manager/*" ]
   deps = [
@@ -134,19 +131,10 @@ js_library("metrics") {
     "../../../externs:file_manager_private",
     "//ui/webui/resources/js:assert",
   ]
-  externs_list = [ "//third_party/analytics/externs.js" ]
 }
 
 js_library("metrics_base") {
   externs_list = [ "$externs_path/metrics_private.js" ]
-}
-
-js_library("metrics_events") {
-  visibility = []
-  visibility = [ "//ui/file_manager/file_manager/*" ]
-  deps = [
-    ":metrics_base",
-  ]
 }
 
 js_library("mock_entry") {
@@ -159,7 +147,9 @@ js_library("mock_entry") {
 js_library("progress_center_common") {
 }
 
-js_unittest("unittest_util") {
+js_library("unittest_util") {
+  testonly = true
+
   # Only files app tests use this util file.
   visibility = []
   visibility = [ "//ui/file_manager/file_manager/*" ]
@@ -172,8 +162,8 @@ js_unittest("unittest_util") {
 js_library("util") {
   deps = [
     ":files_app_entry_types",
-    ":volume_manager_common",
     "../../../externs:file_manager_private",
+    "//ui/file_manager/base/js:volume_manager_types",
     "//ui/webui/resources/js:load_time_data",
     "//ui/webui/resources/js:util",
     "//ui/webui/resources/js/cr:event_target",
@@ -184,20 +174,17 @@ js_library("util") {
     "../../../externs/app_window_common.js",
     "../../../externs/entry_location.js",
     "../../../externs/platform.js",
+    "../../../externs/volume_info.js",
   ]
 }
 
 js_unittest("util_unittest") {
   deps = [
+    ":files_app_entry_types",
     ":mock_entry",
+    ":unittest_util",
     ":util",
-    "//ui/file_manager/base/js:test_error_reporting",
-  ]
-}
-
-js_library("volume_manager_common") {
-  deps = [
-    "//ui/webui/resources/js:assert",
+    "//ui/file_manager/file_manager/background/js:mock_volume_manager",
   ]
 }
 

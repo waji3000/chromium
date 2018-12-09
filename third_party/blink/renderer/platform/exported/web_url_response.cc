@@ -81,8 +81,9 @@ WebURLResponse::WebURLResponse(const WebURLResponse& r)
           std::make_unique<ResourceResponse>(*r.resource_response_)),
       resource_response_(owned_resource_response_.get()) {}
 
-WebURLResponse::WebURLResponse(const WebURL& url) : WebURLResponse() {
-  SetURL(url);
+WebURLResponse::WebURLResponse(const WebURL& current_request_url)
+    : WebURLResponse() {
+  SetCurrentRequestUrl(current_request_url);
 }
 
 WebURLResponse& WebURLResponse::operator=(const WebURLResponse& r) {
@@ -99,12 +100,16 @@ bool WebURLResponse::IsNull() const {
   return resource_response_->IsNull();
 }
 
-WebURL WebURLResponse::Url() const {
-  return resource_response_->Url();
+WebURL WebURLResponse::CurrentRequestUrl() const {
+  return resource_response_->CurrentRequestUrl();
 }
 
-void WebURLResponse::SetURL(const WebURL& url) {
-  resource_response_->SetURL(url);
+void WebURLResponse::SetCurrentRequestUrl(const WebURL& url) {
+  resource_response_->SetCurrentRequestUrl(url);
+}
+
+WebURL WebURLResponse::ResponseUrl() const {
+  return resource_response_->ResponseUrl();
 }
 
 void WebURLResponse::SetConnectionID(unsigned connection_id) {
@@ -261,6 +266,10 @@ void WebURLResponse::SetIsLegacySymantecCert(bool value) {
   resource_response_->SetIsLegacySymantecCert(value);
 }
 
+void WebURLResponse::SetIsLegacyTLSVersion(bool value) {
+  resource_response_->SetIsLegacyTLSVersion(value);
+}
+
 void WebURLResponse::SetSecurityStyle(WebSecurityStyle security_style) {
   resource_response_->SetSecurityStyle(
       static_cast<ResourceResponse::SecurityStyle>(security_style));
@@ -351,10 +360,6 @@ void WebURLResponse::SetURLListViaServiceWorker(
   resource_response_->SetURLListViaServiceWorker(url_list);
 }
 
-WebURL WebURLResponse::OriginalURLViaServiceWorker() const {
-  return resource_response_->OriginalURLViaServiceWorker();
-}
-
 void WebURLResponse::SetMultipartBoundary(const char* bytes, size_t size) {
   resource_response_->SetMultipartBoundary(bytes, size);
 }
@@ -421,10 +426,6 @@ void WebURLResponse::SetExtraData(WebURLResponse::ExtraData* extra_data) {
   }
 }
 
-void WebURLResponse::AppendRedirectResponse(const WebURLResponse& response) {
-  resource_response_->AppendRedirectResponse(response.ToResourceResponse());
-}
-
 WebString WebURLResponse::AlpnNegotiatedProtocol() const {
   return resource_response_->AlpnNegotiatedProtocol();
 }
@@ -445,6 +446,10 @@ void WebURLResponse::SetConnectionInfo(
 
 void WebURLResponse::SetAsyncRevalidationRequested(bool requested) {
   resource_response_->SetAsyncRevalidationRequested(requested);
+}
+
+void WebURLResponse::SetNetworkAccessed(bool network_accessed) {
+  resource_response_->SetNetworkAccessed(network_accessed);
 }
 
 WebURLResponse::WebURLResponse(ResourceResponse& r) : resource_response_(&r) {}

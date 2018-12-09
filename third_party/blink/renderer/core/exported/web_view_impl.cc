@@ -38,7 +38,6 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "cc/layers/picture_layer.h"
-#include "third_party/blink/public/mojom/page/page_visibility_state.mojom-blink.h"
 #include "third_party/blink/public/platform/web_float_point.h"
 #include "third_party/blink/public/platform/web_image.h"
 #include "third_party/blink/public/platform/web_input_event.h"
@@ -242,16 +241,18 @@ namespace {
 
 class EmptyEventListener final : public EventListener {
  public:
-  static EmptyEventListener* Create() { return new EmptyEventListener(); }
+  static EmptyEventListener* Create() {
+    return MakeGarbageCollected<EmptyEventListener>();
+  }
+
+  EmptyEventListener() : EventListener(kCPPEventListenerType) {}
 
   bool operator==(const EventListener& other) const override {
     return this == &other;
   }
 
  private:
-  EmptyEventListener() : EventListener(kCPPEventListenerType) {}
-
-  void handleEvent(ExecutionContext* execution_context, Event*) override {}
+  void Invoke(ExecutionContext* execution_context, Event*) override {}
 };
 
 }  // namespace
@@ -260,19 +261,22 @@ class EmptyEventListener final : public EventListener {
 
 WebView* WebView::Create(WebViewClient* client,
                          WebWidgetClient* widget_client,
-                         mojom::PageVisibilityState visibility_state,
+                         bool is_hidden,
+                         bool compositing_enabled,
                          WebView* opener) {
-  return WebViewImpl::Create(client, widget_client, visibility_state,
+  return WebViewImpl::Create(client, widget_client, is_hidden,
+                             compositing_enabled,
                              static_cast<WebViewImpl*>(opener));
 }
 
 WebViewImpl* WebViewImpl::Create(WebViewClient* client,
                                  WebWidgetClient* widget_client,
-                                 mojom::PageVisibilityState visibility_state,
+                                 bool is_hidden,
+                                 bool compositing_enabled,
                                  WebViewImpl* opener) {
   // Pass the WebViewImpl's self-reference to the caller.
-  auto web_view = base::AdoptRef(
-      new WebViewImpl(client, widget_client, visibility_state, opener));
+  auto web_view = base::AdoptRef(new WebViewImpl(
+      client, widget_client, is_hidden, compositing_enabled, opener));
   web_view->AddRef();
   return web_view.get();
 }
@@ -288,13 +292,14 @@ void WebView::ResetVisitedLinkState(bool invalidate_visited_link_hashes) {
 void WebViewImpl::SetPrerendererClient(
     WebPrerendererClient* prerenderer_client) {
   DCHECK(page_);
-  ProvidePrerendererClientTo(*page_,
-                             new PrerendererClient(*page_, prerenderer_client));
+  ProvidePrerendererClientTo(*page_, MakeGarbageCollected<PrerendererClient>(
+                                         *page_, prerenderer_client));
 }
 
 WebViewImpl::WebViewImpl(WebViewClient* client,
                          WebWidgetClient* widget_client,
-                         mojom::PageVisibilityState visibility_state,
+                         bool is_hidden,
+                         bool does_composite,
                          WebViewImpl* opener)
     : client_(client),
       widget_client_(widget_client),
@@ -315,6 +320,7 @@ WebViewImpl::WebViewImpl(WebViewClient* client,
       ime_accept_events_(true),
       dev_tools_emulator_(nullptr),
       tabs_to_links_(false),
+      does_composite_(does_composite),
       layer_tree_view_(nullptr),
       root_layer_(nullptr),
       root_graphics_layer_(nullptr),
@@ -332,32 +338,23 @@ WebViewImpl::WebViewImpl(WebViewClient* client,
       should_dispatch_first_layout_after_finished_loading_(false),
       display_mode_(kWebDisplayModeBrowser),
       elastic_overscroll_(FloatSize()),
-      mutator_dispatcher_(nullptr),
-      override_compositor_visibility_(false) {
+      mutator_dispatcher_(nullptr) {
   DCHECK_EQ(!!client_, !!widget_client_);
+  if (!client_) {
+    DCHECK(!does_composite_);
+  }
   Page::PageClients page_clients;
   page_clients.chrome_client = chrome_client_.Get();
 
   page_ =
       Page::CreateOrdinary(page_clients, opener ? opener->GetPage() : nullptr);
   CoreInitializer::GetInstance().ProvideModulesToPage(*page_, client_);
-  SetVisibilityState(visibility_state, true);
+  SetIsHidden(is_hidden, /*is_initial_state=*/true);
 
-  // WebViews, and WebWidgets, are used to host a Page and present it via a
-  // WebLayerTreeView compositor. The WidgetClient() provides compositing
-  // support for the WebView.
-  // In some cases, a WidgetClient() is not provided, or it informs us that
-  // it won't be presenting content via a compositor. In that case we keep the
-  // Page in the loop so that it will paint all content into the root layer
-  // as multiple layers can only be used when compositing them together later.
-  //
-  // TODO(dcheng): All WebViewImpls should have an associated LayerTreeView,
-  // but for various reasons, that's not the case... WebView plugin, printing,
-  // workers, and tests don't use a compositor in their WebViews. Sometimes
-  // they avoid the compositor by using a null client, and sometimes by having
-  // the client return a null compositor. We should make things more consistent
-  // and clear.
-  if (WidgetClient() && !WidgetClient()->AllowsBrokenNullLayerTreeView())
+  // When not compositing, keep the Page in the loop so that it will paint all
+  // content into the root layer, as multiple layers can only be used when
+  // compositing them together later.
+  if (does_composite_)
     page_->GetSettings().SetAcceleratedCompositingEnabled(true);
 
   dev_tools_emulator_ = DevToolsEmulator::Create(this);
@@ -365,7 +362,7 @@ WebViewImpl::WebViewImpl(WebViewClient* client,
   AllInstances().insert(this);
 
   page_importance_signals_.SetObserver(client);
-  resize_viewport_anchor_ = new ResizeViewportAnchor(*page_);
+  resize_viewport_anchor_ = MakeGarbageCollected<ResizeViewportAnchor>(*page_);
 }
 
 WebViewImpl::~WebViewImpl() {
@@ -673,7 +670,7 @@ bool WebViewImpl::StartPageScaleAnimation(const IntPoint& target_position,
                                           float new_scale,
                                           double duration_in_seconds) {
   VisualViewport& visual_viewport = GetPage()->GetVisualViewport();
-  WebPoint clamped_point = target_position;
+  gfx::Point clamped_point = target_position;
   if (!use_anchor) {
     clamped_point =
         visual_viewport.ClampDocumentOffsetAtScale(target_position, new_scale);
@@ -683,7 +680,7 @@ bool WebViewImpl::StartPageScaleAnimation(const IntPoint& target_position,
       LocalFrameView* view = MainFrameImpl()->GetFrameView();
       if (view && view->GetScrollableArea()) {
         view->GetScrollableArea()->SetScrollOffset(
-            ScrollOffset(clamped_point.x, clamped_point.y),
+            ScrollOffset(clamped_point.x(), clamped_point.y()),
             kProgrammaticScroll);
       }
 
@@ -736,6 +733,11 @@ void WebViewImpl::SetShowDebugBorders(bool show) {
 void WebViewImpl::SetShowScrollBottleneckRects(bool show) {
   if (layer_tree_view_)
     layer_tree_view_->SetShowScrollBottleneckRects(show);
+}
+
+void WebViewImpl::SetShowHitTestBorders(bool show) {
+  if (layer_tree_view_)
+    layer_tree_view_->SetShowHitTestBorders(show);
 }
 
 void WebViewImpl::AcceptLanguagesChanged() {
@@ -938,14 +940,14 @@ float WebViewImpl::MaximumLegiblePageScale() const {
 }
 
 void WebViewImpl::ComputeScaleAndScrollForBlockRect(
-    const WebPoint& hit_point_in_root_frame,
+    const gfx::Point& hit_point_in_root_frame,
     const WebRect& block_rect_in_root_frame,
     float padding,
     float default_scale_when_already_legible,
     float& scale,
-    WebPoint& scroll) {
+    IntPoint& scroll) {
   scale = PageScaleFactor();
-  scroll.x = scroll.y = 0;
+  scroll = IntPoint();
 
   WebRect rect = block_rect_in_root_frame;
 
@@ -987,7 +989,7 @@ void WebViewImpl::ComputeScaleAndScrollForBlockRect(
     // Ensure position we're zooming to (+ padding) isn't off the bottom of
     // the screen.
     rect.y = std::max<float>(
-        rect.y, hit_point_in_root_frame.y + padding - screen_height);
+        rect.y, hit_point_in_root_frame.y() + padding - screen_height);
   }  // Otherwise top align the block.
 
   // Do the same thing for horizontal alignment.
@@ -995,10 +997,10 @@ void WebViewImpl::ComputeScaleAndScrollForBlockRect(
     rect.x -= 0.5 * (screen_width - rect.width);
   } else {
     rect.x = std::max<float>(
-        rect.x, hit_point_in_root_frame.x + padding - screen_width);
+        rect.x, hit_point_in_root_frame.x() + padding - screen_width);
   }
-  scroll.x = rect.x;
-  scroll.y = rect.y;
+  scroll.SetX(rect.x);
+  scroll.SetY(rect.y);
 
   scale = ClampPageScaleFactorToLimits(scale);
   scroll = MainFrameImpl()->GetFrameView()->RootFrameToDocument(scroll);
@@ -1093,18 +1095,18 @@ void WebViewImpl::EnableTapHighlightAtPoint(
 void WebViewImpl::EnableTapHighlights(
     HeapVector<Member<Node>>& highlight_nodes) {
   GetPage()->GetLinkHighlights().SetTapHighlights(highlight_nodes);
-  UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhases(LifecycleUpdateReason::kOther);
 }
 
-void WebViewImpl::AnimateDoubleTapZoom(const IntPoint& point_in_root_frame,
-                                       const WebRect& block_bounds) {
+void WebViewImpl::AnimateDoubleTapZoom(const gfx::Point& point_in_root_frame,
+                                       const WebRect& rect_to_zoom) {
   DCHECK(MainFrameImpl());
 
   float scale;
-  WebPoint scroll;
+  IntPoint scroll;
 
   ComputeScaleAndScrollForBlockRect(
-      point_in_root_frame, block_bounds, touchPointPadding,
+      point_in_root_frame, rect_to_zoom, touchPointPadding,
       MinimumPageScaleFactor() * doubleTapZoomAlreadyLegibleRatio, scale,
       scroll);
 
@@ -1114,7 +1116,7 @@ void WebViewImpl::AnimateDoubleTapZoom(const IntPoint& point_in_root_frame,
       double_tap_zoom_pending_;
 
   bool scale_unchanged = fabs(PageScaleFactor() - scale) < minScaleDifference;
-  bool should_zoom_out = block_bounds.IsEmpty() || scale_unchanged ||
+  bool should_zoom_out = rect_to_zoom.IsEmpty() || scale_unchanged ||
                          still_at_previous_double_tap_scale;
 
   bool is_animating;
@@ -1123,7 +1125,7 @@ void WebViewImpl::AnimateDoubleTapZoom(const IntPoint& point_in_root_frame,
     scale = MinimumPageScaleFactor();
     IntPoint target_position =
         MainFrameImpl()->GetFrameView()->RootFrameToDocument(
-            point_in_root_frame);
+            IntPoint(point_in_root_frame.x(), point_in_root_frame.y()));
     is_animating = StartPageScaleAnimation(
         target_position, true, scale, doubleTapZoomAnimationDurationInSeconds);
   } else {
@@ -1142,13 +1144,11 @@ void WebViewImpl::AnimateDoubleTapZoom(const IntPoint& point_in_root_frame,
 }
 
 void WebViewImpl::ZoomToFindInPageRect(const WebRect& rect_in_root_frame) {
-  // TODO(lukasza): https://crbug.com/734209: Add OOPIF support.
-  if (!MainFrameImpl())
-    return;
+  DCHECK(MainFrameImpl());
 
   WebRect block_bounds = MainFrameImpl()->FrameWidgetImpl()->ComputeBlockBound(
-      WebPoint(rect_in_root_frame.x + rect_in_root_frame.width / 2,
-               rect_in_root_frame.y + rect_in_root_frame.height / 2),
+      gfx::Point(rect_in_root_frame.x + rect_in_root_frame.width / 2,
+                 rect_in_root_frame.y + rect_in_root_frame.height / 2),
       true);
 
   if (block_bounds.IsEmpty()) {
@@ -1158,10 +1158,10 @@ void WebViewImpl::ZoomToFindInPageRect(const WebRect& rect_in_root_frame) {
   }
 
   float scale;
-  WebPoint scroll;
+  IntPoint scroll;
 
   ComputeScaleAndScrollForBlockRect(
-      WebPoint(rect_in_root_frame.x, rect_in_root_frame.y), block_bounds,
+      gfx::Point(rect_in_root_frame.x, rect_in_root_frame.y), block_bounds,
       nonUserInitiatedPointPadding, MinimumPageScaleFactor(), scale, scroll);
 
   StartPageScaleAnimation(scroll, false, scale,
@@ -1434,7 +1434,7 @@ void WebViewImpl::ResizeViewWhileAnchored(float top_controls_height,
   // Update lifecyle phases immediately to recalculate the minimum scale limit
   // for rotation anchoring, and to make sure that no lifecycle states are
   // stale if this WebView is embedded in another one.
-  UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhases(LifecycleUpdateReason::kOther);
 }
 
 void WebViewImpl::ResizeWithBrowserControls(
@@ -1543,7 +1543,8 @@ void WebViewImpl::RecordEndOfFrameMetrics(base::TimeTicks frame_begin_time) {
       frame_begin_time);
 }
 
-void WebViewImpl::UpdateLifecycle(LifecycleUpdate requested_update) {
+void WebViewImpl::UpdateLifecycle(LifecycleUpdate requested_update,
+                                  LifecycleUpdateReason reason) {
   TRACE_EVENT0("blink", "WebViewImpl::updateAllLifecyclePhases");
   if (!MainFrameImpl())
     return;
@@ -1552,7 +1553,7 @@ void WebViewImpl::UpdateLifecycle(LifecycleUpdate requested_update) {
       MainFrameImpl()->GetFrame()->GetDocument()->Lifecycle());
 
   PageWidgetDelegate::UpdateLifecycle(*page_, *MainFrameImpl()->GetFrame(),
-                                      requested_update);
+                                      requested_update, reason);
   if (requested_update == LifecycleUpdate::kLayout)
     return;
 
@@ -1593,6 +1594,11 @@ void WebViewImpl::UpdateAllLifecyclePhasesAndCompositeForTesting(
   if (layer_tree_view_) {
     layer_tree_view_->UpdateAllLifecyclePhasesAndCompositeForTesting(do_raster);
   }
+}
+
+void WebViewImpl::RequestPresentationCallbackForTesting(
+    base::OnceClosure callback) {
+  layer_tree_view_->RequestPresentationCallback(std::move(callback));
 }
 
 void WebViewImpl::PaintContent(cc::PaintCanvas* canvas, const WebRect& rect) {
@@ -2689,9 +2695,10 @@ void WebViewImpl::ResetScrollAndScaleState() {
 }
 
 void WebViewImpl::PerformPluginAction(const WebPluginAction& action,
-                                      const WebPoint& location) {
+                                      const gfx::Point& location) {
   // FIXME: Location is probably in viewport coordinates
-  HitTestResult result = HitTestResultForRootFramePos(LayoutPoint(location));
+  HitTestResult result =
+      HitTestResultForRootFramePos(LayoutPoint(IntPoint(location)));
   Node* node = result.InnerNode();
   if (!IsHTMLObjectElement(*node) && !IsHTMLEmbedElement(*node))
     return;
@@ -2721,12 +2728,12 @@ void WebViewImpl::AudioStateChanged(bool is_audio_playing) {
   GetPage()->GetPageScheduler()->AudioStateChanged(is_audio_playing);
 }
 
-WebHitTestResult WebViewImpl::HitTestResultAt(const WebPoint& point) {
+WebHitTestResult WebViewImpl::HitTestResultAt(const gfx::Point& point) {
   return CoreHitTestResultAt(point);
 }
 
 HitTestResult WebViewImpl::CoreHitTestResultAt(
-    const WebPoint& point_in_viewport) {
+    const gfx::Point& point_in_viewport) {
   // TODO(crbug.com/843128): When we do async hit-testing, we might try to do
   // hit-testing when the local main frame is not valid anymore. Look into if we
   // can avoid getting here earlier in the pipeline.
@@ -2737,7 +2744,7 @@ HitTestResult WebViewImpl::CoreHitTestResultAt(
       MainFrameImpl()->GetFrame()->GetDocument()->Lifecycle());
   LocalFrameView* view = MainFrameImpl()->GetFrameView();
   LayoutPoint point_in_root_frame =
-      view->ViewportToFrame(LayoutPoint(point_in_viewport));
+      view->ViewportToFrame(LayoutPoint(IntPoint(point_in_viewport)));
   return HitTestResultForRootFramePos(point_in_root_frame);
 }
 
@@ -2827,10 +2834,6 @@ void WebViewImpl::ShowContextMenu(WebMenuSourceType source_type) {
 
 WebURL WebViewImpl::GetURLForDebugTrace() {
   WebFrame* main_frame = MainFrame();
-  // TODO(crbug.com/896836): Avoid a crash in minimal way for merge. But we'll
-  // avoid it properly in a followup.
-  if (!main_frame)
-    return {};
   if (main_frame->IsWebLocalFrame())
     return main_frame->ToWebLocalFrame()->GetDocument().Url();
   return {};
@@ -3041,8 +3044,10 @@ void WebViewImpl::SetZoomFactorOverride(float zoom_factor) {
   SetZoomLevel(ZoomLevel());
 }
 
-void WebViewImpl::SetPageOverlayColor(SkColor color) {
-  page_->SetPageOverlayColor(color);
+void WebViewImpl::SetMainFrameOverlayColor(SkColor color) {
+  DCHECK(page_->MainFrame());
+  if (page_->MainFrame()->IsLocalFrame())
+    ToLocalFrame(page_->MainFrame())->View()->SetMainFrameColorOverlay(color);
 }
 
 WebPageImportanceSignals* WebViewImpl::PageImportanceSignals() {
@@ -3078,7 +3083,7 @@ HitTestResult WebViewImpl::HitTestResultForRootFramePos(
 }
 
 WebHitTestResult WebViewImpl::HitTestResultForTap(
-    const WebPoint& tap_point_window_pos,
+    const gfx::Point& tap_point_window_pos,
     const WebSize& tap_area) {
   if (!page_->MainFrame()->IsLocalFrame())
     return HitTestResult();
@@ -3087,7 +3092,7 @@ WebHitTestResult WebViewImpl::HitTestResultForTap(
       WebInputEvent::kGestureTap, WebInputEvent::kNoModifiers,
       WTF::CurrentTimeTicks(), kWebGestureDeviceTouchscreen);
   // GestureTap is only ever from a touchscreen.
-  tap_event.SetPositionInWidget(FloatPoint(tap_point_window_pos));
+  tap_event.SetPositionInWidget(FloatPoint(IntPoint(tap_point_window_pos)));
   tap_event.data.tap.tap_count = 1;
   tap_event.data.tap.width = tap_area.width;
   tap_event.data.tap.height = tap_area.height;
@@ -3158,8 +3163,8 @@ void WebViewImpl::SetRootGraphicsLayer(GraphicsLayer* graphics_layer) {
   if (!layer_tree_view_)
     return;
 
-  // In SPv2, setRootLayer is used instead.
-  DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV2Enabled());
+  // In CAP, setRootLayer is used instead.
+  DCHECK(!RuntimeEnabledFeatures::CompositeAfterPaintEnabled());
 
   VisualViewport& visual_viewport = GetPage()->GetVisualViewport();
   visual_viewport.AttachLayerTree(graphics_layer);
@@ -3179,7 +3184,7 @@ void WebViewImpl::SetRootGraphicsLayer(GraphicsLayer* graphics_layer) {
     // This means that we're transitioning to a new page. Suppress
     // commits until Blink generates invalidations so we don't
     // attempt to paint too early in the next page load.
-    scoped_defer_commits_ = layer_tree_view_->DeferCommits();
+    scoped_defer_main_frame_update_ = layer_tree_view_->DeferMainFrameUpdate();
     layer_tree_view_->ClearRootLayer();
     layer_tree_view_->ClearViewportLayers();
   }
@@ -3197,7 +3202,7 @@ void WebViewImpl::SetRootLayer(scoped_refptr<cc::Layer> layer) {
     // This means that we're transitioning to a new page. Suppress
     // commits until Blink generates invalidations so we don't
     // attempt to paint too early in the next page load.
-    scoped_defer_commits_ = layer_tree_view_->DeferCommits();
+    scoped_defer_main_frame_update_ = layer_tree_view_->DeferMainFrameUpdate();
     layer_tree_view_->ClearRootLayer();
     layer_tree_view_->ClearViewportLayers();
   }
@@ -3238,6 +3243,7 @@ void WebViewImpl::ScheduleAnimationForWidget() {
 }
 
 void WebViewImpl::SetLayerTreeView(WebLayerTreeView* layer_tree_view) {
+  DCHECK(does_composite_);
   layer_tree_view_ = layer_tree_view;
   if (Platform::Current()->IsThreadedAnimationEnabled()) {
     animation_host_ = std::make_unique<CompositorAnimationHost>(
@@ -3248,7 +3254,7 @@ void WebViewImpl::SetLayerTreeView(WebLayerTreeView* layer_tree_view) {
   // We don't yet have a page loaded at this point of the initialization of
   // WebViewImpl, so don't allow cc to commit any frames Blink might
   // try to create in the meantime.
-  scoped_defer_commits_ = layer_tree_view_->DeferCommits();
+  scoped_defer_main_frame_update_ = layer_tree_view_->DeferMainFrameUpdate();
 }
 
 void WebViewImpl::ApplyViewportChanges(const ApplyViewportChangesArgs& args) {
@@ -3275,6 +3281,10 @@ void WebViewImpl::ApplyViewportChanges(const ApplyViewportChangesArgs& args) {
   elastic_overscroll_ += FloatSize(args.elastic_overscroll_delta.x(),
                                    args.elastic_overscroll_delta.y());
   UpdateBrowserControlsConstraint(args.browser_controls_constraint);
+
+  if (RuntimeEnabledFeatures::NoHoverDuringScrollEnabled() &&
+      args.scroll_gesture_did_end)
+    MainFrameImpl()->GetFrame()->GetEventHandler().RecomputeMouseHoverState();
 }
 
 void WebViewImpl::RecordWheelAndTouchScrollingCount(
@@ -3311,7 +3321,8 @@ void WebViewImpl::UpdateDeviceEmulationTransform() {
   // scales and fuzzy raster from the compositor, force all content to
   // pick ideal raster scales.
   visual_viewport_container_layer_->SetTransform(device_emulation_transform_);
-  layer_tree_view_->ForceRecalculateRasterScales();
+  if (layer_tree_view_)
+    layer_tree_view_->ForceRecalculateRasterScales();
 }
 
 PageScheduler* WebViewImpl::Scheduler() const {
@@ -3319,25 +3330,15 @@ PageScheduler* WebViewImpl::Scheduler() const {
   return GetPage()->GetPageScheduler();
 }
 
-void WebViewImpl::SetVisibilityState(
-    mojom::PageVisibilityState visibility_state,
-    bool is_initial_state) {
+void WebViewImpl::SetIsHidden(bool hidden, bool is_initial_state) {
   DCHECK(GetPage());
-  GetPage()->SetVisibilityState(visibility_state, is_initial_state);
-
-  bool visible = visibility_state == mojom::PageVisibilityState::kVisible;
-  if (layer_tree_view_ && !override_compositor_visibility_)
-    layer_tree_view_->SetVisible(visible);
-  GetPage()->GetPageScheduler()->SetPageVisible(visible);
+  GetPage()->SetIsHidden(hidden, is_initial_state);
+  GetPage()->GetPageScheduler()->SetPageVisible(!hidden);
 }
 
-void WebViewImpl::SetCompositorVisibility(bool is_visible) {
-  if (!is_visible)
-    override_compositor_visibility_ = true;
-  else
-    override_compositor_visibility_ = false;
-  if (layer_tree_view_)
-    layer_tree_view_->SetVisible(is_visible);
+bool WebViewImpl::IsHidden() {
+  DCHECK(GetPage());
+  return !GetPage()->IsPageVisible();
 }
 
 void WebViewImpl::ForceNextWebGLContextCreationToFail() {
@@ -3390,6 +3391,10 @@ void WebViewImpl::SetPageFrozen(bool frozen) {
   Scheduler()->SetPageFrozen(frozen);
 }
 
+WebWidget* WebViewImpl::MainFrameWidget() {
+  return this;
+}
+
 void WebViewImpl::AddAutoplayFlags(int32_t value) {
   page_->AddAutoplayFlags(value);
 }
@@ -3402,8 +3407,8 @@ int32_t WebViewImpl::AutoplayFlagsForTest() {
   return page_->AutoplayFlags();
 }
 
-void WebViewImpl::DeferCommitsForTesting() {
-  scoped_defer_commits_ = layer_tree_view_->DeferCommits();
+void WebViewImpl::DeferMainFrameUpdateForTesting() {
+  scoped_defer_main_frame_update_ = layer_tree_view_->DeferMainFrameUpdate();
 }
 
 }  // namespace blink

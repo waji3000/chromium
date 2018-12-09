@@ -74,6 +74,8 @@ class ZoomLevelDelegate;
 class CONTENT_EXPORT StoragePartition {
  public:
   virtual base::FilePath GetPath() = 0;
+  // These can't be called when the network service is enabled, since net/ runs
+  // in a separate process.
   virtual net::URLRequestContextGetter* GetURLRequestContext() = 0;
   virtual net::URLRequestContextGetter* GetMediaURLRequestContext() = 0;
 

@@ -26,6 +26,7 @@
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/events/event_dispatcher.h"
 #include "third_party/blink/renderer/core/dom/events/event_path.h"
+#include "third_party/blink/renderer/core/event_interface_names.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
@@ -114,7 +115,7 @@ MouseEvent* MouseEvent::Create(ScriptState* script_state,
         initializer->ctrlKey(), initializer->altKey(), initializer->shiftKey(),
         initializer->metaKey());
   }
-  return new MouseEvent(type, initializer);
+  return MakeGarbageCollected<MouseEvent>(type, initializer);
 }
 
 MouseEvent* MouseEvent::Create(const AtomicString& event_type,
@@ -122,8 +123,9 @@ MouseEvent* MouseEvent::Create(const AtomicString& event_type,
                                TimeTicks platform_time_stamp,
                                SyntheticEventType synthetic_event_type,
                                WebMenuSourceType menu_source_type) {
-  return new MouseEvent(event_type, initializer, platform_time_stamp,
-                        synthetic_event_type, menu_source_type);
+  return MakeGarbageCollected<MouseEvent>(
+      event_type, initializer, platform_time_stamp, synthetic_event_type,
+      menu_source_type);
 }
 
 MouseEvent* MouseEvent::Create(const AtomicString& event_type,
@@ -158,8 +160,8 @@ MouseEvent* MouseEvent::Create(const AtomicString& event_type,
 
   TimeTicks timestamp = underlying_event ? underlying_event->PlatformTimeStamp()
                                          : CurrentTimeTicks();
-  MouseEvent* created_event =
-      new MouseEvent(event_type, initializer, timestamp, synthetic_type);
+  MouseEvent* created_event = MakeGarbageCollected<MouseEvent>(
+      event_type, initializer, timestamp, synthetic_type);
 
   created_event->SetTrusted(creation_scope ==
                             SimulatedClickCreationScope::kFromUserAgent);
@@ -189,7 +191,7 @@ MouseEvent::MouseEvent(const AtomicString& event_type,
       screen_location_(
           DoublePoint(initializer->screenX(), initializer->screenY())),
       movement_delta_(
-          IntPoint(initializer->movementX(), initializer->movementY())),
+          DoublePoint(initializer->movementX(), initializer->movementY())),
       position_type_(synthetic_event_type == kPositionless
                          ? PositionType::kPositionless
                          : PositionType::kPosition),
@@ -235,11 +237,13 @@ void MouseEvent::SetCoordinatesFromWebPointerProperties(
   initializer->setClientX(client_point.X());
   initializer->setClientY(client_point.Y());
 
-  // TODO(nzolghadr): We need to scale movement attrinutes as well. But if we do
-  // that here and round it to the int again it causes inconsistencies between
-  // screenX/Y and cumulative movementX/Y.
-  initializer->setMovementX(web_pointer_properties.movement_x);
-  initializer->setMovementY(web_pointer_properties.movement_y);
+  // TODO(nzolghadr): We need to scale movement attrinutes as well. But if we
+  // do that here and round it to the int again it causes inconsistencies
+  // between screenX/Y and cumulative movementX/Y.
+  if (!RuntimeEnabledFeatures::MovementXYInBlinkEnabled()) {
+    initializer->setMovementX(web_pointer_properties.movement_x);
+    initializer->setMovementY(web_pointer_properties.movement_y);
+  }
 }
 
 MouseEvent::~MouseEvent() = default;
@@ -329,7 +333,7 @@ void MouseEvent::InitMouseEventInternal(
 }
 
 const AtomicString& MouseEvent::InterfaceName() const {
-  return EventNames::MouseEvent;
+  return event_interface_names::kMouseEvent;
 }
 
 bool MouseEvent::IsMouseEvent() const {

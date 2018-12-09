@@ -938,13 +938,6 @@ int32_t RTCVideoEncoder::Release() {
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
-int32_t RTCVideoEncoder::SetChannelParameters(uint32_t packet_loss,
-                                              int64_t rtt) {
-  DVLOG(3) << __func__ << " packet_loss=" << packet_loss << ", rtt=" << rtt;
-  // Ignored.
-  return WEBRTC_VIDEO_CODEC_OK;
-}
-
 int32_t RTCVideoEncoder::SetRateAllocation(
     const webrtc::VideoBitrateAllocation& allocation,
     uint32_t frame_rate) {
@@ -968,18 +961,12 @@ int32_t RTCVideoEncoder::SetRateAllocation(
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
-bool RTCVideoEncoder::SupportsNativeHandle() const {
-  return true;
-}
-
-const char* RTCVideoEncoder::ImplementationName() const {
-  return RTCVideoEncoder::Impl::ImplementationName();
-}
-
 webrtc::VideoEncoder::EncoderInfo RTCVideoEncoder::GetEncoderInfo() const {
   EncoderInfo info;
   info.implementation_name = RTCVideoEncoder::Impl::ImplementationName();
   info.supports_native_handle = true;
+  info.is_hardware_accelerated = true;
+  info.has_internal_source = false;
   return info;
 }
 

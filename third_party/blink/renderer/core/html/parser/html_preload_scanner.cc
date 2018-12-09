@@ -29,10 +29,14 @@
 
 #include <memory>
 #include "base/optional.h"
-#include "third_party/blink/public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
+#include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-shared.h"
+#include "third_party/blink/public/mojom/script/script_type.mojom-blink.h"
+#include "third_party/blink/renderer/core/css/css_primitive_value.h"
+#include "third_party/blink/renderer/core/css/css_property_name.h"
 #include "third_party/blink/renderer/core/css/media_list.h"
 #include "third_party/blink/renderer/core/css/media_query_evaluator.h"
 #include "third_party/blink/renderer/core/css/media_values_cached.h"
+#include "third_party/blink/renderer/core/css/parser/css_parser.h"
 #include "third_party/blink/renderer/core/css/parser/sizes_attribute_parser.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -125,6 +129,28 @@ static bool IsDimensionSmallAndAbsoluteForLazyLoad(
          dimension.IsAbsolute() && dimension.Value() <= kMinDimensionToLazyLoad;
 }
 
+static bool IsInlineStyleDimensionsSmall(const String& style_value,
+                                         bool strict_mode) {
+  // Minimum height or width of the image to start lazyloading.
+  const unsigned kMinDimensionToLazyLoad = 10;
+  CSSParserMode mode = strict_mode ? kHTMLStandardMode : kHTMLQuirksMode;
+  const ImmutableCSSPropertyValueSet* property_set =
+      CSSParser::ParseInlineStyleDeclaration(
+          style_value, mode, SecureContextMode::kInsecureContext);
+  const CSSValue* height = property_set->GetPropertyCSSValue(CSSPropertyHeight);
+  const CSSValue* width = property_set->GetPropertyCSSValue(CSSPropertyWidth);
+
+  if (!height || !height->IsPrimitiveValue() || !width ||
+      !width->IsPrimitiveValue())
+    return false;
+  const CSSPrimitiveValue* width_prim = ToCSSPrimitiveValue(width);
+  const CSSPrimitiveValue* height_prim = ToCSSPrimitiveValue(height);
+  return height_prim->IsPx() &&
+         (height_prim->GetDoubleValue() <= kMinDimensionToLazyLoad) &&
+         width_prim->IsPx() &&
+         (width_prim->GetDoubleValue() <= kMinDimensionToLazyLoad);
+}
+
 class TokenPreloadScanner::StartTagScanner {
   STACK_ALLOCATED();
 
@@ -150,12 +176,13 @@ class TokenPreloadScanner::StartTagScanner {
         importance_mode_set_(false),
         media_values_(media_values),
         referrer_policy_set_(false),
-        referrer_policy_(kReferrerPolicyDefault),
+        referrer_policy_(network::mojom::ReferrerPolicy::kDefault),
         integrity_attr_set_(false),
         integrity_features_(features),
         lazyload_attr_set_to_off_(false),
         width_attr_small_absolute_(false),
         height_attr_small_absolute_(false),
+        inline_style_dimensions_small_(false),
         scanner_type_(scanner_type) {
     if (Match(tag_impl_, kImgTag) || Match(tag_impl_, kSourceTag)) {
       source_size_ = SizesAttributeParser(media_values_, String()).length();
@@ -266,8 +293,8 @@ class TokenPreloadScanner::StartTagScanner {
 
     // The element's 'referrerpolicy' attribute (if present) takes precedence
     // over the document's referrer policy.
-    ReferrerPolicy referrer_policy =
-        (referrer_policy_ != kReferrerPolicyDefault)
+    network::mojom::ReferrerPolicy referrer_policy =
+        (referrer_policy_ != network::mojom::ReferrerPolicy::kDefault)
             ? referrer_policy_
             : document_parameters.referrer_policy;
     auto request = PreloadRequest::CreateIfNeeded(
@@ -279,7 +306,7 @@ class TokenPreloadScanner::StartTagScanner {
 
     if ((Match(tag_impl_, kScriptTag) && type_attribute_value_ == "module") ||
         IsLinkRelModulePreload()) {
-      request->SetScriptType(ScriptType::kModule);
+      request->SetScriptType(mojom::ScriptType::kModule);
     }
 
     request->SetCrossOrigin(cross_origin_);
@@ -292,7 +319,8 @@ class TokenPreloadScanner::StartTagScanner {
     // for the 'lazyload' attribute is considered as 'auto'.
     if ((lazyload_attr_set_to_off_ &&
          !document_parameters.lazyload_policy_enforced) ||
-        (width_attr_small_absolute_ && height_attr_small_absolute_)) {
+        (width_attr_small_absolute_ && height_attr_small_absolute_) ||
+        inline_style_dimensions_small_) {
       request->SetIsLazyloadImageDisabled(true);
     }
 
@@ -375,6 +403,11 @@ class TokenPreloadScanner::StartTagScanner {
                RuntimeEnabledFeatures::LazyImageLoadingEnabled()) {
       height_attr_small_absolute_ =
           IsDimensionSmallAndAbsoluteForLazyLoad(attribute_value);
+    } else if (!inline_style_dimensions_small_ &&
+               Match(attribute_name, kStyleAttr) &&
+               RuntimeEnabledFeatures::LazyImageLoadingEnabled()) {
+      inline_style_dimensions_small_ = IsInlineStyleDimensionsSmall(
+          attribute_value, media_values_->StrictMode());
     }
   }
 
@@ -424,10 +457,10 @@ class TokenPreloadScanner::StartTagScanner {
       integrity_attr_set_ = true;
       SubresourceIntegrity::ParseIntegrityAttribute(
           attribute_value, integrity_features_, integrity_metadata_);
-    } else if (Match(attribute_name, kSrcsetAttr) &&
+    } else if (Match(attribute_name, kImagesrcsetAttr) &&
                srcset_attribute_value_.IsNull()) {
       srcset_attribute_value_ = attribute_value;
-    } else if (Match(attribute_name, kImgsizesAttr) && !source_size_set_) {
+    } else if (Match(attribute_name, kImagesizesAttr) && !source_size_set_) {
       ParseSourceSize(attribute_value);
     } else if (!importance_mode_set_ &&
                Match(attribute_name, kImportanceAttr) &&
@@ -594,7 +627,7 @@ class TokenPreloadScanner::StartTagScanner {
     if (Match(tag_impl_, kInputTag) && !input_is_image_)
       return false;
     if (Match(tag_impl_, kScriptTag)) {
-      ScriptType script_type = ScriptType::kClassic;
+      mojom::ScriptType script_type = mojom::ScriptType::kClassic;
       if (!ScriptLoader::IsValidScriptTypeAndLanguage(
               type_attribute_value_, language_attribute_value_,
               ScriptLoader::kAllowLegacyTypeInTypeAttribute, script_type)) {
@@ -664,13 +697,14 @@ class TokenPreloadScanner::StartTagScanner {
   String nonce_;
   Member<MediaValuesCached> media_values_;
   bool referrer_policy_set_;
-  ReferrerPolicy referrer_policy_;
+  network::mojom::ReferrerPolicy referrer_policy_;
   bool integrity_attr_set_;
   IntegrityMetadataSet integrity_metadata_;
   SubresourceIntegrity::IntegrityFeatures integrity_features_;
   bool lazyload_attr_set_to_off_;
   bool width_attr_small_absolute_;
   bool height_attr_small_absolute_;
+  bool inline_style_dimensions_small_;
   TokenPreloadScanner::ScannerType scanner_type_;
 };
 
@@ -761,7 +795,8 @@ static void HandleMetaViewport(
 static void HandleMetaReferrer(const String& attribute_value,
                                CachedDocumentParameters* document_parameters,
                                CSSPreloadScanner* css_scanner) {
-  ReferrerPolicy meta_referrer_policy = kReferrerPolicyDefault;
+  network::mojom::ReferrerPolicy meta_referrer_policy =
+      network::mojom::ReferrerPolicy::kDefault;
   if (!attribute_value.IsEmpty() && !attribute_value.IsNull() &&
       SecurityPolicy::ReferrerPolicyFromString(
           attribute_value, kSupportReferrerPolicyLegacyKeywords,
@@ -948,7 +983,8 @@ void HTMLPreloadScanner::AppendToEnd(const SegmentedString& source) {
 
 PreloadRequestStream HTMLPreloadScanner::Scan(
     const KURL& starting_base_element_url,
-    ViewportDescriptionWrapper* viewport) {
+    ViewportDescriptionWrapper* viewport,
+    bool& has_csp_meta_tag) {
   // HTMLTokenizer::updateStateFor only works on the main thread.
   DCHECK(IsMainThread());
 
@@ -966,14 +1002,20 @@ PreloadRequestStream HTMLPreloadScanner::Scan(
     if (token_.GetType() == HTMLToken::kStartTag)
       tokenizer_->UpdateStateFor(
           AttemptStaticStringCreation(token_.GetName(), kLikely8Bit));
-    bool is_csp_meta_tag = false;
-    scanner_.Scan(token_, source_, requests, viewport, &is_csp_meta_tag);
+    bool seen_csp_meta_tag = false;
+    scanner_.Scan(token_, source_, requests, viewport, &seen_csp_meta_tag);
+    has_csp_meta_tag |= seen_csp_meta_tag;
     token_.Clear();
-    // Don't preload anything if a CSP meta tag is found. We should never really
-    // find them here because the HTMLPreloadScanner is only used for
-    // dynamically added markup.
-    if (is_csp_meta_tag)
+    // Don't preload anything if a CSP meta tag is found. We should rarely find
+    // them here because the HTMLPreloadScanner is only used for the synchronous
+    // parsing path.
+    if (seen_csp_meta_tag) {
+      // Reset the tokenizer, to avoid re-scanning tokens that we are about to
+      // start parsing.
+      source_.Clear();
+      tokenizer_->Reset();
       return requests;
+    }
   }
 
   return requests;

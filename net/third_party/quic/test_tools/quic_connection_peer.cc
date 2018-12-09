@@ -183,12 +183,6 @@ QuicAlarm* QuicConnectionPeer::GetMtuDiscoveryAlarm(
 }
 
 // static
-QuicAlarm* QuicConnectionPeer::GetRetransmittableOnWireAlarm(
-    QuicConnection* connection) {
-  return connection->retransmittable_on_wire_alarm_.get();
-}
-
-// static
 QuicAlarm* QuicConnectionPeer::GetPathDegradingAlarm(
     QuicConnection* connection) {
   return connection->path_degrading_alarm_.get();
@@ -331,6 +325,12 @@ void QuicConnectionPeer::SetNoVersionNegotiation(QuicConnection* connection,
                                                  bool no_version_negotiation) {
   *const_cast<bool*>(&connection->no_version_negotiation_) =
       no_version_negotiation;
+}
+
+// static
+QuicConnection::PacketContent QuicConnectionPeer::GetCurrentPacketContent(
+    QuicConnection* connection) {
+  return connection->current_packet_content_;
 }
 
 }  // namespace test

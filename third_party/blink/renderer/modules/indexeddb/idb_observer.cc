@@ -19,7 +19,7 @@
 namespace blink {
 
 IDBObserver* IDBObserver::Create(V8IDBObserverCallback* callback) {
-  return new IDBObserver(callback);
+  return MakeGarbageCollected<IDBObserver>(callback);
 }
 
 IDBObserver::IDBObserver(V8IDBObserverCallback* callback)
@@ -56,16 +56,16 @@ void IDBObserver::observe(IDBDatabase* database,
     return;
   }
 
-  std::bitset<kWebIDBOperationTypeCount> types;
+  std::bitset<kIDBOperationTypeCount> types;
   for (const auto& operation_type : options->operationTypes()) {
-    if (operation_type == IndexedDBNames::add) {
-      types[kWebIDBAdd] = true;
-    } else if (operation_type == IndexedDBNames::put) {
-      types[kWebIDBPut] = true;
-    } else if (operation_type == IndexedDBNames::kDelete) {
-      types[kWebIDBDelete] = true;
-    } else if (operation_type == IndexedDBNames::clear) {
-      types[kWebIDBClear] = true;
+    if (operation_type == indexed_db_names::kAdd) {
+      types[static_cast<size_t>(mojom::IDBOperationType::Add)] = true;
+    } else if (operation_type == indexed_db_names::kPut) {
+      types[static_cast<size_t>(mojom::IDBOperationType::Put)] = true;
+    } else if (operation_type == indexed_db_names::kDelete) {
+      types[static_cast<size_t>(mojom::IDBOperationType::Delete)] = true;
+    } else if (operation_type == indexed_db_names::kClear) {
+      types[static_cast<size_t>(mojom::IDBOperationType::Clear)] = true;
     } else {
       exception_state.ThrowTypeError(
           "Unknown operation type in observe options: " + operation_type);

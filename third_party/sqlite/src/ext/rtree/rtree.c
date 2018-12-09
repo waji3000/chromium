@@ -127,6 +127,7 @@ struct Rtree {
   u8 nBytesPerCell;           /* Bytes consumed per cell */
   u8 inWrTrans;               /* True if inside write transaction */
   u8 nAux;                    /* # of auxiliary columns in %_rowid */
+  u8 nAuxNotNull;             /* Number of initial not-null aux columns */
   int iDepth;                 /* Current depth of the r-tree structure */
   char *zDb;                  /* Name of database containing r-tree table */
   char *zName;                /* Name of r-tree table */
@@ -2893,7 +2894,7 @@ static int reinsertNodeContent(Rtree *pRtree, RtreeNode *pNode){
 /*
 ** Select a currently unused rowid for a new r-tree record.
 */
-static int newRowid(Rtree *pRtree, i64 *piRowid){
+static int rtreeNewRowid(Rtree *pRtree, i64 *piRowid){
   int rc;
   sqlite3_bind_null(pRtree->pWriteRowid, 1);
   sqlite3_bind_null(pRtree->pWriteRowid, 2);
@@ -3180,7 +3181,7 @@ static int rtreeUpdate(
 
     /* Figure out the rowid of the new row. */
     if( bHaveRowid==0 ){
-      rc = newRowid(pRtree, &cell.iRowid);
+      rc = rtreeNewRowid(pRtree, &cell.iRowid);
     }
     *pRowid = cell.iRowid;
 
@@ -3272,7 +3273,7 @@ static int rtreeRename(sqlite3_vtab *pVtab, const char *zNewName){
 */
 static int rtreeSavepoint(sqlite3_vtab *pVtab, int iSavepoint){
   Rtree *pRtree = (Rtree *)pVtab;
-  int iwt = pRtree->inWrTrans;
+  u8 iwt = pRtree->inWrTrans;
   UNUSED_PARAMETER(iSavepoint);
   pRtree->inWrTrans = 0;
   nodeBlobReset(pRtree);
@@ -3324,8 +3325,24 @@ static int rtreeQueryStat1(sqlite3 *db, Rtree *pRtree){
   return rc;
 }
 
+
+/*
+** Return true if zName is the extension on one of the shadow tables used
+** by this module.
+*/
+static int rtreeShadowName(const char *zName){
+  static const char *azName[] = {
+    "node", "parent", "rowid"
+  };
+  unsigned int i;
+  for(i=0; i<sizeof(azName)/sizeof(azName[0]); i++){
+    if( sqlite3_stricmp(zName, azName[i])==0 ) return 1;
+  }
+  return 0;
+}
+
 static sqlite3_module rtreeModule = {
-  2,                          /* iVersion */
+  3,                          /* iVersion */
   rtreeCreate,                /* xCreate - create a table */
   rtreeConnect,               /* xConnect - connect to an existing table */
   rtreeBestIndex,             /* xBestIndex - Determine search strategy */
@@ -3348,6 +3365,7 @@ static sqlite3_module rtreeModule = {
   rtreeSavepoint,             /* xSavepoint */
   0,                          /* xRelease */
   0,                          /* xRollbackTo */
+  rtreeShadowName             /* xShadowName */
 };
 
 static int rtreeSqlInit(
@@ -3453,7 +3471,11 @@ static int rtreeSqlInit(
       sqlite3_str_appendf(p, "UPDATE \"%w\".\"%w_rowid\"SET ", zDb, zPrefix);
       for(ii=0; ii<pRtree->nAux; ii++){
         if( ii ) sqlite3_str_append(p, ",", 1);
-        sqlite3_str_appendf(p,"a%d=?%d",ii,ii+2);
+        if( ii<pRtree->nAuxNotNull ){
+          sqlite3_str_appendf(p,"a%d=coalesce(?%d,a%d)",ii,ii+2,ii);
+        }else{
+          sqlite3_str_appendf(p,"a%d=?%d",ii,ii+2);
+        }
       }
       sqlite3_str_appendf(p, " WHERE rowid=?1");
       zSql = sqlite3_str_finish(p);
@@ -4222,6 +4244,10 @@ static void rtreecheck(
   }
 }
 
+/* Conditionally include the geopoly code */
+#ifdef SQLITE_ENABLE_GEOPOLY
+# include "geopoly.c"
+#endif
 
 /*
 ** Register the r-tree module with database handle db. This creates the
@@ -4251,6 +4277,11 @@ int sqlite3RtreeInit(sqlite3 *db){
     void *c = (void *)RTREE_COORD_INT32;
     rc = sqlite3_create_module_v2(db, "rtree_i32", &rtreeModule, c, 0);
   }
+#ifdef SQLITE_ENABLE_GEOPOLY
+  if( rc==SQLITE_OK ){
+    rc = sqlite3_geopoly_init(db);
+  }
+#endif
 
   return rc;
 }

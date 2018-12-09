@@ -282,14 +282,14 @@ void LocalDOMWindow::ClearDocument() {
 
 void LocalDOMWindow::AcceptLanguagesChanged() {
   if (navigator_)
-    navigator_->SetLanguagesChanged();
+    navigator_->SetLanguagesDirty();
 
   DispatchEvent(*Event::Create(event_type_names::kLanguagechange));
 }
 
 TrustedTypePolicyFactory* LocalDOMWindow::trustedTypes() const {
   if (!trusted_types_)
-    trusted_types_ = TrustedTypePolicyFactory::Create(GetFrame());
+    trusted_types_ = TrustedTypePolicyFactory::Create(GetExecutionContext());
   return trusted_types_.Get();
 }
 
@@ -603,9 +603,9 @@ void LocalDOMWindow::SchedulePostMessage(
   // is problematic; consider imposing a limit or other restriction if this
   // surfaces often as a problem (see crbug.com/587012).
   std::unique_ptr<SourceLocation> location = SourceLocation::Capture(source);
-  PostMessageTimer* timer =
-      new PostMessageTimer(*this, event, std::move(target), std::move(location),
-                           UserGestureIndicator::CurrentToken());
+  PostMessageTimer* timer = MakeGarbageCollected<PostMessageTimer>(
+      *this, event, std::move(target), std::move(location),
+      UserGestureIndicator::CurrentToken());
   timer->StartOneShot(TimeDelta(), FROM_HERE);
   timer->PauseIfNeeded();
   probe::AsyncTaskScheduled(document(), "postMessage", timer);
@@ -1297,7 +1297,7 @@ void LocalDOMWindow::SetModulator(Modulator* modulator) {
 
 External* LocalDOMWindow::external() {
   if (!external_)
-    external_ = new External;
+    external_ = MakeGarbageCollected<External>();
   return external_;
 }
 
@@ -1416,7 +1416,7 @@ void LocalDOMWindow::DispatchLoadEvent() {
 
   TRACE_EVENT_INSTANT1("devtools.timeline", "MarkLoad",
                        TRACE_EVENT_SCOPE_THREAD, "data",
-                       InspectorMarkLoadEvent::Data(GetFrame()));
+                       inspector_mark_load_event::Data(GetFrame()));
   probe::loadEventFired(GetFrame());
 }
 
@@ -1432,7 +1432,7 @@ DispatchEventResult LocalDOMWindow::DispatchEvent(Event& event,
   event.SetEventPhase(Event::kAtTarget);
 
   TRACE_EVENT1("devtools.timeline", "EventDispatch", "data",
-               InspectorEventDispatchEvent::Data(event));
+               inspector_event_dispatch_event::Data(event));
   return FireEventListeners(event);
 }
 

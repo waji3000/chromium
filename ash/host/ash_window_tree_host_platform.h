@@ -27,6 +27,7 @@ struct PlatformWindowInitProperties;
 }
 
 namespace ash {
+class ExtendedMouseWarpControllerTest;
 
 class ASH_EXPORT AshWindowTreeHostPlatform
     : public AshWindowTreeHost,
@@ -40,6 +41,10 @@ class ASH_EXPORT AshWindowTreeHostPlatform
   ~AshWindowTreeHostPlatform() override;
 
  protected:
+  friend ExtendedMouseWarpControllerTest;
+  FRIEND_TEST_ALL_PREFIXES(ExtendedMouseWarpControllerTest,
+                           CheckHostPointToScreenInMouseWarpRegion);
+
   AshWindowTreeHostPlatform();
 
   // AshWindowTreeHost:
@@ -66,8 +71,8 @@ class ASH_EXPORT AshWindowTreeHostPlatform
       const gfx::Size& host_size_in_pixels) const override;
   void OnCursorVisibilityChangedNative(bool show) override;
   void SetBoundsInPixels(const gfx::Rect& bounds,
-                         const viz::LocalSurfaceId& local_surface_id,
-                         base::TimeTicks allocation_time) override;
+                         const viz::LocalSurfaceIdAllocation&
+                             local_surface_id_allocation) override;
   void DispatchEvent(ui::Event* event) override;
   bool ShouldSendKeyEventToIme() override;
 

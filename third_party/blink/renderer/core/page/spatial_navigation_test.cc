@@ -59,6 +59,11 @@ class SpatialNavigationTest : public RenderingTest {
         SearchOrigin(RootViewport(&GetFrame()), focus_node, kWebFocusTypeRight),
         LeftSideOfVisualViewport());
   }
+
+  void UpdateAllLifecyclePhases(LocalFrameView* frame_view) {
+    frame_view->UpdateAllLifecyclePhases(
+        DocumentLifecycle::LifecycleUpdateReason::kTest);
+  }
 };
 
 TEST_F(SpatialNavigationTest, RootFramesVisualViewport) {
@@ -105,7 +110,7 @@ TEST_F(SpatialNavigationTest, FindContainerWhenEnclosingContainerIsIframe) {
       "<!DOCTYPE html>"
       "<a>link</a>");
 
-  ChildDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhases(ChildDocument().View());
   Element* iframe = GetDocument().QuerySelector("iframe");
   Element* link = ChildDocument().QuerySelector("a");
   Node* enclosing_container = ScrollableAreaOrDocumentOf(link);
@@ -444,7 +449,7 @@ TEST_F(SpatialNavigationTest,
       "<!DOCTYPE html>"
       "<a id='link'>link</a>");
 
-  ChildDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhases(ChildDocument().View());
   Element* link = ChildDocument().QuerySelector("a");
   Element* iframe = GetDocument().QuerySelector("iframe");
 
@@ -480,7 +485,7 @@ TEST_F(SpatialNavigationTest, DivsCanClipIframes) {
       "<!DOCTYPE html>"
       "<a>link</a>");
 
-  ChildDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhases(ChildDocument().View());
   Element* div = GetDocument().QuerySelector("div");
   Element* iframe = GetDocument().QuerySelector("iframe");
   Element* link = ChildDocument().QuerySelector("a");
@@ -523,7 +528,7 @@ TEST_F(SpatialNavigationTest, PartiallyVisibleIFrame) {
       "</style>"
       "<a id='child'>link</a>");
 
-  ChildDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhases(ChildDocument().View());
   Element* child_element = ChildDocument().getElementById("child");
   Node* enclosing_container = ScrollableAreaOrDocumentOf(child_element);
   EXPECT_EQ(enclosing_container, ChildDocument());
@@ -616,7 +621,7 @@ TEST_F(SpatialNavigationTest, HasRemoteFrame) {
                                      base_url);
 
   webview->ResizeWithBrowserControls(IntSize(400, 400), 50, 0, false);
-  webview->MainFrameImpl()->GetFrame()->View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhases(webview->MainFrameImpl()->GetFrame()->View());
 
   Element* iframe =
       webview->MainFrameImpl()->GetFrame()->GetDocument()->getElementById(

@@ -33,7 +33,7 @@
 #include <memory>
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
+#include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-shared.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_url.h"
 #include "third_party/blink/public/platform/web_url_loader_mock_factory.h"
@@ -521,7 +521,7 @@ class MockFinishObserver : public GarbageCollectedFinalized<MockFinishObserver>,
   static MockFinishObserver* Create() {
     return
 
-        new testing::StrictMock<MockFinishObserver>;
+        MakeGarbageCollected<testing::StrictMock<MockFinishObserver>>();
   }
   MOCK_METHOD0(NotifyFinished, void());
   String DebugName() const override { return "MockFinishObserver"; }
@@ -1769,7 +1769,7 @@ TEST(ImageResourceTest,
   const struct {
     int status_code;
     AtomicString content_range;
-    size_t data_size;
+    uint32_t data_size;
   } tests[] = {
       {200, g_null_atom, sizeof(kBadImageData)},
       {206, BuildContentRange(sizeof(kBadImageData), sizeof(kBadImageData)),
@@ -1851,7 +1851,7 @@ TEST(ImageResourceTest, PeriodicFlushTest) {
   ScopedTestingPlatformSupport<TestingPlatformSupportWithMockScheduler>
       platform;
 
-  EmptyChromeClient* chrome_client = new EmptyChromeClient();
+  EmptyChromeClient* chrome_client = MakeGarbageCollected<EmptyChromeClient>();
   Page::PageClients clients;
   FillWithEmptyClients(clients);
   clients.chrome_client = chrome_client;

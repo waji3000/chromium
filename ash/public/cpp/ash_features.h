@@ -63,10 +63,12 @@ ASH_PUBLIC_EXPORT extern const base::Feature kNotificationExpansionAnimation;
 // Enables notification scroll bar in UnifiedSystemTray.
 ASH_PUBLIC_EXPORT extern const base::Feature kNotificationScrollBar;
 
-// Enables swipe to close in overview mode.
-// TODO(sammiequon): Remove this after the feature is fully launched.
-// https://crbug.com/828646.
-ASH_PUBLIC_EXPORT extern const base::Feature kOverviewSwipeToClose;
+// Enables rounded corners for the Picture-in-picture window.
+ASH_PUBLIC_EXPORT extern const base::Feature kPipRoundedCorners;
+
+// Enables displaying separate network icons for different networks types.
+// https://crbug.com/902409
+ASH_PUBLIC_EXPORT extern const base::Feature kSeparateNetworkIcons;
 
 // Enables trilinear filtering.
 ASH_PUBLIC_EXPORT extern const base::Feature kTrilinearFiltering;
@@ -74,11 +76,17 @@ ASH_PUBLIC_EXPORT extern const base::Feature kTrilinearFiltering;
 // Enables running an external binary which provides lock screen authentication.
 ASH_PUBLIC_EXPORT extern const base::Feature kUnlockWithExternalBinary;
 
+// Enables the ContainedShell feature.
+ASH_PUBLIC_EXPORT extern const base::Feature kContainedShell;
+
 // Enables views login.
 ASH_PUBLIC_EXPORT extern const base::Feature kViewsLogin;
 
 // Enables using the BluetoothSystem Mojo interface for Bluetooth operations.
 ASH_PUBLIC_EXPORT extern const base::Feature kUseBluetoothSystemInAsh;
+
+// Enables the Supervised User Deprecation notices.
+ASH_PUBLIC_EXPORT extern const base::Feature kSupervisedUserDeprecationNotice;
 
 ASH_PUBLIC_EXPORT bool IsDockedMagnifierEnabled();
 
@@ -96,11 +104,15 @@ ASH_PUBLIC_EXPORT bool IsNotificationExpansionAnimationEnabled();
 
 ASH_PUBLIC_EXPORT bool IsNotificationScrollBarEnabled();
 
-ASH_PUBLIC_EXPORT bool IsSystemTrayUnifiedEnabled();
+ASH_PUBLIC_EXPORT bool IsPipRoundedCornersEnabled();
+
+ASH_PUBLIC_EXPORT bool IsSeparateNetworkIconsEnabled();
 
 ASH_PUBLIC_EXPORT bool IsTrilinearFilteringEnabled();
 
 ASH_PUBLIC_EXPORT bool IsViewsLoginEnabled();
+
+ASH_PUBLIC_EXPORT bool IsSupervisedUserDeprecationNoticeEnabled();
 
 }  // namespace features
 }  // namespace ash

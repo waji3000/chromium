@@ -18,6 +18,7 @@
 #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
 #include "third_party/blink/renderer/platform/image-decoders/image_decoder.h"
 #include "third_party/blink/renderer/platform/scheduler/public/background_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/wtf/saturated_arithmetic.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkImageInfo.h"
@@ -569,8 +570,7 @@ ImageBitmap::ImageBitmap(ImageElementBase* image,
   if (!image_)
     return;
 
-  image_->SetOriginClean(
-      !image->WouldTaintOrigin(document->GetSecurityOrigin()));
+  image_->SetOriginClean(!image->WouldTaintOrigin());
   UpdateImageBitmapMemoryUsage();
 }
 
@@ -605,8 +605,7 @@ ImageBitmap::ImageBitmap(HTMLVideoElement* video,
   if (!image_)
     return;
 
-  image_->SetOriginClean(
-      !video->WouldTaintOrigin(document->GetSecurityOrigin()));
+  image_->SetOriginClean(!video->WouldTaintOrigin());
   UpdateImageBitmapMemoryUsage();
 }
 
@@ -842,48 +841,50 @@ ImageBitmap* ImageBitmap::Create(ImageElementBase* image,
                                  base::Optional<IntRect> crop_rect,
                                  Document* document,
                                  const ImageBitmapOptions* options) {
-  return new ImageBitmap(image, crop_rect, document, options);
+  return MakeGarbageCollected<ImageBitmap>(image, crop_rect, document, options);
 }
 
 ImageBitmap* ImageBitmap::Create(HTMLVideoElement* video,
                                  base::Optional<IntRect> crop_rect,
                                  Document* document,
                                  const ImageBitmapOptions* options) {
-  return new ImageBitmap(video, crop_rect, document, options);
+  return MakeGarbageCollected<ImageBitmap>(video, crop_rect, document, options);
 }
 
 ImageBitmap* ImageBitmap::Create(HTMLCanvasElement* canvas,
                                  base::Optional<IntRect> crop_rect,
                                  const ImageBitmapOptions* options) {
-  return new ImageBitmap(canvas, crop_rect, options);
+  return MakeGarbageCollected<ImageBitmap>(canvas, crop_rect, options);
 }
 
 ImageBitmap* ImageBitmap::Create(OffscreenCanvas* offscreen_canvas,
                                  base::Optional<IntRect> crop_rect,
                                  const ImageBitmapOptions* options) {
-  return new ImageBitmap(offscreen_canvas, crop_rect, options);
+  return MakeGarbageCollected<ImageBitmap>(offscreen_canvas, crop_rect,
+                                           options);
 }
 
 ImageBitmap* ImageBitmap::Create(ImageData* data,
                                  base::Optional<IntRect> crop_rect,
                                  const ImageBitmapOptions* options) {
-  return new ImageBitmap(data, crop_rect, options);
+  return MakeGarbageCollected<ImageBitmap>(data, crop_rect, options);
 }
 
 ImageBitmap* ImageBitmap::Create(ImageBitmap* bitmap,
                                  base::Optional<IntRect> crop_rect,
                                  const ImageBitmapOptions* options) {
-  return new ImageBitmap(bitmap, crop_rect, options);
+  return MakeGarbageCollected<ImageBitmap>(bitmap, crop_rect, options);
 }
 
 ImageBitmap* ImageBitmap::Create(scoped_refptr<StaticBitmapImage> image,
                                  base::Optional<IntRect> crop_rect,
                                  const ImageBitmapOptions* options) {
-  return new ImageBitmap(std::move(image), crop_rect, options);
+  return MakeGarbageCollected<ImageBitmap>(std::move(image), crop_rect,
+                                           options);
 }
 
 ImageBitmap* ImageBitmap::Create(scoped_refptr<StaticBitmapImage> image) {
-  return new ImageBitmap(std::move(image));
+  return MakeGarbageCollected<ImageBitmap>(std::move(image));
 }
 
 ImageBitmap* ImageBitmap::Create(const void* pixel_data,
@@ -892,9 +893,9 @@ ImageBitmap* ImageBitmap::Create(const void* pixel_data,
                                  bool is_image_bitmap_premultiplied,
                                  bool is_image_bitmap_origin_clean,
                                  const CanvasColorParams& color_params) {
-  return new ImageBitmap(pixel_data, width, height,
-                         is_image_bitmap_premultiplied,
-                         is_image_bitmap_origin_clean, color_params);
+  return MakeGarbageCollected<ImageBitmap>(
+      pixel_data, width, height, is_image_bitmap_premultiplied,
+      is_image_bitmap_origin_clean, color_params);
 }
 
 void ImageBitmap::ResolvePromiseOnOriginalThread(
@@ -927,7 +928,7 @@ void ImageBitmap::ResolvePromiseOnOriginalThread(
                     v8::Null(resolver->GetScriptState()->GetIsolate())));
     return;
   }
-  ImageBitmap* bitmap = new ImageBitmap(image);
+  ImageBitmap* bitmap = MakeGarbageCollected<ImageBitmap>(image);
   bitmap->BitmapImage()->SetOriginClean(origin_clean);
   resolver->Resolve(bitmap);
 }
@@ -948,7 +949,7 @@ void ImageBitmap::RasterizeImageOnBackgroundThread(
     skia_image = surface->makeImageSnapshot();
   }
   scoped_refptr<base::SingleThreadTaskRunner> task_runner =
-      Platform::Current()->MainThread()->GetTaskRunner();
+      Thread::MainThread()->GetTaskRunner();
   PostCrossThreadTask(*task_runner, FROM_HERE,
                       CrossThreadBind(&ResolvePromiseOnOriginalThread,
                                       WrapCrossThreadPersistent(resolver),
@@ -981,10 +982,10 @@ ScriptPromise ImageBitmap::CreateAsync(ImageElementBase* image,
   // a transparent black image, respecting the color_params but ignoring
   // poremultiply_alpha.
   if (src_rect.IsEmpty()) {
-    ImageBitmap* bitmap = new ImageBitmap(MakeBlankImage(parsed_options));
+    ImageBitmap* bitmap =
+        MakeGarbageCollected<ImageBitmap>(MakeBlankImage(parsed_options));
     if (bitmap->BitmapImage()) {
-      bitmap->BitmapImage()->SetOriginClean(
-          !image->WouldTaintOrigin(document->GetSecurityOrigin()));
+      bitmap->BitmapImage()->SetOriginClean(!image->WouldTaintOrigin());
       resolver->Resolve(bitmap);
     } else {
       resolver->Reject(
@@ -1007,7 +1008,7 @@ ScriptPromise ImageBitmap::CreateAsync(ImageElementBase* image,
       CrossThreadBind(&RasterizeImageOnBackgroundThread,
                       WrapCrossThreadPersistent(resolver),
                       std::move(paint_record), draw_dst_rect,
-                      !image->WouldTaintOrigin(document->GetSecurityOrigin()),
+                      !image->WouldTaintOrigin(),
                       WTF::Passed(std::move(passed_parsed_options))));
   return promise;
 }
@@ -1048,14 +1049,14 @@ scoped_refptr<Uint8Array> ImageBitmap::CopyBitmapData() {
   return CopyImageData(image_);
 }
 
-unsigned long ImageBitmap::width() const {
+unsigned ImageBitmap::width() const {
   if (!image_)
     return 0;
   DCHECK_GT(image_->width(), 0);
   return image_->width();
 }
 
-unsigned long ImageBitmap::height() const {
+unsigned ImageBitmap::height() const {
   if (!image_)
     return 0;
   DCHECK_GT(image_->height(), 0);

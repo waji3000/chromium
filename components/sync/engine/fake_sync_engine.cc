@@ -75,10 +75,6 @@ SyncEngine::Status FakeSyncEngine::GetDetailedStatus() {
 void FakeSyncEngine::HasUnsyncedItemsForTest(
     base::OnceCallback<void(bool)> cb) const {}
 
-bool FakeSyncEngine::IsCryptographerReady(const BaseTransaction* trans) const {
-  return false;
-}
-
 void FakeSyncEngine::GetModelSafeRoutingInfo(ModelSafeRoutingInfo* out) const {}
 
 void FakeSyncEngine::FlushDirectory() const {}
@@ -106,5 +102,7 @@ void FakeSyncEngine::OnCookieJarChanged(bool account_mismatch,
     callback.Run();
   }
 }
+
+void FakeSyncEngine::SetInvalidationsForSessionsEnabled(bool enabled) {}
 
 }  // namespace syncer

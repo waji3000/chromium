@@ -505,6 +505,7 @@ void NavigationControllerImpl::Restore(
   DCHECK_EQ(-1, pending_entry_index_);
 
   needs_reload_ = true;
+  needs_reload_type_ = NeedsReloadType::kRestoreSession;
   entries_.reserve(entries->size());
   for (auto& entry : *entries)
     entries_.push_back(
@@ -886,7 +887,8 @@ bool NavigationControllerImpl::RendererDidNavigate(
     const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
     LoadCommittedDetails* details,
     bool is_same_document_navigation,
-    NavigationHandleImpl* navigation_handle) {
+    NavigationRequest* navigation_request) {
+  DCHECK(navigation_request);
   is_initial_navigation_ = false;
 
   // Save the previous state before we clobber it.
@@ -941,6 +943,9 @@ bool NavigationControllerImpl::RendererDidNavigate(
 
   // Save reload type and timestamp for a reload navigation to detect
   // consecutive reloads when the next reload is requested.
+  NavigationHandleImpl* navigation_handle =
+      navigation_request->navigation_handle();
+  DCHECK(navigation_handle);
   if (PendingEntryMatchesHandle(navigation_handle)) {
     if (pending_entry_->reload_type() != ReloadType::NONE) {
       last_committed_reload_type_ = pending_entry_->reload_type();
@@ -964,7 +969,8 @@ bool NavigationControllerImpl::RendererDidNavigate(
                                         was_restored, navigation_handle);
       break;
     case NAVIGATION_TYPE_SAME_PAGE:
-      RendererDidNavigateToSamePage(rfh, params, navigation_handle);
+      RendererDidNavigateToSamePage(rfh, params, details->is_same_document,
+                                    navigation_handle);
       break;
     case NAVIGATION_TYPE_NEW_SUBFRAME:
       RendererDidNavigateNewSubframe(rfh, params, details->is_same_document,
@@ -1216,8 +1222,9 @@ void NavigationControllerImpl::RendererDidNavigateToNewPage(
     FrameNavigationEntry* frame_entry = new FrameNavigationEntry(
         rfh->frame_tree_node()->unique_name(), params.item_sequence_number,
         params.document_sequence_number, rfh->GetSiteInstance(), nullptr,
-        params.url, params.referrer, params.redirects, params.page_state,
-        params.method, params.post_id, nullptr /* blob_url_loader_factory */);
+        params.url, &params.origin, params.referrer, params.redirects,
+        params.page_state, params.method, params.post_id,
+        nullptr /* blob_url_loader_factory */);
 
     new_entry = GetLastCommittedEntry()->CloneAndReplace(
         frame_entry, true, rfh->frame_tree_node(),
@@ -1328,6 +1335,7 @@ void NavigationControllerImpl::RendererDidNavigateToNewPage(
   frame_entry->SetPageState(params.page_state);
   frame_entry->set_method(params.method);
   frame_entry->set_post_id(params.post_id);
+  frame_entry->set_origin(params.origin);
 
   // history.pushState() is classified as a navigation to a new page, but sets
   // is_same_document to true. In this case, we already have the title and
@@ -1505,8 +1513,9 @@ void NavigationControllerImpl::RendererDidNavigateToExistingPage(
   entry->AddOrUpdateFrameEntry(
       rfh->frame_tree_node(), params.item_sequence_number,
       params.document_sequence_number, rfh->GetSiteInstance(), nullptr,
-      params.url, params.referrer, params.redirects, params.page_state,
-      params.method, params.post_id, nullptr /* blob_url_loader_factory */);
+      params.url, params.origin, params.referrer, params.redirects,
+      params.page_state, params.method, params.post_id,
+      nullptr /* blob_url_loader_factory */);
 
   // The redirected to page should not inherit the favicon from the previous
   // page.
@@ -1532,6 +1541,7 @@ void NavigationControllerImpl::RendererDidNavigateToExistingPage(
 void NavigationControllerImpl::RendererDidNavigateToSamePage(
     RenderFrameHostImpl* rfh,
     const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
+    bool is_same_document,
     NavigationHandleImpl* handle) {
   // This classification says that we have a pending entry that's the same as
   // the last committed entry. This entry is guaranteed to exist by
@@ -1555,9 +1565,13 @@ void NavigationControllerImpl::RendererDidNavigateToSamePage(
   existing_entry->SetURL(params.url);
 
   // If a user presses enter in the omnibox and the server redirects, the URL
-  // might change (but it's still considered a SAME_PAGE navigation). So we must
-  // update the SSL status.
-  existing_entry->GetSSL() = SSLStatus(handle->GetSSLInfo());
+  // might change (but it's still considered a SAME_PAGE navigation), so we must
+  // update the SSL status if we perform a network request (e.g. a
+  // non-same-document navigation). Requests that don't result in a network
+  // request do not have a valid SSL status, but since the document didn't
+  // change, the previous SSLStatus is still valid.
+  if (!is_same_document)
+    existing_entry->GetSSL() = SSLStatus(handle->GetSSLInfo());
 
   if (existing_entry->GetURL().SchemeIs(url::kHttpsScheme) &&
       !rfh->GetParent() && handle->GetNetErrorCode() == net::OK) {
@@ -1573,8 +1587,9 @@ void NavigationControllerImpl::RendererDidNavigateToSamePage(
   existing_entry->AddOrUpdateFrameEntry(
       rfh->frame_tree_node(), params.item_sequence_number,
       params.document_sequence_number, rfh->GetSiteInstance(), nullptr,
-      params.url, params.referrer, params.redirects, params.page_state,
-      params.method, params.post_id, nullptr /* blob_url_loader_factory */);
+      params.url, params.origin, params.referrer, params.redirects,
+      params.page_state, params.method, params.post_id,
+      nullptr /* blob_url_loader_factory */);
 
   DiscardNonCommittedEntries();
 }
@@ -1604,8 +1619,9 @@ void NavigationControllerImpl::RendererDidNavigateNewSubframe(
   scoped_refptr<FrameNavigationEntry> frame_entry(new FrameNavigationEntry(
       rfh->frame_tree_node()->unique_name(), params.item_sequence_number,
       params.document_sequence_number, rfh->GetSiteInstance(), nullptr,
-      params.url, params.referrer, params.redirects, params.page_state,
-      params.method, params.post_id, nullptr /* blob_url_loader_factory */));
+      params.url, &params.origin, params.referrer, params.redirects,
+      params.page_state, params.method, params.post_id,
+      nullptr /* blob_url_loader_factory */));
 
   std::unique_ptr<NavigationEntryImpl> new_entry =
       GetLastCommittedEntry()->CloneAndReplace(
@@ -1674,8 +1690,9 @@ bool NavigationControllerImpl::RendererDidNavigateAutoSubframe(
   last_committed->AddOrUpdateFrameEntry(
       rfh->frame_tree_node(), params.item_sequence_number,
       params.document_sequence_number, rfh->GetSiteInstance(), nullptr,
-      params.url, params.referrer, params.redirects, params.page_state,
-      params.method, params.post_id, nullptr /* blob_url_loader_factory */);
+      params.url, params.origin, params.referrer, params.redirects,
+      params.page_state, params.method, params.post_id,
+      nullptr /* blob_url_loader_factory */);
 
   return send_commit_notification;
 }
@@ -1763,6 +1780,7 @@ void NavigationControllerImpl::CopyStateFrom(const NavigationController& temp,
     return;  // Nothing new to do.
 
   needs_reload_ = needs_reload;
+  needs_reload_type_ = NeedsReloadType::kCopyStateFrom;
   InsertEntriesFrom(source, source.GetEntryCount());
 
   for (auto it = source.session_storage_namespace_map_.begin();
@@ -1999,6 +2017,11 @@ void NavigationControllerImpl::NavigateFromFrameProxy(
     const std::string& extra_headers,
     scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory) {
   FrameTreeNode* node = render_frame_host->frame_tree_node();
+
+  // TODO(nasko): Plumb through the real initiator origin and use it to
+  // compute the origin to use.
+  url::Origin origin_to_use;
+
   // Create a NavigationEntry for the transfer, without making it the pending
   // entry. Subframe transfers should have a clone of the last committed entry
   // with a FrameNavigationEntry for the target frame. Main frame transfers
@@ -2027,8 +2050,9 @@ void NavigationControllerImpl::NavigateFromFrameProxy(
     }
     entry->AddOrUpdateFrameEntry(
         node, -1, -1, nullptr,
-        static_cast<SiteInstanceImpl*>(source_site_instance), url, referrer,
-        std::vector<GURL>(), PageState(), method, -1, blob_url_loader_factory);
+        static_cast<SiteInstanceImpl*>(source_site_instance), url,
+        origin_to_use, referrer, std::vector<GURL>(), PageState(), method, -1,
+        blob_url_loader_factory);
   } else {
     // Main frame case.
     entry = NavigationEntryImpl::FromNavigationEntry(CreateNavigationEntry(
@@ -2061,8 +2085,9 @@ void NavigationControllerImpl::NavigateFromFrameProxy(
   if (!frame_entry) {
     frame_entry = new FrameNavigationEntry(
         node->unique_name(), -1, -1, nullptr,
-        static_cast<SiteInstanceImpl*>(source_site_instance), url, referrer,
-        std::vector<GURL>(), PageState(), method, -1, blob_url_loader_factory);
+        static_cast<SiteInstanceImpl*>(source_site_instance), url,
+        &origin_to_use, referrer, std::vector<GURL>(), PageState(), method, -1,
+        blob_url_loader_factory);
   }
 
   LoadURLParams params(url);
@@ -2186,6 +2211,7 @@ bool NavigationControllerImpl::NeedsReload() const {
 
 void NavigationControllerImpl::SetNeedsReload() {
   needs_reload_ = true;
+  needs_reload_type_ = NeedsReloadType::kRequestedByClient;
 
   if (last_committed_entry_index_ != -1) {
     entries_[last_committed_entry_index_]->SetTransitionType(
@@ -2641,11 +2667,16 @@ NavigationControllerImpl::CreateNavigationEntryFromLoadParams(
     // Create an identical NavigationEntry with a new FrameNavigationEntry for
     // the target subframe.
     entry = GetLastCommittedEntry()->Clone();
+
+    // TODO(nasko): Investigate what is the proper origin to supply here
+    // or whether a valid one is required.
+    url::Origin origin;
+
     entry->AddOrUpdateFrameEntry(
         node, -1, -1, nullptr,
         static_cast<SiteInstanceImpl*>(params.source_site_instance.get()),
-        params.url, params.referrer, params.redirect_chain, PageState(), "GET",
-        -1, blob_url_loader_factory);
+        params.url, origin, params.referrer, params.redirect_chain, PageState(),
+        "GET", -1, blob_url_loader_factory);
   } else {
     // Otherwise, create a pending entry for the main frame.
 
@@ -2708,6 +2739,8 @@ NavigationControllerImpl::CreateNavigationRequestFromLoadParams(
     const NavigationEntryImpl& entry,
     FrameNavigationEntry* frame_entry) {
   DCHECK_EQ(-1, GetIndexOfEntry(&entry));
+  DCHECK(frame_entry);
+
   GURL url_to_load;
   GURL virtual_url;
   // For main frames, rewrite the URL if necessary and compute the virtual URL
@@ -2724,16 +2757,32 @@ NavigationControllerImpl::CreateNavigationRequestFromLoadParams(
     if (virtual_url.is_empty())
       virtual_url = url_to_load;
 
+    CHECK(virtual_url == entry.GetVirtualURL());
+
+    // This is a DCHECK and not a CHECK as URL rewrite has non-deterministic
+    // behavior in the field: it is possible for two calls to
+    // RewriteUrlForNavigation to return different results, leading to a
+    // different URL in the NavigationRequest and FrameEntry. This will be fixed
+    // once we remove the pending NavigationEntry, as we'll only make one call
+    // to RewriteUrlForNavigation.
+    DCHECK_EQ(url_to_load, frame_entry->url());
+
     // TODO(clamy): In order to remove the pending NavigationEntry,
     // |virtual_url| and |reverse_on_redirect| should be stored in the
     // NavigationRequest.
   } else {
     url_to_load = params.url;
     virtual_url = params.url;
+    CHECK_EQ(url_to_load, frame_entry->url());
   }
 
-  CHECK(!node->IsMainFrame() || virtual_url == entry.GetVirtualURL());
-  CHECK_EQ(url_to_load, frame_entry->url());
+  if (auto* rfh = node->current_frame_host()) {
+    if (rfh->is_attaching_inner_delegate()) {
+      // Avoid starting any new navigations since this node is now preparing for
+      // attaching an inner delegate.
+      return nullptr;
+    }
+  }
 
   if (!IsValidURLForNavigation(node->IsMainFrame(), virtual_url, url_to_load))
     return nullptr;
@@ -2766,17 +2815,20 @@ NavigationControllerImpl::CreateNavigationRequestFromLoadParams(
   // Create the NavigationParams based on |params|.
 
   bool is_view_source_mode = virtual_url.SchemeIs(kViewSourceScheme);
+  NavigationDownloadPolicy download_policy =
+      is_view_source_mode ? NavigationDownloadPolicy::kDisallowViewSource
+                          : NavigationDownloadPolicy::kAllow;
   const GURL& history_url_for_data_url =
       params.base_url_for_data_url.is_empty() ? GURL() : virtual_url;
   CommonNavigationParams common_params(
       url_to_load, params.referrer, params.transition_type, navigation_type,
-      !is_view_source_mode, should_replace_current_entry,
+      download_policy, should_replace_current_entry,
       params.base_url_for_data_url, history_url_for_data_url, previews_state,
       navigation_start,
       params.load_type == LOAD_TYPE_HTTP_POST ? "POST" : "GET",
       params.post_data, base::Optional<SourceLocation>(),
       params.started_from_context_menu, has_user_gesture, InitiatorCSPInfo(),
-      params.input_start);
+      params.href_translate, params.input_start);
 
   RequestNavigationParams request_params(
       override_user_agent, params.redirect_chain, common_params.url,
@@ -2827,6 +2879,14 @@ NavigationControllerImpl::CreateNavigationRequestFromEntry(
     // case avoids issues with sending data to the wrong page.
     dest_url = entry.GetOriginalRequestURL();
     dest_referrer = Referrer();
+  }
+
+  if (auto* rfh = frame_tree_node->current_frame_host()) {
+    if (rfh->is_attaching_inner_delegate()) {
+      // Avoid starting any new navigations since this node is now preparing for
+      // attaching an inner delegate.
+      return nullptr;
+    }
   }
 
   if (!IsValidURLForNavigation(frame_tree_node->IsMainFrame(),
@@ -2931,6 +2991,9 @@ void NavigationControllerImpl::SetActive(bool is_active) {
 void NavigationControllerImpl::LoadIfNecessary() {
   if (!needs_reload_)
     return;
+
+  UMA_HISTOGRAM_ENUMERATION("Navigation.LoadIfNecessaryType",
+                            needs_reload_type_);
 
   // Calling Reload() results in ignoring state, and not loading.
   // Explicitly use NavigateToPendingEntry so that the renderer uses the

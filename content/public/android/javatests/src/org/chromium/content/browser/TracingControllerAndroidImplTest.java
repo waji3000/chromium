@@ -60,7 +60,7 @@ public class TracingControllerAndroidImplTest {
         File file = new File(tracingController.getOutputPath());
         Assert.assertTrue(file.getName().startsWith("chrome-profile-results"));
 
-        ThreadUtils.runOnUiThreadBlocking(() -> { tracingController.stopTracing(null); });
+        ThreadUtils.runOnUiThreadBlocking(() -> tracingController.stopTracing(null));
 
         // The tracer stops asynchronously, because it needs to wait for native code to flush and
         // close the output file. Give it a little time.
@@ -70,7 +70,7 @@ public class TracingControllerAndroidImplTest {
         // It says it stopped, so it should have written the output file.
         Assert.assertTrue(file.exists());
         Assert.assertTrue(file.delete());
-        tracingController.destroy();
+        ThreadUtils.runOnUiThreadBlocking(() -> tracingController.destroy());
     }
 
     private class TestCallback<T> implements Callback<T> {
@@ -101,7 +101,7 @@ public class TracingControllerAndroidImplTest {
 
         Assert.assertTrue(callback.mWasCalled.block(TIMEOUT_MILLIS));
         Assert.assertThat(Arrays.asList(callback.mResult), CoreMatchers.hasItem("toplevel"));
-        tracingController.destroy();
+        ThreadUtils.runOnUiThreadBlocking(() -> tracingController.destroy());
     }
 
     @Test
@@ -123,7 +123,7 @@ public class TracingControllerAndroidImplTest {
         Assert.assertTrue(callback.mWasCalled.block(TIMEOUT_MILLIS));
         Assert.assertEquals(0f, (double) callback.mResult.first, 0.5f);
         Assert.assertEquals(0, (long) callback.mResult.second);
-        tracingController.destroy();
+        ThreadUtils.runOnUiThreadBlocking(() -> tracingController.destroy());
     }
 
     @Test
@@ -148,7 +148,7 @@ public class TracingControllerAndroidImplTest {
         File file = new File(tracingController.getOutputPath());
 
         TestCallback<Void> callback = new TestCallback<>();
-        ThreadUtils.runOnUiThreadBlocking(() -> { tracingController.stopTracing(callback); });
+        ThreadUtils.runOnUiThreadBlocking(() -> tracingController.stopTracing(callback));
 
         // Callback should be run once stopped.
         Assert.assertTrue(callback.mWasCalled.block(TIMEOUT_MILLIS));
@@ -161,6 +161,6 @@ public class TracingControllerAndroidImplTest {
         Assert.assertEquals((byte) 0x1f, bytes[0]);
         Assert.assertEquals((byte) 0x8b, bytes[1]);
         Assert.assertTrue(file.delete());
-        tracingController.destroy();
+        ThreadUtils.runOnUiThreadBlocking(() -> tracingController.destroy());
     }
 }

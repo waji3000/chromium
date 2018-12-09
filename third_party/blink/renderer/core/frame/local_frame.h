@@ -118,6 +118,8 @@ class CORE_EXPORT LocalFrame final : public Frame,
                             FrameOwner*,
                             InterfaceRegistry* = nullptr);
 
+  LocalFrame(LocalFrameClient*, Page&, FrameOwner*, InterfaceRegistry*);
+
   void Init();
   void SetView(LocalFrameView*);
   void CreateView(const IntSize&, const Color&);
@@ -406,16 +408,10 @@ class CORE_EXPORT LocalFrame final : public Frame,
 
   SmoothScrollSequencer& GetSmoothScrollSequencer();
 
-  // TODO(iclelland): Replace this with a method on Document
-  void DeprecatedReportFeaturePolicyViolation(
-      mojom::FeaturePolicyFeature) const override;
-
   const mojom::blink::ReportingServiceProxyPtr& GetReportingService() const;
 
  private:
   friend class FrameNavigationDisabler;
-
-  LocalFrame(LocalFrameClient*, Page&, FrameOwner*, InterfaceRegistry*);
 
   // Frame protected overrides:
   void DetachImpl(FrameDetachType) override;
@@ -530,6 +526,16 @@ class CORE_EXPORT LocalFrame final : public Frame,
       previews_resource_loading_hints_receiver_;
 
   ClientHintsPreferences client_hints_preferences_;
+
+  // The value of |is_save_data_enabled_| is read once per frame from
+  // NetworkStateNotifier, which is guarded by a mutex lock, and cached locally
+  // here for performance.
+  // TODO(sclittle): This field doesn't really belong here - we should find some
+  // way to make the state of NetworkStateNotifier accessible without needing to
+  // acquire a mutex, such as by adding thread-local objects to hold the network
+  // state that get updated whenever the network state changes. That way, this
+  // field would be no longer necessary.
+  const bool is_save_data_enabled_;
 };
 
 inline FrameLoader& LocalFrame::Loader() const {

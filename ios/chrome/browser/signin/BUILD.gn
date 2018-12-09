@@ -41,6 +41,10 @@ source_set("signin") {
     "profile_oauth2_token_service_factory.mm",
     "profile_oauth2_token_service_ios_provider_impl.h",
     "profile_oauth2_token_service_ios_provider_impl.mm",
+    "signin_browser_state_info_updater.h",
+    "signin_browser_state_info_updater.mm",
+    "signin_browser_state_info_updater_factory.h",
+    "signin_browser_state_info_updater_factory.mm",
     "signin_client_factory.cc",
     "signin_client_factory.h",
     "signin_error_controller_factory.cc",
@@ -82,6 +86,7 @@ source_set("signin") {
     "//services/identity:lib",
     "//services/identity/public/cpp",
     "//services/identity/public/mojom",
+    "//services/service_manager/public/mojom",
     "//url",
   ]
 }
@@ -162,6 +167,7 @@ source_set("unit_tests") {
     "//ios/web/public/test",
     "//ios/web/public/test/fakes",
     "//net:test_support",
+    "//services/identity/public/cpp:test_support",
     "//testing/gmock",
     "//testing/gtest",
     "//third_party/ocmock",

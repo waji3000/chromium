@@ -20,16 +20,12 @@ const base::Feature kEnablePlayStoreAppSearch{
     "EnablePlayStoreAppSearch", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kEnableAppDataSearch{"EnableAppDataSearch",
                                          base::FEATURE_DISABLED_BY_DEFAULT};
-const base::Feature kEnableHomeLauncher{"EnableHomeLauncher",
-                                        base::FEATURE_ENABLED_BY_DEFAULT};
 const base::Feature kEnableHomeLauncherGestures{
     "HomeLauncherGestures", base::FEATURE_ENABLED_BY_DEFAULT};
 const base::Feature kEnableSettingsShortcutSearch{
     "EnableSettingsShortcutSearch", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kEnableAppsGridGapFeature{"EnableAppsGridGapFeature",
                                               base::FEATURE_ENABLED_BY_DEFAULT};
-const base::Feature kEnableNewStyleLauncher{"EnableNewStyleLauncher",
-                                            base::FEATURE_ENABLED_BY_DEFAULT};
 const base::Feature kEnableContinueReading{"EnableContinueReading",
                                            base::FEATURE_ENABLED_BY_DEFAULT};
 const base::Feature kEnableZeroStateSuggestions{
@@ -37,7 +33,7 @@ const base::Feature kEnableZeroStateSuggestions{
 const base::Feature kEnableAppListSearchAutocomplete{
     "EnableAppListSearchAutocomplete", base::FEATURE_ENABLED_BY_DEFAULT};
 const base::Feature kEnableAppSearchResultRanker{
-    "EnableAppSearchResultRanker", base::FEATURE_DISABLED_BY_DEFAULT};
+    "EnableAppSearchResultRanker", base::FEATURE_ENABLED_BY_DEFAULT};
 
 bool IsAnswerCardEnabled() {
   // Not using local static variable to allow tests to change this value.
@@ -61,10 +57,6 @@ bool IsAppDataSearchEnabled() {
   return base::FeatureList::IsEnabled(kEnableAppDataSearch);
 }
 
-bool IsHomeLauncherEnabled() {
-  return base::FeatureList::IsEnabled(kEnableHomeLauncher);
-}
-
 bool IsHomeLauncherGesturesEnabled() {
   return base::FeatureList::IsEnabled(kEnableHomeLauncherGestures);
 }
@@ -75,10 +67,6 @@ bool IsSettingsShortcutSearchEnabled() {
 
 bool IsAppsGridGapFeatureEnabled() {
   return base::FeatureList::IsEnabled(kEnableAppsGridGapFeature);
-}
-
-bool IsNewStyleLauncherEnabled() {
-  return base::FeatureList::IsEnabled(kEnableNewStyleLauncher);
 }
 
 bool IsContinueReadingEnabled() {

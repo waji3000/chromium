@@ -7,10 +7,8 @@
 #include <algorithm>
 
 #include "ash/frame/ash_frame_caption_controller.h"  // mash-ok
-#include "ash/public/cpp/app_list/app_list_features.h"
 #include "ash/public/cpp/app_types.h"
 #include "ash/public/cpp/ash_constants.h"
-#include "ash/public/cpp/ash_layout_constants.h"
 #include "ash/public/cpp/ash_switches.h"
 #include "ash/public/cpp/caption_buttons/frame_back_button.h"
 #include "ash/public/cpp/caption_buttons/frame_caption_button_container_view.h"
@@ -27,7 +25,7 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/themes/theme_properties.h"
-#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
+#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager_client.h"
 #include "chrome/browser/ui/ash/session_util.h"
 #include "chrome/browser/ui/ash/tablet_mode_client.h"
 #include "chrome/browser/ui/browser.h"
@@ -68,6 +66,7 @@
 #include "ui/views/rect_based_targeting_utils.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "ui/views/window/caption_button_layout_constants.h"
 
 namespace {
 
@@ -81,9 +80,6 @@ constexpr SkColor kIncognitoWindowTitleTextColor = SK_ColorWHITE;
 
 // The indicator for teleported windows has 8 DIPs before and below it.
 constexpr int kProfileIndicatorPadding = 8;
-
-// The indicator for teleported windows is 24 DIP on a side.
-constexpr int kProfileIndicatorSize = 24;
 
 bool IsV1AppBackButtonEnabled() {
   return base::CommandLine::ForCurrentProcess()->HasSwitch(
@@ -428,9 +424,9 @@ gfx::Size BrowserNonClientFrameViewAsh::GetMinimumSize() const {
     // at its usual insets.
     const int min_tabstrip_width =
         browser_view()->tabstrip()->GetMinimumSize().width();
-    min_width = std::max(
-        min_width,
-        min_tabstrip_width + GetTabStripLeftInset() + GetTabStripRightInset());
+    min_width =
+        std::max(min_width, min_tabstrip_width + GetTabStripLeftInset() +
+                                GetTabStripRightInset());
   }
   return gfx::Size(min_width, min_client_view_size.height());
 }
@@ -723,8 +719,7 @@ bool BrowserNonClientFrameViewAsh::ShouldShowCaptionButtons() const {
   // Home Launcher feature is enabled, since it gives the user the ability to
   // minimize all windows when pressing the Launcher button on the shelf.
   const bool hide_caption_buttons_in_tablet_mode =
-      !browser_view()->browser()->is_app() &&
-      app_list_features::IsHomeLauncherEnabled();
+      !browser_view()->browser()->is_app();
   if (hide_caption_buttons_in_tablet_mode && TabletModeClient::Get() &&
       TabletModeClient::Get()->tablet_mode_enabled()) {
     return false;
@@ -737,7 +732,7 @@ bool BrowserNonClientFrameViewAsh::ShouldShowCaptionButtons() const {
 int BrowserNonClientFrameViewAsh::GetTabStripLeftInset() const {
   int left_inset = frame_values().normal_insets.left();
   if (profile_indicator_icon_)
-    left_inset += kProfileIndicatorPadding + kProfileIndicatorSize;
+    left_inset += kProfileIndicatorPadding + profile_indicator_icon_->width();
   return left_inset;
 }
 
@@ -793,23 +788,27 @@ BrowserNonClientFrameViewAsh::CreateFrameHeader() {
 
 void BrowserNonClientFrameViewAsh::SetUpForHostedApp(
     ash::DefaultFrameHeader* header) {
-  SkColor active_color = ash::FrameCaptionButton::GetButtonColor(
-      ash::FrameCaptionButton::ColorMode::kDefault, ash::kDefaultFrameColor);
+  SkColor active_color = views::FrameCaptionButton::GetButtonColor(
+      views::FrameCaptionButton::ColorMode::kDefault, ash::kDefaultFrameColor);
 
   // Hosted apps apply a theme color if specified by the extension.
   Browser* browser = browser_view()->browser();
   base::Optional<SkColor> theme_color =
       browser->hosted_app_controller()->GetThemeColor();
   if (theme_color) {
-    header->set_button_color_mode(ash::FrameCaptionButton::ColorMode::kThemed);
+    header->set_button_color_mode(
+        views::FrameCaptionButton::ColorMode::kThemed);
     header->SetFrameColors(*theme_color, *theme_color);
-    active_color = ash::FrameCaptionButton::GetButtonColor(
-        ash::FrameCaptionButton::ColorMode::kThemed, *theme_color);
+    active_color = views::FrameCaptionButton::GetButtonColor(
+        views::FrameCaptionButton::ColorMode::kThemed, *theme_color);
   }
+
+  if (!browser->hosted_app_controller()->ShouldShowHostedAppButtonContainer())
+    return;
 
   // Add the container for extra hosted app buttons (e.g app menu button).
   const float inactive_alpha_ratio =
-      ash::FrameCaptionButton::GetInactiveButtonColorAlphaRatio();
+      views::FrameCaptionButton::GetInactiveButtonColorAlphaRatio();
   SkColor inactive_color =
       SkColorSetA(active_color, 255 * inactive_alpha_ratio);
   set_hosted_app_button_container(new HostedAppButtonContainer(
@@ -827,8 +826,8 @@ void BrowserNonClientFrameViewAsh::UpdateFrameColors() {
     active_color =
         browser_view()->browser()->hosted_app_controller()->GetThemeColor();
     frame_header_->set_button_color_mode(
-        active_color ? ash::FrameCaptionButton::ColorMode::kThemed
-                     : ash::FrameCaptionButton::ColorMode::kDefault);
+        active_color ? views::FrameCaptionButton::ColorMode::kThemed
+                     : views::FrameCaptionButton::ColorMode::kDefault);
   } else if (!browser_view()->browser()->is_app()) {
     active_color = kMdWebUiFrameColor;
   }
@@ -867,26 +866,29 @@ bool BrowserNonClientFrameViewAsh::ShouldShowProfileIndicatorIcon() const {
   if (!browser->is_type_tabbed() && !browser->is_app())
     return false;
 
-  return MultiUserWindowManager::ShouldShowAvatar(
+  return MultiUserWindowManagerClient::ShouldShowAvatar(
       browser_view()->GetNativeWindow());
 }
 
 void BrowserNonClientFrameViewAsh::UpdateProfileIcons() {
   View* root_view = frame()->GetRootView();
   if (ShouldShowProfileIndicatorIcon()) {
+    bool needs_layout = !profile_indicator_icon_;
     if (!profile_indicator_icon_) {
       profile_indicator_icon_ = new ProfileIndicatorIcon();
       AddChildView(profile_indicator_icon_);
-      if (root_view) {
-        // Adding a child does not invalidate the layout.
-        InvalidateLayout();
-        root_view->Layout();
-      }
     }
 
-    profile_indicator_icon_->SetIcon(gfx::Image(
-        GetAvatarImageForContext(browser_view()->browser()->profile())));
-    profile_indicator_icon_->set_stroke_color(GetToolbarTopSeparatorColor());
+    gfx::Image image(
+        GetAvatarImageForContext(browser_view()->browser()->profile()));
+    profile_indicator_icon_->SetSize(image.Size());
+    profile_indicator_icon_->SetIcon(image);
+
+    if (needs_layout && root_view) {
+      // Adding a child does not invalidate the layout.
+      InvalidateLayout();
+      root_view->Layout();
+    }
   } else if (profile_indicator_icon_) {
     delete profile_indicator_icon_;
     profile_indicator_icon_ = nullptr;
@@ -897,12 +899,15 @@ void BrowserNonClientFrameViewAsh::UpdateProfileIcons() {
 
 void BrowserNonClientFrameViewAsh::LayoutProfileIndicator() {
   DCHECK(profile_indicator_icon_);
-  const int bottom = GetTopInset(false) + browser_view()->GetTabStripHeight() -
-                     kProfileIndicatorPadding;
-  profile_indicator_icon_->SetBounds(
-      kProfileIndicatorPadding, bottom - kProfileIndicatorSize,
-      kProfileIndicatorSize, kProfileIndicatorSize);
+  const int frame_height =
+      GetTopInset(false) + browser_view()->GetTabStripHeight();
+  profile_indicator_icon_->SetPosition(
+      gfx::Point(kProfileIndicatorPadding,
+                 (frame_height - profile_indicator_icon_->height()) / 2));
   profile_indicator_icon_->SetVisible(true);
+
+  // The layout size is set along with the image.
+  DCHECK_LE(profile_indicator_icon_->height(), frame_height);
 }
 
 ws::Id BrowserNonClientFrameViewAsh::GetServerWindowId() const {

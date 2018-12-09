@@ -14,6 +14,7 @@
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
@@ -37,7 +38,8 @@ String GetErrorStringForDisallowedLoad(const KURL& url) {
 SubresourceFilter* SubresourceFilter::Create(
     ExecutionContext& execution_context,
     std::unique_ptr<WebDocumentSubresourceFilter> filter) {
-  return new SubresourceFilter(&execution_context, std::move(filter));
+  return MakeGarbageCollected<SubresourceFilter>(&execution_context,
+                                                 std::move(filter));
 }
 
 SubresourceFilter::SubresourceFilter(

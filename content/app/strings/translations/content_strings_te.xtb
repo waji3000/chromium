@@ -65,7 +65,7 @@
 <translation id="3075154866155599887">దయచేసి చెల్లుబాటు అయ్యే విలువను నమోదు చేయండి. ఫీల్డ్ అసంపూర్ణంగా ఉంది లేదా చెల్లని తేదీని కలిగి ఉంది.</translation>
 <translation id="3078740164268491126">పట్టిక</translation>
 <translation id="3086746722712840547">note</translation>
-<translation id="310520048233152454">దయచేసి ఒక URLని ఎంటర్ చెయ్యండి.</translation>
+<translation id="310520048233152454">దయచేసి ఒక URLని ఎంటర్ చేయండి.</translation>
 <translation id="3175736971608411871">టైమర్</translation>
 <translation id="3199563858620722075">కాంబో పెట్టె</translation>
 <translation id="3450233048674729344">విలువ ఖచ్చితంగా <ph name="MAXIMUM" /> కంటే తగ్గువగా లేదా సమానంగా ఉండాలి.</translation>
@@ -120,6 +120,7 @@
 <translation id="5307600278924710095">దయచేసి '<ph name="ATSIGN" />'కి ముందు ఉన్న భాగాన్ని నమోదు చేయండి. '<ph name="INVALIDADDRESS" />' అసంపూర్ణంగా ఉంది.</translation>
 <translation id="5406322316791861025">రూపం</translation>
 <translation id="5453733299334684579">వృక్షాంశం</translation>
+<translation id="5457113250005438886">చెల్లదు</translation>
 <translation id="5466621249238537318">దయచేసి ఒకటి లేదా మరిన్ని ఫైళ్ళను ఎంచుకోండి.</translation>
 <translation id="5468998798572797635">పూర్తి స్క్రీన్ నుండి నిష్క్రమించు</translation>
 <translation id="5516424706154626233">తేదీ ఎంపిక</translation>
@@ -150,6 +151,7 @@
 <translation id="6453774872122745852">గుర్తింపులు</translation>
 <translation id="648732519525291180">సమయం ఎంపిక</translation>
 <translation id="6550675742724504774">ఎంపికలు</translation>
+<translation id="6572309429103589720">చెల్లని వ్యాకరణం</translation>
 <translation id="658823671542763450">పూర్తి స్క్రీన్‌లోకి ప్రవేశించు</translation>
 <translation id="663493177488814956">ఫీడ్</translation>
 <translation id="6637586476836377253">log</translation>
@@ -199,6 +201,7 @@
 <translation id="8105797009065549151">గమనిక సూచన</translation>
 <translation id="8117451130807776954">ఈ వారం</translation>
 <translation id="8199524924445686405">yyyy</translation>
+<translation id="8261464734335370856">చెల్లని అక్షరక్రమం</translation>
 <translation id="8284326494547611709">ఉపశీర్షికలు</translation>
 <translation id="835897206747267392">చెల్లని విలువ.</translation>
 <translation id="8415319359811155763">భాగం</translation>
@@ -213,7 +216,7 @@
 <translation id="8550857728288566671">గ్రాఫిక్స్ చిహ్నం</translation>
 <translation id="8583702881314752957">నిర్వచన జాబితా</translation>
 <translation id="8597182159515967513">శీర్షిక</translation>
-<translation id="860475260694818407">విషయ పట్టిక</translation>
+<translation id="860475260694818407">కంటెంట్‌ల‌ పట్టిక</translation>
 <translation id="8613126697340063924">రిమోట్ ప్లేబ్యాక్‌ను నియంత్రిస్తుంది</translation>
 <translation id="862370744433916922">ఉపశీర్షిక</translation>
 <translation id="8750798805984357768">దయచేసి ఈ ఎంపికలలో ఒకదాన్ని ఎంచుకోండి.</translation>

@@ -23,6 +23,8 @@ blink_platform_sources("scheduler") {
     "common/metrics_helper.h",
     "common/pollable_thread_safe_flag.cc",
     "common/pollable_thread_safe_flag.h",
+    "common/post_cancellable_task.cc",
+    "common/post_cross_thread_task.cc",
     "common/process_state.cc",
     "common/process_state.h",
     "common/scheduler_helper.cc",
@@ -31,6 +33,7 @@ blink_platform_sources("scheduler") {
     "common/simple_thread_scheduler.cc",
     "common/simple_thread_scheduler.h",
     "common/single_thread_idle_task_runner.cc",
+    "common/single_thread_idle_task_runner.h",
     "common/thread.cc",
     "common/thread_cpu_throttler.cc",
     "common/thread_load_tracker.cc",
@@ -105,6 +108,8 @@ blink_platform_sources("scheduler") {
     "public/frame_status.h",
     "public/page_lifecycle_state.h",
     "public/page_scheduler.h",
+    "public/post_cancellable_task.h",
+    "public/post_cross_thread_task.h",
     "public/scheduling_lifecycle_state.h",
     "public/thread.h",
     "public/thread_cpu_throttler.h",
@@ -151,12 +156,12 @@ jumbo_source_set("test_support") {
   sources = [
     "test/fake_frame_scheduler.h",
     "test/fake_page_scheduler.h",
-    "test/fake_renderer_scheduler.cc",
     "test/fake_task_runner.cc",
     "test/fake_task_runner.h",
     "test/renderer_scheduler_test_support.cc",
     "test/test_queueing_time_estimator_client.cc",
     "test/test_queueing_time_estimator_client.h",
+    "test/web_fake_thread_scheduler.cc",
   ]
 
   deps = [
@@ -177,6 +182,7 @@ jumbo_source_set("unit_tests") {
     "common/idle_canceled_delayed_task_sweeper_unittest.cc",
     "common/idle_helper_unittest.cc",
     "common/metrics_helper_unittest.cc",
+    "common/post_cancellable_task_unittest.cc",
     "common/scheduler_helper_unittest.cc",
     "common/thread_load_tracker_unittest.cc",
     "common/throttling/budget_pool_unittest.cc",

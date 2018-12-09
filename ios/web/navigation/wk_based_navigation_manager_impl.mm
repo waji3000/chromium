@@ -7,6 +7,7 @@
 #import <Foundation/Foundation.h>
 #include <memory>
 
+#include "base/callback.h"
 #include "base/logging.h"
 #include "base/mac/bundle_locations.h"
 #include "base/memory/ptr_util.h"
@@ -89,7 +90,7 @@ void WKBasedNavigationManagerImpl::DetachFromWebView() {
 
 void WKBasedNavigationManagerImpl::OnNavigationItemCommitted() {
   LoadCommittedDetails details;
-  details.item = GetLastCommittedItem();
+  details.item = GetLastCommittedItemInCurrentOrRestoredSession();
   DCHECK(details.item);
 
   if (!wk_navigation_util::IsRestoreSessionUrl(details.item->GetURL()) &&
@@ -99,6 +100,13 @@ void WKBasedNavigationManagerImpl::OnNavigationItemCommitted() {
 
     UMA_HISTOGRAM_TIMES(kRestoreNavigationTime, restoration_timer_->Elapsed());
     restoration_timer_.reset();
+
+    for (base::OnceClosure& callback : restore_session_completion_callbacks_) {
+      std::move(callback).Run();
+    }
+    restore_session_completion_callbacks_.clear();
+
+    LoadIfNecessary();
   }
 
   details.previous_item_index = GetPreviousItemIndex();
@@ -134,7 +142,7 @@ void WKBasedNavigationManagerImpl::AddTransientItem(const GURL& url) {
   // navigation manager.
   NavigationItem* item = GetPendingItem();
   if (!item)
-    item = GetLastCommittedNonAppSpecificItem();
+    item = GetLastCommittedItemWithUserAgentType();
   // Item may still be null in captive portal case if chrome://newtab is the
   // only entry in back/forward history.
   if (item) {
@@ -152,14 +160,15 @@ void WKBasedNavigationManagerImpl::AddPendingItem(
   DiscardNonCommittedItems();
 
   pending_item_index_ = -1;
-  NavigationItem* last_committed_item = GetLastCommittedItem();
+  NavigationItem* last_committed_item =
+      GetLastCommittedItemInCurrentOrRestoredSession();
   pending_item_ = CreateNavigationItemWithRewriters(
       url, referrer, navigation_type, initiation_type,
       last_committed_item ? last_committed_item->GetURL() : GURL::EmptyGURL(),
       &transient_url_rewriters_);
   RemoveTransientURLRewriters();
   UpdatePendingItemUserAgentType(user_agent_override_option,
-                                 GetLastCommittedNonAppSpecificItem(),
+                                 GetLastCommittedItemWithUserAgentType(),
                                  pending_item_.get());
 
   // No need to detect renderer-initiated back/forward navigation in detached
@@ -288,6 +297,10 @@ void WKBasedNavigationManagerImpl::AddPushStateItemIfNecessary(
   // to do here.
 }
 
+bool WKBasedNavigationManagerImpl::IsRestoreSessionInProgress() const {
+  return is_restore_session_in_progress_;
+}
+
 BrowserState* WKBasedNavigationManagerImpl::GetBrowserState() const {
   return browser_state_;
 }
@@ -307,7 +320,7 @@ NavigationItem* WKBasedNavigationManagerImpl::GetVisibleItem() const {
 
   // Only return pending_item_ for new (non-history), user-initiated
   // navigations in order to prevent URL spoof attacks.
-  NavigationItemImpl* pending_item = GetPendingItemImpl();
+  NavigationItemImpl* pending_item = GetPendingItemInCurrentOrRestoredSession();
   if (pending_item) {
     bool is_user_initiated = pending_item->NavigationInitiationType() ==
                              NavigationInitiationType::BROWSER_INITIATED;
@@ -364,21 +377,6 @@ int WKBasedNavigationManagerImpl::GetPendingItemIndex() const {
   return -1;
 }
 
-int WKBasedNavigationManagerImpl::GetLastCommittedItemIndex() const {
-  // WKBackForwardList's |currentItem| is usually the last committed item,
-  // except two cases:
-  // 1) when the pending navigation is a back-forward navigation, in which
-  //    case it is actually the pending item. As a workaround, fall back to
-  //    last_committed_item_index_. This is not 100% correct (since
-  //    last_committed_item_index_ is only updated for main frame navigations),
-  //    but is the best possible answer.
-  // 2) when the last committed item is an empty window open item.
-  if (pending_item_index_ >= 0 || empty_window_open_item_) {
-    return last_committed_item_index_;
-  }
-  return web_view_cache_.GetCurrentItemIndex();
-}
-
 bool WKBasedNavigationManagerImpl::RemoveItemAtIndex(int index) {
   DLOG(WARNING) << "Not yet implemented.";
   return true;
@@ -416,6 +414,9 @@ void WKBasedNavigationManagerImpl::GoForward() {
 NavigationItemList WKBasedNavigationManagerImpl::GetBackwardItems() const {
   NavigationItemList items;
 
+  if (is_restore_session_in_progress_)
+    return items;
+
   // If the current navigation item is a transient item (e.g. SSL
   // interstitial), the last committed item should also be considered part of
   // the backward history.
@@ -433,6 +434,10 @@ NavigationItemList WKBasedNavigationManagerImpl::GetBackwardItems() const {
 
 NavigationItemList WKBasedNavigationManagerImpl::GetForwardItems() const {
   NavigationItemList items;
+
+  if (is_restore_session_in_progress_)
+    return items;
+
   for (int index = web_view_cache_.GetCurrentItemIndex() + 1;
        index < GetItemCount(); index++) {
     items.push_back(GetItemAtIndex(index));
@@ -493,6 +498,10 @@ void WKBasedNavigationManagerImpl::Restore(
   // This pending item will become the first item in the restored history.
   params.virtual_url = items[0]->GetVirtualURL();
 
+  // Grab the title of the first item before |restored_visible_item_| (which may
+  // or may not be the first index) is moved out of |items| below.
+  const base::string16& firstTitle = items[0]->GetTitle();
+
   // Ordering is important. Cache the visible item of the restored session
   // before starting the new navigation, which may trigger client lookup of
   // visible item. The visible item of the restored session is the last
@@ -504,6 +513,22 @@ void WKBasedNavigationManagerImpl::Restore(
     restored_visible_item_ = std::move(items[last_committed_item_index]);
 
   LoadURLWithParams(params);
+
+  // On restore prime the first navigation item with the title.  The remaining
+  // navItem titles will be set from the WKBackForwardListItem title value.
+  NavigationItemImpl* pendingItem = GetPendingItemInCurrentOrRestoredSession();
+  if (pendingItem) {
+    pendingItem->SetTitle(firstTitle);
+  }
+}
+
+void WKBasedNavigationManagerImpl::AddRestoreCompletionCallback(
+    base::OnceClosure callback) {
+  if (!is_restore_session_in_progress_) {
+    std::move(callback).Run();
+    return;
+  }
+  restore_session_completion_callbacks_.push_back(std::move(callback));
 }
 
 void WKBasedNavigationManagerImpl::LoadIfNecessary() {
@@ -533,18 +558,36 @@ NavigationItemImpl* WKBasedNavigationManagerImpl::GetNavigationItemImplAtIndex(
       index, true /* create_if_missing */);
 }
 
-NavigationItemImpl* WKBasedNavigationManagerImpl::GetLastCommittedItemImpl()
+NavigationItemImpl*
+WKBasedNavigationManagerImpl::GetLastCommittedItemInCurrentOrRestoredSession()
     const {
   if (empty_window_open_item_) {
     return empty_window_open_item_.get();
   }
 
-  int index = GetLastCommittedItemIndex();
+  int index = GetLastCommittedItemIndexInCurrentOrRestoredSession();
   return index == -1 ? nullptr
                      : GetNavigationItemImplAtIndex(static_cast<size_t>(index));
 }
 
-NavigationItemImpl* WKBasedNavigationManagerImpl::GetPendingItemImpl() const {
+int WKBasedNavigationManagerImpl::
+    GetLastCommittedItemIndexInCurrentOrRestoredSession() const {
+  // WKBackForwardList's |currentItem| is usually the last committed item,
+  // except two cases:
+  // 1) when the pending navigation is a back-forward navigation, in which
+  //    case it is actually the pending item. As a workaround, fall back to
+  //    last_committed_item_index_. This is not 100% correct (since
+  //    last_committed_item_index_ is only updated for main frame navigations),
+  //    but is the best possible answer.
+  // 2) when the last committed item is an empty window open item.
+  if (pending_item_index_ >= 0 || empty_window_open_item_) {
+    return last_committed_item_index_;
+  }
+  return web_view_cache_.GetCurrentItemIndex();
+}
+
+NavigationItemImpl*
+WKBasedNavigationManagerImpl::GetPendingItemInCurrentOrRestoredSession() const {
   return (pending_item_index_ == -1)
              ? pending_item_.get()
              : GetNavigationItemImplAtIndex(pending_item_index_);
@@ -725,6 +768,7 @@ WKBasedNavigationManagerImpl::WKWebViewCache::GetNavigationItemImplAtIndex(
           nullptr /* use default rewriters only */);
   new_item->SetTimestamp(
       navigation_manager_->time_smoother_.GetSmoothedTime(base::Time::Now()));
+  new_item->SetTitle(base::SysNSStringToUTF16(wk_item.title));
   const GURL& url = new_item->GetURL();
   // If this navigation item has a restore_session.html URL, then it was created
   // to restore session history and will redirect to the target URL encoded in

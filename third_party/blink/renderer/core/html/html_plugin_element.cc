@@ -25,7 +25,7 @@
 #include "services/network/public/mojom/request_context_frame_type.mojom-blink.h"
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
-#include "third_party/blink/renderer/core/css_property_names.h"
+#include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/dom/node.h"
@@ -267,7 +267,7 @@ void HTMLPlugInElement::AttachLayoutTree(AttachContext& context) {
 void HTMLPlugInElement::IntrinsicSizingInfoChanged() {
   if (auto* layout_object = GetLayoutObject()) {
     layout_object->SetNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(
-        LayoutInvalidationReason::kUnknown);
+        layout_invalidation_reason::kUnknown);
   }
 }
 
@@ -299,15 +299,16 @@ bool HTMLPlugInElement::ShouldAccelerate() const {
 ParsedFeaturePolicy HTMLPlugInElement::ConstructContainerPolicy(
     Vector<String>*) const {
   // Plugin elements (<object> and <embed>) are not allowed to enable the
-  // fullscreen feature. Add an empty whitelist for the fullscreen feature so
+  // fullscreen feature. Add an empty allowlist for the fullscreen feature so
   // that the nested browsing context is unable to use the API, regardless of
   // origin.
   // https://fullscreen.spec.whatwg.org/#model
   ParsedFeaturePolicy container_policy;
-  ParsedFeaturePolicyDeclaration whitelist;
-  whitelist.feature = mojom::FeaturePolicyFeature::kFullscreen;
-  whitelist.matches_all_origins = false;
-  container_policy.push_back(whitelist);
+  ParsedFeaturePolicyDeclaration allowlist;
+  allowlist.feature = mojom::FeaturePolicyFeature::kFullscreen;
+  allowlist.matches_all_origins = false;
+  allowlist.disposition = mojom::FeaturePolicyDisposition::kEnforce;
+  container_policy.push_back(allowlist);
   return container_policy;
 }
 

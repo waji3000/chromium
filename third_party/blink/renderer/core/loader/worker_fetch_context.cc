@@ -33,82 +33,33 @@
 
 namespace blink {
 
-namespace {
-
-// WorkerFetchContextHolder is used to pass the WebWorkerFetchContext from the
-// main thread to the worker thread by attaching to the WorkerClients as a
-// Supplement.
-class WorkerFetchContextHolder final
-    : public GarbageCollectedFinalized<WorkerFetchContextHolder>,
-      public Supplement<WorkerClients> {
-  USING_GARBAGE_COLLECTED_MIXIN(WorkerFetchContextHolder);
-
- public:
-  static WorkerFetchContextHolder* From(WorkerClients& clients) {
-    return Supplement<WorkerClients>::From<WorkerFetchContextHolder>(clients);
-  }
-  static const char kSupplementName[];
-
-  explicit WorkerFetchContextHolder(
-      std::unique_ptr<WebWorkerFetchContext> web_context)
-      : web_context_(std::move(web_context)) {}
-  virtual ~WorkerFetchContextHolder() = default;
-
-  std::unique_ptr<WebWorkerFetchContext> TakeContext() {
-    return std::move(web_context_);
-  }
-
-  void Trace(blink::Visitor* visitor) override {
-    Supplement<WorkerClients>::Trace(visitor);
-  }
-
- private:
-  std::unique_ptr<WebWorkerFetchContext> web_context_;
-};
-
-}  // namespace
-
-// static
-const char WorkerFetchContextHolder::kSupplementName[] =
-    "WorkerFetchContextHolder";
-
 WorkerFetchContext::~WorkerFetchContext() = default;
 
 WorkerFetchContext* WorkerFetchContext::Create(
-    WorkerOrWorkletGlobalScope& global_scope) {
-  DCHECK(global_scope.IsContextThread());
-  WorkerClients* worker_clients = global_scope.Clients();
-  DCHECK(worker_clients);
-  WorkerFetchContextHolder* holder =
-      Supplement<WorkerClients>::From<WorkerFetchContextHolder>(
-          *worker_clients);
-  if (!holder)
+    WorkerOrWorkletGlobalScope& global_scope,
+    scoped_refptr<WebWorkerFetchContext> web_context,
+    SubresourceFilter* subresource_filter,
+    FetchClientSettingsObject* fetch_client_settings_object) {
+  if (!web_context)
     return nullptr;
-  std::unique_ptr<WebWorkerFetchContext> web_context = holder->TakeContext();
-  DCHECK(web_context);
-  return new WorkerFetchContext(global_scope, std::move(web_context));
+  return MakeGarbageCollected<WorkerFetchContext>(
+      global_scope, std::move(web_context), subresource_filter,
+      fetch_client_settings_object);
 }
 
 WorkerFetchContext::WorkerFetchContext(
     WorkerOrWorkletGlobalScope& global_scope,
-    std::unique_ptr<WebWorkerFetchContext> web_context)
+    scoped_refptr<WebWorkerFetchContext> web_context,
+    SubresourceFilter* subresource_filter,
+    FetchClientSettingsObject* fetch_client_settings_object)
     : BaseFetchContext(global_scope.GetTaskRunner(TaskType::kInternalLoading)),
       global_scope_(global_scope),
       web_context_(std::move(web_context)),
-      fetch_client_settings_object_(
-          new FetchClientSettingsObjectImpl(*global_scope_)),
+      subresource_filter_(subresource_filter),
       save_data_enabled_(GetNetworkStateNotifier().SaveDataEnabled()) {
-  web_context_->InitializeOnWorkerThread();
-  std::unique_ptr<blink::WebDocumentSubresourceFilter> web_filter =
-      web_context_->TakeSubresourceFilter();
-  if (web_filter) {
-    subresource_filter_ =
-        SubresourceFilter::Create(global_scope, std::move(web_filter));
-  }
-}
-const FetchClientSettingsObjectImpl*
-WorkerFetchContext::GetFetchClientSettingsObject() const {
-  return fetch_client_settings_object_.Get();
+  DCHECK(global_scope.IsContextThread());
+  DCHECK(web_context_);
+  SetFetchClientSettingsObject(fetch_client_settings_object);
 }
 
 KURL WorkerFetchContext::GetSiteForCookies() const {
@@ -234,10 +185,6 @@ void WorkerFetchContext::AddConsoleMessage(ConsoleMessage* message) const {
   return global_scope_->AddConsoleMessage(message);
 }
 
-const SecurityOrigin* WorkerFetchContext::GetSecurityOrigin() const {
-  return GetFetchClientSettingsObject()->GetSecurityOrigin();
-}
-
 std::unique_ptr<WebURLLoader> WorkerFetchContext::CreateURLLoader(
     const ResourceRequest& request,
     const ResourceLoaderOptions& options) {
@@ -272,17 +219,13 @@ std::unique_ptr<WebURLLoader> WorkerFetchContext::CreateURLLoader(
   if (request.GetRequestContext() == mojom::RequestContextType::SCRIPT ||
       request.GetRequestContext() ==
           mojom::RequestContextType::SERVICE_WORKER) {
-    if (!script_loader_factory_)
-      script_loader_factory_ = web_context_->CreateScriptLoaderFactory();
-    if (script_loader_factory_) {
-      return script_loader_factory_->CreateURLLoader(
+    if (web_context_->GetScriptLoaderFactory()) {
+      return web_context_->GetScriptLoaderFactory()->CreateURLLoader(
           wrapped, CreateResourceLoadingTaskRunnerHandle());
     }
   }
 
-  if (!url_loader_factory_)
-    url_loader_factory_ = web_context_->CreateURLLoaderFactory();
-  return url_loader_factory_->CreateURLLoader(
+  return web_context_->GetURLLoaderFactory()->CreateURLLoader(
       wrapped, CreateResourceLoadingTaskRunnerHandle());
 }
 
@@ -355,13 +298,13 @@ void WorkerFetchContext::DispatchDidReceiveResponse(
 
 void WorkerFetchContext::DispatchDidReceiveData(unsigned long identifier,
                                                 const char* data,
-                                                int data_length) {
+                                                size_t data_length) {
   probe::didReceiveData(global_scope_, identifier, nullptr, data, data_length);
 }
 
 void WorkerFetchContext::DispatchDidReceiveEncodedData(
     unsigned long identifier,
-    int encoded_data_length) {
+    size_t encoded_data_length) {
   probe::didReceiveEncodedDataLength(global_scope_, nullptr, identifier,
                                      encoded_data_length);
 }
@@ -440,19 +383,7 @@ WorkerFetchContext::GetWorkerContentSettingsClient() const {
 void WorkerFetchContext::Trace(blink::Visitor* visitor) {
   visitor->Trace(global_scope_);
   visitor->Trace(subresource_filter_);
-  visitor->Trace(fetch_client_settings_object_);
   BaseFetchContext::Trace(visitor);
-}
-
-void ProvideWorkerFetchContextToWorker(
-    WorkerClients* clients,
-    std::unique_ptr<WebWorkerFetchContext> web_context) {
-  DCHECK(clients);
-  // web_context should only be nullptr in unit tests.
-  if (!web_context)
-    return;
-  WorkerFetchContextHolder::ProvideTo(
-      *clients, new WorkerFetchContextHolder(std::move(web_context)));
 }
 
 }  // namespace blink

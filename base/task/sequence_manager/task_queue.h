@@ -28,7 +28,7 @@ class BlameContext;
 namespace sequence_manager {
 
 namespace internal {
-struct AssociatedThreadId;
+class AssociatedThreadId;
 class SequenceManagerImpl;
 class TaskQueueImpl;
 }  // namespace internal
@@ -130,6 +130,10 @@ class BASE_EXPORT TaskQueue : public RefCountedThreadSafe<TaskQueue> {
     bool should_notify_observers = true;
     bool delayed_fence_allowed = false;
   };
+
+  // TODO(altimin): Make this private after TaskQueue/TaskQueueImpl refactoring.
+  TaskQueue(std::unique_ptr<internal::TaskQueueImpl> impl,
+            const TaskQueue::Spec& spec);
 
   // Information about task execution.
   //
@@ -313,8 +317,6 @@ class BASE_EXPORT TaskQueue : public RefCountedThreadSafe<TaskQueue> {
   }
 
  protected:
-  TaskQueue(std::unique_ptr<internal::TaskQueueImpl> impl,
-            const TaskQueue::Spec& spec);
   virtual ~TaskQueue();
 
   internal::TaskQueueImpl* GetTaskQueueImpl() const { return impl_.get(); }

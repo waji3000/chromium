@@ -27,7 +27,7 @@
 #import "ios/chrome/browser/ui/bookmarks/bookmark_utils_ios.h"
 #import "ios/chrome/browser/ui/popup_menu/popup_menu_constants.h"
 #import "ios/chrome/browser/ui/table_view/table_view_navigation_controller_constants.h"
-#import "ios/chrome/browser/ui/toolbar/buttons/toolbar_constants.h"
+#import "ios/chrome/browser/ui/toolbar/public/toolbar_constants.h"
 #include "ios/chrome/browser/ui/util/ui_util.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
 #include "ios/chrome/grit/ios_strings.h"
@@ -105,15 +105,9 @@ id<GREYMatcher> NavigateBackButtonTo(NSString* previousViewControllerLabel) {
       grey_anyOf(grey_accessibilityLabel(previousViewControllerLabel),
                  grey_accessibilityLabel(@"Back"), nil);
 
-  if (@available(iOS 11, *)) {
-    return grey_allOf(grey_kindOfClass([UIButton class]),
-                      grey_ancestor(grey_kindOfClass([UINavigationBar class])),
-                      buttonLabelMatcher, nil);
-  } else {
-    return grey_allOf(grey_accessibilityTrait(UIAccessibilityTraitButton),
-                      grey_ancestor(grey_kindOfClass([UINavigationBar class])),
-                      buttonLabelMatcher, nil);
-  }
+  return grey_allOf(grey_kindOfClass([UIButton class]),
+                    grey_ancestor(grey_kindOfClass([UINavigationBar class])),
+                    buttonLabelMatcher, nil);
 }
 
 // Matcher for the DONE button on the bookmarks UI.
@@ -278,7 +272,7 @@ id<GREYMatcher> SearchIconButton() {
   const GURL secondURL = web::test::HttpServer::MakeUrl(
       "http://ios/testing/data/http_server_files/destination.html");
   [ChromeEarlGrey loadURL:firstURL];
-  chrome_test_util::OpenNewTab();
+  [ChromeEarlGrey openNewTab];
   [ChromeEarlGrey loadURL:secondURL];
 
   [BookmarksTestCase bookmarkCurrentTabWithTitle:@"my bookmark"];
@@ -1694,10 +1688,10 @@ id<GREYMatcher> SearchIconButton() {
 @end
 
 // Bookmark entries integration tests for Chrome.
-@interface BookmarksTestCaseEntries : ChromeTestCase
+@interface BookmarksEntriesTestCase : ChromeTestCase
 @end
 
-@implementation BookmarksTestCaseEntries
+@implementation BookmarksEntriesTestCase
 
 - (void)setUp {
   [super setUp];
@@ -1720,18 +1714,16 @@ id<GREYMatcher> SearchIconButton() {
       clearBookmarkTopMostRowCacheWithPrefService:browser_state->GetPrefs()];
 }
 
-#pragma mark - BookmarksTestCaseEntries Tests
+#pragma mark - BookmarksEntriesTestCase Tests
 
 - (void)testUndoDeleteBookmarkFromSwipe {
-  // TODO(crbug.com/851227): On Compact Width on iOS11, the
-  // bookmark cell is being deleted by grey_swipeFastInDirection.
+  // TODO(crbug.com/851227): On Compact Width, the bookmark cell is being
+  // deleted by grey_swipeFastInDirection.
   // grey_swipeFastInDirectionWithStartPoint doesn't work either and it might
   // fail on devices. Disabling this test under these conditions on the
   // meantime.
-  if (@available(iOS 11, *)) {
-    if (!IsCompactWidth()) {
-      EARL_GREY_TEST_SKIPPED(@"Test disabled on iPad on iOS11.");
-    }
+  if (!IsCompactWidth()) {
+    EARL_GREY_TEST_SKIPPED(@"Test disabled on iPad.");
   }
 
   [BookmarksTestCase setupStandardBookmarks];
@@ -1775,15 +1767,13 @@ id<GREYMatcher> SearchIconButton() {
   FLAKY_testSwipeToDeleteDisabledInEditMode
 #endif
 - (void)testSwipeToDeleteDisabledInEditMode {
-  // TODO(crbug.com/851227): On non Compact Width on iOS11, the
-  // bookmark cell is being deleted by grey_swipeFastInDirection.
+  // TODO(crbug.com/851227): On non Compact Width  the bookmark cell is being
+  // deleted by grey_swipeFastInDirection.
   // grey_swipeFastInDirectionWithStartPoint doesn't work either and it might
   // fail on devices. Disabling this test under these conditions on the
   // meantime.
-  if (@available(iOS 11, *)) {
-    if (!IsCompactWidth()) {
-      EARL_GREY_TEST_SKIPPED(@"Test disabled on iPad on iOS11.");
-    }
+  if (!IsCompactWidth()) {
+    EARL_GREY_TEST_SKIPPED(@"Test disabled on iPad on iOS11.");
   }
 
   [BookmarksTestCase setupStandardBookmarks];
@@ -2115,7 +2105,7 @@ id<GREYMatcher> SearchIconButton() {
   [BookmarksTestCase verifyOrderOfTabsWithCurrentTabIndex:0];
 
   // Switch to Incognito mode by adding a new incognito tab.
-  chrome_test_util::OpenNewIncognitoTab();
+  [ChromeEarlGrey openNewIncognitoTab];
 
   [BookmarksTestCase openBookmarks];
 
@@ -2129,7 +2119,7 @@ id<GREYMatcher> SearchIconButton() {
                  @"Incognito tab count should be 1");
 
   // Close the incognito tab to go back to normal mode.
-  GREYAssert(chrome_test_util::CloseAllIncognitoTabs(), @"Tabs did not close");
+  [ChromeEarlGrey closeAllIncognitoTabs];
 
   // The following verifies the selected bookmarks are open in the same order as
   // in folder.
@@ -2705,10 +2695,10 @@ id<GREYMatcher> SearchIconButton() {
 @end
 
 // Bookmark promo integration tests for Chrome.
-@interface BookmarksTestCasePromo : ChromeTestCase
+@interface BookmarksPromoTestCase : ChromeTestCase
 @end
 
-@implementation BookmarksTestCasePromo
+@implementation BookmarksPromoTestCase
 
 - (void)setUp {
   [super setUp];
@@ -2731,7 +2721,7 @@ id<GREYMatcher> SearchIconButton() {
       clearBookmarkTopMostRowCacheWithPrefService:browser_state->GetPrefs()];
 }
 
-#pragma mark - BookmarksTestCasePromo Tests
+#pragma mark - BookmarksPromoTestCase Tests
 
 // Tests that the promo view is only seen at root level and not in any of the
 // child nodes.
@@ -2919,10 +2909,10 @@ id<GREYMatcher> SearchIconButton() {
 @end
 
 // Bookmark accessibility tests for Chrome.
-@interface BookmarksTestCaseAccessibility : ChromeTestCase
+@interface BookmarksAccessibilityTestCase : ChromeTestCase
 @end
 
-@implementation BookmarksTestCaseAccessibility
+@implementation BookmarksAccessibilityTestCase
 
 - (void)setUp {
   [super setUp];
@@ -2937,6 +2927,7 @@ id<GREYMatcher> SearchIconButton() {
   [super tearDown];
   GREYAssert(chrome_test_util::ClearBookmarks(),
              @"Not all bookmarks were removed.");
+
   // Clear position cache so that Bookmarks starts at the root folder in next
   // test.
   ios::ChromeBrowserState* browser_state =
@@ -2945,7 +2936,7 @@ id<GREYMatcher> SearchIconButton() {
       clearBookmarkTopMostRowCacheWithPrefService:browser_state->GetPrefs()];
 }
 
-#pragma mark - BookmarksTestCaseAccessibility Tests
+#pragma mark - BookmarksAccessibilityTestCase Tests
 
 // Tests that all elements on the bookmarks landing page are accessible.
 - (void)testAccessibilityOnBookmarksLandingPage {
@@ -3095,10 +3086,10 @@ id<GREYMatcher> SearchIconButton() {
 @end
 
 // Bookmark folders integration tests for Chrome.
-@interface BookmarksTestCaseFolders : ChromeTestCase
+@interface BookmarksFoldersTestCase : ChromeTestCase
 @end
 
-@implementation BookmarksTestCaseFolders
+@implementation BookmarksFoldersTestCase
 
 - (void)setUp {
   [super setUp];
@@ -4036,10 +4027,10 @@ id<GREYMatcher> SearchIconButton() {
 @end
 
 // Bookmark search integration tests for Chrome.
-@interface BookmarksTestCaseSearch : ChromeTestCase
+@interface BookmarksSearchTestCase : ChromeTestCase
 @end
 
-@implementation BookmarksTestCaseSearch
+@implementation BookmarksSearchTestCase
 
 - (void)setUp {
   [super setUp];
@@ -4062,7 +4053,7 @@ id<GREYMatcher> SearchIconButton() {
       clearBookmarkTopMostRowCacheWithPrefService:browser_state->GetPrefs()];
 }
 
-#pragma mark - BookmarksTestCaseSearch Tests
+#pragma mark - BookmarksSearchTestCase Tests
 
 // Tests that the search bar is shown on root.
 - (void)testSearchBarShownOnRoot {
@@ -4392,15 +4383,13 @@ id<GREYMatcher> SearchIconButton() {
 
 // Tests that you can swipe URL items in search mode.
 - (void)testSearchUrlCanBeSwipedToDelete {
-  // TODO(crbug.com/851227): On non Compact Width on iOS11, the
-  // bookmark cell is being deleted by grey_swipeFastInDirection.
+  // TODO(crbug.com/851227): On non Compact Width, the bookmark cell is being
+  // deleted by grey_swipeFastInDirection.
   // grey_swipeFastInDirectionWithStartPoint doesn't work either and it might
   // fail on devices. Disabling this test under these conditions on the
   // meantime.
-  if (@available(iOS 11, *)) {
-    if (!IsCompactWidth()) {
-      EARL_GREY_TEST_SKIPPED(@"Test disabled on iPad on iOS11.");
-    }
+  if (!IsCompactWidth()) {
+    EARL_GREY_TEST_SKIPPED(@"Test disabled on iPad on iOS11.");
   }
 
   [BookmarksTestCase setupStandardBookmarks];
@@ -4422,15 +4411,13 @@ id<GREYMatcher> SearchIconButton() {
 
 // Tests that you can swipe folders in search mode.
 - (void)testSearchFolderCanBeSwipedToDelete {
-  // TODO(crbug.com/851227): On non Compact Width on iOS11, the
-  // bookmark cell is being deleted by grey_swipeFastInDirection.
+  // TODO(crbug.com/851227): On non Compact Width, the bookmark cell is being
+  // deleted by grey_swipeFastInDirection.
   // grey_swipeFastInDirectionWithStartPoint doesn't work either and it might
   // fail on devices. Disabling this test under these conditions on the
   // meantime.
-  if (@available(iOS 11, *)) {
-    if (!IsCompactWidth()) {
-      EARL_GREY_TEST_SKIPPED(@"Test disabled on iPad on iOS11.");
-    }
+  if (!IsCompactWidth()) {
+    EARL_GREY_TEST_SKIPPED(@"Test disabled on iPad on iOS11.");
   }
 
   [BookmarksTestCase setupStandardBookmarks];

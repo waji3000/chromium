@@ -36,7 +36,6 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/page_navigator.h"
-#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/result_codes.h"
@@ -1122,12 +1121,29 @@ void ServiceWorkerVersion::GetClient(const std::string& client_uuid,
   ServiceWorkerProviderHost* provider_host =
       context_->GetProviderHostByClientID(client_uuid);
   if (!provider_host ||
-      provider_host->document_url().GetOrigin() != script_url_.GetOrigin()) {
+      provider_host->url().GetOrigin() != script_url_.GetOrigin()) {
     // The promise will be resolved to 'undefined'.
     // Note that we don't BadMessage here since Clients#get() can be passed an
     // arbitrary UUID. The BadMessages for the origin mismatches below are
     // appropriate because the UUID is taken directly from a Client object so we
     // expect it to be valid.
+    std::move(callback).Run(nullptr);
+    return;
+  }
+  if (!provider_host->is_execution_ready()) {
+    provider_host->AddExecutionReadyCallback(
+        base::BindOnce(&ServiceWorkerVersion::GetClientInternal, this,
+                       client_uuid, std::move(callback)));
+    return;
+  }
+  service_worker_client_utils::GetClient(provider_host, std::move(callback));
+}
+
+void ServiceWorkerVersion::GetClientInternal(const std::string& client_uuid,
+                                             GetClientCallback callback) {
+  ServiceWorkerProviderHost* provider_host =
+      context_->GetProviderHostByClientID(client_uuid);
+  if (!provider_host || !provider_host->is_execution_ready()) {
     std::move(callback).Run(nullptr);
     return;
   }
@@ -1171,7 +1187,7 @@ void ServiceWorkerVersion::PostMessageToClient(
     // The client may already have been closed, just ignore.
     return;
   }
-  if (provider_host->document_url().GetOrigin() != script_url_.GetOrigin()) {
+  if (provider_host->url().GetOrigin() != script_url_.GetOrigin()) {
     mojo::ReportBadMessage(
         "Received Client#postMessage() request for a cross-origin client.");
     binding_.Close();
@@ -1199,7 +1215,7 @@ void ServiceWorkerVersion::FocusClient(const std::string& client_uuid,
     std::move(callback).Run(nullptr /* client */);
     return;
   }
-  if (provider_host->document_url().GetOrigin() != script_url_.GetOrigin()) {
+  if (provider_host->url().GetOrigin() != script_url_.GetOrigin()) {
     mojo::ReportBadMessage(
         "Received WindowClient#focus() request for a cross-origin client.");
     binding_.Close();
@@ -1254,7 +1270,7 @@ void ServiceWorkerVersion::NavigateClient(const std::string& client_uuid,
                             std::string("The client was not found."));
     return;
   }
-  if (provider_host->document_url().GetOrigin() != script_url_.GetOrigin()) {
+  if (provider_host->url().GetOrigin() != script_url_.GetOrigin()) {
     mojo::ReportBadMessage(
         "Received WindowClient#navigate() request for a cross-origin client.");
     binding_.Close();
@@ -1372,7 +1388,8 @@ void ServiceWorkerVersion::OpenWindow(
   }
 
   service_worker_client_utils::OpenWindow(
-      url, script_url_, embedded_worker_->process_id(), context_, type,
+      url, script_url_, embedded_worker_->embedded_worker_id(),
+      embedded_worker_->process_id(), context_, type,
       base::BindOnce(&OnOpenWindowFinished, std::move(callback)));
 }
 
@@ -1383,8 +1400,7 @@ bool ServiceWorkerVersion::HasWorkInBrowser() const {
 
 void ServiceWorkerVersion::OnSimpleEventFinished(
     int request_id,
-    blink::mojom::ServiceWorkerEventStatus status,
-    base::TimeTicks /* dispatch_event_time */) {
+    blink::mojom::ServiceWorkerEventStatus status) {
   InflightRequest* request = inflight_requests_.Lookup(request_id);
   // |request| will be null when the request has been timed out.
   if (!request)
@@ -1569,6 +1585,7 @@ void ServiceWorkerVersion::StartWorkerInternal() {
   params->scope = scope_;
   params->script_url = script_url_;
   params->script_type = script_type_;
+  params->user_agent = GetContentClient()->browser()->GetUserAgent();
   params->is_installed = IsInstalled(status_);
   params->pause_after_download = pause_after_download();
 
@@ -1594,7 +1611,6 @@ void ServiceWorkerVersion::StartWorkerInternal() {
   ServiceWorkerRegistration* registration =
       context_->GetLiveRegistration(registration_id_);
   DCHECK(registration);
-  provider_host_->SetDocumentUrl(script_url());
   service_worker_ptr_->InitializeGlobalScope(
       std::move(service_worker_host),
       provider_host_->CreateServiceWorkerRegistrationObjectInfo(

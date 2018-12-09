@@ -52,6 +52,13 @@ class ChromeTableViewControllerTest : public BlockCleanupTest {
   // Verifies that the title matches the l10n string for |expected_title_id|.
   void CheckTitleWithId(int expected_title_id);
 
+  // Verifies that the section header at |section| matches the |expected_text|.
+  void CheckSectionHeader(NSString* expected_text, int section);
+
+  // Verifies that the section header at |section| matches the l10n string for
+  // |expected_text_id|.
+  void CheckSectionHeaderWithId(int expected_text_id, int section);
+
   // Verifies that the section footer at |section| matches the |expected_text|.
   void CheckSectionFooter(NSString* expected_text, int section);
 
@@ -104,6 +111,19 @@ class ChromeTableViewControllerTest : public BlockCleanupTest {
   void CheckAccessoryType(UITableViewCellAccessoryType accessory_type,
                           int section,
                           int item);
+
+  // Verifies that the text button cell at |item| in |section| has the given
+  // |buttonText|.
+  void CheckTextButtonCellButtonText(NSString* expected_button_text,
+                                     int section,
+                                     int item);
+
+  // Verifies that the text button cell at |item| in |section| has a
+  // |buttonText| property which matches the l10n string for
+  // |expected_button_text_id|.
+  void CheckTextButtonCellButtonTextWithId(int expected_button_text_id,
+                                           int section,
+                                           int item);
 
   // For |section|, deletes the item at |item|. |completion_block| is called at
   // the end of the call to -performBatchUpdates:completion:.

@@ -44,7 +44,6 @@ template("webapk_java") {
       "src/org/chromium/webapk/shell_apk/HostBrowserClassLoader.java",
       "src/org/chromium/webapk/shell_apk/HostBrowserLauncher.java",
       "src/org/chromium/webapk/shell_apk/HostBrowserLauncherParams.java",
-      "src/org/chromium/webapk/shell_apk/HostBrowserLauncherActivity.java",
       "src/org/chromium/webapk/shell_apk/ChooseHostBrowserDialog.java",
       "src/org/chromium/webapk/shell_apk/HostBrowserUtils.java",
       "src/org/chromium/webapk/shell_apk/IdentityService.java",
@@ -54,6 +53,7 @@ template("webapk_java") {
       "src/org/chromium/webapk/shell_apk/TransparentLauncherActivity.java",
       "src/org/chromium/webapk/shell_apk/WebApkServiceFactory.java",
       "src/org/chromium/webapk/shell_apk/WebApkServiceImplWrapper.java",
+      "src/org/chromium/webapk/shell_apk/WebApkSharedPreferences.java",
       "src/org/chromium/webapk/shell_apk/WebApkUtils.java",
     ]
     deps += [
@@ -66,6 +66,7 @@ template("webapk_java") {
       java_files += [
         "src/org/chromium/webapk/shell_apk/h2o/H2OLauncher.java",
         "src/org/chromium/webapk/shell_apk/h2o/H2OMainActivity.java",
+        "src/org/chromium/webapk/shell_apk/h2o/H2OOpaqueMainActivity.java",
         "src/org/chromium/webapk/shell_apk/h2o/H2OTransparentLauncherActivity.java",
         "src/org/chromium/webapk/shell_apk/h2o/SplashActivity.java",
       ]
@@ -314,6 +315,9 @@ junit_binary("webapk_shell_apk_h2o_junit_tests") {
     ":h2o_j_unit_webapk_java",
     "//chrome/android/webapk/libs/common:common_java",
     "//chrome/android/webapk/test:junit_test_support",
+  ]
+  data_deps = [
+    ":${h2o_junit_manifest_target_name}",
   ]
   android_manifest_path = h2o_junit_manifest_output
 }

@@ -257,8 +257,6 @@ void GpuServiceImpl::InitializeWithHost(
   skia_output_surface_sequence_id_ =
       scheduler_->CreateSequence(gpu::SchedulingPriority::kHigh);
 
-  GrContext* vulkan_gr_context =
-      is_using_vulkan() ? vulkan_context_provider()->GetGrContext() : nullptr;
   // Defer creation of the render thread. This is to prevent it from handling
   // IPC messages before the sandbox has been enabled and all other necessary
   // initialization has succeeded.
@@ -266,7 +264,7 @@ void GpuServiceImpl::InitializeWithHost(
       gpu_preferences_, this, watchdog_thread_.get(), main_runner_, io_runner_,
       scheduler_.get(), sync_point_manager_, gpu_memory_buffer_factory_.get(),
       gpu_feature_info_, std::move(activity_flags),
-      std::move(default_offscreen_surface), vulkan_gr_context);
+      std::move(default_offscreen_surface), vulkan_context_provider());
 
   media_gpu_channel_manager_.reset(
       new media::MediaGpuChannelManager(gpu_channel_manager_.get()));
@@ -300,7 +298,7 @@ GpuServiceImpl::GetContextStateForGLSurface(gl::GLSurface* surface) {
   // TODO(penghuang): https://crbug.com/899740 Support GLSurface which is not
   // compatible.
   DCHECK_EQ(surface->GetCompatibilityKey(),
-            context_state->surface->GetCompatibilityKey());
+            context_state->surface()->GetCompatibilityKey());
   DCHECK(!context_state->use_virtualized_gl_contexts);
   return context_state;
 }
@@ -735,14 +733,16 @@ void GpuServiceImpl::OnBackgroundCleanup() {
 }
 
 void GpuServiceImpl::OnBackgrounded() {
+  DCHECK(io_runner_->BelongsToCurrentThread());
   if (watchdog_thread_)
     watchdog_thread_->OnBackgrounded();
 
-  if (io_runner_->BelongsToCurrentThread()) {
-    main_runner_->PostTask(
-        FROM_HERE, base::BindOnce(&GpuServiceImpl::OnBackgrounded, weak_ptr_));
-    return;
-  }
+  main_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&GpuServiceImpl::OnBackgroundedOnMainThread, weak_ptr_));
+}
+
+void GpuServiceImpl::OnBackgroundedOnMainThread() {
   gpu_channel_manager_->OnApplicationBackgrounded();
 }
 

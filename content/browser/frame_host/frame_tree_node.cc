@@ -9,6 +9,7 @@
 #include <queue>
 #include <utility>
 
+#include "base/feature_list.h"
 #include "base/lazy_instance.h"
 #include "base/macros.h"
 #include "base/metrics/histogram_macros.h"
@@ -22,7 +23,8 @@
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/common/frame_messages.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/common/browser_side_navigation_policy.h"
+#include "content/public/common/content_features.h"
+#include "content/public/common/navigation_policy.h"
 #include "third_party/blink/public/common/frame/sandbox_flags.h"
 #include "third_party/blink/public/common/frame/user_activation_update_type.h"
 
@@ -186,6 +188,15 @@ void FrameTreeNode::ResetForNavigation() {
   // Clear any CSP-set sandbox flags, and the declared feature policy for the
   // frame.
   UpdateFramePolicyHeaders(blink::WebSandboxFlags::kNone, {});
+
+  // TODO(crbug.com/736415): Clear this bit unconditionally for all frames.
+  if (IsMainFrame()) {
+    // This frame has had its user activation bits cleared in the renderer
+    // before arriving here. We just need to clear them here and in the other
+    // renderer processes that may have a reference to this frame.
+    UpdateUserActivationState(
+        blink::UserActivationUpdateType::kClearActivation);
+  }
 }
 
 void FrameTreeNode::SetOpener(FrameTreeNode* opener) {
@@ -541,6 +552,24 @@ bool FrameTreeNode::NotifyUserActivation() {
   for (FrameTreeNode* node = this; node; node = node->parent())
     node->user_activation_state_.Activate();
   replication_state_.has_received_user_gesture = true;
+
+  // TODO(mustaq): The following block relaxes UAv2 a bit to make it slightly
+  // closer to the old (v1) model, to address a Hangout regression.  We will
+  // remove this after implementing a mechanism to delegate activation to
+  // subframes (https://crbug.com/728334)
+  if (base::FeatureList::IsEnabled(features::kUserActivationV2) &&
+      base::FeatureList::IsEnabled(
+          features::kUserActivationSameOriginVisibility)) {
+    const url::Origin& current_origin =
+        this->current_frame_host()->GetLastCommittedOrigin();
+    for (FrameTreeNode* node : frame_tree()->Nodes()) {
+      if (node->current_frame_host()->GetLastCommittedOrigin().IsSameOriginWith(
+              current_origin)) {
+        node->user_activation_state_.Activate();
+      }
+    }
+  }
+
   return true;
 }
 
@@ -549,6 +578,15 @@ bool FrameTreeNode::ConsumeTransientUserActivation() {
   for (FrameTreeNode* node : frame_tree()->Nodes())
     node->user_activation_state_.ConsumeIfActive();
   return was_active;
+}
+
+bool FrameTreeNode::ClearUserActivation() {
+  // Only received for a new main frame.
+  // TODO(crbug.com/736415): Clear this bit unconditionally for all frames.
+  DCHECK(IsMainFrame());
+  for (FrameTreeNode* node : frame_tree()->SubtreeNodes(this))
+    node->user_activation_state_.Clear();
+  return true;
 }
 
 bool FrameTreeNode::UpdateUserActivationState(
@@ -560,6 +598,9 @@ bool FrameTreeNode::UpdateUserActivationState(
 
     case blink::UserActivationUpdateType::kNotifyActivation:
       return NotifyUserActivation();
+
+    case blink::UserActivationUpdateType::kClearActivation:
+      return ClearUserActivation();
   }
   NOTREACHED() << "Invalid update_type.";
 }
@@ -606,6 +647,19 @@ void FrameTreeNode::UpdateFramePolicyHeaders(
   // Notify any proxies if the policies have been changed.
   if (changed)
     render_manager()->OnDidSetFramePolicyHeaders();
+}
+
+void FrameTreeNode::PruneChildFrameNavigationEntries(
+    NavigationEntryImpl* entry) {
+  for (size_t i = 0; i < current_frame_host()->child_count(); ++i) {
+    FrameTreeNode* child = current_frame_host()->child_at(i);
+    if (child->is_created_by_script_) {
+      entry->RemoveEntryForFrame(child,
+                                 /* only_if_different_position = */ false);
+    } else {
+      child->PruneChildFrameNavigationEntries(entry);
+    }
+  }
 }
 
 }  // namespace content

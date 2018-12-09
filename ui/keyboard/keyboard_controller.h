@@ -21,7 +21,6 @@
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/vector2d.h"
 #include "ui/keyboard/container_behavior.h"
-#include "ui/keyboard/container_type.h"
 #include "ui/keyboard/display_util.h"
 #include "ui/keyboard/keyboard_event_filter.h"
 #include "ui/keyboard/keyboard_export.h"
@@ -29,7 +28,7 @@
 #include "ui/keyboard/keyboard_ukm_recorder.h"
 #include "ui/keyboard/notification_manager.h"
 #include "ui/keyboard/public/keyboard_config.mojom.h"
-#include "ui/keyboard/public/keyboard_enable_flag.mojom.h"
+#include "ui/keyboard/public/keyboard_controller_types.mojom.h"
 #include "ui/keyboard/queued_container_type.h"
 #include "ui/keyboard/queued_display_change.h"
 
@@ -70,11 +69,9 @@ enum class KeyboardControllerState {
 
 // Provides control of the virtual keyboard, including enabling/disabling the
 // keyboard and controlling its visibility.
-class KEYBOARD_EXPORT KeyboardController
-    : public ui::InputMethodObserver,
-      public aura::WindowObserver,
-      public ui::InputMethodKeyboardController,
-      public ContainerBehavior::Delegate {
+class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
+                                           public aura::WindowObserver,
+                                           public ContainerBehavior::Delegate {
  public:
   KeyboardController();
   ~KeyboardController() override;
@@ -120,10 +117,6 @@ class KEYBOARD_EXPORT KeyboardController
   // Sets the bounds of the keyboard window.
   void SetKeyboardWindowBounds(const gfx::Rect& new_bounds);
 
-  // Called by KeyboardUI when the keyboard window has loaded. Shows
-  // the keyboard if show_on_keyboard_window_load_ is true.
-  void NotifyKeyboardWindowLoaded();
-
   // Reloads the content of the keyboard. No-op if the keyboard content is not
   // loaded yet.
   void Reload();
@@ -142,6 +135,9 @@ class KEYBOARD_EXPORT KeyboardController
   void SetEnableFlag(mojom::KeyboardEnableFlag flag);
   void ClearEnableFlag(mojom::KeyboardEnableFlag flag);
   bool IsEnableFlagSet(mojom::KeyboardEnableFlag flag) const;
+  const std::set<mojom::KeyboardEnableFlag>& keyboard_enable_flags() const {
+    return keyboard_enable_flags_;
+  }
 
   // Returns true if the keyboard should be enabled, i.e. the current result
   // of Set/ClearEnableFlag should cause the keyboard to be enabled.
@@ -213,7 +209,7 @@ class KEYBOARD_EXPORT KeyboardController
   // Does not do anything if there is no keyboard window.
   void SetHitTestBounds(const std::vector<gfx::Rect>& bounds);
 
-  ContainerType GetActiveContainerType() const {
+  mojom::ContainerType GetActiveContainerType() const {
     return container_behavior_->GetType();
   }
 
@@ -235,25 +231,28 @@ class KEYBOARD_EXPORT KeyboardController
   // Sets the active container type. If the keyboard is currently shown, this
   // will trigger a hide animation and a subsequent show animation. Otherwise
   // the ContainerBehavior change is synchronous.
-  void SetContainerType(ContainerType type,
-                        base::Optional<gfx::Rect> target_bounds,
+  void SetContainerType(mojom::ContainerType type,
+                        const base::Optional<gfx::Rect>& target_bounds,
                         base::OnceCallback<void(bool)> callback);
 
   // Sets floating keyboard draggable rect.
-  bool SetDraggableArea(const gfx::Rect& rect);
+  void SetDraggableArea(const gfx::Rect& rect);
 
-  // InputMethodKeyboardController overrides:
-  bool DisplayVirtualKeyboard() override;
-  void DismissVirtualKeyboard() override;
-  void AddObserver(
-      ui::InputMethodKeyboardControllerObserver* observer) override;
-  void RemoveObserver(
-      ui::InputMethodKeyboardControllerObserver* observer) override;
-  bool IsKeyboardVisible() override;
+  bool IsKeyboardVisible();
+
+  aura::Window* parent_container() { return parent_container_; }
+
+  ui::InputMethodKeyboardController* input_method_keyboard_controller() {
+    return input_method_keyboard_controller_.get();
+  }
 
   bool keyboard_locked() const { return keyboard_locked_; }
   void set_keyboard_locked(bool lock) { keyboard_locked_ = lock; }
 
+  void set_container_behavior_for_test(
+      std::unique_ptr<ContainerBehavior> container_behavior) {
+    container_behavior_ = std::move(container_behavior);
+  }
   KeyboardControllerState GetStateForTest() const { return state_; }
   ui::InputMethod* GetInputMethodForTest();
   void EnsureCaretInWorkAreaForTest(const gfx::Rect& occluded_bounds);
@@ -340,6 +339,10 @@ class KEYBOARD_EXPORT KeyboardController
   // window are changing.
   void NotifyKeyboardBoundsChanging(const gfx::Rect& new_bounds);
 
+  // Called when the keyboard window has loaded. Shows the keyboard if
+  // |show_on_keyboard_window_load_| is true.
+  void NotifyKeyboardWindowLoaded();
+
   // Validates the state transition. Called from ChangeState.
   void CheckStateTransition(KeyboardControllerState prev,
                             KeyboardControllerState next);
@@ -354,7 +357,7 @@ class KEYBOARD_EXPORT KeyboardController
   // time ago.
   void ShowKeyboardIfWithinTransientBlurThreshold();
 
-  void SetContainerBehaviorInternal(ContainerType type);
+  void SetContainerBehaviorInternal(mojom::ContainerType type);
 
   // Records that keyboard was shown on the currently focused UKM source.
   void RecordUkmKeyboardShown();
@@ -379,6 +382,8 @@ class KEYBOARD_EXPORT KeyboardController
   void MarkKeyboardLoadFinished();
 
   std::unique_ptr<KeyboardUI> ui_;
+  std::unique_ptr<ui::InputMethodKeyboardController>
+      input_method_keyboard_controller_;
   KeyboardLayoutDelegate* layout_delegate_ = nullptr;
   ScopedObserver<ui::InputMethod, ui::InputMethodObserver> ime_observer_;
 

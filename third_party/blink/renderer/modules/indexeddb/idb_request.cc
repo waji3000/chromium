@@ -120,8 +120,8 @@ IDBRequest* IDBRequest::Create(ScriptState* script_state,
                                const Source& source,
                                IDBTransaction* transaction,
                                IDBRequest::AsyncTraceState metrics) {
-  IDBRequest* request =
-      new IDBRequest(script_state, source, transaction, std::move(metrics));
+  IDBRequest* request = MakeGarbageCollected<IDBRequest>(
+      script_state, source, transaction, std::move(metrics));
   request->PauseIfNeeded();
   // Requests associated with IDBFactory (open/deleteDatabase/getDatabaseNames)
   // do not have an associated transaction.
@@ -200,9 +200,9 @@ const String& IDBRequest::readyState() const {
   DCHECK(ready_state_ == PENDING || ready_state_ == DONE);
 
   if (ready_state_ == PENDING)
-    return IndexedDBNames::pending;
+    return indexed_db_names::kPending;
 
-  return IndexedDBNames::done;
+  return indexed_db_names::kDone;
 }
 
 std::unique_ptr<WebIDBCallbacks> IDBRequest::CreateWebCallbacks() {
@@ -239,8 +239,8 @@ void IDBRequest::Abort() {
   request_aborted_ = true;
 }
 
-void IDBRequest::SetCursorDetails(IndexedDB::CursorType cursor_type,
-                                  WebIDBCursorDirection direction) {
+void IDBRequest::SetCursorDetails(indexed_db::CursorType cursor_type,
+                                  mojom::IDBCursorDirection direction) {
   DCHECK_EQ(ready_state_, PENDING);
   DCHECK(!pending_cursor_);
   cursor_type_ = cursor_type;
@@ -460,11 +460,11 @@ void IDBRequest::EnqueueResponse(std::unique_ptr<WebIDBCursor> backend,
   DCHECK(!source.IsNull());
 
   switch (cursor_type_) {
-    case IndexedDB::kCursorKeyOnly:
+    case indexed_db::kCursorKeyOnly:
       cursor = IDBCursor::Create(std::move(backend), cursor_direction_, this,
                                  source, transaction_.Get());
       break;
-    case IndexedDB::kCursorKeyAndValue:
+    case indexed_db::kCursorKeyAndValue:
       cursor = IDBCursorWithValue::Create(std::move(backend), cursor_direction_,
                                           this, source, transaction_.Get());
       break;

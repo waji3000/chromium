@@ -516,7 +516,7 @@ HTMLMediaElement::HTMLMediaElement(const QualifiedName& tag_name,
       audio_tracks_(AudioTrackList::Create(*this)),
       video_tracks_(VideoTrackList::Create(*this)),
       audio_source_node_(nullptr),
-      autoplay_policy_(new AutoplayPolicy(this)),
+      autoplay_policy_(MakeGarbageCollected<AutoplayPolicy>(this)),
       remote_playback_client_(nullptr),
       media_controls_(nullptr),
       controls_list_(HTMLMediaElementControlsList::Create(this)),
@@ -609,6 +609,7 @@ void HTMLMediaElement::DidMoveToNewDocument(Document& old_document) {
 }
 
 bool HTMLMediaElement::SupportsFocus() const {
+  // TODO(https://crbug.com/911882): Depending on result of discussion, remove.
   if (ownerDocument()->IsMediaDocument())
     return false;
 
@@ -618,7 +619,7 @@ bool HTMLMediaElement::SupportsFocus() const {
 }
 
 bool HTMLMediaElement::IsMouseFocusable() const {
-  return false;
+  return !IsFullscreen();
 }
 
 void HTMLMediaElement::ParseAttribute(
@@ -1492,7 +1493,7 @@ bool HTMLMediaElement::IsSafeToLoadURL(const KURL& url,
   return true;
 }
 
-bool HTMLMediaElement::IsMediaDataCORSSameOrigin() const {
+bool HTMLMediaElement::IsMediaDataCorsSameOrigin() const {
   if (!GetWebMediaPlayer())
     return true;
 
@@ -1873,10 +1874,11 @@ void HTMLMediaElement::SetReadyState(ReadyState state) {
     // element actually becomes visible to complete the load.
     if (IsHTMLVideoElement() && web_media_player_->DidLazyLoad() &&
         !is_potentially_playing) {
-      lazy_load_visibility_observer_ = new ElementVisibilityObserver(
-          this,
-          WTF::BindRepeating(&HTMLMediaElement::OnVisibilityChangedForLazyLoad,
-                             WrapWeakPersistent(this)));
+      lazy_load_visibility_observer_ =
+          MakeGarbageCollected<ElementVisibilityObserver>(
+              this, WTF::BindRepeating(
+                        &HTMLMediaElement::OnVisibilityChangedForLazyLoad,
+                        WrapWeakPersistent(this)));
       lazy_load_visibility_observer_->Start();
     }
   }
@@ -1989,6 +1991,18 @@ bool HTMLMediaElement::SupportsSave() const {
     return false;
 
   // Infinite streams don't have a clear end at which to finish the download.
+  if (duration() == std::numeric_limits<double>::infinity())
+    return false;
+
+  return true;
+}
+
+bool HTMLMediaElement::SupportsLoop() const {
+  // MediaStream can't be looped.
+  if (GetLoadType() == WebMediaPlayer::kLoadTypeMediaStream)
+    return false;
+
+  // Infinite streams don't have a clear end at which to loop.
   if (duration() == std::numeric_limits<double>::infinity())
     return false;
 
@@ -2375,9 +2389,7 @@ WebMediaPlayer::Preload HTMLMediaElement::PreloadType() const {
   // The spec does not define an invalid value default:
   // https://www.w3.org/Bugs/Public/show_bug.cgi?id=28950
   UseCounter::Count(GetDocument(), WebFeature::kHTMLMediaElementPreloadDefault);
-  return RuntimeEnabledFeatures::PreloadDefaultIsMetadataEnabled()
-             ? WebMediaPlayer::kPreloadMetaData
-             : WebMediaPlayer::kPreloadAuto;
+  return WebMediaPlayer::kPreloadMetaData;
 }
 
 String HTMLMediaElement::EffectivePreload() const {
@@ -3874,7 +3886,7 @@ void HTMLMediaElement::UpdateControlsVisibility() {
 
 CueTimeline& HTMLMediaElement::GetCueTimeline() {
   if (!cue_timeline_)
-    cue_timeline_ = new CueTimeline(*this);
+    cue_timeline_ = MakeGarbageCollected<CueTimeline>(*this);
   return *cue_timeline_;
 }
 
@@ -3929,13 +3941,13 @@ void HTMLMediaElement::SetAudioSourceNode(
   GetAudioSourceProvider().SetClient(audio_source_node_);
 }
 
-WebMediaPlayer::CORSMode HTMLMediaElement::CorsMode() const {
+WebMediaPlayer::CorsMode HTMLMediaElement::CorsMode() const {
   const AtomicString& cross_origin_mode = FastGetAttribute(kCrossoriginAttr);
   if (cross_origin_mode.IsNull())
-    return WebMediaPlayer::kCORSModeUnspecified;
+    return WebMediaPlayer::kCorsModeUnspecified;
   if (DeprecatedEqualIgnoringCase(cross_origin_mode, "use-credentials"))
-    return WebMediaPlayer::kCORSModeUseCredentials;
-  return WebMediaPlayer::kCORSModeAnonymous;
+    return WebMediaPlayer::kCorsModeUseCredentials;
+  return WebMediaPlayer::kCorsModeAnonymous;
 }
 
 void HTMLMediaElement::SetCcLayer(cc::Layer* cc_layer) {
@@ -4169,7 +4181,7 @@ void HTMLMediaElement::AudioSourceProviderImpl::SetClient(
   MutexLocker locker(provide_input_lock);
 
   if (client)
-    client_ = new HTMLMediaElement::AudioClientImpl(client);
+    client_ = MakeGarbageCollected<HTMLMediaElement::AudioClientImpl>(client);
   else
     client_.Clear();
 
@@ -4179,7 +4191,7 @@ void HTMLMediaElement::AudioSourceProviderImpl::SetClient(
 
 void HTMLMediaElement::AudioSourceProviderImpl::ProvideInput(
     AudioBus* bus,
-    size_t frames_to_process) {
+    uint32_t frames_to_process) {
   DCHECK(bus);
 
   MutexTryLocker try_locker(provide_input_lock);
@@ -4197,7 +4209,7 @@ void HTMLMediaElement::AudioSourceProviderImpl::ProvideInput(
   web_audio_source_provider_->ProvideInput(web_audio_data, frames_to_process);
 }
 
-void HTMLMediaElement::AudioClientImpl::SetFormat(size_t number_of_channels,
+void HTMLMediaElement::AudioClientImpl::SetFormat(uint32_t number_of_channels,
                                                   float sample_rate) {
   if (client_)
     client_->SetFormat(number_of_channels, sample_rate);
@@ -4254,7 +4266,7 @@ void HTMLMediaElement::RequestPause() {
 }
 
 bool HTMLMediaElement::MediaShouldBeOpaque() const {
-  return !IsMediaDataCORSSameOrigin() && ready_state_ < kHaveMetadata &&
+  return !IsMediaDataCorsSameOrigin() && ready_state_ < kHaveMetadata &&
          !FastGetAttribute(kSrcAttr).IsEmpty() &&
          EffectivePreloadType() != WebMediaPlayer::kPreloadNone;
 }

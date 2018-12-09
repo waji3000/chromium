@@ -18,7 +18,8 @@ namespace blink {
 CanMakePaymentEvent* CanMakePaymentEvent::Create(
     const AtomicString& type,
     const CanMakePaymentEventInit* initializer) {
-  return new CanMakePaymentEvent(type, initializer, nullptr, nullptr);
+  return MakeGarbageCollected<CanMakePaymentEvent>(type, initializer, nullptr,
+                                                   nullptr);
 }
 
 CanMakePaymentEvent* CanMakePaymentEvent::Create(
@@ -26,14 +27,14 @@ CanMakePaymentEvent* CanMakePaymentEvent::Create(
     const CanMakePaymentEventInit* initializer,
     RespondWithObserver* respond_with_observer,
     WaitUntilObserver* wait_until_observer) {
-  return new CanMakePaymentEvent(type, initializer, respond_with_observer,
-                                 wait_until_observer);
+  return MakeGarbageCollected<CanMakePaymentEvent>(
+      type, initializer, respond_with_observer, wait_until_observer);
 }
 
 CanMakePaymentEvent::~CanMakePaymentEvent() = default;
 
 const AtomicString& CanMakePaymentEvent::InterfaceName() const {
-  return EventNames::CanMakePaymentEvent;
+  return event_interface_names::kCanMakePaymentEvent;
 }
 
 const String& CanMakePaymentEvent::topOrigin() const {

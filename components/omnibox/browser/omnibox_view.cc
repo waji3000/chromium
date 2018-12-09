@@ -117,10 +117,18 @@ gfx::ImageSkia OmniboxView::GetIcon(int dip_size,
   NOTREACHED();
   return gfx::ImageSkia();
 #else
-  if (!IsEditingOrEmpty()) {
+
+  // For tests, model_ will be null.
+  if (!model_) {
+    AutocompleteMatch fake_match;
+    fake_match.type = AutocompleteMatchType::URL_WHAT_YOU_TYPED;
+    const gfx::VectorIcon& vector_icon = fake_match.GetVectorIcon(false);
+    return gfx::CreateVectorIcon(vector_icon, dip_size, color);
+  }
+
+  if (model_->ShouldShowCurrentPageIcon()) {
     // Query in Omnibox.
-    if (model_ &&
-        model_->GetQueryInOmniboxSearchTerms(nullptr /* search_terms */)) {
+    if (model_->GetQueryInOmniboxSearchTerms(nullptr /* search_terms */)) {
       gfx::Image icon = model_->client()->GetFaviconForDefaultSearchProvider(
           std::move(on_icon_fetched));
       if (!icon.IsEmpty())
@@ -131,23 +139,14 @@ gfx::ImageSkia OmniboxView::GetIcon(int dip_size,
         controller_->GetLocationBarModel()->GetVectorIcon(), dip_size, color);
   }
 
-  // For tests, model_ will be null.
-  if (!model_) {
-    const gfx::VectorIcon& vector_icon = AutocompleteMatch::TypeToVectorIcon(
-        AutocompleteMatchType::URL_WHAT_YOU_TYPED, false /*is_bookmark*/,
-        AutocompleteMatch::DocumentType::NONE);
-    return gfx::CreateVectorIcon(vector_icon, dip_size, color);
-  }
-
   gfx::Image favicon;
-
   AutocompleteMatch match = model_->CurrentMatch(nullptr);
   if (AutocompleteMatch::IsSearchType(match.type)) {
     // For search queries, display default search engine's favicon.
     favicon = model_->client()->GetFaviconForDefaultSearchProvider(
         std::move(on_icon_fetched));
 
-  } else if (OmniboxFieldTrial::IsShowSuggestionFaviconsEnabled()) {
+  } else {
     // For site suggestions, display site's favicon.
     favicon = model_->client()->GetFaviconForPageUrl(
         match.destination_url, std::move(on_icon_fetched));
@@ -165,8 +164,7 @@ gfx::ImageSkia OmniboxView::GetIcon(int dip_size,
   const bool is_bookmarked =
       bookmark_model && bookmark_model->IsBookmarked(match.destination_url);
 
-  const gfx::VectorIcon& vector_icon = AutocompleteMatch::TypeToVectorIcon(
-      match.type, is_bookmarked, match.document_type);
+  const gfx::VectorIcon& vector_icon = match.GetVectorIcon(is_bookmarked);
   return gfx::CreateVectorIcon(vector_icon, dip_size, color);
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
 }

@@ -38,7 +38,6 @@
 #include "third_party/blink/renderer/core/css/style_sheet_contents.h"
 #include "third_party/blink/renderer/core/html/track/text_track_cue.h"
 #include "third_party/blink/renderer/core/html_names.h"
-#include "third_party/blink/renderer/platform/heap/heap_terminated_array_builder.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 
@@ -72,7 +71,8 @@ RuleData* RuleData::MaybeCreate(StyleRule* rule,
     return nullptr;
   if (position >= (1 << RuleData::kPositionBits))
     return nullptr;
-  return new RuleData(rule, selector_index, position, add_rule_flags);
+  return MakeGarbageCollected<RuleData>(rule, selector_index, position,
+                                        add_rule_flags);
 }
 
 RuleData::RuleData(StyleRule* rule,
@@ -100,7 +100,7 @@ void RuleSet::AddToRuleSet(const AtomicString& key,
   Member<HeapLinkedStack<Member<const RuleData>>>& rules =
       map.insert(key, nullptr).stored_value->value;
   if (!rules)
-    rules = new HeapLinkedStack<Member<const RuleData>>;
+    rules = MakeGarbageCollected<HeapLinkedStack<Member<const RuleData>>>();
   rules->Push(rule_data);
 }
 
@@ -137,6 +137,7 @@ static void ExtractSelectorValues(const CSSSelector* selector,
         case CSSSelector::kPseudoPart:
         case CSSSelector::kPseudoHost:
         case CSSSelector::kPseudoHostContext:
+        case CSSSelector::kPseudoSpatialNavigationFocus:
           pseudo_type = selector->GetPseudoType();
           break;
         case CSSSelector::kPseudoWebKitCustomElement:
@@ -208,6 +209,9 @@ bool RuleSet::FindBestRuleSetAndAdd(const CSSSelector& component,
     case CSSSelector::kPseudoWebkitAnyLink:
       link_pseudo_class_rules_.push_back(rule_data);
       return true;
+    case CSSSelector::kPseudoSpatialNavigationFocus:
+      spatial_navigation_focus_class_rules_.push_back(rule_data);
+      return true;
     case CSSSelector::kPseudoFocus:
       focus_pseudo_class_rules_.push_back(rule_data);
       return true;
@@ -268,6 +272,11 @@ void RuleSet::AddFontFaceRule(StyleRuleFontFace* rule) {
   font_face_rules_.push_back(rule);
 }
 
+void RuleSet::AddFontFeatureValuesRule(StyleRuleFontFeatureValues* rule) {
+  EnsurePendingRules();
+  font_feature_values_rules_.push_back(rule);
+}
+
 void RuleSet::AddKeyframesRule(StyleRuleKeyframes* rule) {
   EnsurePendingRules();  // So that keyframes_rules_.ShrinkToFit() gets called.
   keyframes_rules_.push_back(rule);
@@ -310,6 +319,8 @@ void RuleSet::AddChildRules(const HeapVector<Member<StyleRuleBase>>& rules,
         AddChildRules(media_rule->ChildRules(), medium, add_rule_flags);
     } else if (rule->IsFontFaceRule()) {
       AddFontFaceRule(ToStyleRuleFontFace(rule));
+    } else if (rule->IsFontFeatureValuesRule()) {
+      AddFontFeatureValuesRule(ToStyleRuleFontFeatureValues(rule));
     } else if (rule->IsKeyframesRule()) {
       AddKeyframesRule(ToStyleRuleKeyframes(rule));
     } else if (rule->IsSupportsRule() &&
@@ -382,10 +393,12 @@ void RuleSet::CompactRules() {
   link_pseudo_class_rules_.ShrinkToFit();
   cue_pseudo_rules_.ShrinkToFit();
   focus_pseudo_class_rules_.ShrinkToFit();
+  spatial_navigation_focus_class_rules_.ShrinkToFit();
   universal_rules_.ShrinkToFit();
   shadow_host_rules_.ShrinkToFit();
   page_rules_.ShrinkToFit();
   font_face_rules_.ShrinkToFit();
+  font_feature_values_rules_.ShrinkToFit();
   keyframes_rules_.ShrinkToFit();
   deep_combinator_or_shadow_pseudo_rules_.ShrinkToFit();
   part_pseudo_rules_.ShrinkToFit();
@@ -416,10 +429,12 @@ void RuleSet::Trace(blink::Visitor* visitor) {
   visitor->Trace(link_pseudo_class_rules_);
   visitor->Trace(cue_pseudo_rules_);
   visitor->Trace(focus_pseudo_class_rules_);
+  visitor->Trace(spatial_navigation_focus_class_rules_);
   visitor->Trace(universal_rules_);
   visitor->Trace(shadow_host_rules_);
   visitor->Trace(page_rules_);
   visitor->Trace(font_face_rules_);
+  visitor->Trace(font_feature_values_rules_);
   visitor->Trace(keyframes_rules_);
   visitor->Trace(deep_combinator_or_shadow_pseudo_rules_);
   visitor->Trace(part_pseudo_rules_);

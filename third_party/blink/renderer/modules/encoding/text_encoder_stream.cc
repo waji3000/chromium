@@ -161,7 +161,7 @@ class TextEncoderStream::Transformer final : public TransformStreamTransformer {
 
 TextEncoderStream* TextEncoderStream::Create(ScriptState* script_state,
                                              ExceptionState& exception_state) {
-  return new TextEncoderStream(script_state, exception_state);
+  return MakeGarbageCollected<TextEncoderStream>(script_state, exception_state);
 }
 
 TextEncoderStream::~TextEncoderStream() = default;
@@ -170,14 +170,12 @@ String TextEncoderStream::encoding() const {
   return "utf-8";
 }
 
-ScriptValue TextEncoderStream::readable(ScriptState* script_state,
-                                        ExceptionState& exception_state) const {
-  return transform_->Readable(script_state, exception_state);
+ReadableStream* TextEncoderStream::readable() const {
+  return transform_->Readable();
 }
 
-ScriptValue TextEncoderStream::writable(ScriptState* script_state,
-                                        ExceptionState& exception_state) const {
-  return transform_->Writable(script_state, exception_state);
+WritableStream* TextEncoderStream::writable() const {
+  return transform_->Writable();
 }
 
 void TextEncoderStream::Trace(Visitor* visitor) {
@@ -187,14 +185,14 @@ void TextEncoderStream::Trace(Visitor* visitor) {
 
 TextEncoderStream::TextEncoderStream(ScriptState* script_state,
                                      ExceptionState& exception_state)
-    : transform_(new TransformStream()) {
+    : transform_(MakeGarbageCollected<TransformStream>()) {
   if (!RetainWrapperDuringConstruction(this, script_state)) {
     exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "Cannot queue task to retain wrapper");
     return;
   }
-  transform_->Init(new Transformer(script_state), script_state,
-                   exception_state);
+  transform_->Init(MakeGarbageCollected<Transformer>(script_state),
+                   script_state, exception_state);
 }
 
 }  // namespace blink

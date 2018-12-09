@@ -21,10 +21,12 @@ struct PaymentInformation {
 
   bool succeed;
   std::unique_ptr<autofill::CreditCard> card;
-  std::unique_ptr<autofill::AutofillProfile> address;
+  std::unique_ptr<autofill::AutofillProfile> shipping_address;
+  std::unique_ptr<autofill::AutofillProfile> billing_address;
   std::string payer_name;
   std::string payer_phone;
   std::string payer_email;
+  bool is_terms_and_conditions_accepted;
 };
 }  // namespace autofill_assistant
 #endif  // COMPONENTS_AUTOFILL_ASSISTANT_BROWSER_PAYMENT_INFORMATION_H_

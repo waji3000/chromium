@@ -155,10 +155,6 @@ void ViewsScreenLocker::ClearErrors() {
   LoginScreenClient::Get()->login_screen()->ClearErrors();
 }
 
-void ViewsScreenLocker::AnimateAuthenticationSuccess() {
-  NOTIMPLEMENTED();
-}
-
 void ViewsScreenLocker::OnLockWebUIReady() {
   NOTIMPLEMENTED();
 }
@@ -295,10 +291,6 @@ bool ViewsScreenLocker::HandleFocusLockScreenApps(bool reverse) {
 }
 
 void ViewsScreenLocker::HandleFocusOobeDialog() {
-  NOTREACHED();
-}
-
-void ViewsScreenLocker::HandleLoginAsGuest() {
   NOTREACHED();
 }
 

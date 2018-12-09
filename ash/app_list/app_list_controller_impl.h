@@ -16,6 +16,7 @@
 #include "ash/app_list/model/search/search_model.h"
 #include "ash/app_list/presenter/app_list_presenter_impl.h"
 #include "ash/ash_export.h"
+#include "ash/display/window_tree_host_manager.h"
 #include "ash/public/cpp/app_list/app_list_constants.h"
 #include "ash/public/cpp/assistant/default_voice_interaction_observer.h"
 #include "ash/public/interfaces/app_list.mojom.h"
@@ -29,17 +30,9 @@
 #include "mojo/public/cpp/bindings/interface_ptr_set.h"
 #include "ui/keyboard/keyboard_controller_observer.h"
 
-namespace app_list {
-class AnswerCardContentsRegistry;
-}  // namespace app_list
-
 namespace ui {
 class MouseWheelEvent;
 }  // namespace ui
-
-namespace ws {
-class WindowService;
-}  // namespace ws
 
 namespace ash {
 
@@ -57,11 +50,12 @@ class ASH_EXPORT AppListControllerImpl
       public TabletModeObserver,
       public keyboard::KeyboardControllerObserver,
       public WallpaperControllerObserver,
-      public DefaultVoiceInteractionObserver {
+      public DefaultVoiceInteractionObserver,
+      public WindowTreeHostManager::Observer {
  public:
   using AppListItemMetadataPtr = mojom::AppListItemMetadataPtr;
   using SearchResultMetadataPtr = mojom::SearchResultMetadataPtr;
-  explicit AppListControllerImpl(ws::WindowService* window_service);
+  AppListControllerImpl();
   ~AppListControllerImpl() override;
 
   // Binds the mojom::AppListController interface request to this object.
@@ -185,7 +179,8 @@ class ASH_EXPORT AppListControllerImpl
   bool ProcessHomeLauncherGesture(ui::GestureEvent* event,
                                   const gfx::Point& screen_location) override;
   bool CanProcessEventsOnApplistViews() override;
-  ws::WindowService* GetWindowService() override;
+  void GetNavigableContentsFactory(
+      content::mojom::NavigableContentsFactoryRequest request) override;
 
   void OnVisibilityChanged(bool visible);
   void OnTargetVisibilityChanged(bool visible);
@@ -216,13 +211,22 @@ class ASH_EXPORT AppListControllerImpl
   void OnAssistantFeatureAllowedChanged(
       mojom::AssistantAllowedState state) override;
 
-  bool onscreen_keyboard_shown() const { return onscreen_keyboard_shown_; }
+  // WindowTreeHostManager::Observer:
+  void OnDisplayConfigurationChanged() override;
 
-  // Returns true if the home launcher is enabled in tablet mode.
-  bool IsHomeLauncherEnabledInTabletMode() const;
+  bool onscreen_keyboard_shown() const { return onscreen_keyboard_shown_; }
 
   // Performs the 'back' action for the active page.
   void Back();
+
+  // Handles app list button press event. (Search key should trigger the same
+  // behavior.) All three parameters are only used in clamshell mode.
+  // |display_id| is the id of display where app list should toggle.
+  // |show_source| is the source of the event. |event_time_stamp| records the
+  // event timestamp.
+  void OnAppListButtonPressed(int64_t display_id,
+                              app_list::AppListShowSource show_source,
+                              base::TimeTicks event_time_stamp);
 
  private:
   syncer::StringOrdinal GetOemFolderPos();
@@ -239,7 +243,8 @@ class ASH_EXPORT AppListControllerImpl
 
   int64_t GetDisplayIdToShowAppListOn();
 
-  ws::WindowService* window_service_;
+  // Shows the home launcher in tablet mode.
+  void ShowHomeLauncher();
 
   base::string16 last_raw_query_;
 
@@ -255,19 +260,12 @@ class ASH_EXPORT AppListControllerImpl
   // Bindings for the AppListController interface.
   mojo::BindingSet<mojom::AppListController> bindings_;
 
-  // Token to view map for classic/mus ash (i.e. non-mash).
-  std::unique_ptr<app_list::AnswerCardContentsRegistry>
-      answer_card_contents_registry_;
-
   // Owned pointer to the object which handles gestures related to the home
   // launcher.
   std::unique_ptr<HomeLauncherGestureHandler> home_launcher_gesture_handler_;
 
   // Whether the on-screen keyboard is shown.
   bool onscreen_keyboard_shown_ = false;
-
-  // Whether the home launcher feature is enabled.
-  const bool is_home_launcher_enabled_;
 
   // Each time overview mode is exited, set this variable based on whether
   // overview mode is sliding out, so the home launcher knows what to do when
@@ -280,8 +278,6 @@ class ASH_EXPORT AppListControllerImpl
 
   // Whether we're currently in a window dragging process.
   bool in_window_dragging_ = false;
-
-  mojo::Binding<mojom::VoiceInteractionObserver> voice_interaction_binding_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListControllerImpl);
 };

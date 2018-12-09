@@ -437,6 +437,9 @@ const char kQuicAllowed[] = "net.quic_allowed";
 // Prefs for persisting network qualities.
 const char kNetworkQualities[] = "net.network_qualities";
 
+// Pref storing the user's network easter egg game high score.
+const char kNetworkEasterEggHighScore[] = "net.easter_egg_high_score";
+
 #if defined(OS_ANDROID)
 // Last time that a check for cloud policy management was done. This time is
 // recorded on Android so that retries aren't attempted on every startup.
@@ -545,6 +548,12 @@ const char kLanguageEnabledImesSyncable[] =
 
 // A boolean pref set to true if the IME menu is activated.
 const char kLanguageImeMenuActivated[] = "settings.language.ime_menu_activated";
+
+// A dictionary of input method IDs and their settings. Each value is itself a
+// dictionary of key / value string pairs, with each pair representing a setting
+// and its value.
+const char kLanguageInputMethodSpecificSettings[] =
+    "settings.language.input_method_specific_settings";
 
 // A boolean pref to indicate whether we still need to add the globally synced
 // input methods. False after the initial post-OOBE sync.
@@ -804,6 +813,11 @@ const char kCastReceiverEnabled[] = "cast_receiver.enabled";
 // be applied. See base::Version for exact string format.
 const char kMinimumAllowedChromeVersion[] = "minimum_req.version";
 
+// Boolean preference that triggers chrome://settings/androidApps/details to be
+// opened on user session start.
+const char kShowArcSettingsOnSessionStart[] =
+    "start_arc_settings_on_session_start";
+
 // Boolean preference that triggers chrome://settings/syncSetup to be opened
 // on user session start.
 const char kShowSyncSettingsOnSessionStart[] =
@@ -875,6 +889,10 @@ const char kLastChildScreenTimeReset[] = "last_child_screen_time_reset";
 const char kNTLMShareAuthenticationEnabled[] =
     "network_file_shares.ntlm_share_authentication.enabled";
 
+// Dictionary pref containing configuration used to verify Parent Access Code.
+// Controlled by ParentAccessCodeConfig policy.
+const char kParentAccessCodeConfig[] = "child_user.parent_access_code.config";
+
 // List of preconfigured network file shares.
 const char kNetworkFileSharesPreconfiguredShares[] =
     "network_file_shares.preconfigured_shares";
@@ -913,10 +931,6 @@ const char kForceGoogleSafeSearch[] = "settings.force_google_safesearch";
 // Integer controlling whether Restrict Mode (moderate/strict) is mandatory on
 // YouTube. See |safe_search_util::YouTubeRestrictMode| for possible values.
 const char kForceYouTubeRestrict[] = "settings.force_youtube_restrict";
-
-// Boolean controlling whether history is recorded via Session Sync
-// (for supervised users).
-const char kForceSessionSync[] = "settings.history_recorded";
 
 // Comma separated list of domain names (e.g. "google.com,school.edu").
 // When this pref is set, the user will be able to access Google Apps
@@ -1091,7 +1105,6 @@ const char kImportDialogSearchEngine[] = "import_dialog_search_engine";
 
 // Profile avatar and name
 const char kProfileAvatarIndex[] = "profile.avatar_index";
-const char kProfileLocalAvatarIndex[] = "profile.local_avatar_index";
 const char kProfileName[] = "profile.name";
 // Whether a profile is using a default avatar name (eg. Pickles or Person 1)
 // because it was randomly assigned at profile creation time.
@@ -1185,6 +1198,11 @@ const char kPrintingDuplexDefault[] = "printing.duplex_default";
 
 // A pref holding the default page size.
 const char kPrintingSizeDefault[] = "printing.size_default";
+
+// Boolean flag which represents whether username and filename should be sent
+// to print server.
+const char kPrintingSendUsernameAndFilenameEnabled[] =
+    "printing.send_username_and_filename_enabled";
 #endif  // OS_CHROMEOS
 
 // An integer pref specifying the fallback behavior for sites outside of content
@@ -1283,10 +1301,10 @@ const char kHasSeenWelcomePage[] = "browser.has_seen_welcome_page";
 const char kHasSeenWin10PromoPage[] = "browser.has_seen_win10_promo_page";
 
 #if defined(GOOGLE_CHROME_BUILD)
-// Whether or not this user went through the first-run experience after NUX
-// launched. This is necessary for determining which users to keep "tagging"
-// with the NUX finch experiment group, and allows a more accurate analysis.
-const char kOnboardDuringNUX[] = "browser.onboard_during_nux";
+// Put the user into an onboarding group that's decided when they go through
+// the first run onboarding experience. Only users in a group will have their
+// finch group pinged to keep track of them for the experiment.
+const char kNaviOnboardGroup[] = "browser.navi_onboard_group";
 #endif  // defined(GOOGLE_CHROME_BUILD)
 #endif  // defined(OS_WIN)
 
@@ -1663,11 +1681,6 @@ const char kCertRevocationCheckingEnabled[] = "ssl.rev_checking.enabled";
 const char kCertRevocationCheckingRequiredLocalAnchors[] =
     "ssl.rev_checking.required_for_local_anchors";
 
-// Boolean that specifies whether to allow the SHA-1 digest algorithm in
-// certificate signatures for certificate paths that end in a locally-trusted
-// (as opposed to publicly trusted) trust anchor.
-const char kCertEnableSha1LocalAnchors[] = "ssl.sha1_enabled_for_local_anchors";
-
 // Boolean that specifies whether to allow certificates from the Legacy
 // Symantec Infrastructure, disabling the mitigations documented in
 // https://security.googleblog.com/2017/09/chromes-plan-to-distrust-symantec.html
@@ -1921,6 +1934,20 @@ const char kCameraMediaConsolidated[] = "camera_media_consolidated";
 
 // Whether the user is allowed to disconnect and configure VPN connections.
 const char kVpnConfigAllowed[] = "vpn_config_allowed";
+
+// Integer pref used by the metrics::DailyEvent owned by
+// chromeos::power::auto_screen_brightness::MetricsReporter.
+const char kAutoScreenBrightnessMetricsDailySample[] =
+    "auto_screen_brightness.metrics.daily_sample";
+
+// Integer prefs used to back event counts reported by
+// chromeos::power::auto_screen_brightness::MetricsReporter.
+const char kAutoScreenBrightnessMetricsNoAlsUserAdjustmentCount[] =
+    "auto_screen_brightness.metrics.no_als_user_adjustment_count";
+const char kAutoScreenBrightnessMetricsSupportedAlsUserAdjustmentCount[] =
+    "auto_screen_brightness.metrics.supported_als_user_adjustment_count";
+const char kAutoScreenBrightnessMetricsUnsupportedAlsUserAdjustmentCount[] =
+    "auto_screen_brightness.metrics.unsupported_als_user_adjustment_count";
 #endif  // defined(OS_CHROMEOS)
 
 // Whether there is a Flash version installed that supports clearing LSO data.
@@ -2386,77 +2413,6 @@ const char kDSEWasDisabledByPolicy[] = "dse_was_disabled_by_policy";
 const char kWebShareVisitedTargets[] = "profile.web_share.visited_targets";
 
 #if defined(OS_WIN)
-// True if the user is eligible to recieve "desktop to iOS" promotion. This
-// vlaue is set by a job that access the growth table to check users with iOS
-// devices and phone recovery number and update the eligibility on chrome sync.
-const char kIOSPromotionEligible[] = "ios.desktoptomobileeligible";
-
-// True if the "desktop to iOS" promotion was successful, i.e. user installed
-// the application and signed in on the iOS client after seeing the promotion
-// and receiving the SMS.
-const char kIOSPromotionDone[] = "ios.desktop_ios_promo_done";
-
-// Index of the entry point that last initiated sending the SMS to the user for
-// the "desktop to iOS" promotion (see DesktopIOSPromotion.IOSSigninReason
-// histogram for details).
-const char kIOSPromotionSMSEntryPoint[] =
-    "ios.desktop_ios_promo_sms_entrypoint";
-
-// Bit mask that represents the Indices of all the entry points shown to the
-// user for "desktop to iOS" promotion. Each entry point is represented by
-// 1<<entrypoint_value using the values from the Enum
-// desktop_ios_promotion::PromotionEntryPoint.
-const char kIOSPromotionShownEntryPoints[] =
-    "ios.desktop_ios_promo_shown_entrypoints";
-
-// Timestamp of the last "desktop to iOS" promotion last impression. If the
-// user sends SMS on that impression then we deal with this timestamp as the
-// SMS sending time because after sending the sms the user shouldn't see the
-// promotion again (Accuracy to the minutes and seconds is not important).
-const char kIOSPromotionLastImpression[] =
-    "ios.desktop_ios_promo_last_impression";
-
-// Integer that represents which variation of title and text of the
-// "desktop to iOS" promotion was presented to the user.
-const char kIOSPromotionVariationId[] = "ios.desktop_ios_promo_variation_id";
-
-// Number of times user has seen the "desktop to iOS" save passwords bubble
-// promotion.
-const char kNumberSavePasswordsBubbleIOSPromoShown[] =
-    "savepasswords_bubble_ios_promo_shown_count";
-
-// True if the user has dismissed the "desktop to iOS" save passwords bubble
-// promotion.
-const char kSavePasswordsBubbleIOSPromoDismissed[] =
-    "savepasswords_bubble_ios_promo_dismissed";
-
-// Number of times the user has seen the "desktop to iOS" bookmarks bubble
-// promotion.
-const char kNumberBookmarksBubbleIOSPromoShown[] =
-    "bookmarks_bubble_ios_promo_shown_count";
-
-// True if the user has dismissed the "desktop to iOS" bookmarks bubble
-// promotion.
-const char kBookmarksBubbleIOSPromoDismissed[] =
-    "bookmarks_bubble_ios_promo_dismissed";
-
-// Number of times user has seen the "desktop to iOS" bookmarks foot note
-// promotion.
-const char kNumberBookmarksFootNoteIOSPromoShown[] =
-    "bookmarks_footnote_ios_promo_shown_count";
-
-// True if the user has dismissed the "desktop to iOS" bookmarks foot note
-// promotion.
-const char kBookmarksFootNoteIOSPromoDismissed[] =
-    "bookmarks_footnote_ios_promo_dismissed";
-
-// Number of times user has seen the "desktop to iOS" history page promotion.
-const char kNumberHistoryPageIOSPromoShown[] =
-    "history_page_ios_promo_shown_count";
-
-// True if the user has dismissed the "desktop to iOS" history page promotion.
-const char kHistoryPageIOSPromoDismissed[] = "history_page_ios_promo_dismissed";
-
 #if defined(GOOGLE_CHROME_BUILD)
 // Acts as a cache to remember incompatible applications through restarts. Used
 // for the Incompatible Applications Warning feature.

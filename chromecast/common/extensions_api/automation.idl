@@ -43,6 +43,7 @@
     menuListItemSelected,
     menuListValueChanged,
     menuPopupEnd,
+    menuPopupHide,
     menuPopupStart,
     menuStart,
     mouseCanceled,
@@ -178,6 +179,7 @@
     imageMap,
     inlineTextBox,
     inputTime,
+    keyboard,
     labelText,
     layoutTable,
     layoutTableCell,
@@ -191,7 +193,6 @@
     listBoxOption,
     listItem,
     listMarker,
-    locationBar,
     log,
     main,
     mark,
@@ -356,9 +357,11 @@
     uninitialized,
     attribute,
     attributeExplicitlyEmpty,
+    caption,
     contents,
     placeholder,
     relatedElement,
+    title,
     value
   };
 
@@ -576,6 +579,9 @@
     // applicable
     AutomationNode? activeDescendant;
 
+    // Reverse relationship for active descendant.
+    AutomationNode[]? activeDescendantFor;
+
     // The target of an in-page link.
     AutomationNode? inPageLinkTarget;
 
@@ -604,10 +610,10 @@
     AutomationNode[]? labelFor;
 
     // The column header nodes for a table cell.
-    AutomationNode? tableCellColumnHeaders;
+    AutomationNode[]? tableCellColumnHeaders;
 
     // The row header nodes for a table cell.
-    AutomationNode? tableCellRowHeaders;
+    AutomationNode[]? tableCellRowHeaders;
 
     // An array of standard actions available on this node.
     ActionType[]? standardActions;
@@ -652,6 +658,9 @@
     long? scrollYMin;
     long? scrollYMax;
 
+    // Indicates whether this node is scrollable.
+    boolean? scrollable;
+
     //
     // Editable text field attributes.
     //
@@ -666,9 +675,6 @@
 
     // The input type, like email or number.
     DOMString? textInputType;
-
-    // An array of indexes of the break between lines in editable text.
-    long[] lineBreaks;
 
     // An array of indexes of the start position of each text marker.
     long[] markerStarts;
@@ -854,6 +860,9 @@
     // Tri-state describing checkbox or radio button:
     // 'false' | 'true' | 'mixed'
     DOMString? checked;
+
+    // The inner html of this element. Only populated for math content.
+    DOMString? innerHtml;
 
     // The RGBA foreground color of this subtree, as an integer.
     long? color;

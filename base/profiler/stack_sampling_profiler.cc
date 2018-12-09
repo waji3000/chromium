@@ -620,7 +620,7 @@ void StackSamplingProfiler::TestPeer::PerformSamplingThreadIdleShutdown(
   SamplingThread::TestPeer::ShutdownAssumingIdle(simulate_intervening_start);
 }
 
-void StackSamplingProfiler::ProfileBuilder::RecordAnnotations() {}
+void StackSamplingProfiler::ProfileBuilder::RecordMetadata() {}
 
 StackSamplingProfiler::StackSamplingProfiler(
     const SamplingParams& params,
@@ -680,7 +680,7 @@ StackSamplingProfiler::~StackSamplingProfiler() {
   //
   // The wait time should, at most, be only as long as it takes to collect one
   // sample (~200us) or none at all if sampling has already completed.
-  ThreadRestrictions::ScopedAllowWait allow_wait;
+  ScopedAllowBaseSyncPrimitivesOutsideBlockingScope allow_wait;
   profiling_inactive_.Wait();
 }
 

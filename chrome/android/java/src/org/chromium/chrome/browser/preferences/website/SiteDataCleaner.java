@@ -17,14 +17,15 @@ public class SiteDataCleaner {
         String origin = site.getAddress().getOrigin();
         WebsitePreferenceBridge.nativeClearCookieData(origin);
         WebsitePreferenceBridge.nativeClearBannerData(origin);
+        WebsitePreferenceBridge.nativeClearMediaLicenses(origin);
 
         // Clear the permissions.
         for (@ContentSettingException.Type int type = 0;
                 type < ContentSettingException.Type.NUM_ENTRIES; type++) {
-            site.setContentSettingPermission(type, ContentSetting.DEFAULT);
+            site.setContentSettingPermission(type, ContentSettingValues.DEFAULT);
         }
         for (@PermissionInfo.Type int type = 0; type < PermissionInfo.Type.NUM_ENTRIES; type++) {
-            site.setPermission(type, ContentSetting.DEFAULT);
+            site.setPermission(type, ContentSettingValues.DEFAULT);
         }
 
         for (ChosenObjectInfo info : site.getChosenObjectInfo()) {

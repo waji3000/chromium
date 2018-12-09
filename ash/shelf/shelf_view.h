@@ -131,7 +131,8 @@ class ASH_EXPORT ShelfView : public views::View,
   // will be returned.
   gfx::Rect GetIdealBoundsOfItemIcon(const ShelfID& id);
 
-  // Returns true if we're showing a menu.
+  // Returns true if we're showing a menu. Note the menu could be either the
+  // context menu or the application select menu.
   bool IsShowingMenu() const;
 
   // Returns true if we're showing a menu for |view|. |view| could be a
@@ -381,13 +382,6 @@ class ASH_EXPORT ShelfView : public views::View,
                               const gfx::Point& location,
                               bool context_menu) const;
 
-  // Gets the menu anchor position for a menu. |for_item| is true if the menu is
-  // for an item on the shelf, or false if the menu is for the shelf view
-  // itself, |context_menu| is whether the menu will be an application menu or
-  // context menu, and |touch_menu| is whether the menu was initiated by touch.
-  views::MenuAnchorPosition GetMenuAnchorPosition(bool for_item,
-                                                  bool context_menu) const;
-
   // Overridden from views::View:
   gfx::Size CalculatePreferredSize() const override;
   void OnBoundsChanged(const gfx::Rect& previous_bounds) override;
@@ -533,6 +527,11 @@ class ASH_EXPORT ShelfView : public views::View,
 
   // True when an item being inserted or removed in the model cancels a drag.
   bool cancelling_drag_model_changed_ = false;
+
+  // The item with an in-flight async request for a context menu or selection
+  // (which shows a shelf item application menu if multiple windows are open).
+  // Used to avoid multiple concurrent menu requests. The value is null if none.
+  ShelfID item_awaiting_response_;
 
   // The timestamp of the event which closed the last menu - or 0.
   base::TimeTicks closing_event_time_;

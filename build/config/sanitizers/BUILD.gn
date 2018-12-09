@@ -197,14 +197,9 @@ config("default_sanitizer_ldflags") {
     if (is_ubsan_vptr) {
       ldflags += [ "-fsanitize=vptr" ]
     }
-    if (is_safestack) {
-      ldflags += [ "-fsanitize=safe-stack" ]
-    }
 
     if (use_sanitizer_coverage) {
-      # TODO(crbug.com/892167): Remove the is_mac check when new instrumentation
-      # works on Mac.
-      if (use_libfuzzer && !is_mac) {
+      if (use_libfuzzer) {
         ldflags += [ "-fsanitize=fuzzer-no-link" ]
       } else {
         ldflags += [ "-fsanitize-coverage=$sanitizer_coverage_flags" ]
@@ -402,9 +397,7 @@ config("coverage_flags") {
     # Used by sandboxing code to allow coverage dump to be written on the disk.
     defines = [ "SANITIZER_COVERAGE" ]
 
-    # TODO(crbug.com/892167): Remove the is_mac check when new instrumentation
-    # works on Mac.
-    if (use_libfuzzer && !is_mac) {
+    if (use_libfuzzer) {
       cflags += [ "-fsanitize=fuzzer-no-link" ]
     } else {
       cflags += [
@@ -441,12 +434,6 @@ config("msan_flags") {
       "-fsanitize-memory-track-origins=$msan_track_origins",
       "-fsanitize-blacklist=$msan_blacklist_path",
     ]
-  }
-}
-
-config("safestack_flags") {
-  if (is_safestack) {
-    cflags = [ "-fsanitize=safe-stack" ]
   }
 }
 
@@ -565,7 +552,6 @@ all_sanitizer_configs = [
   ":cfi_flags",
   ":lsan_flags",
   ":msan_flags",
-  ":safestack_flags",
   ":tsan_flags",
   ":ubsan_flags",
   ":ubsan_no_recover",

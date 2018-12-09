@@ -18,22 +18,29 @@ import static org.chromium.chrome.test.util.ViewUtils.waitForView;
 import static org.chromium.ui.base.LocalizationUtils.setRtlForTesting;
 
 import android.app.Activity;
+import android.support.annotation.Nullable;
 import android.support.design.widget.TabLayout;
 import android.support.test.espresso.PerformException;
 import android.support.test.espresso.UiController;
 import android.support.test.espresso.ViewAction;
 import android.support.test.espresso.ViewInteraction;
+import android.support.v7.widget.RecyclerView;
 import android.view.View;
 import android.view.ViewGroup;
 
 import org.hamcrest.Matcher;
 import org.junit.Assert;
 
+import org.chromium.base.Callback;
 import org.chromium.base.ThreadUtils;
 import org.chromium.base.test.util.UrlUtils;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.ChromeTabbedActivity;
 import org.chromium.chrome.browser.ChromeWindow;
+import org.chromium.chrome.browser.autofill.keyboard_accessory.KeyboardAccessoryData.AccessorySheetData;
+import org.chromium.chrome.browser.autofill.keyboard_accessory.KeyboardAccessoryData.FooterCommand;
+import org.chromium.chrome.browser.autofill.keyboard_accessory.KeyboardAccessoryData.Provider;
+import org.chromium.chrome.browser.autofill.keyboard_accessory.KeyboardAccessoryData.UserInfo;
 import org.chromium.chrome.test.ChromeTabbedActivityTestRule;
 import org.chromium.content_public.browser.ImeAdapter;
 import org.chromium.content_public.browser.WebContents;
@@ -54,6 +61,8 @@ public class ManualFillingTestHelper {
     private final ChromeTabbedActivityTestRule mActivityTestRule;
     private final AtomicReference<WebContents> mWebContentsRef = new AtomicReference<>();
     private TestInputMethodManagerWrapper mInputMethodManagerWrapper;
+    private Provider<AccessorySheetData> mSheetSuggestionsProvider =
+            new KeyboardAccessoryData.PropertyProvider<>();
 
     public FakeKeyboard getKeyboard() {
         return (FakeKeyboard) mActivityTestRule.getKeyboardDelegate();
@@ -76,7 +85,7 @@ public class ManualFillingTestHelper {
                 + "</form></body></html>"));
         setRtlForTesting(isRtl);
         ThreadUtils.runOnUiThreadBlocking(() -> {
-            ChromeTabbedActivity activity = (ChromeTabbedActivity) mActivityTestRule.getActivity();
+            ChromeTabbedActivity activity = mActivityTestRule.getActivity();
             mWebContentsRef.set(activity.getActivityTab().getWebContents());
             activity.getManualFillingController()
                     .getMediatorForTesting()
@@ -89,8 +98,11 @@ public class ManualFillingTestHelper {
             final ImeAdapter imeAdapter = ImeAdapter.fromWebContents(mWebContentsRef.get());
             mInputMethodManagerWrapper = TestInputMethodManagerWrapper.create(imeAdapter);
             imeAdapter.setInputMethodManagerWrapper(mInputMethodManagerWrapper);
+            activity.getManualFillingController().registerPasswordProvider(
+                    mSheetSuggestionsProvider);
         });
         DOMUtils.waitForNonZeroNodeBounds(mWebContentsRef.get(), "password");
+        sendCredentials(createEmptyCredentials());
     }
 
     public void clear() {
@@ -175,15 +187,9 @@ public class ManualFillingTestHelper {
     /**
      * Creates and adds a password tab to keyboard accessory and sheet.
      */
-    public void createTestTab() {
-        KeyboardAccessoryData.Provider<KeyboardAccessoryData.Item> provider =
-                new KeyboardAccessoryData.PropertyProvider<>();
-        mActivityTestRule.getActivity().getManualFillingController().registerPasswordProvider(
-                provider);
-        provider.notifyObservers(new KeyboardAccessoryData.Item[] {
-                KeyboardAccessoryData.Item.createSuggestion("TestName", "", false, null, null),
-                KeyboardAccessoryData.Item.createSuggestion(
-                        "TestPassword", "", false, (item) -> {}, null)});
+    public void sendCredentials(AccessorySheetData testCrendentials) {
+        ThreadUtils.runOnUiThreadBlocking(
+                () -> { mSheetSuggestionsProvider.notifyObservers(testCrendentials); });
     }
 
     /**
@@ -212,6 +218,36 @@ public class ManualFillingTestHelper {
                             .build();
                 }
                 ThreadUtils.runOnUiThread(() -> tabLayout.getTabAt(tabIndex).select());
+            }
+        };
+    }
+
+    /**
+     * Use in a |onView().perform| action to scroll to the end of a {@link RecyclerView}.
+     * @return The action executed by |perform|.
+     */
+    static public ViewAction scrollToLastElement() {
+        return new ViewAction() {
+            @Override
+            public Matcher<View> getConstraints() {
+                return allOf(isDisplayed(), isAssignableFrom(RecyclerView.class));
+            }
+
+            @Override
+            public String getDescription() {
+                return "scrolling to end of view";
+            }
+
+            @Override
+            public void perform(UiController uiController, View view) {
+                RecyclerView recyclerView = (RecyclerView) view;
+                int itemCount = recyclerView.getAdapter().getItemCount();
+                if (itemCount <= 0) {
+                    throw new PerformException.Builder()
+                            .withCause(new Throwable("RecyclerView has no items."))
+                            .build();
+                }
+                recyclerView.scrollToPosition(itemCount - 1);
             }
         };
     }
@@ -257,5 +293,64 @@ public class ManualFillingTestHelper {
                     .getMediatorForTesting()
                     .hide();
         });
+    }
+
+    public void addGenerationButton() {
+        KeyboardAccessoryData
+                .PropertyProvider<KeyboardAccessoryData.Action[]> generationActionProvider =
+                new KeyboardAccessoryData.PropertyProvider<>(
+                        AccessoryAction.GENERATE_PASSWORD_AUTOMATIC);
+        mActivityTestRule.getActivity().getManualFillingController().registerActionProvider(
+                generationActionProvider);
+        generationActionProvider.notifyObservers(new KeyboardAccessoryData.Action[] {
+                new KeyboardAccessoryData.Action("Generate Password",
+                        AccessoryAction.GENERATE_PASSWORD_AUTOMATIC, result -> {})});
+    }
+
+    public void addAutofillChips() {
+        KeyboardAccessoryData.PropertyProvider<KeyboardAccessoryData.Action[]> suggestionProvider =
+                new KeyboardAccessoryData.PropertyProvider<>(AccessoryAction.AUTOFILL_SUGGESTION);
+        mActivityTestRule.getActivity().getManualFillingController().registerActionProvider(
+                suggestionProvider);
+        ThreadUtils.runOnUiThreadBlocking(() -> {
+            suggestionProvider.notifyObservers(new KeyboardAccessoryData.Action[] {
+                    new KeyboardAccessoryData.Action(
+                            "Jonathan", AccessoryAction.AUTOFILL_SUGGESTION, result -> {}),
+                    new KeyboardAccessoryData.Action(
+                            "Jane", AccessoryAction.AUTOFILL_SUGGESTION, result -> {}),
+                    new KeyboardAccessoryData.Action(
+                            "Marcus", AccessoryAction.AUTOFILL_SUGGESTION, result -> {})});
+        });
+    }
+
+    public static AccessorySheetData createTestCredentials() {
+        AccessorySheetData testCredentials =
+                new AccessorySheetData("Saved passwords for this site");
+        testCredentials.getUserInfoList().add(createUserInfo("mpark@gmail.com", "TestPassword"));
+        testCredentials.getUserInfoList().add(
+                createUserInfo("mayapark@googlemail.com", "SomeReallyLongPassword"));
+        testCredentials.getFooterCommands().add(
+                new FooterCommand("Manage Passwords...", (item) -> {}));
+        return testCredentials;
+    }
+
+    public static AccessorySheetData createEmptyCredentials() {
+        AccessorySheetData testCredentials =
+                new AccessorySheetData("No Saved passwords for this site");
+        testCredentials.getFooterCommands().add(
+                new FooterCommand("Manage Passwords...", (item) -> {}));
+        return testCredentials;
+    }
+
+    public static UserInfo createUserInfo(String username, String password) {
+        return createUserInfo(username, password, null);
+    }
+
+    public static UserInfo createUserInfo(
+            String username, String password, @Nullable Callback<UserInfo.Field> userCallback) {
+        UserInfo info = new UserInfo(null);
+        info.addField(new UserInfo.Field(username, username, false, userCallback));
+        info.addField(new UserInfo.Field(password, "Password for " + username, true, result -> {}));
+        return info;
     }
 }

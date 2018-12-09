@@ -21,7 +21,7 @@ void SharedWorkerFactoryImpl::Create(
 SharedWorkerFactoryImpl::SharedWorkerFactoryImpl() {}
 
 void SharedWorkerFactoryImpl::CreateSharedWorker(
-    mojom::SharedWorkerInfoPtr info,
+    blink::mojom::SharedWorkerInfoPtr info,
     bool pause_on_start,
     const base::UnguessableToken& devtools_worker_token,
     const RendererPreferences& renderer_preferences,
@@ -32,10 +32,10 @@ void SharedWorkerFactoryImpl::CreateSharedWorker(
     int appcache_host_id,
     network::mojom::URLLoaderFactoryAssociatedPtrInfo
         main_script_loader_factory,
-    blink::mojom::SharedWorkerMainScriptLoadParamsPtr main_script_load_params,
+    blink::mojom::WorkerMainScriptLoadParamsPtr main_script_load_params,
     std::unique_ptr<URLLoaderFactoryBundleInfo> subresource_loader_factories,
-    mojom::ControllerServiceWorkerInfoPtr controller_info,
-    mojom::SharedWorkerHostPtr host,
+    blink::mojom::ControllerServiceWorkerInfoPtr controller_info,
+    blink::mojom::SharedWorkerHostPtr host,
     mojom::SharedWorkerRequest request,
     service_manager::mojom::InterfaceProviderPtr interface_provider) {
   // Bound to the lifetime of the underlying blink::WebSharedWorker instance.

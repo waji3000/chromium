@@ -4,6 +4,10 @@
 
 #include "chrome/browser/ui/views/frame/opaque_browser_frame_view_layout.h"
 
+#include <memory>
+#include <utility>
+#include <vector>
+
 #include "base/command_line.h"
 #include "base/macros.h"
 #include "base/strings/utf_string_conversions.h"
@@ -92,7 +96,6 @@ class OpaqueBrowserFrameViewLayoutTest : public ChromeViewsTestBase {
     delegate_.reset(new TestLayoutDelegate);
     auto layout = std::make_unique<OpaqueBrowserFrameViewLayout>();
     layout->set_delegate(delegate_.get());
-    layout->set_extra_caption_y(0);
     layout->set_forced_window_caption_spacing_for_test(0);
     widget_ = new views::Widget;
     widget_->Init(CreateParams(views::Widget::InitParams::TYPE_POPUP));
@@ -172,7 +175,7 @@ class OpaqueBrowserFrameViewLayoutTest : public ChromeViewsTestBase {
     const int unavailable_px_at_top =
         delegate_->IsMaximized()
             ? 0
-            : OpaqueBrowserFrameViewLayout::kTitlebarTopEdgeThickness;
+            : OpaqueBrowserFrameViewLayout::kTopFrameEdgeThickness;
     return (unavailable_px_at_top + CaptionY() + kCaptionButtonHeight +
             OpaqueBrowserFrameViewLayout::kCaptionButtonBottomPadding -
             delegate_->GetIconSize()) /
@@ -266,7 +269,7 @@ class OpaqueBrowserFrameViewLayoutTest : public ChromeViewsTestBase {
     gfx::Size browser_view_min_size(delegate_->GetBrowserViewMinimumSize());
     const int min_width =
         browser_view_min_size.width() + tabstrip_min_size.width() + spacing;
-    gfx::Size min_size(layout_manager_->GetMinimumSize(kWindowWidth));
+    gfx::Size min_size(layout_manager_->GetMinimumSize(root_view_));
     EXPECT_EQ(min_width, min_size.width());
     int restored_border_height =
         2 * OpaqueBrowserFrameViewLayout::kFrameBorderThickness +
@@ -341,18 +344,6 @@ TEST_F(OpaqueBrowserFrameViewLayoutTest, BasicWindow) {
     ExpectWindowIcon(false);
     delegate_->set_maximized(true);
   }
-}
-
-TEST_F(OpaqueBrowserFrameViewLayoutTest, MaximizedWithYOffset) {
-  // Tests the layout of a basic chrome window with the caption buttons slightly
-  // offset from the top of the screen (as they are on Linux).
-  layout_manager_->set_extra_caption_y(2);
-  delegate_->set_maximized(true);
-  root_view_->Layout();
-
-  ExpectCaptionButtons(false, 2);
-  ExpectTabStripAndMinimumSize(false);
-  ExpectWindowIcon(false);
 }
 
 TEST_F(OpaqueBrowserFrameViewLayoutTest, WindowButtonsOnLeft) {

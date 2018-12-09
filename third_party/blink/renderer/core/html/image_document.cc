@@ -62,13 +62,16 @@ using namespace html_names;
 class ImageEventListener : public EventListener {
  public:
   static ImageEventListener* Create(ImageDocument* document) {
-    return new ImageEventListener(document);
+    return MakeGarbageCollected<ImageEventListener>(document);
   }
   static const ImageEventListener* Cast(const EventListener* listener) {
     return listener->GetType() == kImageEventListenerType
                ? static_cast<const ImageEventListener*>(listener)
                : nullptr;
   }
+
+  ImageEventListener(ImageDocument* document)
+      : EventListener(kImageEventListenerType), doc_(document) {}
 
   bool operator==(const EventListener& other) const override;
 
@@ -78,10 +81,7 @@ class ImageEventListener : public EventListener {
   }
 
  private:
-  ImageEventListener(ImageDocument* document)
-      : EventListener(kImageEventListenerType), doc_(document) {}
-
-  void handleEvent(ExecutionContext*, Event*) override;
+  void Invoke(ExecutionContext*, Event*) override;
 
   Member<ImageDocument> doc_;
 };
@@ -89,17 +89,17 @@ class ImageEventListener : public EventListener {
 class ImageDocumentParser : public RawDataDocumentParser {
  public:
   static ImageDocumentParser* Create(ImageDocument* document) {
-    return new ImageDocumentParser(document);
+    return MakeGarbageCollected<ImageDocumentParser>(document);
   }
+
+  ImageDocumentParser(ImageDocument* document)
+      : RawDataDocumentParser(document) {}
 
   ImageDocument* GetDocument() const {
     return ToImageDocument(RawDataDocumentParser::GetDocument());
   }
 
  private:
-  ImageDocumentParser(ImageDocument* document)
-      : RawDataDocumentParser(document) {}
-
   void AppendBytes(const char*, size_t) override;
   void Finish() override;
 };
@@ -562,7 +562,7 @@ void ImageDocument::Trace(blink::Visitor* visitor) {
 
 // --------
 
-void ImageEventListener::handleEvent(ExecutionContext*, Event* event) {
+void ImageEventListener::Invoke(ExecutionContext*, Event* event) {
   if (event->type() == event_type_names::kResize) {
     doc_->WindowSizeChanged();
   } else if (event->type() == event_type_names::kClick &&

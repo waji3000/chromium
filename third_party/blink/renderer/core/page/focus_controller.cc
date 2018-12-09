@@ -26,6 +26,8 @@
 
 #include "third_party/blink/renderer/core/page/focus_controller.h"
 
+#include <limits>
+
 #include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
 #include "third_party/blink/renderer/core/dom/container_node.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -57,8 +59,6 @@
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/page/slot_scoped_traversal.h"
 #include "third_party/blink/renderer/core/page/spatial_navigation.h"
-
-#include <limits>
 
 namespace blink {
 
@@ -232,17 +232,19 @@ ScopedFocusNavigation::ScopedFocusNavigation(
     : current_(current) {
   if (HTMLSlotElement* slot = ToHTMLSlotElementOrNull(scoping_root_node)) {
     if (slot->AssignedNodes().IsEmpty()) {
-      navigation_ = new FocusNavigation(scoping_root_node, *slot, owner_map);
+      navigation_ = MakeGarbageCollected<FocusNavigation>(scoping_root_node,
+                                                          *slot, owner_map);
     } else {
       // Here, slot->AssignedNodes() are non null, so the slot must be inside
       // the shadow tree.
       DCHECK(scoping_root_node.ContainingShadowRoot());
-      navigation_ =
-          new FocusNavigation(scoping_root_node.ContainingShadowRoot()->host(),
-                              ToHTMLSlotElement(scoping_root_node), owner_map);
+      navigation_ = MakeGarbageCollected<FocusNavigation>(
+          scoping_root_node.ContainingShadowRoot()->host(),
+          ToHTMLSlotElement(scoping_root_node), owner_map);
     }
   } else {
-    navigation_ = new FocusNavigation(scoping_root_node, owner_map);
+    navigation_ =
+        MakeGarbageCollected<FocusNavigation>(scoping_root_node, owner_map);
   }
   DCHECK(navigation_);
 }
@@ -767,7 +769,7 @@ FocusController::FocusController(Page* page)
       is_emulating_focus_(false) {}
 
 FocusController* FocusController::Create(Page* page) {
-  return new FocusController(page);
+  return MakeGarbageCollected<FocusController>(page);
 }
 
 void FocusController::SetFocusedFrame(Frame* frame, bool notify_embedder) {
@@ -843,10 +845,7 @@ void FocusController::FocusDocumentView(Frame* frame, bool notify_embedder) {
 }
 
 LocalFrame* FocusController::FocusedFrame() const {
-  // TODO(alexmos): Strengthen this to DCHECK that whoever called this really
-  // expected a LocalFrame. Refactor call sites so that the rare cases that
-  // need to know about focused RemoteFrames use a separate accessor (to be
-  // added).
+  // All callsites only care about *local* focused frames.
   if (focused_frame_ && focused_frame_->IsRemoteFrame())
     return nullptr;
   return ToLocalFrame(focused_frame_.Get());
@@ -856,9 +855,10 @@ Frame* FocusController::FocusedOrMainFrame() const {
   if (LocalFrame* frame = FocusedFrame())
     return frame;
 
-  // FIXME: This is a temporary hack to ensure that we return a LocalFrame, even
-  // when the mainFrame is remote.  FocusController needs to be refactored to
-  // deal with RemoteFrames cross-process focus transfers.
+  // TODO(dcheng, alexmos): https://crbug.com/820786: This is a temporary hack
+  // to ensure that we return a LocalFrame, even when the mainFrame is remote.
+  // FocusController needs to be refactored to deal with RemoteFrames
+  // cross-process focus transfers.
   for (Frame* frame = &page_->MainFrame()->Tree().Top(); frame;
        frame = frame->Tree().TraverseNext()) {
     if (frame->IsLocalFrame() && ToLocalFrame(frame)->IsLocalRoot())
@@ -866,6 +866,11 @@ Frame* FocusController::FocusedOrMainFrame() const {
   }
 
   return page_->MainFrame();
+}
+
+void FocusController::FrameDetached(Frame* detached_frame) {
+  if (detached_frame == focused_frame_)
+    SetFocusedFrame(nullptr);
 }
 
 HTMLFrameOwnerElement* FocusController::FocusedFrameOwnerElement(
@@ -1226,7 +1231,6 @@ bool FocusController::SetFocusedElement(Element* element,
       new_document->FocusedElement() == element)
     return true;
 
-
   if (old_document && old_document != new_document)
     old_document->ClearFocusedElement();
 
@@ -1285,16 +1289,13 @@ static void UpdateFocusCandidateIfNeeded(WebFocusType direction,
        candidate.rect_in_root_frame.IsEmpty()))
     return;
 
-  // Ignore off screen child nodes of containers that do not scroll
-  // (overflow:hidden)
-  if (candidate.is_offscreen && !CanBeScrolledIntoView(direction, candidate))
+  // Ignore off-screen focusables that are not exposed after one "scroll step"
+  // in the direction.
+  if (candidate.is_offscreen && candidate.is_offscreen_after_scrolling)
     return;
 
   DistanceDataForNode(direction, current, candidate);
   if (candidate.distance == MaxDistance())
-    return;
-
-  if (candidate.is_offscreen_after_scrolling)
     return;
 
   if (closest.IsNull()) {
@@ -1460,20 +1461,34 @@ bool FocusController::AdvanceFocusDirectionally(WebFocusType direction) {
   Document* focused_document = current_frame->GetDocument();
   if (!focused_document)
     return false;
+  focused_document->UpdateStyleAndLayoutIgnorePendingStylesheets();
 
-  Element* focused_element = focused_document->FocusedElement();
+  Node* focused_element = focused_document->FocusedElement();
+  if (!focused_element)  // An iframe's document is focused.
+    focused_element = focused_document;
+
   Node* container = focused_document;
-  if (auto* document = DynamicTo<Document>(container))
-    document->UpdateStyleAndLayoutIgnorePendingStylesheets();
   if (focused_element)
     container = ScrollableAreaOrDocumentOf(focused_element);
 
   const LayoutRect visible_rect = RootViewport(current_frame);
   const LayoutRect start_box =
       SearchOrigin(visible_rect, focused_element, direction);
-
   bool consumed = false;
   Node* pruned_sub_tree_root = nullptr;
+
+  if (IsScrollableAreaOrDocument(focused_element) &&
+      !IsOffscreen(focused_element)) {
+    // A visible scroller is focused. Search inside of it from one of its edges.
+    LayoutRect edge = OppositeEdge(direction, start_box);
+    consumed = AdvanceFocusDirectionallyInContainer(focused_element, edge,
+                                                    direction, nullptr);
+    if (consumed)
+      return true;
+    // The scroller had nothing. Let's search outside of it.
+    pruned_sub_tree_root = focused_element;
+  }
+
   while (container) {
     consumed = AdvanceFocusDirectionallyInContainer(
         container, start_box, direction, pruned_sub_tree_root);

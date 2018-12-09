@@ -130,9 +130,8 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   gfx::Rect GetBoundsInPixels() const override;
   void SetBoundsInPixels(
       const gfx::Rect& bounds,
-      const viz::LocalSurfaceId& local_surface_id = viz::LocalSurfaceId(),
-      base::TimeTicks local_surface_id_allocation_time =
-          base::TimeTicks()) override;
+      const viz::LocalSurfaceIdAllocation& local_surface_id_allocation =
+          viz::LocalSurfaceIdAllocation()) override;
   gfx::Point GetLocationOnScreenInPixels() const override;
   void SetCapture() override;
   void ReleaseCapture() override;
@@ -197,6 +196,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   void HandleWorkAreaChanged() override;
   void HandleVisibilityChanging(bool visible) override;
   void HandleVisibilityChanged(bool visible) override;
+  void HandleWindowMinimizedOrRestored(bool restored) override;
   void HandleClientSizeChanged(const gfx::Size& new_size) override;
   void HandleFrameChanged() override;
   void HandleNativeFocus(HWND last_focused_window) override;

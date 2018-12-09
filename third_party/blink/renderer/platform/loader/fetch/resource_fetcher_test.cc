@@ -35,7 +35,7 @@
 #include "build/build_config.h"
 #include "services/network/public/mojom/request_context_frame_type.mojom-shared.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
+#include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-shared.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_url_loader.h"
 #include "third_party/blink/public/platform/web_url_loader_mock_factory.h"
@@ -362,7 +362,8 @@ TEST_F(ResourceFetcherTest, RevalidateWhileFinishingLoading) {
   request1.SetHTTPHeaderField(http_names::kCacheControl, "no-cache");
   FetchParameters fetch_params1(request1);
   Persistent<RequestSameResourceOnComplete> client =
-      new RequestSameResourceOnComplete(fetch_params1, fetcher1);
+      MakeGarbageCollected<RequestSameResourceOnComplete>(fetch_params1,
+                                                          fetcher1);
   platform_->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
   EXPECT_TRUE(client->NotifyFinishedCalled());
 }
@@ -446,7 +447,7 @@ TEST_F(ResourceFetcherTest, ResponseOnCancel) {
   resource_request.SetRequestContext(mojom::RequestContextType::INTERNAL);
   FetchParameters fetch_params(resource_request);
   Persistent<ServeRequestsOnCompleteClient> client =
-      new ServeRequestsOnCompleteClient();
+      MakeGarbageCollected<ServeRequestsOnCompleteClient>();
   Resource* resource = RawResource::Fetch(fetch_params, fetcher, client);
   resource->Loader()->Cancel();
 }
@@ -462,7 +463,7 @@ class ScopedMockRedirectRequester {
   void RegisterRedirect(const WebString& from_url, const WebString& to_url) {
     KURL redirect_url(from_url);
     WebURLResponse redirect_response;
-    redirect_response.SetURL(redirect_url);
+    redirect_response.SetCurrentRequestUrl(redirect_url);
     redirect_response.SetHTTPStatusCode(301);
     redirect_response.SetHTTPHeaderField(http_names::kLocation, to_url);
     redirect_response.SetEncodedDataLength(kRedirectResponseOverheadBytes);
@@ -605,7 +606,8 @@ TEST_F(ResourceFetcherTest, LinkPreloadResourceAndUse) {
 
   // Resource created by parser
   FetchParameters fetch_params{ResourceRequest(url)};
-  Persistent<MockResourceClient> client = new MockResourceClient;
+  Persistent<MockResourceClient> client =
+      MakeGarbageCollected<MockResourceClient>();
   Resource* new_resource = MockResource::Fetch(fetch_params, fetcher, client);
   EXPECT_EQ(resource, new_resource);
   EXPECT_FALSE(resource->IsLinkPreload());
@@ -810,7 +812,8 @@ TEST_F(ResourceFetcherTest, LinkPreloadResourceMultipleFetchersAndMove) {
 
   // Resource created by parser on the second fetcher
   FetchParameters fetch_params2{ResourceRequest(url)};
-  Persistent<MockResourceClient> client2 = new MockResourceClient;
+  Persistent<MockResourceClient> client2 =
+      MakeGarbageCollected<MockResourceClient>();
   Resource* new_resource2 =
       MockResource::Fetch(fetch_params2, fetcher2, client2);
   EXPECT_NE(resource, new_resource2);

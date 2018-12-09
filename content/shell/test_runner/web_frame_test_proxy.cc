@@ -246,14 +246,10 @@ void WebFrameTestProxy::DidReceiveResponse(
   RenderFrameImpl::DidReceiveResponse(response);
 }
 
-blink::WebNavigationPolicy WebFrameTestProxy::DecidePolicyForNavigation(
-    const blink::WebLocalFrameClient::NavigationPolicyInfo& info) {
-  blink::WebNavigationPolicy policy =
-      test_client_->DecidePolicyForNavigation(info);
-  if (policy == blink::kWebNavigationPolicyIgnore)
-    return policy;
-
-  return RenderFrameImpl::DecidePolicyForNavigation(info);
+void WebFrameTestProxy::BeginNavigation(
+    std::unique_ptr<blink::WebNavigationInfo> info) {
+  if (test_client_->ShouldContinueNavigation(*info))
+    RenderFrameImpl::BeginNavigation(std::move(info));
 }
 
 void WebFrameTestProxy::PostAccessibilityEvent(const blink::WebAXObject& object,
@@ -288,12 +284,6 @@ void WebFrameTestProxy::CheckIfAudioSinkExistsAndIsAuthorized(
 void WebFrameTestProxy::DidClearWindowObject() {
   test_client_->DidClearWindowObject();
   RenderFrameImpl::DidClearWindowObject();
-}
-
-bool WebFrameTestProxy::RunFileChooser(
-    const blink::WebFileChooserParams& params,
-    blink::WebFileChooserCompletion* completion) {
-  return test_client_->RunFileChooser(params, completion);
 }
 
 }  // namespace test_runner

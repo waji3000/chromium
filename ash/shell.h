@@ -103,6 +103,7 @@ class BluetoothPowerController;
 class BrightnessControlDelegate;
 class CastConfigController;
 class DisplayOutputProtection;
+class ContainedShellController;
 class CrosDisplayConfig;
 class DetachableBaseHandler;
 class DetachableBaseNotificationController;
@@ -125,12 +126,11 @@ class HighlighterController;
 class ImeController;
 class ImeFocusHandler;
 class ImmersiveContext;
-class ImmersiveHandlerFactoryAsh;
 class KeyAccessibilityEnabler;
 class KeyboardBrightnessControlDelegate;
 class AshKeyboardController;
 class LaserPointerController;
-class LocaleNotificationController;
+class LocaleUpdateController;
 class LockStateController;
 class LogoutConfirmationController;
 class LoginScreenController;
@@ -178,7 +178,6 @@ class StickyKeysController;
 class SystemGestureEventFilter;
 class SystemModalContainerEventFilter;
 class SystemNotificationController;
-class SystemTray;
 class SystemTrayModel;
 class SystemTrayNotifier;
 class TimeToFirstPresentRecorder;
@@ -359,6 +358,9 @@ class ASH_EXPORT Shell : public SessionObserver,
   }
   CastConfigController* cast_config() { return cast_config_.get(); }
   service_manager::Connector* connector() { return connector_; }
+  ContainedShellController* contained_shell_controller() {
+    return contained_shell_controller_.get();
+  }
   CrosDisplayConfig* cros_display_config() {
     return cros_display_config_.get();
   }
@@ -420,8 +422,8 @@ class ASH_EXPORT Shell : public SessionObserver,
   LaserPointerController* laser_pointer_controller() {
     return laser_pointer_controller_.get();
   }
-  LocaleNotificationController* locale_notification_controller() {
-    return locale_notification_controller_.get();
+  LocaleUpdateController* locale_update_controller() {
+    return locale_update_controller_.get();
   }
   LoginScreenController* login_screen_controller() {
     return login_screen_controller_.get();
@@ -564,9 +566,6 @@ class ASH_EXPORT Shell : public SessionObserver,
 
   // Does the primary display have status area?
   bool HasPrimaryStatusArea();
-
-  // Returns the system tray on primary display.
-  SystemTray* GetPrimarySystemTray();
 
   // Starts the animation that occurs on first login.
   void DoInitialWorkspaceAnimation();
@@ -725,6 +724,7 @@ class ASH_EXPORT Shell : public SessionObserver,
   std::unique_ptr<CastConfigController> cast_config_;
   std::unique_ptr<CrosDisplayConfig> cros_display_config_;
   service_manager::Connector* const connector_;
+  std::unique_ptr<ContainedShellController> contained_shell_controller_;
   std::unique_ptr<DetachableBaseHandler> detachable_base_handler_;
   std::unique_ptr<DetachableBaseNotificationController>
       detachable_base_notification_controller_;
@@ -737,7 +737,7 @@ class ASH_EXPORT Shell : public SessionObserver,
   std::unique_ptr<ImmersiveContext> immersive_context_;
   std::unique_ptr<KeyboardBrightnessControlDelegate>
       keyboard_brightness_control_delegate_;
-  std::unique_ptr<LocaleNotificationController> locale_notification_controller_;
+  std::unique_ptr<LocaleUpdateController> locale_update_controller_;
   std::unique_ptr<LoginScreenController> login_screen_controller_;
   std::unique_ptr<LogoutConfirmationController> logout_confirmation_controller_;
   std::unique_ptr<TabletModeController> tablet_mode_controller_;
@@ -878,8 +878,6 @@ class ASH_EXPORT Shell : public SessionObserver,
 
   // For testing only: simulate that a modal window is open
   bool simulate_modal_window_open_for_test_ = false;
-
-  std::unique_ptr<ImmersiveHandlerFactoryAsh> immersive_handler_factory_;
 
   std::unique_ptr<MessageCenterController> message_center_controller_;
 

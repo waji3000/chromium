@@ -15,13 +15,12 @@
 #include "content/browser/background_fetch/background_fetch_request_match_params.h"
 #include "content/browser/bad_message.h"
 #include "content/browser/storage_partition_impl.h"
-#include "content/common/service_worker/service_worker_type_converter.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
-#include "third_party/blink/public/platform/modules/fetch/fetch_api_request.mojom.h"
+#include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom.h"
 
 namespace content {
 
@@ -107,22 +106,16 @@ void BackgroundFetchServiceImpl::Fetch(
     int64_t service_worker_registration_id,
     const std::string& developer_id,
     std::vector<blink::mojom::FetchAPIRequestPtr> requests,
-    const BackgroundFetchOptions& options,
+    blink::mojom::BackgroundFetchOptionsPtr options,
     const SkBitmap& icon,
     blink::mojom::BackgroundFetchUkmDataPtr ukm_data,
     FetchCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  std::vector<ServiceWorkerFetchRequest> request_;
-  for (const auto& request : requests) {
-    request_.push_back(
-        mojo::ConvertTo<content::ServiceWorkerFetchRequest>(request));
-  }
-  if (!ValidateDeveloperId(developer_id) || !ValidateRequests(request_)) {
+
+  if (!ValidateDeveloperId(developer_id) || !ValidateRequests(requests)) {
     std::move(callback).Run(
         blink::mojom::BackgroundFetchError::INVALID_ARGUMENT,
         base::nullopt /* registration */);
-    background_fetch::RecordRegistrationCreatedError(
-        blink::mojom::BackgroundFetchError::INVALID_ARGUMENT);
     return;
   }
 
@@ -133,8 +126,8 @@ void BackgroundFetchServiceImpl::Fetch(
                                                 base::GenerateGUID());
 
   background_fetch_context_->StartFetch(
-      registration_id, request_, options, icon, std::move(ukm_data),
-      render_frame_host_, std::move(callback));
+      registration_id, std::move(requests), std::move(options), icon,
+      std::move(ukm_data), render_frame_host_, std::move(callback));
 }
 
 void BackgroundFetchServiceImpl::GetIconDisplaySize(
@@ -155,16 +148,9 @@ void BackgroundFetchServiceImpl::MatchRequests(
   BackgroundFetchRegistrationId registration_id(
       service_worker_registration_id, origin_, developer_id, unique_id);
 
-  base::Optional<ServiceWorkerFetchRequest> request_to_match_opt;
-  if (request_to_match.is_null()) {
-    request_to_match_opt = base::nullopt;
-  } else {
-    request_to_match_opt =
-        mojo::ConvertTo<ServiceWorkerFetchRequest>(request_to_match);
-  }
   // Create BackgroundFetchMatchRequestParams.
   auto match_params = std::make_unique<BackgroundFetchRequestMatchParams>(
-      request_to_match_opt, std::move(cache_query_params), match_all);
+      std::move(request_to_match), std::move(cache_query_params), match_all);
 
   background_fetch_context_->MatchRequests(
       registration_id, std::move(match_params), std::move(callback));
@@ -270,7 +256,7 @@ bool BackgroundFetchServiceImpl::ValidateUniqueId(
 }
 
 bool BackgroundFetchServiceImpl::ValidateRequests(
-    const std::vector<ServiceWorkerFetchRequest>& requests) {
+    const std::vector<blink::mojom::FetchAPIRequestPtr>& requests) {
   if (requests.empty()) {
     mojo::ReportBadMessage("Invalid requests");
     return false;

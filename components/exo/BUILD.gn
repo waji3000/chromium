@@ -2,8 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//chrome/common/features.gni")
 import("//build/config/ui.gni")
+import("//chrome/common/features.gni")
 import("//testing/test.gni")
 
 source_set("exo") {
@@ -33,6 +33,8 @@ source_set("exo") {
     "seat_observer.h",
     "shared_memory.cc",
     "shared_memory.h",
+    "shell_surface_util.cc",
+    "shell_surface_util.h",
     "sub_surface.cc",
     "sub_surface.h",
     "surface.cc",
@@ -82,6 +84,7 @@ source_set("exo") {
       "//ash/public/cpp",
       "//chromeos",
       "//ui/keyboard",
+      "//ui/keyboard:mojom",
     ]
     sources += [
       "client_controlled_shell_surface.cc",
@@ -107,8 +110,17 @@ source_set("exo") {
       "shell_surface_base.h",
       "text_input.cc",
       "text_input.h",
+      "wm_helper_chromeos.cc",
+      "wm_helper_chromeos.h",
       "xdg_shell_surface.cc",
       "xdg_shell_surface.h",
+    ]
+  }
+
+  if (is_chromecast) {
+    sources += [
+      "fullscreen_shell_surface.cc",
+      "fullscreen_shell_surface.h",
     ]
   }
 }
@@ -117,12 +129,8 @@ source_set("test_support") {
   testonly = true
 
   sources = [
-    "test/exo_test_base.cc",
-    "test/exo_test_base.h",
-    "test/exo_test_helper.cc",
-    "test/exo_test_helper.h",
-    "test/test_client_controlled_state_delegate.cc",
-    "test/test_client_controlled_state_delegate.h",
+    "test/exo_test_base_aura.cc",
+    "test/exo_test_base_aura.h",
   ]
 
   deps = [
@@ -132,13 +140,24 @@ source_set("test_support") {
     "//skia",
     "//testing/gtest",
     "//ui/aura",
+    "//ui/aura:test_support",
     "//ui/compositor",
+    "//ui/compositor:test_support",
+    "//ui/display/manager",
     "//ui/gfx/geometry",
     "//ui/views",
     "//ui/wm",
   ]
 
   if (is_chromeos) {
+    sources += [
+      "test/exo_test_base.cc",
+      "test/exo_test_base.h",
+      "test/exo_test_helper.cc",
+      "test/exo_test_helper.h",
+      "test/test_client_controlled_state_delegate.cc",
+      "test/test_client_controlled_state_delegate.h",
+    ]
     deps += [
       "//ash:test_support_without_content",
       "//ash/public/cpp",
@@ -148,27 +167,6 @@ source_set("test_support") {
 
 source_set("unit_tests") {
   testonly = true
-
-  sources = [
-    "../../ui/events/ozone/gamepad/gamepad_event.cc",
-    "buffer_unittest.cc",
-    "client_controlled_shell_surface_unittest.cc",
-    "data_device_unittest.cc",
-    "data_offer_unittest.cc",
-    "data_source_unittest.cc",
-    "display_unittest.cc",
-    "gaming_seat_unittest.cc",
-    "keyboard_unittest.cc",
-    "notification_unittest.cc",
-    "pointer_unittest.cc",
-    "seat_unittest.cc",
-    "shared_memory_unittest.cc",
-    "shell_surface_unittest.cc",
-    "sub_surface_unittest.cc",
-    "surface_unittest.cc",
-    "text_input_unittest.cc",
-    "touch_unittest.cc",
-  ]
 
   deps = [
     ":exo",
@@ -202,11 +200,38 @@ source_set("unit_tests") {
   }
 
   if (is_chromeos) {
+    sources = [
+      "../../ui/events/ozone/gamepad/gamepad_event.cc",
+      "buffer_unittest.cc",
+      "client_controlled_shell_surface_unittest.cc",
+      "data_device_unittest.cc",
+      "data_offer_unittest.cc",
+      "data_source_unittest.cc",
+      "display_unittest.cc",
+      "gaming_seat_unittest.cc",
+      "keyboard_unittest.cc",
+      "notification_unittest.cc",
+      "pointer_unittest.cc",
+      "seat_unittest.cc",
+      "shared_memory_unittest.cc",
+      "shell_surface_unittest.cc",
+      "sub_surface_unittest.cc",
+      "surface_unittest.cc",
+      "text_input_unittest.cc",
+      "touch_unittest.cc",
+    ]
+
     deps += [
       "//ash",
       "//ash:test_support_without_content",
       "//ash/public/cpp",
       "//ui/keyboard",
+    ]
+  }
+
+  if (is_chromecast) {
+    sources = [
+      "fullscreen_shell_surface_unittest.cc",
     ]
   }
 }
@@ -233,9 +258,7 @@ test("exo_unittests") {
     "//ui/gl:test_support",
   ]
 
-  data_deps = [
-    "//testing/buildbot/filters:exo_unittests_filters",
-  ]
+  data_deps = []
 
   if (is_linux) {
     deps += [ "//components/exo/wayland:unit_tests" ]

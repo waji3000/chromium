@@ -329,10 +329,6 @@ const char kEnablePowerOverlay[]            = "enable-power-overlay";
 const char kEnablePrintPreviewRegisterPromos[] =
     "enable-print-preview-register-promos";
 
-// Enables DevTools server for UI (mus, ash, etc). Value should be the port the
-// server is started on. Default port is 9223.
-const char kEnableUiDevTools[] = "enable-ui-devtools";
-
 // Name of the command line flag to force content verification to be on in one
 // of various modes.
 const char kExtensionContentVerification[] = "extension-content-verification";
@@ -364,10 +360,6 @@ const char kForceAndroidAppMode[] = "force-android-app-mode";
 // the app to be installed if it hasn't been already.
 const char kForceAppMode[]                  = "force-app-mode";
 
-// Forces Desktop to iOS promotion to appear in windows whenever an entrypoint
-// is triggered.
-const char kForceDesktopIOSPromotion[] = "force-desktop-ios-promotion";
-
 // Displays the First Run experience when the browser is started, regardless of
 // whether or not it's actually the First Run (this overrides kNoFirstRun).
 const char kForceFirstRun[]                 = "force-first-run";
@@ -387,12 +379,6 @@ const char kForceStackedTabStripLayout[]    = "force-stacked-tab-strip-layout";
 // for testing purposes so that the UI tests don't depend on what comes up for
 // http://google.com.
 const char kHomePage[]                      = "homepage";
-
-// Causes net::URLFetchers to ignore requests for SSL client certificates,
-// causing them to attempt an unauthenticated SSL/TLS session. This is intended
-// for use when testing various service URLs (eg: kPromoServerURL, kSbURLPrefix,
-// kSyncServiceURL, etc).
-const char kIgnoreUrlFetcherCertRequests[] = "ignore-urlfetcher-cert-requests";
 
 // Causes the browser to launch directly in incognito mode.
 const char kIncognito[]                     = "incognito";
@@ -553,17 +539,6 @@ const char kProductVersion[]                = "product-version";
 
 // Selects directory of profile to associate with the first browser launched.
 const char kProfileDirectory[]              = "profile-directory";
-
-// Starts the sampling based profiler for the browser process at startup. This
-// will only work if chrome has been built with the gyp variable profiling=1.
-// The output will go to the value of kProfilingFile.
-const char kProfilingAtStart[]              = "profiling-at-start";
-
-// Controls whether profile data is periodically flushed to a file. Normally
-// the data gets written on exit but cases exist where chrome doesn't exit
-// cleanly (especially when using single-process). A time in seconds can be
-// specified.
-const char kProfilingFlush[]                = "profiling-flush";
 
 // Forces proxy auto-detection.
 const char kProxyAutoDetect[]               = "proxy-auto-detect";
@@ -848,10 +823,6 @@ const char kAppsKeepChromeAliveInTests[]    = "apps-keep-chrome-alive-in-tests";
 // Disable the toolkit-views App Info dialog for Mac.
 const char kDisableAppInfoDialogMac[] = "disable-app-info-dialog-mac";
 
-// Disables tab detaching in fullscreen mode on Mac.
-const char kDisableFullscreenTabDetaching[] =
-    "disable-fullscreen-tab-detaching";
-
 // Disables app shim creation for hosted apps on Mac.
 const char kDisableHostedAppShimCreation[] = "disable-hosted-app-shim-creation";
 
@@ -868,9 +839,6 @@ const char kEnableUserMetrics[] = "enable-user-metrics";
 // Enable the toolkit-views App Info dialog for Mac. This is accessible from
 // chrome://apps and chrome://extensions and is already enabled on non-mac.
 const char kEnableAppInfoDialogMac[] = "enable-app-info-dialog-mac";
-
-// Enables tab detaching in fullscreen mode on Mac.
-const char kEnableFullscreenTabDetaching[] = "enable-fullscreen-tab-detaching";
 
 // Enables the fullscreen toolbar to reveal itself for tab strip changes.
 const char kEnableFullscreenToolbarReveal[] =

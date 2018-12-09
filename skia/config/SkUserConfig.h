@@ -130,7 +130,6 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 // until we update our call-sites (typically these are for API changes).
 //
 // Remove these as we update our sites.
-//
 
 // Workaround for poor anisotropic mipmap quality,
 // pending Skia ripmap support.
@@ -138,8 +137,6 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #ifndef    SK_SUPPORT_LEGACY_ANISOTROPIC_MIPMAP_SCALE
 #   define SK_SUPPORT_LEGACY_ANISOTROPIC_MIPMAP_SCALE
 #endif
-
-#define SK_LEGACY_OP_COLOR_AS_BYTES
 
 // Remove this after we fixed all the issues related to the new SDF algorithm
 // (https://codereview.chromium.org/1643143002)
@@ -151,6 +148,10 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 // not want it for M64
 #ifndef SK_DISABLE_EXPLICIT_GPU_RESOURCE_ALLOCATION
 #define SK_DISABLE_EXPLICIT_GPU_RESOURCE_ALLOCATION
+#endif
+
+#ifndef SK_IGNORE_LINEONLY_AA_CONVEX_PATH_OPTS
+#define SK_IGNORE_LINEONLY_AA_CONVEX_PATH_OPTS
 #endif
 
 // Max. verb count for paths rendered by the edge-AA tessellating path renderer.

@@ -10,6 +10,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/optional.h"
 #include "base/trace_event/trace_event.h"
+#include "content/browser/service_worker/service_worker_provider_host.h"
 #include "content/browser/service_worker/service_worker_version.h"
 #include "content/browser/url_loader_factory_getter.h"
 #include "content/common/service_worker/service_worker_loader_helpers.h"
@@ -68,11 +69,11 @@ class ServiceWorkerNavigationLoader::StreamWaiter
   // Implements mojom::ServiceWorkerStreamCallback.
   void OnCompleted() override {
     // Destroys |this|.
-    owner_->CommitCompleted(net::OK);
+    owner_->CommitCompleted(net::OK, "Stream has completed.");
   }
   void OnAborted() override {
     // Destroys |this|.
-    owner_->CommitCompleted(net::ERR_ABORTED);
+    owner_->CommitCompleted(net::ERR_ABORTED, "Stream has aborted.");
   }
 
  private:
@@ -88,10 +89,12 @@ ServiceWorkerNavigationLoader::ServiceWorkerNavigationLoader(
     NavigationLoaderInterceptor::FallbackCallback fallback_callback,
     Delegate* delegate,
     const network::ResourceRequest& tentative_resource_request,
+    base::WeakPtr<ServiceWorkerProviderHost> provider_host,
     scoped_refptr<URLLoaderFactoryGetter> url_loader_factory_getter)
     : loader_callback_(std::move(callback)),
       fallback_callback_(std::move(fallback_callback)),
       delegate_(delegate),
+      provider_host_(std::move(provider_host)),
       url_loader_factory_getter_(std::move(url_loader_factory_getter)),
       binding_(this),
       weak_factory_(this) {
@@ -127,11 +130,11 @@ void ServiceWorkerNavigationLoader::FallbackToNetwork() {
   // The URLJobWrapper only calls this if this loader never intercepted the
   // request. Fallback to network after interception uses |fallback_callback_|
   // instead.
-  DCHECK_EQ(status_, Status::kNotStarted);
   DCHECK_EQ(response_type_, ResponseType::NOT_DETERMINED);
-
   response_type_ = ResponseType::FALLBACK_TO_NETWORK;
+
   TransitionToStatus(Status::kCompleted);
+
   std::move(loader_callback_).Run({});
 }
 
@@ -172,6 +175,10 @@ void ServiceWorkerNavigationLoader::StartRequest(
     network::mojom::URLLoaderRequest request,
     network::mojom::URLLoaderClientPtr client) {
   resource_request_ = resource_request;
+  if (provider_host_ && provider_host_->fetch_request_window_id()) {
+    resource_request_.fetch_window_id =
+        base::make_optional(provider_host_->fetch_request_window_id());
+  }
 
   DCHECK(delegate_);
   DCHECK(!binding_.is_bound());
@@ -194,10 +201,7 @@ void ServiceWorkerNavigationLoader::StartRequest(
   ServiceWorkerVersion* active_worker =
       delegate_->GetServiceWorkerVersion(&result);
   if (!active_worker) {
-    delegate_->ReportDestination(
-        ServiceWorkerMetrics::MainResourceRequestDestination::
-            kErrorNoActiveWorkerFromDelegate);
-    CommitCompleted(net::ERR_FAILED);
+    CommitCompleted(net::ERR_FAILED, "No active worker");
     return;
   }
 
@@ -217,13 +221,19 @@ void ServiceWorkerNavigationLoader::StartRequest(
       << "We assumed there would be no data pipe getter elements here, but "
          "there are. Add code here to clone the body before proceeding.";
 
+  if (!provider_host_) {
+    // We lost |provider_host_| (for the client) somehow before dispatching
+    // FetchEvent.
+    CommitCompleted(net::ERR_ABORTED, "No provider host");
+    return;
+  }
+
   // Dispatch the fetch event.
-  delegate_->WillDispatchFetchEventForMainResource();
   fetch_dispatcher_ = std::make_unique<ServiceWorkerFetchDispatcher>(
       std::move(resource_request_to_pass),
       std::string() /* request_body_blob_uuid */,
       0 /* request_body_blob_size */, nullptr /* request_body_blob */,
-      std::string() /* client_id */, active_worker,
+      provider_host_->client_uuid(), active_worker,
       net::NetLogWithSource() /* TODO(scottmg): net log? */,
       base::BindOnce(&ServiceWorkerNavigationLoader::DidPrepareFetchEvent,
                      weak_factory_.GetWeakPtr(),
@@ -253,11 +263,33 @@ void ServiceWorkerNavigationLoader::CommitResponseHeaders() {
   url_loader_client_->OnReceiveResponse(response_head_);
 }
 
-void ServiceWorkerNavigationLoader::CommitCompleted(int error_code) {
-  TRACE_EVENT_WITH_FLOW1("ServiceWorker",
-                         "ServiceWorkerNavigationLoader::CommitCompleted", this,
-                         TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT,
-                         "error_code", net::ErrorToString(error_code));
+void ServiceWorkerNavigationLoader::CommitResponseBody(
+    mojo::ScopedDataPipeConsumerHandle response_body) {
+  TransitionToStatus(Status::kSentBody);
+  url_loader_client_->OnStartLoadingResponseBody(std::move(response_body));
+}
+
+void ServiceWorkerNavigationLoader::CommitEmptyResponseAndComplete() {
+  mojo::ScopedDataPipeProducerHandle producer_handle;
+  mojo::ScopedDataPipeConsumerHandle consumer_handle;
+  if (CreateDataPipe(nullptr, &producer_handle, &consumer_handle) !=
+      MOJO_RESULT_OK) {
+    CommitCompleted(net::ERR_INSUFFICIENT_RESOURCES,
+                    "Can't create empty data pipe");
+    return;
+  }
+
+  producer_handle.reset();  // The data pipe is empty.
+  CommitResponseBody(std::move(consumer_handle));
+  CommitCompleted(net::OK, "No body exists.");
+}
+
+void ServiceWorkerNavigationLoader::CommitCompleted(int error_code,
+                                                    const char* reason) {
+  TRACE_EVENT_WITH_FLOW2(
+      "ServiceWorker", "ServiceWorkerNavigationLoader::CommitCompleted", this,
+      TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT, "error_code",
+      net::ErrorToString(error_code), "reason", TRACE_STR_COPY(reason));
 
   DCHECK(url_loader_client_.is_bound());
   TransitionToStatus(Status::kCompleted);
@@ -318,16 +350,11 @@ void ServiceWorkerNavigationLoader::DidDispatchFetchEvent(
 
   ServiceWorkerMetrics::RecordFetchEventStatus(true /* is_main_resource */,
                                                status);
-  if (delegate_) {
-    delegate_->ReportDestination(
-        ServiceWorkerMetrics::MainResourceRequestDestination::kServiceWorker);
-  }
-
   ServiceWorkerMetrics::URLRequestJobResult result =
       ServiceWorkerMetrics::REQUEST_JOB_ERROR_BAD_DELEGATE;
   if (!delegate_ || !delegate_->RequestStillValid(&result)) {
     // The navigation or shared worker startup is cancelled. Just abort.
-    CommitCompleted(net::ERR_ABORTED);
+    CommitCompleted(net::ERR_ABORTED, "No delegate");
     return;
   }
 
@@ -362,7 +389,8 @@ void ServiceWorkerNavigationLoader::DidDispatchFetchEvent(
   // A response with status code 0 is Blink telling us to respond with
   // network error.
   if (response->status_code == 0) {
-    CommitCompleted(net::ERR_FAILED);
+    // TODO(falken): Use more specific errors. Or just add ERR_SERVICE_WORKER?
+    CommitCompleted(net::ERR_FAILED, "Zero response status");
     return;
   }
 
@@ -423,8 +451,7 @@ void ServiceWorkerNavigationLoader::StartResponse(
                            "result", "stream response");
     stream_waiter_ = std::make_unique<StreamWaiter>(
         this, std::move(version), std::move(body_as_stream->callback_request));
-    url_loader_client_->OnStartLoadingResponseBody(
-        std::move(body_as_stream->stream));
+    CommitResponseBody(std::move(body_as_stream->stream));
     // StreamWaiter will call CommitCompleted() when done.
     return;
   }
@@ -440,7 +467,7 @@ void ServiceWorkerNavigationLoader::StartResponse(
                        weak_factory_.GetWeakPtr()),
         &data_pipe);
     if (error != net::OK) {
-      CommitCompleted(error);
+      CommitCompleted(error, "Failed to read blob body");
       return;
     }
     TRACE_EVENT_WITH_FLOW1("ServiceWorker",
@@ -448,7 +475,7 @@ void ServiceWorkerNavigationLoader::StartResponse(
                            TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT,
                            "result", "blob response");
 
-    url_loader_client_->OnStartLoadingResponseBody(std::move(data_pipe));
+    CommitResponseBody(std::move(data_pipe));
     // We continue in OnBlobReadingComplete().
     return;
   }
@@ -458,8 +485,7 @@ void ServiceWorkerNavigationLoader::StartResponse(
                          TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT,
                          "result", "no body");
 
-  // The response has no body.
-  CommitCompleted(net::OK);
+  CommitEmptyResponseAndComplete();
 }
 
 // URLLoader implementation----------------------------------------
@@ -467,7 +493,8 @@ void ServiceWorkerNavigationLoader::StartResponse(
 void ServiceWorkerNavigationLoader::FollowRedirect(
     const base::Optional<std::vector<std::string>>&
         to_be_removed_request_headers,
-    const base::Optional<net::HttpRequestHeaders>& modified_request_headers) {
+    const base::Optional<net::HttpRequestHeaders>& modified_request_headers,
+    const base::Optional<GURL>& new_url) {
   NOTIMPLEMENTED();
 }
 
@@ -487,7 +514,7 @@ void ServiceWorkerNavigationLoader::PauseReadingBodyFromNet() {}
 void ServiceWorkerNavigationLoader::ResumeReadingBodyFromNet() {}
 
 void ServiceWorkerNavigationLoader::OnBlobReadingComplete(int net_error) {
-  CommitCompleted(net_error);
+  CommitCompleted(net_error, "Blob has been read.");
   body_as_blob_.reset();
 }
 
@@ -507,7 +534,7 @@ void ServiceWorkerNavigationLoader::OnConnectionClosed() {
 
   // Respond to the request if it's not yet responded to.
   if (status_ != Status::kCompleted)
-    CommitCompleted(net::ERR_ABORTED);
+    CommitCompleted(net::ERR_ABORTED, "Disconnected pipe before completed");
 
   url_loader_client_.reset();
   DeleteIfNeeded();
@@ -544,9 +571,9 @@ void ServiceWorkerNavigationLoader::RecordTimingMetrics(bool handled) {
           response_head_.load_timing.request_start);
 
   // Time spent for service worker startup.
-  UMA_HISTOGRAM_TIMES(
+  UMA_HISTOGRAM_MEDIUM_TIMES(
       "ServiceWorker.LoadTiming.MainFrame.MainResource."
-      "ForwardServiceWorkerToWorkerReady",
+      "ForwardServiceWorkerToWorkerReady2",
       response_head_.service_worker_ready_time -
           response_head_.service_worker_start_time);
 
@@ -573,9 +600,9 @@ void ServiceWorkerNavigationLoader::RecordTimingMetrics(bool handled) {
             fetch_event_timing_->respond_with_settled_time);
 
     // Time spent reading response body.
-    UMA_HISTOGRAM_TIMES(
+    UMA_HISTOGRAM_MEDIUM_TIMES(
         "ServiceWorker.LoadTiming.MainFrame.MainResource."
-        "ResponseReceivedToCompleted",
+        "ResponseReceivedToCompleted2",
         completion_time_ - response_head_.load_timing.receive_headers_end);
   } else {
     // Renderer -> Browser IPC delay (network fallback case).
@@ -598,14 +625,19 @@ void ServiceWorkerNavigationLoader::TransitionToStatus(Status new_status) {
     case Status::kSentHeader:
       DCHECK_EQ(status_, Status::kStarted);
       break;
+    case Status::kSentBody:
+      DCHECK_EQ(status_, Status::kSentHeader);
+      break;
     case Status::kCompleted:
-      // kNotStarted -> kCompleted happens on network fallback before
-      // interception.
-      // kStarted -> kCompleted happens on error or network fallback after
-      // interception.
-      // kSentHeader -> kCompleted happens in the success case or error
-      // while sending the body.
-      DCHECK_NE(status_, Status::kCompleted);
+      DCHECK(
+          // Network fallback before interception.
+          status_ == Status::kNotStarted ||
+          // Network fallback after interception.
+          status_ == Status::kStarted ||
+          // Pipe creation failure for empty response.
+          status_ == Status::kSentHeader ||
+          // Success case or error while sending the response's body.
+          status_ == Status::kSentBody);
       break;
   }
 #endif  // DCHECK_IS_ON()

@@ -22,7 +22,6 @@ class NGConstraintSpace;
 class NGLayoutResult;
 class NGPaintFragment;
 class NGPhysicalFragment;
-struct NGBaseline;
 struct NGInlineNodeData;
 struct NGPhysicalOffset;
 
@@ -40,6 +39,7 @@ class LayoutNGMixin : public Base {
   NGInlineNodeData* TakeNGInlineNodeData() final;
   NGInlineNodeData* GetNGInlineNodeData() const final;
   void ResetNGInlineNodeData() final;
+  void ClearNGInlineNodeData() final;
   bool HasNGInlineNodeData() const final { return ng_inline_node_data_.get(); }
 
   LayoutUnit FirstLineBoxBaseline() const final;
@@ -59,9 +59,8 @@ class LayoutNGMixin : public Base {
   // Returns the last layout result for this block flow with the given
   // constraint space and break token, or null if it is not up-to-date or
   // otherwise unavailable.
-  scoped_refptr<NGLayoutResult> CachedLayoutResult(
-      const NGConstraintSpace&,
-      const NGBreakToken*) const final;
+  scoped_refptr<NGLayoutResult> CachedLayoutResult(const NGConstraintSpace&,
+                                                   const NGBreakToken*) final;
 
   void SetCachedLayoutResult(const NGConstraintSpace&,
                              const NGBreakToken*,
@@ -102,7 +101,7 @@ class LayoutNGMixin : public Base {
 
   const NGPhysicalBoxFragment* CurrentFragment() const final;
 
-  const NGBaseline* FragmentBaseline(NGBaselineAlgorithmType) const;
+  base::Optional<LayoutUnit> FragmentBaseline(NGBaselineAlgorithmType) const;
 
   void DirtyLinesFromChangedChild(LayoutObject* child,
                                   MarkingBehavior marking_behavior) final;

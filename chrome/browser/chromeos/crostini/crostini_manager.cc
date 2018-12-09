@@ -12,7 +12,7 @@
 #include "base/no_destructor.h"
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "base/task/post_task.h"
 #include "base/time/clock.h"
 #include "base/time/default_clock.h"
@@ -185,18 +185,61 @@ class CrostiniManager::CrostiniRestarter
       FinishRestart(result);
       return;
     }
+
+    crostini_manager_->ListVmDisks(
+        base::BindOnce(&CrostiniRestarter::ListVmDisksFinished, this));
+  }
+
+  void ListVmDisksFinished(CrostiniResult result, int64_t disk_space_taken) {
+    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+    if (is_aborted_)
+      return;
+    if (result != CrostiniResult::SUCCESS) {
+      LOG(ERROR) << "Failed to list disk images.";
+      FinishRestart(result);
+      return;
+    }
+    base::PostTaskWithTraitsAndReplyWithResult(
+        FROM_HERE, {base::MayBlock()},
+        base::BindOnce(&base::SysInfo::AmountOfFreeDiskSpace,
+                       base::FilePath(kHomeDirectory)),
+        base::BindOnce(&CrostiniRestarter::CreateDiskImageAfterSizeCheck, this,
+                       disk_space_taken));
+  }
+
+  void CreateDiskImageAfterSizeCheck(int64_t disk_space_taken,
+                                     int64_t free_disk_bytes) {
+    int64_t disk_size_available = (free_disk_bytes * 9) / 10;
+    // If there's no existing disk image, need enough space to create one.
+    if (disk_space_taken == 0) {
+      // Don't enforce minimum disk size on dev box or trybots because
+      // base::SysInfo::AmountOfFreeDiskSpace returns zero in testing.
+      if (disk_size_available < kMinimumDiskSize &&
+          base::SysInfo::IsRunningOnChromeOS()) {
+        LOG(ERROR) << "Insufficient disk available. Need to free "
+                   << kMinimumDiskSize - disk_size_available << " bytes";
+        FinishRestart(CrostiniResult::INSUFFICIENT_DISK);
+        return;
+      }
+    }
+    // If we have an already existing disk, CreateDiskImage will just return its
+    // path so we can pass it to StartTerminaVm.
     crostini_manager_->CreateDiskImage(
         base::FilePath(vm_name_),
         vm_tools::concierge::StorageLocation::STORAGE_CRYPTOHOME_ROOT,
-        base::BindOnce(&CrostiniRestarter::CreateDiskImageFinished, this));
+        disk_size_available,
+        base::BindOnce(&CrostiniRestarter::CreateDiskImageFinished, this,
+                       disk_size_available));
   }
 
-  void CreateDiskImageFinished(CrostiniResult result,
+  void CreateDiskImageFinished(int64_t disk_size_available,
+                               CrostiniResult result,
+                               vm_tools::concierge::DiskImageStatus status,
                                const base::FilePath& result_path) {
     DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
     // Tell observers.
     for (auto& observer : observer_list_) {
-      observer.OnDiskImageCreated(result);
+      observer.OnDiskImageCreated(result, status, disk_size_available);
     }
     if (is_aborted_)
       return;
@@ -658,11 +701,15 @@ void CrostiniManager::OnStopConcierge(StopConciergeCallback callback,
 void CrostiniManager::CreateDiskImage(
     const base::FilePath& disk_path,
     vm_tools::concierge::StorageLocation storage_location,
+    int64_t disk_size_bytes,
     CreateDiskImageCallback callback) {
   std::string disk_path_string = disk_path.AsUTF8Unsafe();
   if (disk_path_string.empty()) {
     LOG(ERROR) << "Disk path cannot be empty";
-    std::move(callback).Run(CrostiniResult::CLIENT_ERROR, base::FilePath());
+    std::move(callback).Run(
+        CrostiniResult::CLIENT_ERROR,
+        vm_tools::concierge::DiskImageStatus::DISK_STATUS_UNKNOWN,
+        base::FilePath());
     return;
   }
 
@@ -670,41 +717,21 @@ void CrostiniManager::CreateDiskImage(
   request.set_cryptohome_id(CryptohomeIdForProfile(profile_));
   request.set_disk_path(std::move(disk_path_string));
   // The type of disk image to be created.
-  request.set_image_type(vm_tools::concierge::DISK_IMAGE_QCOW2);
+  request.set_image_type(vm_tools::concierge::DISK_IMAGE_AUTO);
 
   if (storage_location != vm_tools::concierge::STORAGE_CRYPTOHOME_ROOT &&
       storage_location != vm_tools::concierge::STORAGE_CRYPTOHOME_DOWNLOADS) {
     LOG(ERROR) << "'" << storage_location
                << "' is not a valid storage location";
-    std::move(callback).Run(CrostiniResult::CLIENT_ERROR, base::FilePath());
+    std::move(callback).Run(
+        CrostiniResult::CLIENT_ERROR,
+        vm_tools::concierge::DiskImageStatus::DISK_STATUS_UNKNOWN,
+        base::FilePath());
     return;
   }
   request.set_storage_location(storage_location);
-
-  base::PostTaskWithTraitsAndReplyWithResult(
-      FROM_HERE, {base::MayBlock()},
-      base::BindOnce(&base::SysInfo::AmountOfFreeDiskSpace,
-                     base::FilePath(kHomeDirectory)),
-      base::BindOnce(&CrostiniManager::CreateDiskImageAfterSizeCheck,
-                     weak_ptr_factory_.GetWeakPtr(), std::move(request),
-                     std::move(callback)));
-}
-
-void CrostiniManager::CreateDiskImageAfterSizeCheck(
-    vm_tools::concierge::CreateDiskImageRequest request,
-    CreateDiskImageCallback callback,
-    int64_t free_disk_size) {
-  int64_t disk_size = (free_disk_size * 9) / 10;
-  // Skip disk size check on dev box or trybots because
-  // base::SysInfo::AmountOfFreeDiskSpace returns zero in testing.
-  if (disk_size < kMinimumDiskSize && base::SysInfo::IsRunningOnChromeOS()) {
-    LOG(ERROR) << "Insufficient disk available. Need to free "
-               << kMinimumDiskSize - disk_size << " bytes";
-    std::move(callback).Run(CrostiniResult::CLIENT_ERROR, base::FilePath());
-    return;
-  }
   // The logical size of the new disk image, in bytes.
-  request.set_disk_size(std::move(disk_size));
+  request.set_disk_size(std::move(disk_size_bytes));
 
   GetConciergeClient()->CreateDiskImage(
       std::move(request),
@@ -776,7 +803,7 @@ void CrostiniManager::StartTerminaVm(std::string name,
 
   vm_tools::concierge::DiskImage* disk_image = request.add_disks();
   disk_image->set_path(std::move(disk_path_string));
-  disk_image->set_image_type(vm_tools::concierge::DISK_IMAGE_QCOW2);
+  disk_image->set_image_type(vm_tools::concierge::DISK_IMAGE_AUTO);
   disk_image->set_writable(true);
   disk_image->set_do_mount(false);
 
@@ -1030,8 +1057,8 @@ GURL CrostiniManager::GenerateVshInCroshUrl(
                          CryptohomeIdForProfile(profile).c_str()),
       false);
 
-  std::vector<base::StringPiece> pieces = {
-      vsh_crosh, vm_name_param, container_name_param, owner_id_param};
+  std::vector<std::string> pieces = {vsh_crosh, vm_name_param,
+                                     container_name_param, owner_id_param};
   if (!terminal_args.empty()) {
     // Separates the command args from the args we are passing into the
     // terminal to be executed.
@@ -1176,6 +1203,7 @@ void CrostiniManager::OnCreateDiskImage(
   if (!reply.has_value()) {
     LOG(ERROR) << "Failed to create disk image. Empty response.";
     std::move(callback).Run(CrostiniResult::CREATE_DISK_IMAGE_FAILED,
+                            vm_tools::concierge::DISK_STATUS_UNKNOWN,
                             base::FilePath());
     return;
   }
@@ -1185,11 +1213,11 @@ void CrostiniManager::OnCreateDiskImage(
       response.status() != vm_tools::concierge::DISK_STATUS_CREATED) {
     LOG(ERROR) << "Failed to create disk image: " << response.failure_reason();
     std::move(callback).Run(CrostiniResult::CREATE_DISK_IMAGE_FAILED,
-                            base::FilePath());
+                            response.status(), base::FilePath());
     return;
   }
 
-  std::move(callback).Run(CrostiniResult::SUCCESS,
+  std::move(callback).Run(CrostiniResult::SUCCESS, response.status(),
                           base::FilePath(response.disk_path()));
 }
 
@@ -1286,7 +1314,8 @@ void CrostiniManager::OnStartTerminaVm(
 
   // Share folders from Downloads, etc with default VM.
   if (vm_name == kCrostiniDefaultVmName) {
-    SharePersistedPaths(profile_, base::DoNothing());
+    CrostiniSharePath::GetForProfile(profile_)->SharePersistedPaths(
+        base::DoNothing());
   }
 }
 

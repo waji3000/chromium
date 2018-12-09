@@ -44,6 +44,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/frame/remote_frame.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
+#include "third_party/blink/renderer/core/html/custom/element_internals.h"
 #include "third_party/blink/renderer/core/html/forms/form_controller.h"
 #include "third_party/blink/renderer/core/html/forms/form_data.h"
 #include "third_party/blink/renderer/core/html/forms/form_data_event.h"
@@ -81,7 +82,7 @@ HTMLFormElement::HTMLFormElement(Document& document)
 
 HTMLFormElement* HTMLFormElement::Create(Document& document) {
   UseCounter::Count(document, WebFeature::kFormElement);
-  return new HTMLFormElement(document);
+  return MakeGarbageCollected<HTMLFormElement>(document);
 }
 
 HTMLFormElement::~HTMLFormElement() = default;
@@ -100,8 +101,11 @@ bool HTMLFormElement::MatchesValidityPseudoClasses() const {
 }
 
 bool HTMLFormElement::IsValidElement() {
-  return !CheckInvalidControlsAndCollectUnhandled(
-      nullptr, kCheckValidityDispatchNoEvent);
+  for (const auto& element : ListedElements()) {
+    if (!element->IsNotCandidateOrValid())
+      return false;
+  }
+  return true;
 }
 
 Node::InsertionNotificationRequest HTMLFormElement::InsertedInto(
@@ -206,14 +210,11 @@ void HTMLFormElement::SubmitImplicitly(Event& event,
 
 bool HTMLFormElement::ValidateInteractively() {
   UseCounter::Count(GetDocument(), WebFeature::kFormValidationStarted);
-  for (const auto& element : ListedElements()) {
-    if (element->IsFormControlElement())
-      ToHTMLFormControlElement(element)->HideVisibleValidationMessage();
-  }
+  for (const auto& element : ListedElements())
+    element->HideVisibleValidationMessage();
 
-  HeapVector<Member<HTMLFormControlElement>> unhandled_invalid_controls;
-  if (!CheckInvalidControlsAndCollectUnhandled(
-          &unhandled_invalid_controls, kCheckValidityDispatchInvalidEvent))
+  ListedElement::List unhandled_invalid_controls;
+  if (!CheckInvalidControlsAndCollectUnhandled(&unhandled_invalid_controls))
     return true;
   UseCounter::Count(GetDocument(),
                     WebFeature::kFormValidationAbortedSubmission);
@@ -226,7 +227,7 @@ bool HTMLFormElement::ValidateInteractively() {
 
   // Focus on the first focusable control and show a validation message.
   for (const auto& unhandled : unhandled_invalid_controls) {
-    if (unhandled->IsFocusable()) {
+    if (ToHTMLElement(unhandled)->IsFocusable()) {
       unhandled->ShowValidationMessage();
       UseCounter::Count(GetDocument(),
                         WebFeature::kFormValidationShowedMessage);
@@ -236,7 +237,7 @@ bool HTMLFormElement::ValidateInteractively() {
   // Warn about all of unfocusable controls.
   if (GetDocument().GetFrame()) {
     for (const auto& unhandled : unhandled_invalid_controls) {
-      if (unhandled->IsFocusable())
+      if (ToHTMLElement(unhandled)->IsFocusable())
         continue;
       String message(
           "An invalid form control with name='%name' is not focusable.");
@@ -355,6 +356,15 @@ void HTMLFormElement::Submit(Event* event,
     return;
   }
 
+  if (is_constructing_entry_list_) {
+    DCHECK(RuntimeEnabledFeatures::FormDataEventEnabled());
+    GetDocument().AddConsoleMessage(
+        ConsoleMessage::Create(kJSMessageSource, kWarningMessageLevel,
+                               "Form submission canceled because the form is "
+                               "constructing entry list"));
+    return;
+  }
+
   if (is_submitting_)
     return;
 
@@ -402,14 +412,12 @@ void HTMLFormElement::Submit(Event* event,
   }
 }
 
-void HTMLFormElement::ConstructFormDataSet(
-    HTMLFormControlElement* submit_button,
-    FormData& form_data) {
-  // TODO(tkent): We might move the event dispatching later than the
-  // ListedElements iteration.
-  if (RuntimeEnabledFeatures::FormDataEventEnabled())
-    DispatchEvent(*FormDataEvent::Create(form_data));
-
+bool HTMLFormElement::ConstructEntryList(HTMLFormControlElement* submit_button,
+                                         FormData& form_data) {
+  if (is_constructing_entry_list_) {
+    return false;
+  }
+  base::AutoReset<bool> entry_list_scope(&is_constructing_entry_list_, true);
   if (submit_button)
     submit_button->SetActivatedSubmit(true);
   for (ListedElement* control : ListedElements()) {
@@ -423,8 +431,12 @@ void HTMLFormElement::ConstructFormDataSet(
         form_data.SetContainsPasswordData(true);
     }
   }
+  if (RuntimeEnabledFeatures::FormDataEventEnabled())
+    DispatchEvent(*FormDataEvent::Create(form_data));
+
   if (submit_button)
     submit_button->SetActivatedSubmit(false);
+  return true;
 }
 
 void HTMLFormElement::ScheduleFormSubmission(FormSubmission* submission) {
@@ -614,6 +626,8 @@ void HTMLFormElement::CollectListedElements(
     ListedElement* listed_element = nullptr;
     if (element.IsFormControlElement())
       listed_element = ToHTMLFormControlElement(&element);
+    else if (element.IsFormAssociatedCustomElement())
+      listed_element = &element.EnsureElementInternals();
     else if (auto* object = ToHTMLObjectElementOrNull(element))
       listed_element = object;
     else
@@ -706,15 +720,13 @@ HTMLFormControlElement* HTMLFormElement::FindDefaultButton() const {
 }
 
 bool HTMLFormElement::checkValidity() {
-  return !CheckInvalidControlsAndCollectUnhandled(
-      nullptr, kCheckValidityDispatchInvalidEvent);
+  return !CheckInvalidControlsAndCollectUnhandled(nullptr);
 }
 
 bool HTMLFormElement::CheckInvalidControlsAndCollectUnhandled(
-    HeapVector<Member<HTMLFormControlElement>>* unhandled_invalid_controls,
-    CheckValidityEventBehavior event_behavior) {
+    ListedElement::List* unhandled_invalid_controls) {
   // Copy listedElements because event handlers called from
-  // HTMLFormControlElement::checkValidity() might change listedElements.
+  // ListedElement::checkValidity() might change listed_elements.
   const ListedElement::List& listed_elements = ListedElements();
   HeapVector<Member<ListedElement>> elements;
   elements.ReserveCapacity(listed_elements.size());
@@ -722,16 +734,20 @@ bool HTMLFormElement::CheckInvalidControlsAndCollectUnhandled(
     elements.push_back(element);
   int invalid_controls_count = 0;
   for (const auto& element : elements) {
-    if (element->Form() == this && element->IsFormControlElement()) {
-      HTMLFormControlElement* control = ToHTMLFormControlElement(element);
-      if (control->IsSubmittableElement() &&
-          !control->checkValidity(unhandled_invalid_controls, event_behavior) &&
-          control->formOwner() == this) {
-        ++invalid_controls_count;
-        if (!unhandled_invalid_controls &&
-            event_behavior == kCheckValidityDispatchNoEvent)
-          return true;
-      }
+    if (element->Form() != this)
+      continue;
+    // TOOD(tkent): Virtualize checkValidity().
+    bool should_check_validity = false;
+    if (element->IsFormControlElement()) {
+      should_check_validity =
+          ToHTMLFormControlElement(element)->IsSubmittableElement();
+    } else if (element->IsElementInternals()) {
+      should_check_validity = true;
+    }
+    if (should_check_validity &&
+        !element->checkValidity(unhandled_invalid_controls) &&
+        element->Form() == this) {
+      ++invalid_controls_count;
     }
   }
   return invalid_controls_count;

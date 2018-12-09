@@ -74,6 +74,8 @@ static_library("secure_channel") {
     "error_tolerant_ble_advertisement.h",
     "error_tolerant_ble_advertisement_impl.cc",
     "error_tolerant_ble_advertisement_impl.h",
+    "latency_metrics_logger.cc",
+    "latency_metrics_logger.h",
     "multiplexed_channel.cc",
     "multiplexed_channel.h",
     "multiplexed_channel_impl.cc",
@@ -116,6 +118,7 @@ static_library("secure_channel") {
   deps = [
     "//base",
     "//chromeos",
+    "//chromeos/components/multidevice",
     "//chromeos/components/proximity_auth/logging",
     "//chromeos/services/secure_channel/public/cpp/shared",
     "//chromeos/services/secure_channel/public/mojom",
@@ -123,6 +126,7 @@ static_library("secure_channel") {
     "//components/cryptauth/ble",
     "//device/bluetooth",
     "//services/service_manager/public/cpp",
+    "//services/service_manager/public/mojom",
   ]
 }
 
@@ -186,6 +190,7 @@ static_library("test_support") {
     ":secure_channel",
     "//base",
     "//base/test:test_support",
+    "//chromeos/components/multidevice",
     "//chromeos/services/secure_channel/public/cpp/shared",
     "//chromeos/services/secure_channel/public/mojom",
     "//components/cryptauth:cryptauth",
@@ -226,6 +231,8 @@ source_set("unit_tests") {
     ":secure_channel",
     ":test_support",
     "//base/test:test_support",
+    "//chromeos/components/multidevice",
+    "//chromeos/components/multidevice:test_support",
     "//chromeos/services/secure_channel/public/cpp/client:unit_tests",
     "//chromeos/services/secure_channel/public/cpp/shared",
     "//chromeos/services/secure_channel/public/mojom",

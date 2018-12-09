@@ -32,18 +32,18 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/webrtc_ip_handling_policy.h"
-#include "content/shell/browser/layout_test/blink_test_controller.h"
-#include "content/shell/browser/layout_test/layout_test_bluetooth_chooser_factory.h"
-#include "content/shell/browser/layout_test/layout_test_devtools_bindings.h"
-#include "content/shell/browser/layout_test/layout_test_javascript_dialog_manager.h"
-#include "content/shell/browser/layout_test/secondary_test_window_observer.h"
 #include "content/shell/browser/shell_browser_main_parts.h"
 #include "content/shell/browser/shell_content_browser_client.h"
 #include "content/shell/browser/shell_devtools_frontend.h"
 #include "content/shell/browser/shell_javascript_dialog_manager.h"
-#include "content/shell/common/layout_test/layout_test_switches.h"
+#include "content/shell/browser/web_test/blink_test_controller.h"
+#include "content/shell/browser/web_test/secondary_test_window_observer.h"
+#include "content/shell/browser/web_test/web_test_bluetooth_chooser_factory.h"
+#include "content/shell/browser/web_test/web_test_devtools_bindings.h"
+#include "content/shell/browser/web_test/web_test_javascript_dialog_manager.h"
 #include "content/shell/common/shell_messages.h"
 #include "content/shell/common/shell_switches.h"
+#include "content/shell/common/web_test/web_test_switches.h"
 #include "media/media_buildflags.h"
 #include "third_party/blink/public/web/web_presentation_receiver_flags.h"
 
@@ -537,7 +537,7 @@ JavaScriptDialogManager* Shell::GetJavaScriptDialogManager(
     WebContents* source) {
   if (!dialog_manager_) {
     dialog_manager_.reset(switches::IsRunWebTestsSwitchPresent()
-                              ? new LayoutTestJavaScriptDialogManager
+                              ? new WebTestJavaScriptDialogManager
                               : new ShellJavaScriptDialogManager);
   }
   return dialog_manager_.get();
@@ -597,7 +597,7 @@ bool Shell::ShouldAllowRunningInsecureContent(
   BlinkTestController* blink_test_controller = BlinkTestController::Get();
   if (blink_test_controller && switches::IsRunWebTestsSwitchPresent()) {
     const base::DictionaryValue& test_flags =
-        blink_test_controller->accumulated_layout_test_runtime_flags_changes();
+        blink_test_controller->accumulated_web_test_runtime_flags_changes();
     test_flags.GetBoolean("running_insecure_content_allowed", &allowed_by_test);
   }
 

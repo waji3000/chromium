@@ -42,13 +42,14 @@
 
   python tools/code_coverage/coverage.py pdfium_fuzzer \\
       -b out/coverage -o out/report \\
-      -c 'out/coverage/pdfium_fuzzer -runs=<runs> <corpus_dir>' \\
+      -c 'out/coverage/pdfium_fuzzer -runs=0 <corpus_dir>' \\
       -f third_party/pdfium
 
   where:
     <corpus_dir> - directory containing samples files for this format.
-    <runs> - number of times to fuzz target function. Should be 0 when you just
-             want to see the coverage on corpus and don't want to fuzz at all.
+
+  To learn more about generating code coverage reports for fuzz targets, see
+  https://chromium.googlesource.com/chromium/src/+/master/testing/libfuzzer/efficient_fuzzer.md#Code-Coverage
 
   * Sample workflow for running Blink web tests:
 
@@ -661,7 +662,7 @@ def _GetBinaryPath(command):
   if _IsIOSCommand(command):
     # For a given application bundle, the binary resides in the bundle and has
     # the same name with the application without the .app extension.
-    app_path = command_parts[-1].rstrip(os.path.sep)
+    app_path = command_parts[1].rstrip(os.path.sep)
     app_name = os.path.splitext(os.path.basename(app_path))[0]
     return os.path.join(app_path, app_name)
 

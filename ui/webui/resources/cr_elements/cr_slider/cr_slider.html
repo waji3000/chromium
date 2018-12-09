@@ -11,6 +11,8 @@
   <template>
     <style include="cr-hidden-style">
       :host {
+        --cr-slider-bar-height: 2px;
+        --cr-slider-position-transition: 80ms ease;
         -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
         cursor: default;
         user-select: none;
@@ -25,27 +27,40 @@
         position: relative;
       }
 
+      #barContainer,
+      #bar {
+        /* Using border instead of background-color to address pixel rounding
+           at low zoom levels (e.g. 33%). The browser will round border widths
+           to a minimum of 1px.*/
+        border-top-style: solid;
+        border-top-width: 2px;
+      }
+
       #barContainer {
-        background-color: var(--google-blue-600-opacity-24);
-        border-radius: 1px;
-        height: 2px;
+        border-top-color: var(--google-blue-600-opacity-24);
+        height: var(--cr-slider-bar-height);
         margin: 0 16px;
         position: absolute;
         top: 15px;
         width: calc(100% - 32px);
       }
 
+      #barContainer div {
+        top: calc(-1 * var(--cr-slider-bar-height));
+      }
+
       #bar {
-        background-color: var(--google-blue-600);
-        border-radius: 1px;
-        height: 2px;
+        border-top-color: var(--cr-slider-active-color, var(--google-blue-600));
         left: 0;
         position: absolute;
-        transition: width 80ms ease;
         width: 0;
       }
 
-      :host-context([dir=rtl]) #bar {
+      :host([transiting_]) #bar {
+        transition: width var(--cr-slider-position-transition);
+      }
+
+      :host([is-rtl_]) #bar {
         left: initial;
         right: 0;
       }
@@ -58,7 +73,7 @@
       }
 
       #knob {
-        background-color: var(--google-blue-600);
+        background-color: var(--cr-slider-knob-color, var(--google-blue-600));
         border: 0;
         border-radius: 50%;
         box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4);
@@ -66,8 +81,11 @@
         margin-inline-start: 0;
         outline: none;
         position: absolute;
-        transition: margin-inline-start 80ms ease;
         width: 10px;
+      }
+
+      :host([transiting_]) #knob {
+        transition: margin-inline-start var(--cr-slider-position-transition);
       }
 
       paper-ripple {
@@ -80,7 +98,7 @@
         width: 32px;
       }
 
-      :host-context([dir=rtl]) paper-ripple {
+      :host([is-rtl_]) paper-ripple {
         left: auto;
         right: -11px;
       }
@@ -90,7 +108,6 @@
         pointer-events: none;
         position: absolute;
         right: 0;
-        top: 0;
         @apply --layout-horizontal;
       }
 
@@ -144,8 +161,11 @@
         line-height: 1.5em;
         padding: 0 8px;
         position: absolute;
-        transition: margin-inline-start 80ms ease;
         white-space: nowrap;
+      }
+
+      :host([transiting_]) #label {
+        transition: margin-inline-start var(--cr-slider-position-transition);
       }
 
       :host([disabled_]) {
@@ -153,20 +173,20 @@
       }
 
       :host([disabled_]) #barContainer {
-        background-color: var(--google-grey-600-opacity-24);
+        border-top-color: var(--google-grey-600-opacity-24);
       }
 
       :host([disabled_]) #bar {
-        background-color: var(--google-grey-600);
+        border-top-color: var(--google-grey-600);
       }
 
-      :host([disabled_]) inactive-marker::after,
+      :host([disabled_]) .inactive-marker::after,
       :host([disabled_]) #markers::after {
-        background-color: rgba(255, 255, 255, 0.54);
+        background-color: rgba(128, 134, 139, 0.54);
       }
 
       :host([disabled_]) #knobContainer {
-        margin-inline-start: 9px;
+        margin-inline-start: 10px;
         top: 9px;
       }
       :host([disabled_]) #knob {
@@ -180,13 +200,14 @@
         <div id="bar"></div>
         <div id="markers" hidden$="[[!markerCount]]">
           <template is="dom-repeat" items="[[getMarkers_(markerCount)]]">
-            <div class$="[[getMarkerClass_(index, immediateValue_, min, max,
+            <div class$="[[getMarkerClass_(index, value, min, max,
                                            markerCount)]]"></div>
           </template>
         </div>
       </div>
       <div id="knobContainer">
-        <div id="knob" tabindex="0"></div>
+        <div id="knob" tabindex="0" on-transitionend="onKnobTransitionEnd_">
+        </div>
       </div>
       <div id="labelContainer" aria-label="[[label_]]">
         <div id="label">[[label_]]</div>

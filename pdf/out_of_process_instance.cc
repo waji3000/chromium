@@ -22,6 +22,7 @@
 #include "chrome/common/content_restriction.h"
 #include "net/base/escape.h"
 #include "pdf/pdf.h"
+#include "pdf/pdf_features.h"
 #include "ppapi/c/dev/ppb_cursor_control_dev.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/pp_rect.h"
@@ -50,16 +51,12 @@ namespace chrome_pdf {
 
 namespace {
 
-const base::Feature kSaveEditedPDFFormExperiment{
-    "SaveEditedPDFForm", base::FEATURE_DISABLED_BY_DEFAULT};
-
 constexpr char kChromePrint[] = "chrome://print/";
 constexpr char kChromeExtension[] =
     "chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai";
 
 // Constants used in handling postMessage() messages.
 constexpr char kType[] = "type";
-constexpr char kJSId[] = "id";
 // Beep messge arguments. (Plugin -> Page).
 constexpr char kJSBeepType[] = "beep";
 // Viewport message arguments. (Page -> Plugin).
@@ -159,9 +156,6 @@ constexpr char kJSGetNamedDestination[] = "namedDestination";
 // Reply with the page number of the named destination (Plugin -> Page)
 constexpr char kJSGetNamedDestinationReplyType[] = "getNamedDestinationReply";
 constexpr char kJSNamedDestinationPageNumber[] = "pageNumber";
-
-constexpr char kJSTransformPagePointType[] = "transformPagePoint";
-constexpr char kJSTransformPagePointReplyType[] = "transformPagePointReply";
 
 // Selecting text in document (Plugin -> Page)
 constexpr char kJSSetIsSelectingType[] = "setIsSelecting";
@@ -773,25 +767,6 @@ void OutOfProcessInstance::HandleMessage(const pp::Var& message) {
         pp::Var(kJSNamedDestinationPageNumber),
         named_destination ? static_cast<int>(named_destination->page) : -1);
     PostMessage(reply);
-  } else if (type == kJSTransformPagePointType) {
-    if (!(dict.Get(pp::Var(kJSPageNumber)).is_int() &&
-          dict.Get(pp::Var(kJSPageX)).is_int() &&
-          dict.Get(pp::Var(kJSPageY)).is_int() &&
-          dict.Get(pp::Var(kJSId)).is_int())) {
-      NOTREACHED();
-      return;
-    }
-    gfx::PointF page_xy(dict.Get(pp::Var(kJSPageX)).AsInt(),
-                        dict.Get(pp::Var(kJSPageY)).AsInt());
-    gfx::PointF device_xy = engine_->TransformPagePoint(
-        dict.Get(pp::Var(kJSPageNumber)).AsInt(), page_xy);
-
-    pp::VarDictionary reply;
-    reply.Set(pp::Var(kType), pp::Var(kJSTransformPagePointReplyType));
-    reply.Set(pp::Var(kJSPositionX), device_xy.x());
-    reply.Set(pp::Var(kJSPositionY), device_xy.y());
-    reply.Set(pp::Var(kJSId), dict.Get(pp::Var(kJSId)).AsInt());
-    PostMessage(reply);
   } else {
     NOTREACHED();
   }
@@ -1385,7 +1360,7 @@ void OutOfProcessInstance::ScrollBy(const pp::Point& point) {
 }
 
 void OutOfProcessInstance::ScrollToPage(int page) {
-  if (engine_->GetNumberOfPages() == 0)
+  if (!engine_ || engine_->GetNumberOfPages() == 0)
     return;
 
   pp::VarDictionary message;
@@ -1501,7 +1476,7 @@ void OutOfProcessInstance::GetDocumentPassword(
 void OutOfProcessInstance::Save(const std::string& token) {
   engine_->KillFormFocus();
 
-  if (!base::FeatureList::IsEnabled(kSaveEditedPDFFormExperiment) ||
+  if (!base::FeatureList::IsEnabled(features::kSaveEditedPDFForm) ||
       !edit_mode_) {
     ConsumeSaveToken(token);
     pp::PDF::SaveAs(this);
@@ -1582,8 +1557,9 @@ void OutOfProcessInstance::Email(const std::string& to,
 }
 
 void OutOfProcessInstance::Print() {
-  if (!engine_->HasPermission(PDFEngine::PERMISSION_PRINT_LOW_QUALITY) &&
-      !engine_->HasPermission(PDFEngine::PERMISSION_PRINT_HIGH_QUALITY)) {
+  if (!engine_ ||
+      (!engine_->HasPermission(PDFEngine::PERMISSION_PRINT_LOW_QUALITY) &&
+       !engine_->HasPermission(PDFEngine::PERMISSION_PRINT_HIGH_QUALITY))) {
     return;
   }
 

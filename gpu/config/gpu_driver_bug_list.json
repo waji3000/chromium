@@ -320,6 +320,8 @@
       "os": {
         "type": "chromeos"
       },
+      "gl_vendor": "ARM.*",
+      "gl_renderer": "Mali.*",
       "features": [
         "disable_discard_framebuffer"
       ]
@@ -1386,6 +1388,21 @@
       ]
     },
     {
+      "id": 149,
+      "description": "Direct composition flashes black initially on Win <10",
+      "cr_bugs": [588588],
+      "os": {
+        "type": "win",
+        "version": {
+          "op": "<",
+          "value": "10.0"
+        }
+      },
+      "features": [
+        "disable_direct_composition"
+      ]
+    },
+    {
       "id": 150,
       "cr_bugs": [563714],
       "description": "Alignment works incorrectly with unpack buffer bound",
@@ -2402,7 +2419,7 @@
     {
       "id": 233,
       "description": "Delayed copy NV12 displays incorrect colors on NVIDIA drivers.",
-      "cr_bugs": [728670],
+      "cr_bugs": [727216],
       "os": {
         "type": "win"
       },
@@ -2570,6 +2587,32 @@
       "gl_renderer": "Mali-T880",
       "disabled_extensions": [
         "GL_EXT_disjoint_timer_query"
+      ]
+    },
+    {
+      "id": 248,
+      "description": "Direct composition causes slow presents on Intel Sandybridge",
+      "cr_bugs": [775898, 785648],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x8086",
+      "device_id": ["0x0116"],
+      "features": [
+        "disable_direct_composition"
+      ]
+    },
+    {
+      "id": 249,
+      "description": "Direct composition causes slow presents on old Nvidia GPUs",
+      "cr_bugs": [775898],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x10de",
+      "device_id": ["0x10d8"],
+      "features": [
+        "disable_direct_composition"
       ]
     },
     {
@@ -2908,6 +2951,35 @@
       ]
     },
     {
+      "id": 277,
+      "description": "Direct composition path is buggy on certain AMD devices/drivers",
+      "cr_bugs": [800950],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x1002",
+      "driver_version": {
+        "op": "=",
+        "value": "8.970.100.9001"
+      },
+      "features": [
+        "disable_direct_composition"
+      ]
+    },
+    {
+      "id": 278,
+      "description": "Direct composition path is buggy on certain AMD devices/drivers",
+      "cr_bugs": [800950],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x1002",
+      "device_id": ["0x6900"],
+      "features": [
+        "disable_direct_composition"
+      ]
+    },
+    {
       "id": 279,
       "description": "WindowServer crashes on VMWare bots using CA renderer",
       "cr_bugs": [828031],
@@ -2958,6 +3030,17 @@
       "gl_vendor": "NVIDIA.*",
       "features": [
         "disable_aimagereader"
+      ]
+    },
+    {
+      "id": 283,
+      "cr_bugs": [893177],
+      "description": "Some drivers can't recover after OUT_OF_MEM and context lost",
+      "os": {
+        "type": "linux"
+      },
+      "features": [
+        "exit_on_context_lost"
       ]
     }
   ]

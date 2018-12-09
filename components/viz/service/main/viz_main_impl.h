@@ -12,7 +12,6 @@
 #include "components/discardable_memory/client/client_discardable_shared_memory_manager.h"
 #include "components/viz/service/main/viz_compositor_thread_runner.h"
 #include "gpu/ipc/in_process_command_buffer.h"
-#include "gpu/ipc/service/gpu_init.h"
 #include "mojo/public/cpp/bindings/associated_binding_set.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "services/viz/privileged/interfaces/gl/gpu_service.mojom.h"
@@ -20,6 +19,7 @@
 #include "ui/gfx/font_render_params.h"
 
 namespace gpu {
+class GpuInit;
 class SyncPointManager;
 }  // namespace gpu
 
@@ -40,7 +40,7 @@ using CompositorThreadType = base::android::JavaHandlerThread;
 using CompositorThreadType = base::Thread;
 #endif
 
-class VizMainImpl : public gpu::GpuSandboxHelper, public mojom::VizMain {
+class VizMainImpl : public mojom::VizMain {
  public:
   struct LogMessage {
     int severity;
@@ -80,7 +80,7 @@ class VizMainImpl : public gpu::GpuSandboxHelper, public mojom::VizMain {
 
   VizMainImpl(Delegate* delegate,
               ExternalDependencies dependencies,
-              std::unique_ptr<gpu::GpuInit> gpu_init = nullptr);
+              std::unique_ptr<gpu::GpuInit> gpu_init);
   // Destruction must happen on the GPU thread.
   ~VizMainImpl() override;
 
@@ -98,6 +98,7 @@ class VizMainImpl : public gpu::GpuSandboxHelper, public mojom::VizMain {
       mojo::ScopedSharedBufferHandle activity_flags,
       gfx::FontRenderParams::SubpixelRendering subpixel_rendering) override;
   void CreateFrameSinkManager(mojom::FrameSinkManagerParamsPtr params) override;
+  void CreateVizDevTools(mojom::VizDevToolsParamsPtr params) override;
 
   GpuServiceImpl* gpu_service() { return gpu_service_.get(); }
   const GpuServiceImpl* gpu_service() const { return gpu_service_.get(); }
@@ -109,20 +110,14 @@ class VizMainImpl : public gpu::GpuSandboxHelper, public mojom::VizMain {
     return discardable_shared_memory_manager_.get();
   }
 
+  // Cleanly exits the process.
+  void ExitProcess();
+
  private:
   // Initializes GPU's UkmRecorder if GPU is running in it's own process.
   void CreateUkmRecorderIfNeeded(service_manager::Connector* connector);
 
   void CreateFrameSinkManagerInternal(mojom::FrameSinkManagerParamsPtr params);
-
-  // Cleanly exits the process.
-  void ExitProcess();
-
-  // gpu::GpuSandboxHelper:
-  void PreSandboxStartup() override;
-  bool EnsureSandboxInitialized(gpu::GpuWatchdogThread* watchdog_thread,
-                                const gpu::GPUInfo* gpu_info,
-                                const gpu::GpuPreferences& gpu_prefs) override;
 
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner() const {
     return io_thread_ ? io_thread_->task_runner()

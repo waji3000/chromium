@@ -37,7 +37,7 @@ enum class LengthResolvePhase { kIntrinsic, kLayout };
 // kContentSize - width / height
 enum class LengthResolveType { kMinSize, kMaxSize, kContentSize };
 
-CORE_EXPORT inline bool NeedMinMaxSize(const ComputedStyle& style) {
+inline bool NeedMinMaxSize(const ComputedStyle& style) {
   // This check is technically too broad (fill-available does not need intrinsic
   // size computation) but that's a rare case and only affects performance, not
   // correctness.
@@ -50,9 +50,8 @@ CORE_EXPORT inline bool NeedMinMaxSize(const ComputedStyle& style) {
 // pass them to ResolveInlineLength / ComputeInlineSizeForFragment.
 // If this function returns false, it is safe to pass an empty
 // MinMaxSize struct to those functions.
-CORE_EXPORT inline bool NeedMinMaxSize(
-    const NGConstraintSpace& constraint_space,
-    const ComputedStyle& style) {
+inline bool NeedMinMaxSize(const NGConstraintSpace& constraint_space,
+                           const ComputedStyle& style) {
   return constraint_space.IsShrinkToFit() || NeedMinMaxSize(style);
 }
 
@@ -95,7 +94,7 @@ CORE_EXPORT LayoutUnit ResolveBlockLength(
 // given constraint space.
 LayoutUnit ResolveMarginPaddingLength(LayoutUnit percentage_resolution_size,
                                       const Length&);
-CORE_EXPORT inline LayoutUnit ResolveMarginPaddingLength(
+inline LayoutUnit ResolveMarginPaddingLength(
     const NGConstraintSpace& constraint_space,
     const Length& length) {
   LayoutUnit percentage_resolution_size =
@@ -119,19 +118,17 @@ ComputeMinAndMaxContentContribution(WritingMode writing_mode,
                                     const base::Optional<MinMaxSize>&);
 
 // A version of ComputeMinAndMaxContentContribution that does not require you
-// to compute the min/max content size of the node. Instead, this function
+// to compute the min/max content size of the child. Instead, this function
 // will compute it if necessary.
-// writing_mode is the desired output writing mode (ie. often the writing mode
-// of the parent); node is the node of which to compute the min/max content
-// contribution.
-// If a constraint space is provided, this function will convert it to the
-// correct writing mode and otherwise make sure it is suitable for computing
-// the desired value.
+// |child| is the node of which to compute the min/max content contribution.
+// Note that if the writing mode of the child is orthogonal to that of the
+// parent, we'll still return the inline min/max contribution in the writing
+// mode of the parent (i.e. typically something based on the preferred *block*
+// size of the child).
 MinMaxSize ComputeMinAndMaxContentContribution(
-    WritingMode writing_mode,
-    NGLayoutInputNode node,
-    const MinMaxSizeInput& input,
-    const NGConstraintSpace* space = nullptr);
+    const ComputedStyle& parent_style,
+    NGLayoutInputNode child,
+    const MinMaxSizeInput& input);
 
 // Resolves the computed value in style.logicalWidth (Length) to a layout unit,
 // then constrains the result by the resolved min logical width and max logical
@@ -157,6 +154,13 @@ CORE_EXPORT NGLogicalSize
 ComputeReplacedSize(const NGLayoutInputNode&,
                     const NGConstraintSpace&,
                     const base::Optional<MinMaxSize>&);
+
+// Return true if it's possible (but not necessarily guaranteed) that the new
+// constraint space will give a different size compared to the old one, when
+// computed style and child content remain unchanged.
+bool SizeMayChange(const ComputedStyle&,
+                   const NGConstraintSpace& new_space,
+                   const NGConstraintSpace& old_space);
 
 // Based on available inline size, CSS computed column-width, CSS computed
 // column-count and CSS used column-gap, return CSS used column-count.
@@ -184,7 +188,7 @@ CORE_EXPORT NGPhysicalBoxStrut
 ComputePhysicalMargins(const ComputedStyle&,
                        LayoutUnit percentage_resolution_size);
 
-CORE_EXPORT inline NGPhysicalBoxStrut ComputePhysicalMargins(
+inline NGPhysicalBoxStrut ComputePhysicalMargins(
     const NGConstraintSpace& constraint_space,
     const ComputedStyle& style) {
   LayoutUnit percentage_resolution_size =
@@ -206,7 +210,7 @@ inline NGBoxStrut ComputeMarginsFor(const ComputedStyle& child_style,
 }
 
 // Compute margins for the style owner.
-CORE_EXPORT inline NGBoxStrut ComputeMarginsForSelf(
+inline NGBoxStrut ComputeMarginsForSelf(
     const NGConstraintSpace& constraint_space,
     const ComputedStyle& style) {
   if (constraint_space.IsAnonymous())
@@ -221,7 +225,7 @@ CORE_EXPORT inline NGBoxStrut ComputeMarginsForSelf(
 //
 // The "line" versions compute line-relative logical values. See NGLineBoxStrut
 // for more details.
-CORE_EXPORT inline NGLineBoxStrut ComputeLineMarginsForSelf(
+inline NGLineBoxStrut ComputeLineMarginsForSelf(
     const NGConstraintSpace& constraint_space,
     const ComputedStyle& style) {
   if (constraint_space.IsAnonymous())
@@ -234,7 +238,7 @@ CORE_EXPORT inline NGLineBoxStrut ComputeLineMarginsForSelf(
 
 // Compute line logical margins for the constraint space, in the visual order
 // (always assumes LTR, ignoring the direction) for inline layout algorithm.
-CORE_EXPORT inline NGLineBoxStrut ComputeLineMarginsForVisualContainer(
+inline NGLineBoxStrut ComputeLineMarginsForVisualContainer(
     const NGConstraintSpace& constraint_space,
     const ComputedStyle& style) {
   if (constraint_space.IsAnonymous())
@@ -256,7 +260,7 @@ CORE_EXPORT NGBoxStrut ComputeBorders(const NGConstraintSpace&,
 CORE_EXPORT NGBoxStrut ComputeBorders(const NGConstraintSpace&,
                                       const NGLayoutInputNode);
 
-CORE_EXPORT inline NGLineBoxStrut ComputeLineBorders(
+inline NGLineBoxStrut ComputeLineBorders(
     const NGConstraintSpace& constraint_space,
     const ComputedStyle& style) {
   return NGLineBoxStrut(ComputeBorders(constraint_space, style),
@@ -269,7 +273,7 @@ CORE_EXPORT NGBoxStrut ComputeIntrinsicPadding(const NGConstraintSpace&,
 CORE_EXPORT NGBoxStrut ComputePadding(const NGConstraintSpace&,
                                       const ComputedStyle&);
 
-CORE_EXPORT inline NGLineBoxStrut ComputeLinePadding(
+inline NGLineBoxStrut ComputeLinePadding(
     const NGConstraintSpace& constraint_space,
     const ComputedStyle& style) {
   return NGLineBoxStrut(ComputePadding(constraint_space, style),
@@ -309,9 +313,9 @@ CORE_EXPORT LayoutUnit LineOffsetForTextAlign(ETextAlign,
 CORE_EXPORT LayoutUnit InlineOffsetForTextAlign(const ComputedStyle&,
                                                 LayoutUnit space_left);
 
-CORE_EXPORT inline LayoutUnit ConstrainByMinMax(LayoutUnit length,
-                                                LayoutUnit min,
-                                                LayoutUnit max) {
+inline LayoutUnit ConstrainByMinMax(LayoutUnit length,
+                                    LayoutUnit min,
+                                    LayoutUnit max) {
   return std::max(min, std::min(length, max));
 }
 

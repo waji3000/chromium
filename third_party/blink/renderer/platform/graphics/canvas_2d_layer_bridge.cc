@@ -374,7 +374,8 @@ void Canvas2DLayerBridge::DisableDeferral(DisableDeferralReason reason) {
     return;
 
   UMA_HISTOGRAM_ENUMERATION(
-      "Blink.Canvas.GPUAccelerated2DCanvasDisableDeferralReason", reason);
+      "Blink.Canvas.GPUAccelerated2DCanvasDisableDeferralReason", reason,
+      kDisableDeferralReasonCount);
   FlushRecording();
   // Because we will be discarding the recorder, if the flush failed
   // content will be lost -> force m_haveRecordedDrawCommands to false
@@ -410,11 +411,11 @@ void Canvas2DLayerBridge::SetIsHidden(bool hidden) {
     logger_->ReportHibernationEvent(kHibernationScheduled);
     hibernation_scheduled_ = true;
     if (dont_use_idle_scheduling_for_testing_) {
-      Platform::Current()->CurrentThread()->GetTaskRunner()->PostTask(
+      Thread::Current()->GetTaskRunner()->PostTask(
           FROM_HERE, WTF::Bind(&HibernateWrapperForTesting,
                                weak_ptr_factory_.GetWeakPtr()));
     } else {
-      Platform::Current()->CurrentThread()->Scheduler()->PostIdleTask(
+      ThreadScheduler::Current()->PostIdleTask(
           FROM_HERE,
           WTF::Bind(&HibernateWrapper, weak_ptr_factory_.GetWeakPtr()));
     }

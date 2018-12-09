@@ -17,6 +17,7 @@
 #include "base/metrics/field_trial.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/mock_entropy_provider.h"
 #include "base/test/simple_test_clock.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -88,10 +89,7 @@ class BackgroundSyncManagerTest : public testing::Test {
   BackgroundSyncManagerTest()
       : browser_thread_bundle_(TestBrowserThreadBundle::IO_MAINLOOP) {
     sync_options_1_.tag = "foo";
-    sync_options_1_.network_state = NETWORK_STATE_ONLINE;
-
     sync_options_2_.tag = "bar";
-    sync_options_2_.network_state = NETWORK_STATE_ONLINE;
   }
 
   void SetUp() override {
@@ -260,6 +258,15 @@ class BackgroundSyncManagerTest : public testing::Test {
             base::Unretained(this), &was_called));
     base::RunLoop().RunUntilIdle();
     EXPECT_TRUE(was_called);
+
+    // Mock the client receiving the response and calling
+    // DidResolveRegistration.
+    if (callback_status_ == BACKGROUND_SYNC_STATUS_OK) {
+      background_sync_manager_->DidResolveRegistration(sw_registration_id,
+                                                       options.tag);
+      base::RunLoop().RunUntilIdle();
+    }
+
     return callback_status_ == BACKGROUND_SYNC_STATUS_OK;
   }
 
@@ -439,11 +446,51 @@ TEST_F(BackgroundSyncManagerTest, Register) {
   EXPECT_TRUE(Register(sync_options_1_));
 }
 
+TEST_F(BackgroundSyncManagerTest, RegisterAndWaitToFireUntilResolved) {
+  InitSyncEventTest();
+  bool was_called = false;
+  background_sync_manager_->Register(
+      sw_registration_id_1_, sync_options_1_,
+      base::BindOnce(&BackgroundSyncManagerTest::StatusAndRegistrationCallback,
+                     base::Unretained(this), &was_called));
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(was_called);
+
+  // Verify that the sync event hasn't fired yet, as it should wait for the
+  // client to acknowledge with DidResolveRegistration.
+  EXPECT_EQ(0, sync_events_called_);
+
+  background_sync_manager_->DidResolveRegistration(sw_registration_id_1_,
+                                                   sync_options_1_.tag);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(1, sync_events_called_);
+}
+
+TEST_F(BackgroundSyncManagerTest, ResolveInvalidRegistration) {
+  InitSyncEventTest();
+  bool was_called = false;
+  background_sync_manager_->Register(
+      sw_registration_id_1_, sync_options_1_,
+      base::BindOnce(&BackgroundSyncManagerTest::StatusAndRegistrationCallback,
+                     base::Unretained(this), &was_called));
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(was_called);
+
+  // Verify that the sync event hasn't fired yet, as it should wait for the
+  // client to acknowledge with DidResolveRegistration.
+  EXPECT_EQ(0, sync_events_called_);
+
+  // Resolve a non-existing registration.
+  background_sync_manager_->DidResolveRegistration(sw_registration_id_1_,
+                                                   "unknown_tag");
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(0, sync_events_called_);
+}
+
 TEST_F(BackgroundSyncManagerTest, RegistrationIntact) {
   EXPECT_TRUE(Register(sync_options_1_));
   EXPECT_STREQ(sync_options_1_.tag.c_str(),
                callback_registration_->options()->tag.c_str());
-  EXPECT_TRUE(callback_registration_->IsValid());
 }
 
 TEST_F(BackgroundSyncManagerTest, RegisterWithoutLiveSWRegistration) {
@@ -586,16 +633,6 @@ TEST_F(BackgroundSyncManagerTest, RegisterMaxTagLength) {
   sync_options_2_.tag = std::string(MaxTagLength() + 1, 'b');
   EXPECT_FALSE(Register(sync_options_2_));
   EXPECT_EQ(BACKGROUND_SYNC_STATUS_NOT_ALLOWED, callback_status_);
-}
-
-TEST_F(BackgroundSyncManagerTest, RegistrationIncreasesId) {
-  EXPECT_TRUE(Register(sync_options_1_));
-  BackgroundSyncRegistration::RegistrationId cur_id =
-      callback_registration_->id();
-
-  EXPECT_TRUE(GetRegistration(sync_options_1_));
-  EXPECT_TRUE(Register(sync_options_2_));
-  EXPECT_LT(cur_id, callback_registration_->id());
 }
 
 TEST_F(BackgroundSyncManagerTest, RebootRecovery) {
@@ -747,29 +784,11 @@ TEST_F(BackgroundSyncManagerTest, DisabledManagerWorksAfterDeleteAndStartOver) {
   EXPECT_TRUE(GetRegistration(sync_options_2_));
 }
 
-TEST_F(BackgroundSyncManagerTest, RegistrationEqualsId) {
-  BackgroundSyncRegistration reg_1;
-  BackgroundSyncRegistration reg_2;
-
-  EXPECT_TRUE(reg_1.Equals(reg_2));
-  reg_2.set_id(reg_1.id() + 1);
-  EXPECT_TRUE(reg_1.Equals(reg_2));
-}
-
 TEST_F(BackgroundSyncManagerTest, RegistrationEqualsTag) {
   BackgroundSyncRegistration reg_1;
   BackgroundSyncRegistration reg_2;
   EXPECT_TRUE(reg_1.Equals(reg_2));
   reg_2.options()->tag = "bar";
-  EXPECT_FALSE(reg_1.Equals(reg_2));
-}
-
-TEST_F(BackgroundSyncManagerTest, RegistrationEqualsNetworkState) {
-  BackgroundSyncRegistration reg_1;
-  BackgroundSyncRegistration reg_2;
-  EXPECT_TRUE(reg_1.Equals(reg_2));
-  reg_1.options()->network_state = NETWORK_STATE_ANY;
-  reg_2.options()->network_state = NETWORK_STATE_ONLINE;
   EXPECT_FALSE(reg_1.Equals(reg_2));
 }
 
@@ -779,8 +798,6 @@ TEST_F(BackgroundSyncManagerTest, StoreAndRetrievePreservesValues) {
 
   // Set non-default values for each field.
   options.tag = "foo";
-  EXPECT_NE(NETWORK_STATE_AVOID_CELLULAR, options.network_state);
-  options.network_state = NETWORK_STATE_AVOID_CELLULAR;
 
   // Store the registration.
   EXPECT_TRUE(Register(options));
@@ -930,6 +947,37 @@ TEST_F(BackgroundSyncManagerTest, MultipleRegistrationsFireOnNetworkChange) {
   EXPECT_EQ(2, sync_events_called_);
   EXPECT_FALSE(GetRegistration(sync_options_1_));
   EXPECT_FALSE(GetRegistration(sync_options_2_));
+}
+
+TEST_F(BackgroundSyncManagerTest, DispatchCancelledOnNetworkFailure) {
+  InitSyncEventTest();
+  base::HistogramTester histogram_tester;
+
+  SetNetwork(network::mojom::ConnectionType::CONNECTION_NONE);
+  EXPECT_TRUE(Register(sync_options_1_));
+  EXPECT_EQ(0, sync_events_called_);
+  EXPECT_TRUE(GetRegistration(sync_options_1_));
+
+  BackgroundSyncNetworkObserver* network_observer =
+      test_background_sync_manager_->GetNetworkObserverForTesting();
+  ASSERT_TRUE(network_observer);
+
+  // Set the network, then immediately remove it.
+  network_observer->NotifyManagerIfConnectionChangedForTesting(
+      network::mojom::ConnectionType::CONNECTION_WIFI);
+  network_observer->NotifyManagerIfConnectionChangedForTesting(
+      network::mojom::ConnectionType::CONNECTION_NONE);
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_EQ(0, sync_events_called_);
+  ASSERT_TRUE(GetRegistration(sync_options_1_));
+
+  // The event fires after the network is restored.
+  SetNetwork(network::mojom::ConnectionType::CONNECTION_WIFI);
+  EXPECT_EQ(1, sync_events_called_);
+  EXPECT_FALSE(GetRegistration(sync_options_1_));
+  histogram_tester.ExpectBucketCount("BackgroundSync.OptionConditionsChanged",
+                                     false, 1);
 }
 
 TEST_F(BackgroundSyncManagerTest, FiresOnManagerRestart) {

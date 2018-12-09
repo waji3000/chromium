@@ -273,6 +273,14 @@ Status FindElement(int interval_ms,
   std::string strategy;
   if (!params.GetString("using", &strategy))
     return Status(kInvalidArgument, "'using' must be a string");
+  if (session->w3c_compliant &&
+      strategy != "css selector" &&
+      strategy != "link text" &&
+      strategy != "partial link text" &&
+      strategy != "tag name" &&
+      strategy != "xpath")
+    return Status(kInvalidArgument, "invalid locator");
+
   std::string target;
   if (!params.GetString("value", &target))
     return Status(kInvalidArgument, "'value' must be a string");
@@ -355,6 +363,25 @@ Status IsElementFocused(
     return status;
   std::unique_ptr<base::Value> element_dict(CreateElement(element_id));
   *is_focused = result->Equals(element_dict.get());
+  return Status(kOk);
+}
+
+Status IsDocumentTypeXml(
+    Session* session,
+    WebView* web_view,
+    bool* is_xml_document) {
+
+  std::unique_ptr<base::Value> contentType;
+  Status status = web_view->EvaluateScript(
+      session->GetCurrentFrameId(),
+      "document.contentType", &contentType);
+  if (status.IsError())
+          return status;
+  if (base::LowerCaseEqualsASCII(contentType->GetString(),
+                                 "text/xml"))
+    *is_xml_document = true;
+  else
+    *is_xml_document = false;
   return Status(kOk);
 }
 

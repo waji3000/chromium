@@ -197,7 +197,7 @@ DesktopMediaPickerDialogView::DesktopMediaPickerDialogView(
   if (params.request_audio) {
     audio_share_checkbox_ = new views::Checkbox(
         l10n_util::GetStringUTF16(IDS_DESKTOP_MEDIA_PICKER_AUDIO_SHARE));
-    audio_share_checkbox_->SetChecked(true);
+    audio_share_checkbox_->SetChecked(false);
   }
 
   // Focus on the first non-null media_list.
@@ -297,6 +297,12 @@ bool DesktopMediaPickerDialogView::IsDialogButtonEnabled(
 
 views::View* DesktopMediaPickerDialogView::GetInitiallyFocusedView() {
   return list_views_[0];
+}
+
+int DesktopMediaPickerDialogView::GetDefaultDialogButton() const {
+  // To prevent permissions being accepted accidentally, permission prompts
+  // should not be accepted as the default action.
+  return ui::DIALOG_BUTTON_CANCEL;
 }
 
 base::string16 DesktopMediaPickerDialogView::GetDialogButtonLabel(

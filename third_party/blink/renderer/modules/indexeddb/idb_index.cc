@@ -26,7 +26,6 @@
 #include "third_party/blink/renderer/modules/indexeddb/idb_index.h"
 
 #include <memory>
-#include "third_party/blink/public/platform/modules/indexeddb/web_idb_key_range.h"
 #include "third_party/blink/renderer/bindings/core/v8/to_v8_for_core.h"
 #include "third_party/blink/renderer/bindings/modules/v8/idb_object_store_or_idb_index_or_idb_cursor.h"
 #include "third_party/blink/renderer/bindings/modules/v8/to_v8_for_modules.h"
@@ -131,7 +130,7 @@ IDBRequest* IDBIndex::openCursor(ScriptState* script_state,
         transaction_->InactiveErrorMessage());
     return nullptr;
   }
-  WebIDBCursorDirection direction =
+  mojom::IDBCursorDirection direction =
       IDBCursor::StringToDirection(direction_string);
   IDBKeyRange* key_range = IDBKeyRange::FromScriptValue(
       ExecutionContext::From(script_state), range, exception_state);
@@ -149,13 +148,14 @@ IDBRequest* IDBIndex::openCursor(ScriptState* script_state,
 
 IDBRequest* IDBIndex::openCursor(ScriptState* script_state,
                                  IDBKeyRange* key_range,
-                                 WebIDBCursorDirection direction,
+                                 mojom::IDBCursorDirection direction,
                                  IDBRequest::AsyncTraceState metrics) {
   IDBRequest* request = IDBRequest::Create(
       script_state, this, transaction_.Get(), std::move(metrics));
-  request->SetCursorDetails(IndexedDB::kCursorKeyAndValue, direction);
+  request->SetCursorDetails(indexed_db::kCursorKeyAndValue, direction);
   BackendDB()->OpenCursor(transaction_->Id(), object_store_->Id(), Id(),
-                          key_range, direction, false, kWebIDBTaskTypeNormal,
+                          key_range, direction, false,
+                          mojom::IDBTaskType::Normal,
                           request->CreateWebCallbacks().release());
   return request;
 }
@@ -214,7 +214,7 @@ IDBRequest* IDBIndex::openKeyCursor(ScriptState* script_state,
         transaction_->InactiveErrorMessage());
     return nullptr;
   }
-  WebIDBCursorDirection direction =
+  mojom::IDBCursorDirection direction =
       IDBCursor::StringToDirection(direction_string);
   IDBKeyRange* key_range = IDBKeyRange::FromScriptValue(
       ExecutionContext::From(script_state), range, exception_state);
@@ -228,10 +228,10 @@ IDBRequest* IDBIndex::openKeyCursor(ScriptState* script_state,
 
   IDBRequest* request = IDBRequest::Create(
       script_state, this, transaction_.Get(), std::move(metrics));
-  request->SetCursorDetails(IndexedDB::kCursorKeyOnly, direction);
-  BackendDB()->OpenCursor(transaction_->Id(), object_store_->Id(), Id(),
-                          key_range, direction, true, kWebIDBTaskTypeNormal,
-                          request->CreateWebCallbacks().release());
+  request->SetCursorDetails(indexed_db::kCursorKeyOnly, direction);
+  BackendDB()->OpenCursor(
+      transaction_->Id(), object_store_->Id(), Id(), key_range, direction, true,
+      mojom::IDBTaskType::Normal, request->CreateWebCallbacks().release());
   return request;
 }
 

@@ -5,7 +5,7 @@
 #include "third_party/blink/renderer/core/paint/compositing/compositing_reason_finder.h"
 
 #include "third_party/blink/renderer/core/animation/scroll_timeline.h"
-#include "third_party/blink/renderer/core/css_property_names.h"
+#include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
@@ -44,7 +44,7 @@ bool CompositingReasonFinder::IsMainFrame() const {
 CompositingReasons CompositingReasonFinder::DirectReasons(
     const PaintLayer* layer,
     bool ignore_lcd_text) const {
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
     return CompositingReason::kNone;
 
   DCHECK_EQ(PotentialCompositingReasonsFromStyle(layer->GetLayoutObject()),
@@ -75,7 +75,7 @@ bool CompositingReasonFinder::RequiresCompositingForScrollableFrame() const {
 CompositingReasons
 CompositingReasonFinder::PotentialCompositingReasonsFromStyle(
     LayoutObject& layout_object) const {
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
     return CompositingReason::kNone;
 
   CompositingReasons reasons = CompositingReason::kNone;
@@ -93,9 +93,6 @@ CompositingReasonFinder::PotentialCompositingReasonsFromStyle(
   if (style.HasWillChangeCompositingHint() &&
       !style.SubtreeWillChangeContents())
     reasons |= CompositingReason::kWillChangeCompositingHint;
-
-  if (style.HasInlineTransform())
-    reasons |= CompositingReason::kInlineTransform;
 
   if (style.UsedTransformStyle3D() == ETransformStyle3D::kPreserve3d)
     reasons |= CompositingReason::kPreserve3DWith3DDescendants;
@@ -257,7 +254,8 @@ bool CompositingReasonFinder::RequiresCompositingForRootScroller(
   const auto& settings = *layer.GetLayoutObject().GetDocument().GetSettings();
   if (!settings.GetAcceleratedCompositingEnabled())
     return false;
-  return root_scroller_util::IsGlobal(layer);
+
+  return layer.GetLayoutObject().IsGlobalRootScroller();
 }
 
 bool CompositingReasonFinder::RequiresCompositingForScrollDependentPosition(
@@ -271,7 +269,7 @@ bool CompositingReasonFinder::RequiresCompositingForScrollDependentPosition(
         (compositing_triggers_ & kViewportConstrainedPositionedTrigger)) &&
       (!RuntimeEnabledFeatures::CompositeOpaqueFixedPositionEnabled() ||
        !layer->BackgroundIsKnownToBeOpaqueInRect(
-           LayoutRect(layer->BoundingBoxForCompositing())) ||
+           LayoutRect(layer->BoundingBoxForCompositing()), true) ||
        layer->CompositesWithTransform() || layer->CompositesWithOpacity())) {
     return false;
   }

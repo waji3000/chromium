@@ -7,6 +7,7 @@
 #include <memory>
 #include "services/network/public/mojom/fetch_api.mojom-shared.h"
 #include "third_party/blink/public/platform/task_type.h"
+#include "third_party/blink/renderer/bindings/core/v8/sanitize_script_errors.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_cache_options.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/events/error_event.h"
@@ -20,7 +21,7 @@
 #include "third_party/blink/renderer/core/workers/dedicated_worker_thread.h"
 #include "third_party/blink/renderer/core/workers/worker_options.h"
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
-#include "third_party/blink/renderer/platform/web_task_runner.h"
+#include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/wtf/wtf.h"
 
 namespace blink {
@@ -184,6 +185,10 @@ void DedicatedWorkerMessagingProxy::DispatchErrorEvent(
       CrossThreadBind(&DedicatedWorkerObjectProxy::ProcessUnhandledException,
                       CrossThreadUnretained(worker_object_proxy_.get()),
                       exception_id, CrossThreadUnretained(GetWorkerThread())));
+
+  // Propagate an unhandled error to the parent context.
+  const auto mute_script_errors = SanitizeScriptErrors::kDoNotSanitize;
+  GetExecutionContext()->DispatchErrorEvent(event, mute_script_errors);
 }
 
 void DedicatedWorkerMessagingProxy::Trace(blink::Visitor* visitor) {

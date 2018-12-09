@@ -20,6 +20,7 @@ if (closure_compile) {
         "md_bookmarks:closure_compile",
         "md_downloads:closure_compile",
         "md_history:closure_compile",
+        "md_user_manager:closure_compile",
         "media_router:closure_compile",
         "ntp4:closure_compile",
         "omnibox:closure_compile",
@@ -27,15 +28,12 @@ if (closure_compile) {
         "print_preview:closure_compile",
         "settings:closure_compile",
         "signin/dice_sync_confirmation:closure_compile",
+        "welcome/dice_welcome:closure_compile",
         "welcome/onboarding_welcome:closure_compile",
       ]
     }
     if (is_chromeos) {
-      deps += [
-        "chromeos:closure_compile",
-        "md_user_manager:closure_compile",
-        "welcome/dice_welcome:closure_compile",
-      ]
+      deps += [ "chromeos:closure_compile" ]
     }
     if (enable_extensions) {
       deps += [ "md_extensions:closure_compile" ]
@@ -47,6 +45,9 @@ if (closure_compile) {
         "snippets_internals:closure_compile",
         "webapks:closure_compile",
       ]
+    }
+    if (!is_android) {
+      deps += [ "app_management:closure_compile" ]
     }
   }
 }
@@ -124,6 +125,16 @@ if (!is_android) {
       "grit/component_extension_resources_map.cc",
       "grit/component_extension_resources_map.h",
       "component_extension_resources.pak",
+    ]
+    output_dir = "$root_gen_dir/chrome"
+  }
+
+  grit("local_ntp_resources") {
+    source = "local_ntp_resources.grd"
+    defines = chrome_grit_defines
+    outputs = [
+      "grit/local_ntp_resources.h",
+      "local_ntp_resources.pak",
     ]
     output_dir = "$root_gen_dir/chrome"
   }

@@ -16,7 +16,7 @@
 #import "ios/chrome/browser/ui/commands/browser_commands.h"
 #import "ios/chrome/browser/ui/find_bar/find_bar_view.h"
 #import "ios/chrome/browser/ui/image_util/image_util.h"
-#import "ios/chrome/browser/ui/toolbar/buttons/toolbar_constants.h"
+#import "ios/chrome/browser/ui/toolbar/public/toolbar_constants.h"
 #include "ios/chrome/browser/ui/util/rtl_geometry.h"
 #include "ios/chrome/browser/ui/util/ui_util.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
@@ -374,12 +374,22 @@ const NSTimeInterval kSearchShortDelay = 0.100;
   [parentView addSubview:self.view];
   self.view.accessibilityIdentifier = kFindInPageContainerViewId;
 
+  // Make sure that the Find in Page view bottom constraint has a lower priority
+  // than the constraint making sure that it doesn't overlap with the status
+  // bar.
+  NSLayoutConstraint* bottomConstraint =
+      [self.view.bottomAnchor constraintEqualToAnchor:toolbarView.bottomAnchor];
+  bottomConstraint.priority = UILayoutPriorityRequired - 1;
+
   [NSLayoutConstraint activateConstraints:@[
     [self.view.leadingAnchor constraintEqualToAnchor:parentView.leadingAnchor],
     [self.view.trailingAnchor
         constraintEqualToAnchor:parentView.trailingAnchor],
+    bottomConstraint,
+    [self.findBarView.topAnchor
+        constraintGreaterThanOrEqualToAnchor:self.view.safeAreaLayoutGuide
+                                                 .topAnchor],
     [self.view.topAnchor constraintEqualToAnchor:parentView.topAnchor],
-    [self.view.bottomAnchor constraintEqualToAnchor:toolbarView.bottomAnchor],
   ]];
 
   CGFloat duration = animated ? kAnimationDuration : 0;

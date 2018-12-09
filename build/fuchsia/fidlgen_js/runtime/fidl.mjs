@@ -18,6 +18,8 @@ const $fidl__kAlignmentMask = 0x7;
 const $fidl__kLE = true;
 
 const $fidl__kUserspaceTxidMask = 0x7fffffff;
+const $fidl__kHandlePresent = 0xffffffff;
+const $fidl__kInvalidUnionTag = 0xffffffff;
 var $fidl__nextTxid = 1;
 
 function $fidl__align(size) {
@@ -34,7 +36,6 @@ function $fidl_Encoder(ordinal) {
   this.data = new DataView(buf);
   this.extent = 0;
   this.handles = [];
-  this.outOfLine = [];
   this._encodeMessageHeader(ordinal);
 }
 
@@ -78,14 +79,14 @@ $fidl_Encoder.prototype._grow = function(newSize) {
   this.data = new DataView(newBuffer);
 };
 
-$fidl_Encoder.prototype.messageData = function() {
-  // Add all out of line data.
-  var len = this.outOfLine.length;
-  for (var i = 0; i < len; i++) {
-    this.outOfLine[i][0](this, this.outOfLine[i][1]);
-  }
+/**
+ * @param {number} handle
+ */
+$fidl_Encoder.prototype.addHandle = function(handle) {
+  this.handles.push(handle);
+};
 
-  // Return final result.
+$fidl_Encoder.prototype.messageData = function() {
   return new DataView(this.data.buffer, 0, this.extent);
 };
 
@@ -117,6 +118,8 @@ $fidl_Decoder.prototype.claimMemory = function(size) {
 }
 
 $fidl_Decoder.prototype.claimHandle = function() {
+  if (this.nextHandle >= this.handles.length)
+    throw "Attempt to claim more handles than are available";
   return this.handles[this.nextHandle++];
 }
 
@@ -125,6 +128,16 @@ $fidl_Decoder.prototype.claimHandle = function() {
 const _kTT_bool = {
   enc: function(e, o, v) { e.data.setInt8(o, v ? 1 : 0); },
   dec: function(d, o) { return d.data.getInt8(o) != 0; },
+};
+
+const _kTT_float32 = {
+  enc: function(e, o, v) { e.data.setFloat32(o, v, $fidl__kLE); },
+  dec: function(d, o) { return d.data.getFloat32(o, $fidl__kLE); },
+};
+
+const _kTT_float64 = {
+  enc: function(e, o, v) { e.data.setFloat64(o, v, $fidl__kLE); },
+  dec: function(d, o) { return d.data.getFloat64(o, $fidl__kLE); },
 };
 
 const _kTT_int8 = {
@@ -142,6 +155,21 @@ const _kTT_int32 = {
   dec: function(d, o) { return d.data.getInt32(o, $fidl__kLE); },
 };
 
+const _kTT_int64 = {
+  enc: function(e, o, v) {
+    var bi = BigInt.asIntN(64, BigInt(v));
+    var x = Number(bi & 0xffffffffn);
+    var y = Number((bi >> 32n) & 0xffffffffn);
+    e.data.setInt32(o, x, $fidl__kLE);
+    e.data.setInt32(o + 4, y, $fidl__kLE);
+  },
+  dec: function(d, o) {
+    var x = BigInt.asIntN(64, BigInt(d.data.getInt32(o, $fidl__kLE)));
+    var y = BigInt.asIntN(64, BigInt(d.data.getInt32(o + 4, $fidl__kLE)));
+    return x | (y << 32n);
+  },
+};
+
 const _kTT_uint8 = {
   enc: function(e, o, v) { e.data.setUint8(o, v); },
   dec: function(d, o) { return d.data.getUint8(o); },
@@ -157,17 +185,57 @@ const _kTT_uint32 = {
   dec: function(d, o) { return d.data.getUint32(o, $fidl__kLE); },
 };
 
-const _kTT_String_Nonnull = {
+const _kTT_uint64 = {
+  enc: function(e, o, v) {
+    var bi = BigInt.asUintN(64, BigInt(v));
+    var x = Number(bi & 0xffffffffn);
+    var y = Number((bi >> 32n) & 0xffffffffn);
+    e.data.setUint32(o, x, $fidl__kLE);
+    e.data.setUint32(o + 4, y, $fidl__kLE);
+  },
+  dec: function(d, o) {
+    var x = BigInt.asUintN(64, BigInt(d.data.getUint32(o, $fidl__kLE)));
+    var y = BigInt.asUintN(64, BigInt(d.data.getUint32(o + 4, $fidl__kLE)));
+    return x | (y << 32n);
+  },
+};
+
+const _kTT_Handle = {
+  enc: function(e, o, v) {
+    if (v === null || v === undefined) {
+      e.data.setUint32(o, 0, $fidl__kLE);
+    } else {
+      e.data.setUint32(o, $fidl__kHandlePresent, $fidl__kLE);
+      e.addHandle(v);
+    }
+  },
+  dec: function(d, o) {
+    var $present = d.data.getUint32(o, $fidl__kLE);
+    if ($present === 0) {
+      return 0;
+    } else {
+      if ($present !== $fidl__kHandlePresent)
+        throw "Expected UINT32_MAX to indicate handle presence";
+      return d.claimHandle();
+    }
+  },
+};
+
+const _kTT_String = {
   enc: function(e, o, v) {
     if (v === null || v === undefined) throw "non-null string required";
     // Both size and data are uint64, but that's awkward in JS, so for now only
-    // support a maximum of 32b lengths.
+    // support a maximum of 32b lengths. The maximum length of a FIDL message is
+    // shorter than 32b in any case.
     var asUtf8 = $FidlJsStrToUtf8Array(v);
     e.data.setUint32(o, asUtf8.length, $fidl__kLE);
     e.data.setUint32(o + 4, 0, $fidl__kLE);
     e.data.setUint32(o + 8, 0xffffffff, $fidl__kLE);
     e.data.setUint32(o + 12, 0xffffffff, $fidl__kLE);
-    e.outOfLine.push([$fidl_OutOfLineStringEnc, asUtf8]);
+    var body = e.alloc(asUtf8.length);
+    for (var i = 0; i < asUtf8.length; i++) {
+      e.data.setUint8(body + i, asUtf8[i], $fidl__kLE);
+    }
   },
   dec: function(d, o) {
     var len = d.data.getUint32(o, $fidl__kLE);
@@ -178,9 +246,25 @@ const _kTT_String_Nonnull = {
   }
 };
 
-function $fidl_OutOfLineStringEnc(e, strAsUtf8Array) {
-  var start = e.alloc(strAsUtf8Array.length);
-  for (var i = 0; i < strAsUtf8Array.length; i++) {
-    e.data.setUint8(start + i, strAsUtf8Array[i], $fidl__kLE);
+const _kTT_String_Nullable = {
+  enc: function(e, o, v) {
+    if (v === null || v === undefined) {
+      e.data.setUint32(o, 0, $fidl__kLE);
+      e.data.setUint32(o + 4, 0, $fidl__kLE);
+      e.data.setUint32(o + 8, 0, $fidl__kLE);
+      e.data.setUint32(o + 12, 0, $fidl__kLE);
+    } else {
+      _kTT_String.enc(e, o, v);
+    }
+  },
+  dec: function(d, o) {
+    if (v === null || v === undefined) {
+      var pointer = d.data.getUint32(o + 8, $fidl__kLE);
+      if (pointer === 0) {
+        return null;
+      }
+    } else {
+      return _kTT_String.dec(e, o, v);
+    }
   }
-}
+};

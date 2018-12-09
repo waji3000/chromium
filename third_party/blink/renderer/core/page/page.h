@@ -34,7 +34,6 @@
 #include "third_party/blink/renderer/core/page/page_animator.h"
 #include "third_party/blink/renderer/core/page/page_visibility_notifier.h"
 #include "third_party/blink/renderer/core/page/page_visibility_observer.h"
-#include "third_party/blink/renderer/core/page/page_visibility_state.h"
 #include "third_party/blink/renderer/core/page/viewport_description.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
@@ -44,7 +43,6 @@
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
-#include "third_party/skia/include/core/SkColor.h"
 
 namespace blink {
 
@@ -61,7 +59,6 @@ class LinkHighlights;
 class LocalFrame;
 class LocalFrameView;
 class OverscrollController;
-class PageOverlay;
 struct PageScaleConstraints;
 class PageScaleConstraintsSet;
 class PluginData;
@@ -109,6 +106,7 @@ class CORE_EXPORT Page final : public GarbageCollectedFinalized<Page>,
   // An "ordinary" page is a fully-featured page owned by a web view.
   static Page* CreateOrdinary(PageClients&, Page* opener);
 
+  explicit Page(PageClients&);
   ~Page() override;
 
   void CloseSoon();
@@ -254,8 +252,7 @@ class CORE_EXPORT Page final : public GarbageCollectedFinalized<Page>,
   static void AllVisitedStateChanged(bool invalidate_visited_link_hashes);
   static void VisitedStateChanged(LinkHash visited_hash);
 
-  void SetVisibilityState(mojom::PageVisibilityState, bool);
-  mojom::PageVisibilityState VisibilityState() const;
+  void SetIsHidden(bool hidden, bool is_initial_state);
   bool IsPageVisible() const;
 
   PageLifecycleState LifecycleState() const;
@@ -311,16 +308,8 @@ class CORE_EXPORT Page final : public GarbageCollectedFinalized<Page>,
 
   int32_t AutoplayFlags() const;
 
-  void SetPageOverlayColor(SkColor);
-
-  void UpdatePageColorOverlay();
-
-  void PaintPageColorOverlay();
-
  private:
   friend class ScopedPagePauser;
-
-  explicit Page(PageClients&);
 
   void InitGroup();
 
@@ -368,8 +357,6 @@ class CORE_EXPORT Page final : public GarbageCollectedFinalized<Page>,
 
   Member<ValidationMessageClient> validation_message_client_;
 
-  std::unique_ptr<PageOverlay> page_color_overlay_;
-
   Deprecation deprecation_;
   HostsUsingFeatures hosts_using_features_;
   WebWindowFeatures window_features_;
@@ -387,7 +374,7 @@ class CORE_EXPORT Page final : public GarbageCollectedFinalized<Page>,
 
   float device_scale_factor_;
 
-  mojom::PageVisibilityState visibility_state_;
+  bool is_hidden_;
 
   PageLifecycleState page_lifecycle_state_;
 

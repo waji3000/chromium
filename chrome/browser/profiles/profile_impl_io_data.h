@@ -16,14 +16,8 @@
 
 class ReportingPermissionsChecker;
 
-namespace domain_reliability {
-class DomainReliabilityMonitor;
-}  // namespace domain_reliability
-
 namespace net {
 class CookieStore;
-struct ReportingPolicy;
-class ReportingService;
 class URLRequestContextBuilder;
 }  // namespace net
 
@@ -46,9 +40,7 @@ class ProfileImplIOData : public ProfileIOData {
               const base::FilePath& profile_path,
               storage::SpecialStoragePolicy* special_storage_policy,
               std::unique_ptr<ReportingPermissionsChecker>
-                  reporting_permissions_checker,
-              std::unique_ptr<domain_reliability::DomainReliabilityMonitor>
-                  domain_reliability_monitor);
+                  reporting_permissions_checker);
 
     // These Create*ContextGetter() functions are only exposed because the
     // circular relationship between Profile, ProfileIOData::Handle, and the
@@ -126,8 +118,6 @@ class ProfileImplIOData : public ProfileIOData {
     bool persist_session_cookies;
     scoped_refptr<storage::SpecialStoragePolicy> special_storage_policy;
     std::unique_ptr<ReportingPermissionsChecker> reporting_permissions_checker;
-    std::unique_ptr<domain_reliability::DomainReliabilityMonitor>
-        domain_reliability_monitor;
   };
 
   ProfileImplIOData();
@@ -156,17 +146,6 @@ class ProfileImplIOData : public ProfileIOData {
       net::URLRequestContext* app_context,
       const StoragePartitionDescriptor& partition_descriptor) const override;
   net::CookieStore* GetExtensionsCookieStore() const override;
-
-  // Returns a net::ReportingService, if reporting should be enabled. Otherwise,
-  // returns nullptr.
-  // TODO(mmenke): Remove once URLRequestContextBuilders are always used to
-  // create URLRequestContexts.
-  std::unique_ptr<net::ReportingService> MaybeCreateReportingService(
-      net::URLRequestContext* url_request_context) const;
-
-  // Returns a net::ReportingPolicy, if reporting should be enabled. Otherwise,
-  // returns nullptr.
-  static std::unique_ptr<net::ReportingPolicy> MaybeCreateReportingPolicy();
 
   // Lazy initialization params.
   mutable std::unique_ptr<LazyParams> lazy_params_;

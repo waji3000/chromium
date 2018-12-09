@@ -47,6 +47,8 @@ class CORE_EXPORT OffscreenCanvas final
 
  public:
   static OffscreenCanvas* Create(unsigned width, unsigned height);
+
+  explicit OffscreenCanvas(const IntSize&);
   ~OffscreenCanvas() override;
   void Dispose();
 
@@ -148,9 +150,7 @@ class CORE_EXPORT OffscreenCanvas final
   scoped_refptr<Image> GetSourceImageForCanvas(SourceImageStatus*,
                                                AccelerationHint,
                                                const FloatSize&) final;
-  bool WouldTaintOrigin(const SecurityOrigin*) const final {
-    return !origin_clean_;
-  }
+  bool WouldTaintOrigin() const final { return !origin_clean_; }
   FloatSize ElementSize(const FloatSize& default_object_size) const final {
     return FloatSize(width(), height());
   }
@@ -173,7 +173,6 @@ class CORE_EXPORT OffscreenCanvas final
   int32_t memory_usage_ = 0;
 
   friend class OffscreenCanvasTest;
-  explicit OffscreenCanvas(const IntSize&);
   using ContextFactoryVector =
       Vector<std::unique_ptr<CanvasRenderingContextFactory>>;
   static ContextFactoryVector& RenderingContextFactories();

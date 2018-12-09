@@ -89,6 +89,7 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapter
     // |device| changes:
     //  * GetAddress()
     //  * GetAppearance()
+    //  * GetName() (Chrome OS and Windows only)
     //  * GetBluetoothClass()
     //  * GetInquiryRSSI()
     //  * GetInquiryTxPower()
@@ -138,6 +139,26 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapter
     virtual void DeviceMTUChanged(BluetoothAdapter* adapter,
                                   BluetoothDevice* device,
                                   uint16_t mtu) {}
+
+    // This function is implemented for ChromeOS only.
+    // Called when advertisement is received from |device|. |eir| is the
+    // extended inquiry response specified in Bluetooth Core Spec, Vol 3,
+    // Part C, Section 11.
+    //
+    // Override this function to observe LE advertisements. Whenever |rssi| of
+    // |device| changes, this function is called with the latest |eir| from
+    // |device|. This function is never called on classic |device|.
+    virtual void DeviceAdvertisementReceived(BluetoothAdapter* adapter,
+                                             BluetoothDevice* device,
+                                             int16_t rssi,
+                                             const std::vector<uint8_t>& eir) {}
+
+    // This function is implemented for ChromeOS only.
+    // Called when |device|'s state has changed from connected to not connected
+    // or vice versa.
+    virtual void DeviceConnectedStateChanged(BluetoothAdapter* adapter,
+                                             BluetoothDevice* device,
+                                             bool is_now_connected) {}
 #endif
 
     // Called when the device |device| is removed from the adapter |adapter|,

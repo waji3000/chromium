@@ -27,8 +27,6 @@
 #include "services/catalog/constants.h"
 #include "services/catalog/entry_cache.h"
 #include "services/catalog/instance.h"
-#include "services/service_manager/public/cpp/binder_registry.h"
-#include "services/service_manager/public/cpp/service_context.h"
 
 namespace catalog {
 
@@ -143,52 +141,27 @@ class Catalog::DirectoryThreadState
   DISALLOW_COPY_AND_ASSIGN(DirectoryThreadState);
 };
 
-class Catalog::ServiceImpl : public service_manager::Service {
- public:
-  explicit ServiceImpl(Catalog* catalog) : catalog_(catalog) {
-    registry_.AddInterface<mojom::Catalog>(
-        base::Bind(&Catalog::BindCatalogRequest, base::Unretained(catalog_)));
-    registry_.AddInterface<filesystem::mojom::Directory>(
-        base::Bind(&Catalog::BindDirectoryRequest, base::Unretained(catalog_)));
-  }
-  ~ServiceImpl() override {}
-
-  // service_manager::Service:
-  void OnBindInterface(const service_manager::BindSourceInfo& source_info,
-                       const std::string& interface_name,
-                       mojo::ScopedMessagePipeHandle interface_pipe) override {
-    registry_.BindInterface(interface_name, std::move(interface_pipe),
-                            source_info);
-  }
-
- private:
-  Catalog* const catalog_;
-  service_manager::BinderRegistryWithArgs<
-      const service_manager::BindSourceInfo&>
-      registry_;
-
-  DISALLOW_COPY_AND_ASSIGN(ServiceImpl);
-};
-
 Catalog::Catalog(std::unique_ptr<base::Value> static_manifest,
                  ManifestProvider* service_manifest_provider)
-    : service_context_(new service_manager::ServiceContext(
-          std::make_unique<ServiceImpl>(this),
-          mojo::MakeRequest(&service_))),
-      service_manifest_provider_(service_manifest_provider),
-      weak_factory_(this) {
+    : service_manifest_provider_(service_manifest_provider) {
   if (static_manifest) {
     LoadCatalogManifestIntoCache(static_manifest.get(), &system_cache_);
   } else if (g_default_static_manifest.Get()) {
     LoadCatalogManifestIntoCache(
         g_default_static_manifest.Get().get(), &system_cache_);
   }
+
+  registry_.AddInterface<mojom::Catalog>(base::BindRepeating(
+      &Catalog::BindCatalogRequest, base::Unretained(this)));
+  registry_.AddInterface<filesystem::mojom::Directory>(base::BindRepeating(
+      &Catalog::BindDirectoryRequest, base::Unretained(this)));
 }
 
-Catalog::~Catalog() {}
+Catalog::~Catalog() = default;
 
-service_manager::mojom::ServicePtr Catalog::TakeService() {
-  return std::move(service_);
+void Catalog::BindServiceRequest(
+    service_manager::mojom::ServiceRequest request) {
+  service_binding_.Bind(std::move(request));
 }
 
 // static
@@ -211,21 +184,22 @@ void Catalog::LoadDefaultCatalogManifest(const base::FilePath& path) {
   catalog::Catalog::SetDefaultCatalogManifest(std::move(manifest_value));
 }
 
-Instance* Catalog::GetInstanceForUserId(const std::string& user_id) {
-  auto it = instances_.find(user_id);
+Instance* Catalog::GetInstanceForGroup(const base::Token& instance_group) {
+  auto it = instances_.find(instance_group);
   if (it != instances_.end())
     return it->second.get();
 
-  auto result = instances_.insert(std::make_pair(
-      user_id,
-      std::make_unique<Instance>(&system_cache_, service_manifest_provider_)));
+  auto result = instances_.emplace(
+      instance_group,
+      std::make_unique<Instance>(&system_cache_, service_manifest_provider_));
   return result.first->second.get();
 }
 
 void Catalog::BindCatalogRequest(
     mojom::CatalogRequest request,
     const service_manager::BindSourceInfo& source_info) {
-  Instance* instance = GetInstanceForUserId(source_info.identity.user_id());
+  Instance* instance =
+      GetInstanceForGroup(source_info.identity.instance_group());
   instance->BindCatalog(std::move(request));
 }
 
@@ -258,6 +232,14 @@ void Catalog::BindDirectoryRequestOnBackgroundThread(
           resources_path, scoped_refptr<filesystem::SharedTempDir>(),
           thread_state->lock_table()),
       std::move(request));
+}
+
+void Catalog::OnBindInterface(
+    const service_manager::BindSourceInfo& source_info,
+    const std::string& interface_name,
+    mojo::ScopedMessagePipeHandle interface_pipe) {
+  registry_.BindInterface(interface_name, std::move(interface_pipe),
+                          source_info);
 }
 
 }  // namespace catalog

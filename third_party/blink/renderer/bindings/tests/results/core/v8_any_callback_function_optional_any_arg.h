@@ -13,6 +13,7 @@
 
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/platform/bindings/callback_function_base.h"
+#include "third_party/blink/renderer/platform/wtf/forward.h"
 
 namespace blink {
 
@@ -21,9 +22,11 @@ class ScriptWrappable;
 class CORE_EXPORT V8AnyCallbackFunctionOptionalAnyArg final : public CallbackFunctionBase {
  public:
   static V8AnyCallbackFunctionOptionalAnyArg* Create(v8::Local<v8::Function> callback_function) {
-    return new V8AnyCallbackFunctionOptionalAnyArg(callback_function);
+    return MakeGarbageCollected<V8AnyCallbackFunctionOptionalAnyArg>(callback_function);
   }
 
+  explicit V8AnyCallbackFunctionOptionalAnyArg(v8::Local<v8::Function> callback_function)
+      : CallbackFunctionBase(callback_function) {}
   ~V8AnyCallbackFunctionOptionalAnyArg() override = default;
 
   // NameClient overrides:
@@ -36,10 +39,6 @@ class CORE_EXPORT V8AnyCallbackFunctionOptionalAnyArg final : public CallbackFun
   // Performs "construct".
   // https://heycam.github.io/webidl/#construct-a-callback-function
   v8::Maybe<ScriptValue> Construct(ScriptValue optionalAnyArg) WARN_UNUSED_RESULT;
-
- private:
-  explicit V8AnyCallbackFunctionOptionalAnyArg(v8::Local<v8::Function> callback_function)
-      : CallbackFunctionBase(callback_function) {}
 };
 
 template <>
@@ -47,6 +46,8 @@ class V8PersistentCallbackFunction<V8AnyCallbackFunctionOptionalAnyArg> final : 
   using V8CallbackFunction = V8AnyCallbackFunctionOptionalAnyArg;
 
  public:
+  explicit V8PersistentCallbackFunction(V8CallbackFunction* callback_function)
+      : V8PersistentCallbackFunctionBase(callback_function) {}
   ~V8PersistentCallbackFunction() override = default;
 
   // Returns a wrapper-tracing version of this callback function.
@@ -55,9 +56,6 @@ class V8PersistentCallbackFunction<V8AnyCallbackFunctionOptionalAnyArg> final : 
   v8::Maybe<ScriptValue> Invoke(ScriptWrappable* callback_this_value, ScriptValue optionalAnyArg) WARN_UNUSED_RESULT;
 
  private:
-  explicit V8PersistentCallbackFunction(V8CallbackFunction* callback_function)
-      : V8PersistentCallbackFunctionBase(callback_function) {}
-
   V8CallbackFunction* Proxy() {
     return As<V8CallbackFunction>();
   }

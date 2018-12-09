@@ -15,8 +15,8 @@
 #import "ios/chrome/browser/ui/authentication/signin_promo_view_configurator.h"
 #import "ios/chrome/browser/ui/authentication/signin_promo_view_delegate.h"
 #import "ios/chrome/browser/ui/authentication/signin_promo_view_mediator.h"
-#import "ios/chrome/browser/ui/autofill/cells/autofill_edit_item.h"
 #import "ios/chrome/browser/ui/autofill/cells/cvc_item.h"
+#import "ios/chrome/browser/ui/autofill/cells/legacy_autofill_edit_item.h"
 #import "ios/chrome/browser/ui/autofill/cells/status_item.h"
 #import "ios/chrome/browser/ui/collection_view/cells/MDCCollectionViewCell+Chrome.h"
 #import "ios/chrome/browser/ui/collection_view/cells/collection_view_account_item.h"
@@ -31,11 +31,10 @@
 #import "ios/chrome/browser/ui/payments/cells/payments_text_item.h"
 #import "ios/chrome/browser/ui/payments/cells/price_item.h"
 #import "ios/chrome/browser/ui/settings/cells/account_signin_item.h"
-#import "ios/chrome/browser/ui/settings/cells/autofill_data_item.h"
 #import "ios/chrome/browser/ui/settings/cells/card_multiline_item.h"
 #import "ios/chrome/browser/ui/settings/cells/copied_to_chrome_item.h"
-#import "ios/chrome/browser/ui/settings/cells/encryption_item.h"
 #import "ios/chrome/browser/ui/settings/cells/import_data_multiline_detail_item.h"
+#import "ios/chrome/browser/ui/settings/cells/legacy/legacy_autofill_data_item.h"
 #import "ios/chrome/browser/ui/settings/cells/legacy/legacy_settings_detail_item.h"
 #import "ios/chrome/browser/ui/settings/cells/legacy/legacy_settings_switch_item.h"
 #import "ios/chrome/browser/ui/settings/cells/passphrase_error_item.h"
@@ -112,8 +111,6 @@ typedef NS_ENUM(NSInteger, ItemType) {
   ItemTypeAutofillStatus,
   ItemTypeAccountControlDynamicHeight,
   ItemTypeFooter,
-  ItemTypeSyncEncryption,
-  ItemTypeSyncEncryptionChecked,
   ItemTypeSyncPassphraseError,
   ItemTypeContentSuggestions,
   ItemTypeImageDetailTextItem,
@@ -407,10 +404,6 @@ const CGFloat kCardIssuerNetworkIconDimension = 25.0;
 
   // Sync cells.
   [model addSectionWithIdentifier:SectionIdentifierSync];
-  [model addItem:[self syncEncryptionItem]
-      toSectionWithIdentifier:SectionIdentifierSync];
-  [model addItem:[self syncEncryptionCheckedItem]
-      toSectionWithIdentifier:SectionIdentifierSync];
   [model addItem:[self syncPassphraseErrorItem]
       toSectionWithIdentifier:SectionIdentifierSync];
 
@@ -469,8 +462,6 @@ const CGFloat kCardIssuerNetworkIconDimension = 25.0;
     case ItemTypeAutofillDynamicHeight:
     case ItemTypeColdStateSigninPromo:
     case ItemTypeWarmStateSigninPromo:
-    case ItemTypeSyncEncryption:
-    case ItemTypeSyncEncryptionChecked:
       return [MDCCollectionViewCell
           cr_preferredHeightForWidth:CGRectGetWidth(collectionView.bounds)
                              forItem:item];
@@ -693,8 +684,8 @@ const CGFloat kCardIssuerNetworkIconDimension = 25.0;
 }
 
 - (CollectionViewItem*)autofillItemWithMainAndTrailingText {
-  AutofillDataItem* item =
-      [[AutofillDataItem alloc] initWithType:ItemTypeAutofillDynamicHeight];
+  LegacyAutofillDataItem* item = [[LegacyAutofillDataItem alloc]
+      initWithType:ItemTypeAutofillDynamicHeight];
   item.text = @"Main Text";
   item.trailingDetailText = @"Trailing Detail Text";
   item.accessoryType = MDCCollectionViewCellAccessoryNone;
@@ -702,8 +693,8 @@ const CGFloat kCardIssuerNetworkIconDimension = 25.0;
 }
 
 - (CollectionViewItem*)autofillItemWithLeadingTextOnly {
-  AutofillDataItem* item =
-      [[AutofillDataItem alloc] initWithType:ItemTypeAutofillDynamicHeight];
+  LegacyAutofillDataItem* item = [[LegacyAutofillDataItem alloc]
+      initWithType:ItemTypeAutofillDynamicHeight];
   item.text = @"Main Text";
   item.leadingDetailText = @"Leading Detail Text";
   item.accessoryType = MDCCollectionViewCellAccessoryDisclosureIndicator;
@@ -711,8 +702,8 @@ const CGFloat kCardIssuerNetworkIconDimension = 25.0;
 }
 
 - (CollectionViewItem*)autofillItemWithAllText {
-  AutofillDataItem* item =
-      [[AutofillDataItem alloc] initWithType:ItemTypeAutofillDynamicHeight];
+  LegacyAutofillDataItem* item = [[LegacyAutofillDataItem alloc]
+      initWithType:ItemTypeAutofillDynamicHeight];
   item.text = @"Main Text";
   item.leadingDetailText = @"Leading Detail Text";
   item.trailingDetailText = @"Trailing Detail Text";
@@ -721,8 +712,8 @@ const CGFloat kCardIssuerNetworkIconDimension = 25.0;
 }
 
 - (CollectionViewItem*)autofillEditItem {
-  AutofillEditItem* item =
-      [[AutofillEditItem alloc] initWithType:ItemTypeAutofillDynamicHeight];
+  LegacyAutofillEditItem* item = [[LegacyAutofillEditItem alloc]
+      initWithType:ItemTypeAutofillDynamicHeight];
   item.cellStyle = CollectionViewCellStyle::kUIKit;
   item.textFieldName = @"Required Card Number";
   item.textFieldValue = @"4111111111111111";
@@ -732,8 +723,8 @@ const CGFloat kCardIssuerNetworkIconDimension = 25.0;
 }
 
 - (CollectionViewItem*)autofillEditItemWithIcon {
-  AutofillEditItem* item =
-      [[AutofillEditItem alloc] initWithType:ItemTypeAutofillDynamicHeight];
+  LegacyAutofillEditItem* item = [[LegacyAutofillEditItem alloc]
+      initWithType:ItemTypeAutofillDynamicHeight];
   item.cellStyle = CollectionViewCellStyle::kUIKit;
   item.textFieldName = @"Card Number";
   item.textFieldValue = @"4111111111111111";
@@ -844,27 +835,6 @@ const CGFloat kCardIssuerNetworkIconDimension = 25.0;
                  title:@"Footer title"
               callback:nil];
   return footerItem;
-}
-
-- (EncryptionItem*)syncEncryptionItem {
-  EncryptionItem* item =
-      [[EncryptionItem alloc] initWithType:ItemTypeSyncEncryption];
-  item.text =
-      @"These two cells have exactly the same text, but one has a checkmark "
-      @"and the other does not.  They should lay out identically, and the "
-      @"presence of the checkmark should not cause the text to reflow.";
-  return item;
-}
-
-- (EncryptionItem*)syncEncryptionCheckedItem {
-  EncryptionItem* item =
-      [[EncryptionItem alloc] initWithType:ItemTypeSyncEncryptionChecked];
-  item.text =
-      @"These two cells have exactly the same text, but one has a checkmark "
-      @"and the other does not.  They should lay out identically, and the "
-      @"presence of the checkmark should not cause the text to reflow.";
-  item.accessoryType = MDCCollectionViewCellAccessoryCheckmark;
-  return item;
 }
 
 - (PassphraseErrorItem*)syncPassphraseErrorItem {

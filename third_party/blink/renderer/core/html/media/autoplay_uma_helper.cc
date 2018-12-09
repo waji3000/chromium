@@ -52,7 +52,7 @@ int64_t GetUserGestureStatusForUkmMetric(LocalFrame* frame) {
 }  // namespace
 
 AutoplayUmaHelper* AutoplayUmaHelper::Create(HTMLMediaElement* element) {
-  return new AutoplayUmaHelper(element);
+  return MakeGarbageCollected<AutoplayUmaHelper>(element);
 }
 
 AutoplayUmaHelper::AutoplayUmaHelper(HTMLMediaElement* element)
@@ -356,8 +356,8 @@ void AutoplayUmaHelper::OnVisibilityChangedForMutedVideoOffscreenDuration(
   is_visible_ = is_visible;
 }
 
-void AutoplayUmaHelper::handleEvent(ExecutionContext* execution_context,
-                                    Event* event) {
+void AutoplayUmaHelper::Invoke(ExecutionContext* execution_context,
+                               Event* event) {
   if (event->type() == event_type_names::kLoadstart)
     OnLoadStarted();
   else if (event->type() == event_type_names::kPlaying)
@@ -394,11 +394,13 @@ void AutoplayUmaHelper::MaybeStartRecordingMutedVideoPlayMethodBecomeVisible() {
       !element_->IsHTMLVideoElement() || !element_->muted())
     return;
 
-  muted_video_play_method_visibility_observer_ = new ElementVisibilityObserver(
-      element_, WTF::BindRepeating(
-                    &AutoplayUmaHelper::
-                        OnVisibilityChangedForMutedVideoPlayMethodBecomeVisible,
-                    WrapWeakPersistent(this)));
+  muted_video_play_method_visibility_observer_ =
+      MakeGarbageCollected<ElementVisibilityObserver>(
+          element_,
+          WTF::BindRepeating(
+              &AutoplayUmaHelper::
+                  OnVisibilityChangedForMutedVideoPlayMethodBecomeVisible,
+              WrapWeakPersistent(this)));
   muted_video_play_method_visibility_observer_->Start();
   SetContext(&element_->GetDocument());
 }
@@ -425,12 +427,12 @@ void AutoplayUmaHelper::MaybeStartRecordingMutedVideoOffscreenDuration() {
   // Start recording muted video playing offscreen duration.
   muted_video_autoplay_offscreen_start_time_ = CurrentTimeTicks();
   is_visible_ = false;
-  muted_video_offscreen_duration_visibility_observer_ =
-      new ElementVisibilityObserver(
-          element_, WTF::BindRepeating(
-                        &AutoplayUmaHelper::
-                            OnVisibilityChangedForMutedVideoOffscreenDuration,
-                        WrapWeakPersistent(this)));
+  muted_video_offscreen_duration_visibility_observer_ = MakeGarbageCollected<
+      ElementVisibilityObserver>(
+      element_,
+      WTF::BindRepeating(
+          &AutoplayUmaHelper::OnVisibilityChangedForMutedVideoOffscreenDuration,
+          WrapWeakPersistent(this)));
   muted_video_offscreen_duration_visibility_observer_->Start();
   element_->addEventListener(event_type_names::kPause, this, false);
   SetContext(&element_->GetDocument());

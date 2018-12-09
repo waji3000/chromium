@@ -8,15 +8,12 @@
 #include <memory>
 
 #include "base/macros.h"
-#include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/optional.h"
-#include "chromeos/chromeos_features.h"
+#include "chromeos/components/multidevice/remote_device_ref.h"
 #include "chromeos/components/proximity_auth/proximity_monitor.h"
 #include "chromeos/services/secure_channel/public/mojom/secure_channel.mojom.h"
-#include "components/cryptauth/connection.h"
-#include "components/cryptauth/remote_device_ref.h"
 #include "device/bluetooth/bluetooth_device.h"
 
 namespace chromeos {
@@ -38,9 +35,8 @@ class ProximityMonitorObserver;
 class ProximityMonitorImpl : public ProximityMonitor {
  public:
   // The |connection| is not owned, and must outlive |this| instance.
-  ProximityMonitorImpl(cryptauth::RemoteDeviceRef remote_device,
+  ProximityMonitorImpl(chromeos::multidevice::RemoteDeviceRef remote_device,
                        chromeos::secure_channel::ClientChannel* channel,
-                       cryptauth::Connection* connection,
                        ProximityAuthPrefManager* pref_manager);
   ~ProximityMonitorImpl() override;
 
@@ -76,8 +72,6 @@ class ProximityMonitorImpl : public ProximityMonitor {
   void OnGetConnectionMetadata(
       chromeos::secure_channel::mojom::ConnectionMetadataPtr
           connection_metadata);
-  void OnConnectionInfo(
-      const device::BluetoothDevice::ConnectionInfo& connection_info);
   void OnGetRssi(const base::Optional<int32_t>& rssi);
 
   // Resets the proximity state to |false|, and clears all member variables
@@ -97,12 +91,11 @@ class ProximityMonitorImpl : public ProximityMonitor {
 
   // Used to get the name of the remote device that ProximitMonitor is
   // communicating with, for metrics purposes.
-  cryptauth::RemoteDeviceRef remote_device_;
+  chromeos::multidevice::RemoteDeviceRef remote_device_;
 
   // Used to communicate with the remote device to gauge its proximity via RSSI
   // measurement.
   chromeos::secure_channel::ClientChannel* channel_;
-  cryptauth::Connection* connection_;
 
   // Used to get determine the user pref for how far away the phone is allowed
   // to be.

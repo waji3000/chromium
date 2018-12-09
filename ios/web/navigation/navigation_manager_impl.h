@@ -10,6 +10,7 @@
 #include <memory>
 #include <vector>
 
+#include "base/callback.h"
 #include "base/macros.h"
 #import "ios/web/navigation/navigation_item_impl.h"
 #import "ios/web/public/navigation_item_list.h"
@@ -142,6 +143,12 @@ class NavigationManagerImpl : public NavigationManager {
                                            NSString* state_object,
                                            ui::PageTransition transition) = 0;
 
+  // Returns true after session restoration has started, until the first
+  // post-restore navigation is finished. Returns true when first post-restore
+  // navigation is started, even though technically session restoration is
+  // complete.
+  virtual bool IsRestoreSessionInProgress() const = 0;
+
   // Resets the transient url rewriter list.
   void RemoveTransientURLRewriters();
 
@@ -181,6 +188,7 @@ class NavigationManagerImpl : public NavigationManager {
 
   // NavigationManager:
   NavigationItem* GetLastCommittedItem() const final;
+  int GetLastCommittedItemIndex() const final;
   NavigationItem* GetPendingItem() const final;
   NavigationItem* GetTransientItem() const final;
   void LoadURLWithParams(const NavigationManager::WebLoadParams&) final;
@@ -189,11 +197,19 @@ class NavigationManagerImpl : public NavigationManager {
   void Reload(ReloadType reload_type, bool check_for_reposts) final;
   void ReloadWithUserAgentType(UserAgentType user_agent_type) final;
   void LoadIfNecessary() override;
+  void AddRestoreCompletionCallback(base::OnceClosure callback) override;
 
   // Implementation for corresponding NavigationManager getters.
-  virtual NavigationItemImpl* GetPendingItemImpl() const = 0;
+  virtual NavigationItemImpl* GetPendingItemInCurrentOrRestoredSession()
+      const = 0;
   virtual NavigationItemImpl* GetTransientItemImpl() const = 0;
-  virtual NavigationItemImpl* GetLastCommittedItemImpl() const = 0;
+  // Unlike GetLastCommittedItem(), this method does not return null during
+  // session restoration (and returns last known committed item instead).
+  virtual NavigationItemImpl* GetLastCommittedItemInCurrentOrRestoredSession()
+      const = 0;
+  // Unlike GetLastCommittedItemIndex(), this method does not return -1 during
+  // session restoration (and returns last known committed item index instead).
+  virtual int GetLastCommittedItemIndexInCurrentOrRestoredSession() const = 0;
 
   // Identical to GetItemAtIndex() but returns the underlying NavigationItemImpl
   // instead of the public NavigationItem interface.
@@ -237,9 +253,9 @@ class NavigationManagerImpl : public NavigationManager {
       const GURL& previous_url,
       const std::vector<BrowserURLRewriter::URLRewriter>* url_rewriters) const;
 
-  // Returns the most recent NavigationItem that does not have an app-specific
-  // URL.
-  NavigationItem* GetLastCommittedNonAppSpecificItem() const;
+  // Returns the most recent NavigationItem with an URL that generates an HTTP
+  // request.
+  NavigationItem* GetLastCommittedItemWithUserAgentType() const;
 
   // Subclass specific implementation to update session state.
   virtual void FinishGoToIndex(int index,

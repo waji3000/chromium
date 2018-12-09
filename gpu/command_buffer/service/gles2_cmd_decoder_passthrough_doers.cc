@@ -2165,6 +2165,48 @@ error::Error GLES2DecoderPassthroughImpl::DoMemoryBarrierByRegion(
   return error::kNoError;
 }
 
+error::Error GLES2DecoderPassthroughImpl::DoMultiDrawArraysWEBGL(
+    GLenum mode,
+    const GLint* firsts,
+    const GLsizei* counts,
+    GLsizei drawcount) {
+  api()->glMultiDrawArraysANGLEFn(mode, firsts, counts, drawcount);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderPassthroughImpl::DoMultiDrawArraysInstancedWEBGL(
+    GLenum mode,
+    const GLint* firsts,
+    const GLsizei* counts,
+    const GLsizei* instanceCounts,
+    GLsizei drawcount) {
+  api()->glMultiDrawArraysInstancedANGLEFn(mode, firsts, counts, instanceCounts,
+                                           drawcount);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderPassthroughImpl::DoMultiDrawElementsWEBGL(
+    GLenum mode,
+    const GLsizei* counts,
+    GLenum type,
+    const GLvoid* const* indices,
+    GLsizei drawcount) {
+  api()->glMultiDrawElementsANGLEFn(mode, counts, type, indices, drawcount);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderPassthroughImpl::DoMultiDrawElementsInstancedWEBGL(
+    GLenum mode,
+    const GLsizei* counts,
+    GLenum type,
+    const GLvoid* const* indices,
+    const GLsizei* instanceCounts,
+    GLsizei drawcount) {
+  api()->glMultiDrawElementsInstancedANGLEFn(mode, counts, type, indices,
+                                             instanceCounts, drawcount);
+  return error::kNoError;
+}
+
 error::Error GLES2DecoderPassthroughImpl::DoPauseTransformFeedback() {
   api()->glPauseTransformFeedbackFn();
   return error::kNoError;
@@ -3391,8 +3433,6 @@ error::Error GLES2DecoderPassthroughImpl::DoBindVertexArrayOES(GLuint array) {
 
 error::Error GLES2DecoderPassthroughImpl::DoSwapBuffers(uint64_t swap_id,
                                                         GLbitfield flags) {
-  dc_layer_shared_state_.reset();
-
   if (offscreen_) {
     if (offscreen_single_buffer_) {
       return error::kNoError;
@@ -3661,8 +3701,7 @@ error::Error GLES2DecoderPassthroughImpl::DoGetProgramInfoCHROMIUM(
 
   const base::CheckedNumeric<size_t> buffer_header_size(
       sizeof(ProgramInfoHeader));
-  const base::CheckedNumeric<size_t> buffer_block_size(
-      sizeof(ProgramInput));
+  const base::CheckedNumeric<size_t> buffer_block_size(sizeof(ProgramInput));
   const base::CheckedNumeric<size_t> attribute_block_size =
       buffer_block_size * num_attributes;
   const base::CheckedNumeric<size_t> uniform_block_size =
@@ -4019,8 +4058,6 @@ error::Error GLES2DecoderPassthroughImpl::DoSwapBuffersWithBoundsCHROMIUM(
     return error::kNoError;
   }
 
-  dc_layer_shared_state_.reset();
-
   std::vector<gfx::Rect> bounds(count);
   for (GLsizei i = 0; i < count; ++i) {
     bounds[i] = gfx::Rect(rects[i * 4 + 0], rects[i * 4 + 1], rects[i * 4 + 2],
@@ -4045,8 +4082,6 @@ error::Error GLES2DecoderPassthroughImpl::DoPostSubBufferCHROMIUM(
                 "glPostSubBufferCHROMIUM is not supported for this surface.");
     return error::kNoError;
   }
-
-  dc_layer_shared_state_.reset();
 
   client_->OnSwapBuffers(swap_id, flags);
   return CheckSwapBuffersResult(
@@ -4172,43 +4207,6 @@ error::Error GLES2DecoderPassthroughImpl::DoCreateAndConsumeTextureINTERNAL(
                                           texture->service_id());
   resources_->texture_object_map.RemoveClientID(texture_client_id);
   resources_->texture_object_map.SetIDMapping(texture_client_id, texture);
-
-  return error::kNoError;
-}
-
-error::Error
-GLES2DecoderPassthroughImpl::DoCreateAndTexStorage2DSharedImageINTERNAL(
-    GLuint texture_client_id,
-    GLenum internal_format,
-    const volatile GLbyte* mailbox) {
-  if (!texture_client_id ||
-      resources_->texture_id_map.HasClientID(texture_client_id)) {
-    InsertError(GL_INVALID_OPERATION, "Invalid texture ID");
-    return error::kNoError;
-  }
-
-  const Mailbox& mb = Mailbox::FromVolatile(
-      *reinterpret_cast<const volatile Mailbox*>(mailbox));
-  auto shared_image = group_->shared_image_representation_factory()
-                          ->ProduceGLTexturePassthrough(mb);
-  if (shared_image == nullptr) {
-    // Create texture to handle invalid mailbox (see http://crbug.com/472465 and
-    // http://crbug.com/851878).
-    DoGenTextures(1, &texture_client_id);
-    InsertError(GL_INVALID_OPERATION, "Invalid mailbox name.");
-    return error::kNoError;
-  }
-
-  auto texture = shared_image->GetTexturePassthrough();
-
-  // Update id mappings
-  resources_->texture_id_map.RemoveClientID(texture_client_id);
-  resources_->texture_id_map.SetIDMapping(texture_client_id,
-                                          texture->service_id());
-  resources_->texture_object_map.RemoveClientID(texture_client_id);
-  resources_->texture_object_map.SetIDMapping(texture_client_id, texture);
-  resources_->texture_shared_image_map[texture_client_id] =
-      std::move(shared_image);
 
   return error::kNoError;
 }
@@ -4423,96 +4421,78 @@ error::Error GLES2DecoderPassthroughImpl::DoScheduleCALayerInUseQueryCHROMIUM(
   return error::kNoError;
 }
 
-error::Error GLES2DecoderPassthroughImpl::DoScheduleDCLayerSharedStateCHROMIUM(
-    GLfloat opacity,
-    GLboolean is_clipped,
-    const GLfloat* clip_rect,
-    GLint z_order,
-    const GLfloat* transform) {
-  if (!dc_layer_shared_state_) {
-    dc_layer_shared_state_.reset(new DCLayerSharedState);
-  }
-  dc_layer_shared_state_->opacity = opacity;
-  dc_layer_shared_state_->is_clipped = is_clipped ? true : false;
-  dc_layer_shared_state_->clip_rect = gfx::ToEnclosingRect(
-      gfx::RectF(clip_rect[0], clip_rect[1], clip_rect[2], clip_rect[3]));
-  dc_layer_shared_state_->z_order = z_order;
-  dc_layer_shared_state_->transform =
-      gfx::Transform(transform[0], transform[4], transform[8], transform[12],
-                     transform[1], transform[5], transform[9], transform[13],
-                     transform[2], transform[6], transform[10], transform[14],
-                     transform[3], transform[7], transform[11], transform[15]);
-  return error::kNoError;
-}
-
 error::Error GLES2DecoderPassthroughImpl::DoScheduleDCLayerCHROMIUM(
-    GLsizei num_textures,
-    const volatile GLuint* contents_texture_ids,
-    const GLfloat* contents_rect,
-    GLuint background_color,
-    GLuint edge_aa_mask,
-    GLenum filter,
-    const GLfloat* bounds_rect,
-    bool is_protected_video) {
-  switch (filter) {
-    case GL_NEAREST:
-    case GL_LINEAR:
-      break;
-    default:
-      InsertError(GL_INVALID_OPERATION, "invalid filter.");
+    GLuint y_texture_id,
+    GLuint uv_texture_id,
+    GLint z_order,
+    GLint content_x,
+    GLint content_y,
+    GLint content_width,
+    GLint content_height,
+    GLint quad_x,
+    GLint quad_y,
+    GLint quad_width,
+    GLint quad_height,
+    GLfloat transform_c1r1,
+    GLfloat transform_c2r1,
+    GLfloat transform_c1r2,
+    GLfloat transform_c2r2,
+    GLfloat transform_tx,
+    GLfloat transform_ty,
+    GLboolean is_clipped,
+    GLint clip_x,
+    GLint clip_y,
+    GLint clip_width,
+    GLint clip_height,
+    GLuint protected_video_type) {
+  if (protected_video_type >
+      static_cast<GLuint>(ui::ProtectedVideoType::kMaxValue)) {
+    InsertError(GL_INVALID_VALUE, "invalid protected video type");
+    return error::kNoError;
+  }
+
+  GLuint texture_ids[] = {y_texture_id, uv_texture_id};
+  scoped_refptr<gl::GLImage> images[2];
+  size_t i = 0;
+  for (GLuint texture_id : texture_ids) {
+    if (!texture_id) {
+      InsertError(GL_INVALID_VALUE, "invalid texture");
       return error::kNoError;
-  }
-
-  if (!dc_layer_shared_state_) {
-    InsertError(GL_INVALID_OPERATION,
-                "glScheduleDCLayerSharedStateCHROMIUM has not been called.");
-    return error::kNoError;
-  }
-
-  if (num_textures < 0 || num_textures > 4) {
-    InsertError(GL_INVALID_OPERATION,
-                "number of textures greater than maximum of 4.");
-    return error::kNoError;
-  }
-
-  gfx::RectF contents_rect_object(contents_rect[0], contents_rect[1],
-                                  contents_rect[2], contents_rect[3]);
-  gfx::RectF bounds_rect_object(bounds_rect[0], bounds_rect[1], bounds_rect[2],
-                                bounds_rect[3]);
-
-  std::vector<scoped_refptr<gl::GLImage>> images(num_textures);
-  for (int i = 0; i < num_textures; ++i) {
-    GLuint contents_texture_client_id = contents_texture_ids[i];
-    if (contents_texture_client_id != 0) {
-      scoped_refptr<TexturePassthrough> passthrough_texture = nullptr;
-      if (!resources_->texture_object_map.GetServiceID(
-              contents_texture_client_id, &passthrough_texture)) {
-        InsertError(GL_INVALID_VALUE, "unknown texture.");
-        return error::kNoError;
-      }
-      DCHECK(passthrough_texture != nullptr);
-
-      scoped_refptr<gl::GLImage> image =
-          passthrough_texture->GetLevelImage(passthrough_texture->target(), 0);
-      if (image == nullptr) {
-        InsertError(GL_INVALID_VALUE, "unsupported texture format");
-        return error::kNoError;
-      }
-      images[i] = image;
     }
+
+    scoped_refptr<TexturePassthrough> passthrough_texture;
+    if (!resources_->texture_object_map.GetServiceID(texture_id,
+                                                     &passthrough_texture)) {
+      InsertError(GL_INVALID_VALUE, "unknown texture");
+      return error::kNoError;
+    }
+    DCHECK(passthrough_texture);
+    gl::GLImage* image =
+        passthrough_texture->GetLevelImage(passthrough_texture->target(), 0);
+    if (!image) {
+      InsertError(GL_INVALID_VALUE, "unsupported texture format");
+      return error::kNoError;
+    }
+    images[i++] = scoped_refptr<gl::GLImage>(image);
   }
 
-  ui::DCRendererLayerParams params(
-      dc_layer_shared_state_->is_clipped, dc_layer_shared_state_->clip_rect,
-      dc_layer_shared_state_->z_order, dc_layer_shared_state_->transform,
-      images, contents_rect_object, gfx::ToEnclosingRect(bounds_rect_object),
-      background_color, edge_aa_mask, dc_layer_shared_state_->opacity, filter,
-      is_protected_video);
+  ui::DCRendererLayerParams params;
+  params.y_image = std::move(images[0]);
+  params.uv_image = std::move(images[1]);
+  params.z_order = z_order;
+  params.content_rect =
+      gfx::Rect(content_x, content_y, content_width, content_height);
+  params.quad_rect = gfx::Rect(quad_x, quad_y, quad_width, quad_height);
+  params.transform =
+      gfx::Transform(transform_c1r1, transform_c2r1, transform_c1r2,
+                     transform_c2r2, transform_tx, transform_ty);
+  params.is_clipped = is_clipped;
+  params.clip_rect = gfx::Rect(clip_x, clip_y, clip_width, clip_height);
+  params.protected_video_type =
+      static_cast<ui::ProtectedVideoType>(protected_video_type);
 
-  if (!surface_->ScheduleDCLayer(params)) {
+  if (!surface_->ScheduleDCLayer(params))
     InsertError(GL_INVALID_OPERATION, "failed to schedule DCLayer");
-    return error::kNoError;
-  }
 
   return error::kNoError;
 }
@@ -4525,8 +4505,6 @@ error::Error GLES2DecoderPassthroughImpl::DoCommitOverlayPlanesCHROMIUM(
                 "glCommitOverlayPlanes not supported by surface.");
     return error::kNoError;
   }
-
-  dc_layer_shared_state_.reset();
 
   client_->OnSwapBuffers(swap_id, flags);
   return CheckSwapBuffersResult(
@@ -5055,6 +5033,17 @@ GLES2DecoderPassthroughImpl::DoInitializeDiscardableTextureCHROMIUM(
   return error::kNoError;
 }
 
+error::Error GLES2DecoderPassthroughImpl::DoLockDiscardableTextureCHROMIUM(
+    GLuint texture_id) {
+  if (!group_->passthrough_discardable_manager()->LockTexture(texture_id,
+                                                              group_.get())) {
+    InsertError(GL_INVALID_VALUE, "Texture ID not initialized");
+    return error::kNoError;
+  }
+
+  return error::kNoError;
+}
+
 error::Error GLES2DecoderPassthroughImpl::DoUnlockDiscardableTextureCHROMIUM(
     GLuint texture_id) {
   TexturePassthrough* texture_to_unbind = nullptr;
@@ -5067,18 +5056,82 @@ error::Error GLES2DecoderPassthroughImpl::DoUnlockDiscardableTextureCHROMIUM(
   if (texture_to_unbind != nullptr) {
     UpdateTextureBinding(texture_to_unbind->target(), texture_id, nullptr);
   }
+  return error::kNoError;
+}
+
+error::Error
+GLES2DecoderPassthroughImpl::DoCreateAndTexStorage2DSharedImageINTERNAL(
+    GLuint texture_client_id,
+    const volatile GLbyte* mailbox) {
+  if (!texture_client_id ||
+      resources_->texture_id_map.HasClientID(texture_client_id)) {
+    InsertError(GL_INVALID_OPERATION, "invalid client ID");
+    return error::kNoError;
+  }
+
+  const Mailbox& mb = Mailbox::FromVolatile(
+      *reinterpret_cast<const volatile Mailbox*>(mailbox));
+  auto shared_image = group_->shared_image_representation_factory()
+                          ->ProduceGLTexturePassthrough(mb);
+  if (shared_image == nullptr) {
+    // Create texture to handle invalid mailbox (see http://crbug.com/472465 and
+    // http://crbug.com/851878).
+    DoGenTextures(1, &texture_client_id);
+    InsertError(GL_INVALID_OPERATION, "invalid mailbox name.");
+    return error::kNoError;
+  }
+
+  auto texture = shared_image->GetTexturePassthrough();
+
+  // Update id mappings
+  resources_->texture_id_map.RemoveClientID(texture_client_id);
+  resources_->texture_id_map.SetIDMapping(texture_client_id,
+                                          texture->service_id());
+  resources_->texture_object_map.RemoveClientID(texture_client_id);
+  resources_->texture_object_map.SetIDMapping(texture_client_id, texture);
+  resources_->texture_shared_image_map[texture_client_id] =
+      std::move(shared_image);
 
   return error::kNoError;
 }
 
-error::Error GLES2DecoderPassthroughImpl::DoLockDiscardableTextureCHROMIUM(
-    GLuint texture_id) {
-  if (!group_->passthrough_discardable_manager()->LockTexture(texture_id,
-                                                              group_.get())) {
-    InsertError(GL_INVALID_VALUE, "Texture ID not initialized");
+error::Error
+GLES2DecoderPassthroughImpl::DoBeginSharedImageAccessDirectCHROMIUM(
+    GLuint client_id,
+    GLenum mode) {
+  if (mode != GL_SHARED_IMAGE_ACCESS_MODE_READWRITE_CHROMIUM &&
+      mode != GL_SHARED_IMAGE_ACCESS_MODE_READ_CHROMIUM) {
+    InsertError(GL_INVALID_ENUM, "unrecognized access mode");
     return error::kNoError;
   }
 
+  auto found = resources_->texture_shared_image_map.find(client_id);
+  if (found == resources_->texture_shared_image_map.end()) {
+    InsertError(GL_INVALID_OPERATION, "texture is not a shared image");
+    return error::kNoError;
+  }
+
+  SharedImageRepresentationGLTexturePassthrough* shared_image =
+      found->second.get();
+  if (!shared_image->BeginAccess(mode)) {
+    InsertError(GL_INVALID_OPERATION, "unable to begin access");
+    return error::kNoError;
+  }
+
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderPassthroughImpl::DoEndSharedImageAccessDirectCHROMIUM(
+    GLuint client_id) {
+  auto found = resources_->texture_shared_image_map.find(client_id);
+  if (found == resources_->texture_shared_image_map.end()) {
+    InsertError(GL_INVALID_OPERATION, "texture is not a shared image");
+    return error::kNoError;
+  }
+
+  SharedImageRepresentationGLTexturePassthrough* shared_image =
+      found->second.get();
+  shared_image->EndAccess();
   return error::kNoError;
 }
 

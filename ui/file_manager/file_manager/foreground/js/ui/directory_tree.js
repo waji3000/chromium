@@ -2,6 +2,28 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Namespace
+const directorytree = {};
+
+/**
+ * Returns a string to be used as an attribute value to customize the entry
+ * icon.
+ *
+ * @param {VolumeManagerCommon.RootType} rootType The root type to entry.
+ * @param {Entry|FilesAppEntry} entry
+ * @return {string} a string
+ */
+directorytree.getIconOverrides = function(rootType, entry) {
+  // Overrides per RootType and defined by fullPath.
+  const overrides = {
+    [VolumeManagerCommon.RootType.DOWNLOADS]: {
+      '/Downloads': VolumeManagerCommon.VolumeType.DOWNLOADS,
+    },
+  };
+  const root = overrides[rootType];
+  return root ? root[entry.fullPath] : null;
+};
+
 ////////////////////////////////////////////////////////////////////////////////
 // DirectoryTreeBase
 
@@ -86,6 +108,7 @@ DirectoryItemTreeBaseMethods.searchAndSelectByEntry = function(entry) {
   }
   return false;
 };
+
 /**
  * Records UMA for the selected entry at {@code location}. Records slightly
  * differently if the expand icon is selected and {@code expandIconSelected} is
@@ -215,6 +238,22 @@ DirectoryItem.prototype = {
   },
 
   /**
+   * Returns true if this item is inside any part of Computers.
+   * @type {!boolean}
+   */
+  get insideComputers() {
+    if (!this.entry)
+      return false;
+
+    const locationInfo =
+        this.parentTree_.volumeManager.getLocationInfo(this.entry);
+    return locationInfo &&
+        (locationInfo.rootType ===
+             VolumeManagerCommon.RootType.COMPUTERS_GRAND_ROOT ||
+         locationInfo.rootType === VolumeManagerCommon.RootType.COMPUTER);
+  },
+
+  /**
    * Returns true if this item is inside any part of Drive, including Team
    * Drive.
    * @type {!boolean}
@@ -246,8 +285,8 @@ DirectoryItem.prototype = {
    * support it.
    * @type {!boolean}
    */
-  get supportsSharedFeature() {
-    return this.insideMyDrive;
+  get supportDriveSpecificIcons() {
+    return this.insideMyDrive || this.insideComputers;
   },
 };
 
@@ -257,7 +296,11 @@ DirectoryItem.prototype = {
  * @param {Event} event Metadata update event.
  */
 DirectoryItem.prototype.onMetadataUpdated_ = function(event) {
-  if (!(event.names.has('shared') && this.supportsSharedFeature))
+  if (!this.supportDriveSpecificIcons)
+    return;
+
+  const updateableProperties = ['shared', 'isMachineRoot', 'isExternalMedia'];
+  if (!updateableProperties.some((prop) => event.names.has(prop)))
     return;
 
   let index = 0;
@@ -266,7 +309,7 @@ DirectoryItem.prototype.onMetadataUpdated_ = function(event) {
     const childElement = this.items[index];
 
     if (event.entriesMap.has(childEntry.toURL()))
-      childElement.updateSharedStatusIcon();
+      childElement.updateDriveSpecificIcons();
 
     index++;
   }
@@ -305,7 +348,7 @@ DirectoryItem.prototype.updateSubElementsFromList = function(recursive) {
       this.add(item);
       index++;
     } else if (util.isSameEntry(currentEntry, currentElement.entry)) {
-      currentElement.updateSharedStatusIcon();
+      currentElement.updateDriveSpecificIcons();
       if (recursive && this.expanded) {
         if (this.delayExpansion) {
           // Only update deeper on expanded children.
@@ -407,7 +450,7 @@ DirectoryItem.prototype.clearHasChildren = function() {
  * @private
  */
 DirectoryItem.prototype.onExpand_ = function(e) {
-  if (this.supportsSharedFeature && !this.onMetadataUpdateBound_) {
+  if (this.supportDriveSpecificIcons && !this.onMetadataUpdateBound_) {
     this.onMetadataUpdateBound_ = this.onMetadataUpdated_.bind(this);
     this.parentTree_.metadataModel_.addEventListener(
         'update', this.onMetadataUpdateBound_);
@@ -558,7 +601,7 @@ DirectoryItem.prototype.updateItemByEntry = function(changedDirectoryEntry) {
 /**
  * Update the icon based on whether the folder is shared on Drive.
  */
-DirectoryItem.prototype.updateSharedStatusIcon = function() {};
+DirectoryItem.prototype.updateDriveSpecificIcons = function() {};
 
 /**
  * Select the item corresponding to the given {@code entry}.
@@ -635,8 +678,14 @@ function SubDirectoryItem(label, dirEntry, parentDirItem, tree) {
           'volume-type-for-testing', location.volumeInfo.volumeType);
     }
   } else {
-    icon.setAttribute('file-type-icon', 'folder');
-    item.updateSharedStatusIcon();
+    const rootType = location.rootType || null;
+    const iconOverride = directorytree.getIconOverrides(rootType, dirEntry);
+    // Add Downloads icon as volume so current test code passes with
+    // MyFilesVolume flag enabled and disabled.
+    if (iconOverride)
+      icon.setAttribute('volume-type-icon', iconOverride);
+    icon.setAttribute('file-type-icon', iconOverride || 'folder');
+    item.updateDriveSpecificIcons();
   }
 
   // Sets up context menu of the item.
@@ -670,11 +719,17 @@ SubDirectoryItem.prototype = {
  * Update the icon based on whether the folder is shared on Drive.
  * @override
  */
-SubDirectoryItem.prototype.updateSharedStatusIcon = function() {
+SubDirectoryItem.prototype.updateDriveSpecificIcons = function() {
   const icon = this.querySelector('.icon');
-  const metadata =
-      this.parentTree_.metadataModel.getCache([this.dirEntry_], ['shared']);
+  const metadata = this.parentTree_.metadataModel.getCache(
+      [this.dirEntry_], ['shared', 'isMachineRoot', 'isExternalMedia']);
   icon.classList.toggle('shared', !!(metadata[0] && metadata[0].shared));
+  if (metadata[0] && metadata[0].isMachineRoot)
+    icon.setAttribute(
+        'volume-type-icon', VolumeManagerCommon.RootType.COMPUTER);
+  if (metadata[0] && metadata[0].isExternalMedia)
+    icon.setAttribute(
+        'volume-type-icon', VolumeManagerCommon.RootType.EXTERNAL_MEDIA);
 };
 
 /**
@@ -701,6 +756,10 @@ function EntryListItem(rootType, modelItem, tree) {
   item.dirEntry_ = modelItem.entry;
   item.parentTree_ = tree;
 
+  if (window.IN_TEST && item.entry && item.entry.volumeInfo) {
+    item.setAttribute(
+        'volume-type-for-testing', item.entry.volumeInfo.volumeType);
+  }
   const icon = queryRequiredElement('.icon', item);
   icon.classList.add('item-icon');
   icon.setAttribute('root-type-icon', rootType);
@@ -737,6 +796,24 @@ EntryListItem.prototype = {
 };
 
 /**
+ * Default sorting for DirectoryItem sub-dirrectories.
+ * @param {!Array<!Entry>} entries Entries to be sorted.
+ * @returns {!Array<!Entry>}
+ */
+EntryListItem.prototype.sortEntries = function(entries) {
+  if (!util.isMyFilesVolumeEnabled())
+    return DirectoryItem.prototype.sortEntries.apply(this, [entries]);
+
+  // If the root entry hasn't been resolved yet.
+  if (!this.entry)
+    return DirectoryItem.prototype.sortEntries.apply(this, [entries]);
+
+  const filter = this.fileFilter_.filter.bind(this.fileFilter_);
+  return entries.filter(filter).sort(
+      util.compareNameAndGroupBottomEntries(this.entry.getUIChildren()));
+};
+
+/**
  * Retrieves the subdirectories and update them on the tree. Runs synchronously,
  *     since EntryList has its subdirectories already in memory.
  * @param {boolean} recursive True if the update is recursively.
@@ -756,8 +833,6 @@ EntryListItem.prototype.updateSubDirectories = function(
     if (this.entries_.length > 0)
       this.expanded = true;
     opt_successCallback && opt_successCallback();
-    // TODO(lucmult): Remove this log once flakiness is fixed.
-    console.log('EntryListItem children loaded.');
   };
   const reader = this.entry.createReader();
   const entries = [];
@@ -771,11 +846,7 @@ EntryListItem.prototype.updateSubDirectories = function(
         const entry = results[i];
         if (entry.isDirectory) {
           // For VolumeEntry we want to display its root.
-          if (entry instanceof VolumeEntry) {
-            entries.push(entry.rootEntry);
-          } else {
-            entries.push(entry);
-          }
+          entries.push(util.unwrapEntry(entry));
         }
       }
       readEntry();
@@ -953,7 +1024,13 @@ VolumeItem.prototype.setupEjectButton_ = function(rowElement) {
   ejectButton.addEventListener('mouseup', (event) => {
     event.stopPropagation();
   });
+  ejectButton.addEventListener('up', (event) => {
+    event.stopPropagation();
+  });
   ejectButton.addEventListener('mousedown', (event) => {
+    event.stopPropagation();
+  });
+  ejectButton.addEventListener('down', (event) => {
     event.stopPropagation();
   });
   ejectButton.className = 'root-eject';
@@ -1036,13 +1113,7 @@ DriveVolumeItem.prototype = {
 DriveVolumeItem.prototype.handleClick = function(e) {
   VolumeItem.prototype.handleClick.call(this, e);
 
-  if (!e.target.classList.contains('expand-icon')) {
-    // If the Drive volume is clicked, select one of the children instead of
-    // this item itself.
-    this.volumeInfo_.resolveDisplayRoot((displayRoot) => {
-      this.searchAndSelectByEntry(displayRoot);
-    });
-  }
+  this.selectDisplayRoot_(e.target);
 
   DirectoryItemTreeBaseMethods.recordUMASelectedEntry.call(
       this, e, VolumeManagerCommon.RootType.DRIVE_FAKE_ROOT, true);
@@ -1182,6 +1253,28 @@ DriveVolumeItem.prototype.createComputersGrandRoot_ = function() {
       }
     });
   });
+};
+
+/**
+ * Change current entry to the entry corresponding to My Drive.
+ */
+DriveVolumeItem.prototype.activate = function() {
+  VolumeItem.prototype.activate.call(this);
+  this.selectDisplayRoot_(this);
+};
+
+/**
+ * Select Drive's display root.
+ * @param {EventTarget} target The event target.
+ */
+DriveVolumeItem.prototype.selectDisplayRoot_ = function(target) {
+  if (!target.classList.contains('expand-icon')) {
+    // If the Drive volume is clicked, select one of the children instead of
+    // this item itself.
+    this.volumeInfo_.resolveDisplayRoot((displayRoot) => {
+      this.searchAndSelectByEntry(displayRoot);
+    });
+  }
 };
 
 /**
@@ -1538,7 +1631,7 @@ FakeItem.prototype.updateSubDirectories = function(
 /**
  * FakeItem doesn't really have shared status/icon so we define here as no-op.
  */
-FakeItem.prototype.updateSharedStatusIcon = function() {};
+FakeItem.prototype.updateDriveSpecificIcons = function() {};
 
 ////////////////////////////////////////////////////////////////////////////////
 // DirectoryTree
@@ -2039,6 +2132,7 @@ DirectoryTree.prototype.updateTreeByEntry_ = function(entry) {
  */
 DirectoryTree.prototype.onCurrentDirectoryChanged_ = function(event) {
   this.selectByEntry(event.newDirEntry);
+  this.updateSubDirectories(false /* recursive */, () => {});
 };
 
 /**

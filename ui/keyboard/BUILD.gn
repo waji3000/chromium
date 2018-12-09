@@ -33,10 +33,6 @@ jumbo_component("keyboard") {
     "keyboard_layout_delegate.h",
     "keyboard_layout_manager.cc",
     "keyboard_layout_manager.h",
-    "keyboard_resource_util.cc",
-    "keyboard_resource_util.h",
-    "keyboard_switches.cc",
-    "keyboard_switches.h",
     "keyboard_ui.cc",
     "keyboard_ui.h",
     "keyboard_ukm_recorder.cc",
@@ -45,10 +41,14 @@ jumbo_component("keyboard") {
     "keyboard_util.h",
     "notification_manager.cc",
     "notification_manager.h",
+    "public/keyboard_switches.cc",
+    "public/keyboard_switches.h",
     "queued_container_type.cc",
     "queued_container_type.h",
     "queued_display_change.cc",
     "queued_display_change.h",
+    "resources/keyboard_resource_util.cc",
+    "resources/keyboard_resource_util.h",
     "shaped_window_targeter.cc",
     "shaped_window_targeter.h",
   ]
@@ -94,6 +94,7 @@ static_library("test_support") {
     "//ui/aura",
     "//ui/aura:test_support",
     "//ui/base:test_support",
+    "//ui/display",
   ]
 }
 
@@ -140,7 +141,7 @@ build_closure("inputview") {
 mojom("mojom") {
   sources = [
     "public/keyboard_config.mojom",
-    "public/keyboard_enable_flag.mojom",
+    "public/keyboard_controller_types.mojom",
   ]
 }
 

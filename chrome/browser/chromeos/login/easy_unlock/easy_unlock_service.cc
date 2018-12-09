@@ -6,15 +6,13 @@
 
 #include <utility>
 
-#include "apps/app_lifetime_monitor.h"
-#include "apps/app_lifetime_monitor_factory.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/guid.h"
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "base/values.h"
@@ -37,6 +35,7 @@
 #include "chromeos/components/proximity_auth/proximity_auth_profile_pref_manager.h"
 #include "chromeos/components/proximity_auth/proximity_auth_system.h"
 #include "chromeos/components/proximity_auth/screenlock_bridge.h"
+#include "chromeos/components/proximity_auth/smart_lock_metrics_recorder.h"
 #include "chromeos/components/proximity_auth/switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_manager_client.h"
@@ -65,6 +64,15 @@ PrefService* GetLocalState() {
   return g_browser_process ? g_browser_process->local_state() : NULL;
 }
 
+void RecordAuthResultFailure(
+    EasyUnlockAuthAttempt::Type auth_attempt_type,
+    SmartLockMetricsRecorder::SmartLockAuthResultFailureReason failure_reason) {
+  if (auth_attempt_type == EasyUnlockAuthAttempt::TYPE_UNLOCK)
+    SmartLockMetricsRecorder::RecordAuthResultUnlockFailure(failure_reason);
+  else if (auth_attempt_type == EasyUnlockAuthAttempt::TYPE_SIGNIN)
+    SmartLockMetricsRecorder::RecordAuthResultSignInFailure(failure_reason);
+}
+
 }  // namespace
 
 // static
@@ -82,20 +90,14 @@ EasyUnlockService* EasyUnlockService::GetForUser(
 }
 
 class EasyUnlockService::BluetoothDetector
-    : public device::BluetoothAdapter::Observer,
-      public apps::AppLifetimeMonitor::Observer {
+    : public device::BluetoothAdapter::Observer {
  public:
   explicit BluetoothDetector(EasyUnlockService* service)
-      : service_(service), weak_ptr_factory_(this) {
-    apps::AppLifetimeMonitorFactory::GetForBrowserContext(service_->profile())
-        ->AddObserver(this);
-  }
+      : service_(service), weak_ptr_factory_(this) {}
 
   ~BluetoothDetector() override {
     if (adapter_.get())
       adapter_->RemoveObserver(this);
-    apps::AppLifetimeMonitorFactory::GetForBrowserContext(service_->profile())
-        ->RemoveObserver(this);
   }
 
   void Initialize() {
@@ -125,21 +127,6 @@ class EasyUnlockService::BluetoothDetector
     // to be turned on except through the Easy Unlock setup. If we step on any
     // toes in the future then we need to revisit this guard.
     if (adapter_->IsDiscoverable())
-      TurnOffBluetoothDiscoverability();
-  }
-
-  // apps::AppLifetimeMonitor::Observer:
-  void OnAppDeactivated(content::BrowserContext* context,
-                        const std::string& app_id) override {
-    // TODO(tengs): Refactor the lifetime management to EasyUnlockAppManager.
-    if (app_id == extension_misc::kEasyUnlockAppId)
-      TurnOffBluetoothDiscoverability();
-  }
-
-  void OnAppStop(content::BrowserContext* context,
-                 const std::string& app_id) override {
-    // TODO(tengs): Refactor the lifetime management to EasyUnlockAppManager.
-    if (app_id == extension_misc::kEasyUnlockAppId)
       TurnOffBluetoothDiscoverability();
   }
 
@@ -371,27 +358,52 @@ bool EasyUnlockService::UpdateScreenlockState(ScreenlockState state) {
   return true;
 }
 
+void EasyUnlockService::OnUserEnteredPassword() {
+  if (proximity_auth_system_)
+    proximity_auth_system_->CancelConnectionAttempt();
+}
+
 void EasyUnlockService::AttemptAuth(const AccountId& account_id) {
   const EasyUnlockAuthAttempt::Type auth_attempt_type =
       GetType() == TYPE_REGULAR ? EasyUnlockAuthAttempt::TYPE_UNLOCK
                                 : EasyUnlockAuthAttempt::TYPE_SIGNIN;
   if (auth_attempt_) {
-    PA_LOG(INFO) << "Already attempting auth, skipping this request.";
+    PA_LOG(VERBOSE) << "Already attempting auth, skipping this request.";
+    RecordAuthResultFailure(
+        auth_attempt_type,
+        SmartLockMetricsRecorder::SmartLockAuthResultFailureReason::
+            kAlreadyAttemptingAuth);
     return;
   }
 
   if (!GetAccountId().is_valid()) {
     PA_LOG(ERROR) << "Empty user account. Auth attempt failed.";
+    RecordAuthResultFailure(
+        auth_attempt_type,
+        SmartLockMetricsRecorder::SmartLockAuthResultFailureReason::
+            kEmptyUserAccount);
     return;
   }
 
-  CHECK(GetAccountId() == account_id)
-      << "Check failed: " << GetAccountId().Serialize() << " vs "
-      << account_id.Serialize();
+  if (GetAccountId() != account_id) {
+    RecordAuthResultFailure(
+        auth_attempt_type,
+        SmartLockMetricsRecorder::SmartLockAuthResultFailureReason::
+            kInvalidAccoundId);
+
+    PA_LOG(ERROR) << "Check failed: " << GetAccountId().Serialize() << " vs "
+                  << account_id.Serialize();
+    return;
+  }
 
   auth_attempt_.reset(new EasyUnlockAuthAttempt(account_id, auth_attempt_type));
-  if (!auth_attempt_->Start())
+  if (!auth_attempt_->Start()) {
+    RecordAuthResultFailure(
+        auth_attempt_type,
+        SmartLockMetricsRecorder::SmartLockAuthResultFailureReason::
+            kAuthAttemptCannotStart);
     auth_attempt_.reset();
+  }
 
   // TODO(tengs): We notify ProximityAuthSystem whenever unlock attempts are
   // attempted. However, we ideally should refactor the auth attempt logic to
@@ -435,6 +447,10 @@ void EasyUnlockService::FinalizeSignin(const std::string& key) {
 }
 
 void EasyUnlockService::HandleAuthFailure(const AccountId& account_id) {
+  SmartLockMetricsRecorder::RecordAuthResultSignInFailure(
+      SmartLockMetricsRecorder::SmartLockAuthResultFailureReason::
+          kUserControllerSignInFailure);
+
   if (account_id != GetAccountId())
     return;
 
@@ -481,14 +497,6 @@ void EasyUnlockService::CheckCryptohomeKeysAndMaybeHardlock() {
       UserContext(*user),
       base::Bind(&EasyUnlockService::OnCryptohomeKeysFetchedForChecking,
                  weak_ptr_factory_.GetWeakPtr(), account_id, paired_devices));
-}
-
-void EasyUnlockService::AddObserver(EasyUnlockServiceObserver* observer) {
-  observers_.AddObserver(observer);
-}
-
-void EasyUnlockService::RemoveObserver(EasyUnlockServiceObserver* observer) {
-  observers_.RemoveObserver(observer);
 }
 
 void EasyUnlockService::Shutdown() {
@@ -635,8 +643,8 @@ EasyUnlockAuthEvent EasyUnlockService::GetPasswordAuthEvent() const {
 
 void EasyUnlockService::SetProximityAuthDevices(
     const AccountId& account_id,
-    const cryptauth::RemoteDeviceRefList& remote_devices,
-    base::Optional<cryptauth::RemoteDeviceRef> local_device) {
+    const multidevice::RemoteDeviceRefList& remote_devices,
+    base::Optional<multidevice::RemoteDeviceRef> local_device) {
   UMA_HISTOGRAM_COUNTS_100("SmartLock.EnabledDevicesCount",
                            remote_devices.size());
 
@@ -646,7 +654,7 @@ void EasyUnlockService::SetProximityAuthDevices(
   }
 
   if (!proximity_auth_system_) {
-    PA_LOG(INFO) << "Creating ProximityAuthSystem.";
+    PA_LOG(VERBOSE) << "Creating ProximityAuthSystem.";
     proximity_auth_system_.reset(new proximity_auth::ProximityAuthSystem(
         GetType() == TYPE_SIGNIN
             ? proximity_auth::ProximityAuthSystem::SIGN_IN

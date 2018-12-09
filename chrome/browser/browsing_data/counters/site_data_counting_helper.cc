@@ -13,12 +13,10 @@
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/dom_storage_context.h"
-#include "content/public/browser/local_storage_usage_info.h"
 #include "content/public/browser/session_storage_usage_info.h"
 #include "content/public/browser/storage_partition.h"
+#include "content/public/browser/storage_usage_info.h"
 #include "net/cookies/cookie_util.h"
-#include "net/ssl/channel_id_service.h"
-#include "net/ssl/channel_id_store.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ppapi/buildflags/buildflags.h"
@@ -46,8 +44,6 @@ void SiteDataCountingHelper::CountAndDestroySelfWhenFinished() {
 
   scoped_refptr<storage::SpecialStoragePolicy> special_storage_policy(
       profile_->GetSpecialStoragePolicy());
-
-  net::URLRequestContextGetter* rq_context = partition->GetURLRequestContext();
 
   tasks_ += 1;
   // Count origins with cookies.
@@ -106,12 +102,6 @@ void SiteDataCountingHelper::CountAndDestroySelfWhenFinished() {
     tasks_ += 1;
     GetOriginsFromHostContentSettignsMap(hcsm, type);
   }
-  // Count origins with channel ids.
-  tasks_ += 1;
-  base::PostTaskWithTraits(
-      FROM_HERE, {BrowserThread::IO},
-      base::BindOnce(&SiteDataCountingHelper::GetChannelIDsOnIOThread,
-                     base::Unretained(this), base::WrapRefCounted(rq_context)));
 }
 
 void SiteDataCountingHelper::GetOriginsFromHostContentSettignsMap(
@@ -160,7 +150,7 @@ void SiteDataCountingHelper::GetQuotaOriginsCallback(
 
 void SiteDataCountingHelper::GetLocalStorageUsageInfoCallback(
     const scoped_refptr<storage::SpecialStoragePolicy>& policy,
-    const std::vector<content::LocalStorageUsageInfo>& infos) {
+    const std::vector<content::StorageUsageInfo>& infos) {
   std::vector<GURL> origins;
   for (const auto& info : infos) {
     if (info.last_modified >= begin_ &&
@@ -191,30 +181,6 @@ void SiteDataCountingHelper::SitesWithFlashDataCallback(
     origins.push_back(GURL(site));
   }
   Done(origins);
-}
-
-void SiteDataCountingHelper::GetChannelIDsOnIOThread(
-    const scoped_refptr<net::URLRequestContextGetter>& rq_context) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  net::ChannelIDService* channel_id_service =
-      rq_context->GetURLRequestContext()->channel_id_service();
-  channel_id_service->GetChannelIDStore()->GetAllChannelIDs(base::Bind(
-      &SiteDataCountingHelper::GetChannelIDsCallback, base::Unretained(this)));
-}
-
-void SiteDataCountingHelper::GetChannelIDsCallback(
-    const net::ChannelIDStore::ChannelIDList& channel_ids) {
-  std::vector<GURL> origins;
-  for (const net::ChannelIDStore::ChannelID& channel_id : channel_ids) {
-    if (channel_id.creation_time() >= begin_) {
-      // Assume url is https://<server_identifier> on default port because
-      // channel ids don't know about their scheme or port.
-      origins.push_back(GURL("https://" + channel_id.server_identifier()));
-    }
-  }
-  base::PostTaskWithTraits(FROM_HERE, {BrowserThread::UI},
-                           base::BindOnce(&SiteDataCountingHelper::Done,
-                                          base::Unretained(this), origins));
 }
 
 void SiteDataCountingHelper::Done(const std::vector<GURL>& origins) {

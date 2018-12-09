@@ -16,6 +16,7 @@
 #include "net/http/proxy_connect_redirect_http_stream.h"
 #include "net/log/net_log_source.h"
 #include "net/log/net_log_source_type.h"
+#include "net/quic/quic_http_utils.h"
 #include "net/spdy/spdy_http_utils.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 
@@ -84,6 +85,10 @@ bool QuicProxyClientSocket::IsUsingSpdy() const {
 
 NextProto QuicProxyClientSocket::GetProxyNegotiatedProtocol() const {
   return kProtoQUIC;
+}
+
+void QuicProxyClientSocket::SetStreamPriority(RequestPriority priority) {
+  stream_->SetPriority(ConvertRequestPriorityToQuicPriority(priority));
 }
 
 // Sends a HEADERS frame to the proxy with a CONNECT request

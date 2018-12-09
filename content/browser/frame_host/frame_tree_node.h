@@ -34,6 +34,7 @@ class FrameTree;
 class NavigationRequest;
 class Navigator;
 class RenderFrameHostImpl;
+class NavigationEntryImpl;
 struct ContentSecurityPolicyHeader;
 
 // When a page contains iframes, its renderer process maintains a tree structure
@@ -402,6 +403,11 @@ class CONTENT_EXPORT FrameTreeNode {
     return user_activation_state_.IsActive();
   }
 
+  // Remove history entries for all frames created by script in this frame's
+  // subtree. If a frame created by a script is removed, then its history entry
+  // will never be reused - this saves memory.
+  void PruneChildFrameNavigationEntries(NavigationEntryImpl* entry);
+
  private:
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessFeaturePolicyBrowserTest,
                            ContainerPolicyDynamic);
@@ -415,6 +421,8 @@ class CONTENT_EXPORT FrameTreeNode {
   bool NotifyUserActivation();
 
   bool ConsumeTransientUserActivation();
+
+  bool ClearUserActivation();
 
   // The next available browser-global FrameTreeNode ID.
   static int next_frame_tree_node_id_;

@@ -180,7 +180,7 @@ void LayoutText::StyleDidChange(StyleDifference diff,
   // We do have to schedule layouts, though, since a style change can force us
   // to need to relayout.
   if (diff.NeedsFullLayout()) {
-    SetNeedsLayoutAndPrefWidthsRecalc(LayoutInvalidationReason::kStyleChange);
+    SetNeedsLayoutAndPrefWidthsRecalc(layout_invalidation_reason::kStyleChange);
     known_to_have_no_overflow_and_no_fallback_fonts_ = false;
   }
 
@@ -1262,7 +1262,7 @@ void LayoutText::ComputePreferredLogicalWidths(
 
     if (run) {
       // Treat adjacent runs with the same resolved directionality
-      // (TextDirection as opposed to WTF::Unicode::Direction) as belonging
+      // (TextDirection as opposed to WTF::unicode::Direction) as belonging
       // to the same run to avoid breaking unnecessarily.
       while (i >= run->Stop() ||
              (run->Next() && run->Next()->Direction() == run->Direction()))
@@ -1564,16 +1564,26 @@ UChar32 LayoutText::FirstCharacterAfterWhitespaceCollapsing() const {
     String text = text_box->GetText();
     return text.length() ? text.CharacterStartingAt(0) : 0;
   }
-  // TODO(kojii): Support LayoutNG once we have NGInlineItem pointers.
+  if (const NGPaintFragment* paint_fragment = FirstInlineFragment()) {
+    const StringView text =
+        ToNGPhysicalTextFragment(paint_fragment->PhysicalFragment()).Text();
+    return text.length() ? text.CodepointAt(0) : 0;
+  }
   return 0;
 }
 
 UChar32 LayoutText::LastCharacterAfterWhitespaceCollapsing() const {
   if (InlineTextBox* text_box = LastTextBox()) {
     String text = text_box->GetText();
-    return text.length() ? text.CharacterStartingAt(text.length() - 1) : 0;
+    return text.length() ? StringView(text).CodepointAt(text.length() - 1) : 0;
   }
-  // TODO(kojii): Support LayoutNG once we have NGInlineItem pointers.
+  if (const NGPaintFragment* paint_fragment = FirstInlineFragment()) {
+    const StringView text =
+        ToNGPhysicalTextFragment(
+            paint_fragment->LastForSameLayoutObject()->PhysicalFragment())
+            .Text();
+    return text.length() ? text.CodepointAt(text.length() - 1) : 0;
+  }
   return 0;
 }
 
@@ -1598,15 +1608,44 @@ bool LayoutText::CanOptimizeSetText() const {
   return Parent()->IsLayoutBlockFlow() &&
          (Parent()->ShouldApplyLayoutContainment() &&
           Parent()->ShouldApplySizeContainment()) &&
-         FirstTextBox() &&
-         (FirstTextBox() == LastTextBox() &&
-          // If "line-height" is "normal" we might need to recompute the
-          // baseline which is not straight forward.
-          !StyleRef().LineHeight().IsNegative() &&
-          // We would need to recompute the position if "direction" is "rtl" or
-          // "text-align" is not the default one.
-          StyleRef().IsLeftToRightDirection() &&
-          (StyleRef().GetTextAlign(true) == ETextAlign::kStart));
+         !PreviousSibling() && !NextSibling() && FirstTextBox() &&
+         FirstTextBox() == LastTextBox() &&
+         // If "line-height" is "normal" we might need to recompute the
+         // baseline which is not straight forward.
+         !StyleRef().LineHeight().IsNegative() &&
+         // We would need to recompute the position if "direction" is "rtl".
+         StyleRef().IsLeftToRightDirection() &&
+         // We would need to layout the text if it is justified.
+         (StyleRef().GetTextAlign(true) != ETextAlign::kJustify);
+}
+
+void LayoutText::SetFirstTextBoxLogicalLeft(float text_width) const {
+  DCHECK(FirstTextBox());
+  DCHECK(ContainingBlock());
+  DCHECK(StyleRef().IsLeftToRightDirection());
+
+  LayoutUnit offset_left = ContainingBlock()->LogicalLeftOffsetForContent();
+  LayoutUnit available_space = ContainingBlock()->ContentLogicalWidth();
+
+  switch (StyleRef().GetTextAlign(true)) {
+    case ETextAlign::kLeft:
+    case ETextAlign::kWebkitLeft:
+    case ETextAlign::kJustify:
+    case ETextAlign::kStart:
+      // Do nothing.
+      break;
+    case ETextAlign::kRight:
+    case ETextAlign::kWebkitRight:
+    case ETextAlign::kEnd:
+      offset_left += available_space - text_width;
+      break;
+    case ETextAlign::kCenter:
+    case ETextAlign::kWebkitCenter:
+      offset_left += (available_space - text_width) / 2;
+      break;
+  }
+
+  FirstTextBox()->SetLogicalLeft(offset_left);
 }
 
 void LayoutText::SetTextWithOffset(scoped_refptr<StringImpl> text,
@@ -1628,12 +1667,13 @@ void LayoutText::SetTextWithOffset(scoped_refptr<StringImpl> text,
     FloatRect glyph_bounds;
     float text_width =
         style_to_use->GetFont().Width(text_run, nullptr, &glyph_bounds);
-    // TODO(rego): We could avoid measuring text width in some specific
-    // situations (e.g. if "white-space" property is "pre" and "overflow-wrap"
-    // is "normal").
-    if (text_width <= ContainingBlock()->ContentLogicalWidth()) {
+    // If the text is not wrapping we don't care if it fits or not in the
+    // container as it's not going to be split in multiple lines.
+    if (!style_to_use->AutoWrap() ||
+        (text_width <= ContainingBlock()->ContentLogicalWidth())) {
       FirstTextBox()->ManuallySetStartLenAndLogicalWidth(
           offset, text->length(), LayoutUnit(text_width));
+      SetFirstTextBoxLogicalLeft(text_width);
       SetText(std::move(text), force, true);
       lines_dirty_ = false;
       valid_ng_items_ = false;
@@ -1838,7 +1878,7 @@ void LayoutText::SetText(scoped_refptr<StringImpl> text,
       SetShouldDoFullPaintInvalidation();
     } else {
       SetNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(
-          LayoutInvalidationReason::kTextChanged);
+          layout_invalidation_reason::kTextChanged);
     }
   }
   known_to_have_no_overflow_and_no_fallback_fonts_ = false;

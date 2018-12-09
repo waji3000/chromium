@@ -14,6 +14,7 @@
 #include "third_party/blink/renderer/modules/picture_in_picture/enter_picture_in_picture_event.h"
 #include "third_party/blink/renderer/modules/picture_in_picture/picture_in_picture_window.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 
 namespace blink {
 
@@ -22,7 +23,7 @@ PictureInPictureControllerImpl::~PictureInPictureControllerImpl() = default;
 // static
 PictureInPictureControllerImpl* PictureInPictureControllerImpl::Create(
     Document& document) {
-  return new PictureInPictureControllerImpl(document);
+  return MakeGarbageCollected<PictureInPictureControllerImpl>(document);
 }
 
 // static
@@ -121,7 +122,7 @@ void PictureInPictureControllerImpl::OnEnteredPictureInPicture(
   if (picture_in_picture_window_)
     picture_in_picture_window_->OnClose();
 
-  picture_in_picture_window_ = new PictureInPictureWindow(
+  picture_in_picture_window_ = MakeGarbageCollected<PictureInPictureWindow>(
       GetSupplementable(), picture_in_picture_window_size);
 
   picture_in_picture_element_->DispatchEvent(
@@ -191,6 +192,10 @@ void PictureInPictureControllerImpl::OnPictureInPictureControlClicked(
         *PictureInPictureControlEvent::Create(
             event_type_names::kPictureinpicturecontrolclick, control_id));
   }
+}
+
+Element* PictureInPictureControllerImpl::PictureInPictureElement() const {
+  return picture_in_picture_element_;
 }
 
 Element* PictureInPictureControllerImpl::PictureInPictureElement(

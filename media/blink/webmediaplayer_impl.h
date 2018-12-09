@@ -126,7 +126,7 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
 
   WebMediaPlayer::LoadTiming Load(LoadType load_type,
                                   const blink::WebMediaPlayerSource& source,
-                                  CORSMode cors_mode) override;
+                                  CorsMode cors_mode) override;
 
   // Playback controls.
   void Play() override;
@@ -293,6 +293,7 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
 
   bool DidLazyLoad() const override;
   void OnBecameVisible() override;
+  bool IsOpaque() const override;
 
   // Called from WebMediaPlayerCast.
   // TODO(hubbe): WMPI_CAST make private.
@@ -341,8 +342,6 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
   void OnPipelineResumed();
   void OnDemuxerOpened();
 
-  bool HasSingleSecurityOrigin() const;
-
   // Pipeline::Client overrides.
   void OnError(PipelineStatus status) override;
   void OnEnded() override;
@@ -371,9 +370,7 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
 
   // Called after |defer_load_cb_| has decided to allow the load. If
   // |defer_load_cb_| is null this is called immediately.
-  void DoLoad(LoadType load_type,
-              const blink::WebURL& url,
-              CORSMode cors_mode);
+  void DoLoad(LoadType load_type, const blink::WebURL& url, CorsMode cors_mode);
 
   // Called after asynchronous initialization of a data source completed.
   void DataSourceInitialized(bool success);
@@ -434,7 +431,7 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
   //
   // This method should be called any time its dependent values change. These
   // are:
-  //   - isRemote(),
+  //   - isRemote(), is_flinging_,
   //   - hasVideo(),
   //   - delegate_->IsHidden(),
   //   - network_state_, ready_state_,
@@ -446,6 +443,7 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
 
   // Methods internal to UpdatePlayState().
   PlayState UpdatePlayState_ComputePlayState(bool is_remote,
+                                             bool is_flinging,
                                              bool can_auto_suspend,
                                              bool is_suspended,
                                              bool is_backgrounded);
@@ -609,6 +607,11 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
   void ActivateSurfaceLayerForVideo();
 
   void SendBytesReceivedUpdate();
+
+  // Returns whether the Picture-in-Picture window should contain a play/pause
+  // button. It will return false if video is "live", in other words if duration
+  // is equals to Infinity.
+  bool ShouldShowPlayPauseButtonInPictureInPictureWindow() const;
 
   blink::WebLocalFrame* const frame_;
 

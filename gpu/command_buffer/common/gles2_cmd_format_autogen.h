@@ -1023,6 +1023,11 @@ struct ClearBufferuivImmediate {
     return static_cast<uint32_t>(sizeof(GLuint) * 4);
   }
 
+  static uint32_t ComputeEffectiveDataSize(GLenum buffer) {
+    return static_cast<uint32_t>(
+        sizeof(GLuint) * GLES2Util::CalcClearBufferuivDataCount(buffer));
+  }
+
   static uint32_t ComputeSize() {
     return static_cast<uint32_t>(sizeof(ValueType) + ComputeDataSize());
   }
@@ -1033,7 +1038,12 @@ struct ClearBufferuivImmediate {
     SetHeader();
     buffer = _buffer;
     drawbuffers = _drawbuffers;
-    memcpy(ImmediateDataAddress(this), _value, ComputeDataSize());
+    memcpy(ImmediateDataAddress(this), _value,
+           ComputeEffectiveDataSize(buffer));
+    DCHECK_GE(ComputeDataSize(), ComputeEffectiveDataSize(buffer));
+    char* pointer = reinterpret_cast<char*>(ImmediateDataAddress(this)) +
+                    ComputeEffectiveDataSize(buffer);
+    memset(pointer, 0, ComputeDataSize() - ComputeEffectiveDataSize(buffer));
   }
 
   void* Set(void* cmd,
@@ -7483,6 +7493,328 @@ static_assert(offsetof(ShaderSourceBucket, shader) == 4,
 static_assert(offsetof(ShaderSourceBucket, str_bucket_id) == 8,
               "offset of ShaderSourceBucket str_bucket_id should be 8");
 
+struct MultiDrawArraysWEBGL {
+  typedef MultiDrawArraysWEBGL ValueType;
+  static const CommandId kCmdId = kMultiDrawArraysWEBGL;
+  static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(2);
+
+  static uint32_t ComputeSize() {
+    return static_cast<uint32_t>(sizeof(ValueType));  // NOLINT
+  }
+
+  void SetHeader() { header.SetCmd<ValueType>(); }
+
+  void Init(GLenum _mode,
+            uint32_t _firsts_shm_id,
+            uint32_t _firsts_shm_offset,
+            uint32_t _counts_shm_id,
+            uint32_t _counts_shm_offset,
+            GLsizei _drawcount) {
+    SetHeader();
+    mode = _mode;
+    firsts_shm_id = _firsts_shm_id;
+    firsts_shm_offset = _firsts_shm_offset;
+    counts_shm_id = _counts_shm_id;
+    counts_shm_offset = _counts_shm_offset;
+    drawcount = _drawcount;
+  }
+
+  void* Set(void* cmd,
+            GLenum _mode,
+            uint32_t _firsts_shm_id,
+            uint32_t _firsts_shm_offset,
+            uint32_t _counts_shm_id,
+            uint32_t _counts_shm_offset,
+            GLsizei _drawcount) {
+    static_cast<ValueType*>(cmd)->Init(_mode, _firsts_shm_id,
+                                       _firsts_shm_offset, _counts_shm_id,
+                                       _counts_shm_offset, _drawcount);
+    return NextCmdAddress<ValueType>(cmd);
+  }
+
+  gpu::CommandHeader header;
+  uint32_t mode;
+  uint32_t firsts_shm_id;
+  uint32_t firsts_shm_offset;
+  uint32_t counts_shm_id;
+  uint32_t counts_shm_offset;
+  int32_t drawcount;
+};
+
+static_assert(sizeof(MultiDrawArraysWEBGL) == 28,
+              "size of MultiDrawArraysWEBGL should be 28");
+static_assert(offsetof(MultiDrawArraysWEBGL, header) == 0,
+              "offset of MultiDrawArraysWEBGL header should be 0");
+static_assert(offsetof(MultiDrawArraysWEBGL, mode) == 4,
+              "offset of MultiDrawArraysWEBGL mode should be 4");
+static_assert(offsetof(MultiDrawArraysWEBGL, firsts_shm_id) == 8,
+              "offset of MultiDrawArraysWEBGL firsts_shm_id should be 8");
+static_assert(offsetof(MultiDrawArraysWEBGL, firsts_shm_offset) == 12,
+              "offset of MultiDrawArraysWEBGL firsts_shm_offset should be 12");
+static_assert(offsetof(MultiDrawArraysWEBGL, counts_shm_id) == 16,
+              "offset of MultiDrawArraysWEBGL counts_shm_id should be 16");
+static_assert(offsetof(MultiDrawArraysWEBGL, counts_shm_offset) == 20,
+              "offset of MultiDrawArraysWEBGL counts_shm_offset should be 20");
+static_assert(offsetof(MultiDrawArraysWEBGL, drawcount) == 24,
+              "offset of MultiDrawArraysWEBGL drawcount should be 24");
+
+struct MultiDrawArraysInstancedWEBGL {
+  typedef MultiDrawArraysInstancedWEBGL ValueType;
+  static const CommandId kCmdId = kMultiDrawArraysInstancedWEBGL;
+  static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(2);
+
+  static uint32_t ComputeSize() {
+    return static_cast<uint32_t>(sizeof(ValueType));  // NOLINT
+  }
+
+  void SetHeader() { header.SetCmd<ValueType>(); }
+
+  void Init(GLenum _mode,
+            uint32_t _firsts_shm_id,
+            uint32_t _firsts_shm_offset,
+            uint32_t _counts_shm_id,
+            uint32_t _counts_shm_offset,
+            uint32_t _instance_counts_shm_id,
+            uint32_t _instance_counts_shm_offset,
+            GLsizei _drawcount) {
+    SetHeader();
+    mode = _mode;
+    firsts_shm_id = _firsts_shm_id;
+    firsts_shm_offset = _firsts_shm_offset;
+    counts_shm_id = _counts_shm_id;
+    counts_shm_offset = _counts_shm_offset;
+    instance_counts_shm_id = _instance_counts_shm_id;
+    instance_counts_shm_offset = _instance_counts_shm_offset;
+    drawcount = _drawcount;
+  }
+
+  void* Set(void* cmd,
+            GLenum _mode,
+            uint32_t _firsts_shm_id,
+            uint32_t _firsts_shm_offset,
+            uint32_t _counts_shm_id,
+            uint32_t _counts_shm_offset,
+            uint32_t _instance_counts_shm_id,
+            uint32_t _instance_counts_shm_offset,
+            GLsizei _drawcount) {
+    static_cast<ValueType*>(cmd)->Init(
+        _mode, _firsts_shm_id, _firsts_shm_offset, _counts_shm_id,
+        _counts_shm_offset, _instance_counts_shm_id,
+        _instance_counts_shm_offset, _drawcount);
+    return NextCmdAddress<ValueType>(cmd);
+  }
+
+  gpu::CommandHeader header;
+  uint32_t mode;
+  uint32_t firsts_shm_id;
+  uint32_t firsts_shm_offset;
+  uint32_t counts_shm_id;
+  uint32_t counts_shm_offset;
+  uint32_t instance_counts_shm_id;
+  uint32_t instance_counts_shm_offset;
+  int32_t drawcount;
+};
+
+static_assert(sizeof(MultiDrawArraysInstancedWEBGL) == 36,
+              "size of MultiDrawArraysInstancedWEBGL should be 36");
+static_assert(offsetof(MultiDrawArraysInstancedWEBGL, header) == 0,
+              "offset of MultiDrawArraysInstancedWEBGL header should be 0");
+static_assert(offsetof(MultiDrawArraysInstancedWEBGL, mode) == 4,
+              "offset of MultiDrawArraysInstancedWEBGL mode should be 4");
+static_assert(
+    offsetof(MultiDrawArraysInstancedWEBGL, firsts_shm_id) == 8,
+    "offset of MultiDrawArraysInstancedWEBGL firsts_shm_id should be 8");
+static_assert(
+    offsetof(MultiDrawArraysInstancedWEBGL, firsts_shm_offset) == 12,
+    "offset of MultiDrawArraysInstancedWEBGL firsts_shm_offset should be 12");
+static_assert(
+    offsetof(MultiDrawArraysInstancedWEBGL, counts_shm_id) == 16,
+    "offset of MultiDrawArraysInstancedWEBGL counts_shm_id should be 16");
+static_assert(
+    offsetof(MultiDrawArraysInstancedWEBGL, counts_shm_offset) == 20,
+    "offset of MultiDrawArraysInstancedWEBGL counts_shm_offset should be 20");
+static_assert(offsetof(MultiDrawArraysInstancedWEBGL, instance_counts_shm_id) ==
+                  24,
+              "offset of MultiDrawArraysInstancedWEBGL instance_counts_shm_id "
+              "should be 24");
+static_assert(offsetof(MultiDrawArraysInstancedWEBGL,
+                       instance_counts_shm_offset) == 28,
+              "offset of MultiDrawArraysInstancedWEBGL "
+              "instance_counts_shm_offset should be 28");
+static_assert(offsetof(MultiDrawArraysInstancedWEBGL, drawcount) == 32,
+              "offset of MultiDrawArraysInstancedWEBGL drawcount should be 32");
+
+struct MultiDrawElementsWEBGL {
+  typedef MultiDrawElementsWEBGL ValueType;
+  static const CommandId kCmdId = kMultiDrawElementsWEBGL;
+  static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(2);
+
+  static uint32_t ComputeSize() {
+    return static_cast<uint32_t>(sizeof(ValueType));  // NOLINT
+  }
+
+  void SetHeader() { header.SetCmd<ValueType>(); }
+
+  void Init(GLenum _mode,
+            uint32_t _counts_shm_id,
+            uint32_t _counts_shm_offset,
+            GLenum _type,
+            uint32_t _offsets_shm_id,
+            uint32_t _offsets_shm_offset,
+            GLsizei _drawcount) {
+    SetHeader();
+    mode = _mode;
+    counts_shm_id = _counts_shm_id;
+    counts_shm_offset = _counts_shm_offset;
+    type = _type;
+    offsets_shm_id = _offsets_shm_id;
+    offsets_shm_offset = _offsets_shm_offset;
+    drawcount = _drawcount;
+  }
+
+  void* Set(void* cmd,
+            GLenum _mode,
+            uint32_t _counts_shm_id,
+            uint32_t _counts_shm_offset,
+            GLenum _type,
+            uint32_t _offsets_shm_id,
+            uint32_t _offsets_shm_offset,
+            GLsizei _drawcount) {
+    static_cast<ValueType*>(cmd)->Init(
+        _mode, _counts_shm_id, _counts_shm_offset, _type, _offsets_shm_id,
+        _offsets_shm_offset, _drawcount);
+    return NextCmdAddress<ValueType>(cmd);
+  }
+
+  gpu::CommandHeader header;
+  uint32_t mode;
+  uint32_t counts_shm_id;
+  uint32_t counts_shm_offset;
+  uint32_t type;
+  uint32_t offsets_shm_id;
+  uint32_t offsets_shm_offset;
+  int32_t drawcount;
+};
+
+static_assert(sizeof(MultiDrawElementsWEBGL) == 32,
+              "size of MultiDrawElementsWEBGL should be 32");
+static_assert(offsetof(MultiDrawElementsWEBGL, header) == 0,
+              "offset of MultiDrawElementsWEBGL header should be 0");
+static_assert(offsetof(MultiDrawElementsWEBGL, mode) == 4,
+              "offset of MultiDrawElementsWEBGL mode should be 4");
+static_assert(offsetof(MultiDrawElementsWEBGL, counts_shm_id) == 8,
+              "offset of MultiDrawElementsWEBGL counts_shm_id should be 8");
+static_assert(
+    offsetof(MultiDrawElementsWEBGL, counts_shm_offset) == 12,
+    "offset of MultiDrawElementsWEBGL counts_shm_offset should be 12");
+static_assert(offsetof(MultiDrawElementsWEBGL, type) == 16,
+              "offset of MultiDrawElementsWEBGL type should be 16");
+static_assert(offsetof(MultiDrawElementsWEBGL, offsets_shm_id) == 20,
+              "offset of MultiDrawElementsWEBGL offsets_shm_id should be 20");
+static_assert(
+    offsetof(MultiDrawElementsWEBGL, offsets_shm_offset) == 24,
+    "offset of MultiDrawElementsWEBGL offsets_shm_offset should be 24");
+static_assert(offsetof(MultiDrawElementsWEBGL, drawcount) == 28,
+              "offset of MultiDrawElementsWEBGL drawcount should be 28");
+
+struct MultiDrawElementsInstancedWEBGL {
+  typedef MultiDrawElementsInstancedWEBGL ValueType;
+  static const CommandId kCmdId = kMultiDrawElementsInstancedWEBGL;
+  static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(2);
+
+  static uint32_t ComputeSize() {
+    return static_cast<uint32_t>(sizeof(ValueType));  // NOLINT
+  }
+
+  void SetHeader() { header.SetCmd<ValueType>(); }
+
+  void Init(GLenum _mode,
+            uint32_t _counts_shm_id,
+            uint32_t _counts_shm_offset,
+            GLenum _type,
+            uint32_t _offsets_shm_id,
+            uint32_t _offsets_shm_offset,
+            uint32_t _instance_counts_shm_id,
+            uint32_t _instance_counts_shm_offset,
+            GLsizei _drawcount) {
+    SetHeader();
+    mode = _mode;
+    counts_shm_id = _counts_shm_id;
+    counts_shm_offset = _counts_shm_offset;
+    type = _type;
+    offsets_shm_id = _offsets_shm_id;
+    offsets_shm_offset = _offsets_shm_offset;
+    instance_counts_shm_id = _instance_counts_shm_id;
+    instance_counts_shm_offset = _instance_counts_shm_offset;
+    drawcount = _drawcount;
+  }
+
+  void* Set(void* cmd,
+            GLenum _mode,
+            uint32_t _counts_shm_id,
+            uint32_t _counts_shm_offset,
+            GLenum _type,
+            uint32_t _offsets_shm_id,
+            uint32_t _offsets_shm_offset,
+            uint32_t _instance_counts_shm_id,
+            uint32_t _instance_counts_shm_offset,
+            GLsizei _drawcount) {
+    static_cast<ValueType*>(cmd)->Init(
+        _mode, _counts_shm_id, _counts_shm_offset, _type, _offsets_shm_id,
+        _offsets_shm_offset, _instance_counts_shm_id,
+        _instance_counts_shm_offset, _drawcount);
+    return NextCmdAddress<ValueType>(cmd);
+  }
+
+  gpu::CommandHeader header;
+  uint32_t mode;
+  uint32_t counts_shm_id;
+  uint32_t counts_shm_offset;
+  uint32_t type;
+  uint32_t offsets_shm_id;
+  uint32_t offsets_shm_offset;
+  uint32_t instance_counts_shm_id;
+  uint32_t instance_counts_shm_offset;
+  int32_t drawcount;
+};
+
+static_assert(sizeof(MultiDrawElementsInstancedWEBGL) == 40,
+              "size of MultiDrawElementsInstancedWEBGL should be 40");
+static_assert(offsetof(MultiDrawElementsInstancedWEBGL, header) == 0,
+              "offset of MultiDrawElementsInstancedWEBGL header should be 0");
+static_assert(offsetof(MultiDrawElementsInstancedWEBGL, mode) == 4,
+              "offset of MultiDrawElementsInstancedWEBGL mode should be 4");
+static_assert(
+    offsetof(MultiDrawElementsInstancedWEBGL, counts_shm_id) == 8,
+    "offset of MultiDrawElementsInstancedWEBGL counts_shm_id should be 8");
+static_assert(
+    offsetof(MultiDrawElementsInstancedWEBGL, counts_shm_offset) == 12,
+    "offset of MultiDrawElementsInstancedWEBGL counts_shm_offset should be 12");
+static_assert(offsetof(MultiDrawElementsInstancedWEBGL, type) == 16,
+              "offset of MultiDrawElementsInstancedWEBGL type should be 16");
+static_assert(
+    offsetof(MultiDrawElementsInstancedWEBGL, offsets_shm_id) == 20,
+    "offset of MultiDrawElementsInstancedWEBGL offsets_shm_id should be 20");
+static_assert(offsetof(MultiDrawElementsInstancedWEBGL, offsets_shm_offset) ==
+                  24,
+              "offset of MultiDrawElementsInstancedWEBGL offsets_shm_offset "
+              "should be 24");
+static_assert(offsetof(MultiDrawElementsInstancedWEBGL,
+                       instance_counts_shm_id) == 28,
+              "offset of MultiDrawElementsInstancedWEBGL "
+              "instance_counts_shm_id should be 28");
+static_assert(offsetof(MultiDrawElementsInstancedWEBGL,
+                       instance_counts_shm_offset) == 32,
+              "offset of MultiDrawElementsInstancedWEBGL "
+              "instance_counts_shm_offset should be 32");
+static_assert(
+    offsetof(MultiDrawElementsInstancedWEBGL, drawcount) == 36,
+    "offset of MultiDrawElementsInstancedWEBGL drawcount should be 36");
+
 struct StencilFunc {
   typedef StencilFunc ValueType;
   static const CommandId kCmdId = kStencilFunc;
@@ -13160,60 +13492,6 @@ static_assert(
     offsetof(CreateAndConsumeTextureINTERNALImmediate, texture) == 4,
     "offset of CreateAndConsumeTextureINTERNALImmediate texture should be 4");
 
-struct CreateAndTexStorage2DSharedImageINTERNALImmediate {
-  typedef CreateAndTexStorage2DSharedImageINTERNALImmediate ValueType;
-  static const CommandId kCmdId =
-      kCreateAndTexStorage2DSharedImageINTERNALImmediate;
-  static const cmd::ArgFlags kArgFlags = cmd::kAtLeastN;
-  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(2);
-
-  static uint32_t ComputeDataSize() {
-    return static_cast<uint32_t>(sizeof(GLbyte) * 16);
-  }
-
-  static uint32_t ComputeSize() {
-    return static_cast<uint32_t>(sizeof(ValueType) + ComputeDataSize());
-  }
-
-  void SetHeader() { header.SetCmdByTotalSize<ValueType>(ComputeSize()); }
-
-  void Init(GLuint _texture, GLenum _internalFormat, const GLbyte* _mailbox) {
-    SetHeader();
-    texture = _texture;
-    internalFormat = _internalFormat;
-    memcpy(ImmediateDataAddress(this), _mailbox, ComputeDataSize());
-  }
-
-  void* Set(void* cmd,
-            GLuint _texture,
-            GLenum _internalFormat,
-            const GLbyte* _mailbox) {
-    static_cast<ValueType*>(cmd)->Init(_texture, _internalFormat, _mailbox);
-    const uint32_t size = ComputeSize();
-    return NextImmediateCmdAddressTotalSize<ValueType>(cmd, size);
-  }
-
-  gpu::CommandHeader header;
-  uint32_t texture;
-  uint32_t internalFormat;
-};
-
-static_assert(
-    sizeof(CreateAndTexStorage2DSharedImageINTERNALImmediate) == 12,
-    "size of CreateAndTexStorage2DSharedImageINTERNALImmediate should be 12");
-static_assert(offsetof(CreateAndTexStorage2DSharedImageINTERNALImmediate,
-                       header) == 0,
-              "offset of CreateAndTexStorage2DSharedImageINTERNALImmediate "
-              "header should be 0");
-static_assert(offsetof(CreateAndTexStorage2DSharedImageINTERNALImmediate,
-                       texture) == 4,
-              "offset of CreateAndTexStorage2DSharedImageINTERNALImmediate "
-              "texture should be 4");
-static_assert(offsetof(CreateAndTexStorage2DSharedImageINTERNALImmediate,
-                       internalFormat) == 8,
-              "offset of CreateAndTexStorage2DSharedImageINTERNALImmediate "
-              "internalFormat should be 8");
-
 struct BindUniformLocationCHROMIUMBucket {
   typedef BindUniformLocationCHROMIUMBucket ValueType;
   static const CommandId kCmdId = kBindUniformLocationCHROMIUMBucket;
@@ -14145,71 +14423,6 @@ static_assert(sizeof(FlushDriverCachesCHROMIUM) == 4,
 static_assert(offsetof(FlushDriverCachesCHROMIUM, header) == 0,
               "offset of FlushDriverCachesCHROMIUM header should be 0");
 
-struct ScheduleDCLayerSharedStateCHROMIUM {
-  typedef ScheduleDCLayerSharedStateCHROMIUM ValueType;
-  static const CommandId kCmdId = kScheduleDCLayerSharedStateCHROMIUM;
-  static const cmd::ArgFlags kArgFlags = cmd::kFixed;
-  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
-
-  static uint32_t ComputeSize() {
-    return static_cast<uint32_t>(sizeof(ValueType));  // NOLINT
-  }
-
-  void SetHeader() { header.SetCmd<ValueType>(); }
-
-  void Init(GLfloat _opacity,
-            GLboolean _is_clipped,
-            GLint _z_order,
-            GLuint _shm_id,
-            GLuint _shm_offset) {
-    SetHeader();
-    opacity = _opacity;
-    is_clipped = _is_clipped;
-    z_order = _z_order;
-    shm_id = _shm_id;
-    shm_offset = _shm_offset;
-  }
-
-  void* Set(void* cmd,
-            GLfloat _opacity,
-            GLboolean _is_clipped,
-            GLint _z_order,
-            GLuint _shm_id,
-            GLuint _shm_offset) {
-    static_cast<ValueType*>(cmd)->Init(_opacity, _is_clipped, _z_order, _shm_id,
-                                       _shm_offset);
-    return NextCmdAddress<ValueType>(cmd);
-  }
-
-  gpu::CommandHeader header;
-  float opacity;
-  uint32_t is_clipped;
-  int32_t z_order;
-  uint32_t shm_id;
-  uint32_t shm_offset;
-};
-
-static_assert(sizeof(ScheduleDCLayerSharedStateCHROMIUM) == 24,
-              "size of ScheduleDCLayerSharedStateCHROMIUM should be 24");
-static_assert(
-    offsetof(ScheduleDCLayerSharedStateCHROMIUM, header) == 0,
-    "offset of ScheduleDCLayerSharedStateCHROMIUM header should be 0");
-static_assert(
-    offsetof(ScheduleDCLayerSharedStateCHROMIUM, opacity) == 4,
-    "offset of ScheduleDCLayerSharedStateCHROMIUM opacity should be 4");
-static_assert(
-    offsetof(ScheduleDCLayerSharedStateCHROMIUM, is_clipped) == 8,
-    "offset of ScheduleDCLayerSharedStateCHROMIUM is_clipped should be 8");
-static_assert(
-    offsetof(ScheduleDCLayerSharedStateCHROMIUM, z_order) == 12,
-    "offset of ScheduleDCLayerSharedStateCHROMIUM z_order should be 12");
-static_assert(
-    offsetof(ScheduleDCLayerSharedStateCHROMIUM, shm_id) == 16,
-    "offset of ScheduleDCLayerSharedStateCHROMIUM shm_id should be 16");
-static_assert(
-    offsetof(ScheduleDCLayerSharedStateCHROMIUM, shm_offset) == 20,
-    "offset of ScheduleDCLayerSharedStateCHROMIUM shm_offset should be 20");
-
 struct ScheduleDCLayerCHROMIUM {
   typedef ScheduleDCLayerCHROMIUM ValueType;
   static const CommandId kCmdId = kScheduleDCLayerCHROMIUM;
@@ -14222,66 +14435,165 @@ struct ScheduleDCLayerCHROMIUM {
 
   void SetHeader() { header.SetCmd<ValueType>(); }
 
-  void Init(GLsizei _num_textures,
-            GLuint _background_color,
-            GLuint _edge_aa_mask,
-            GLuint _filter,
-            GLuint _shm_id,
-            GLuint _shm_offset,
-            bool _is_protected_video) {
+  void Init(GLuint _y_texture_id,
+            GLuint _uv_texture_id,
+            GLint _z_order,
+            GLint _content_x,
+            GLint _content_y,
+            GLint _content_width,
+            GLint _content_height,
+            GLint _quad_x,
+            GLint _quad_y,
+            GLint _quad_width,
+            GLint _quad_height,
+            GLfloat _transform_c1r1,
+            GLfloat _transform_c2r1,
+            GLfloat _transform_c1r2,
+            GLfloat _transform_c2r2,
+            GLfloat _transform_tx,
+            GLfloat _transform_ty,
+            GLboolean _is_clipped,
+            GLint _clip_x,
+            GLint _clip_y,
+            GLint _clip_width,
+            GLint _clip_height,
+            GLuint _protected_video_type) {
     SetHeader();
-    num_textures = _num_textures;
-    background_color = _background_color;
-    edge_aa_mask = _edge_aa_mask;
-    filter = _filter;
-    shm_id = _shm_id;
-    shm_offset = _shm_offset;
-    is_protected_video = _is_protected_video;
+    y_texture_id = _y_texture_id;
+    uv_texture_id = _uv_texture_id;
+    z_order = _z_order;
+    content_x = _content_x;
+    content_y = _content_y;
+    content_width = _content_width;
+    content_height = _content_height;
+    quad_x = _quad_x;
+    quad_y = _quad_y;
+    quad_width = _quad_width;
+    quad_height = _quad_height;
+    transform_c1r1 = _transform_c1r1;
+    transform_c2r1 = _transform_c2r1;
+    transform_c1r2 = _transform_c1r2;
+    transform_c2r2 = _transform_c2r2;
+    transform_tx = _transform_tx;
+    transform_ty = _transform_ty;
+    is_clipped = _is_clipped;
+    clip_x = _clip_x;
+    clip_y = _clip_y;
+    clip_width = _clip_width;
+    clip_height = _clip_height;
+    protected_video_type = _protected_video_type;
   }
 
   void* Set(void* cmd,
-            GLsizei _num_textures,
-            GLuint _background_color,
-            GLuint _edge_aa_mask,
-            GLuint _filter,
-            GLuint _shm_id,
-            GLuint _shm_offset,
-            bool _is_protected_video) {
-    static_cast<ValueType*>(cmd)->Init(_num_textures, _background_color,
-                                       _edge_aa_mask, _filter, _shm_id,
-                                       _shm_offset, _is_protected_video);
+            GLuint _y_texture_id,
+            GLuint _uv_texture_id,
+            GLint _z_order,
+            GLint _content_x,
+            GLint _content_y,
+            GLint _content_width,
+            GLint _content_height,
+            GLint _quad_x,
+            GLint _quad_y,
+            GLint _quad_width,
+            GLint _quad_height,
+            GLfloat _transform_c1r1,
+            GLfloat _transform_c2r1,
+            GLfloat _transform_c1r2,
+            GLfloat _transform_c2r2,
+            GLfloat _transform_tx,
+            GLfloat _transform_ty,
+            GLboolean _is_clipped,
+            GLint _clip_x,
+            GLint _clip_y,
+            GLint _clip_width,
+            GLint _clip_height,
+            GLuint _protected_video_type) {
+    static_cast<ValueType*>(cmd)->Init(
+        _y_texture_id, _uv_texture_id, _z_order, _content_x, _content_y,
+        _content_width, _content_height, _quad_x, _quad_y, _quad_width,
+        _quad_height, _transform_c1r1, _transform_c2r1, _transform_c1r2,
+        _transform_c2r2, _transform_tx, _transform_ty, _is_clipped, _clip_x,
+        _clip_y, _clip_width, _clip_height, _protected_video_type);
     return NextCmdAddress<ValueType>(cmd);
   }
 
   gpu::CommandHeader header;
-  int32_t num_textures;
-  uint32_t background_color;
-  uint32_t edge_aa_mask;
-  uint32_t filter;
-  uint32_t shm_id;
-  uint32_t shm_offset;
-  uint32_t is_protected_video;
+  uint32_t y_texture_id;
+  uint32_t uv_texture_id;
+  int32_t z_order;
+  int32_t content_x;
+  int32_t content_y;
+  int32_t content_width;
+  int32_t content_height;
+  int32_t quad_x;
+  int32_t quad_y;
+  int32_t quad_width;
+  int32_t quad_height;
+  float transform_c1r1;
+  float transform_c2r1;
+  float transform_c1r2;
+  float transform_c2r2;
+  float transform_tx;
+  float transform_ty;
+  uint32_t is_clipped;
+  int32_t clip_x;
+  int32_t clip_y;
+  int32_t clip_width;
+  int32_t clip_height;
+  uint32_t protected_video_type;
 };
 
-static_assert(sizeof(ScheduleDCLayerCHROMIUM) == 32,
-              "size of ScheduleDCLayerCHROMIUM should be 32");
+static_assert(sizeof(ScheduleDCLayerCHROMIUM) == 96,
+              "size of ScheduleDCLayerCHROMIUM should be 96");
 static_assert(offsetof(ScheduleDCLayerCHROMIUM, header) == 0,
               "offset of ScheduleDCLayerCHROMIUM header should be 0");
-static_assert(offsetof(ScheduleDCLayerCHROMIUM, num_textures) == 4,
-              "offset of ScheduleDCLayerCHROMIUM num_textures should be 4");
-static_assert(offsetof(ScheduleDCLayerCHROMIUM, background_color) == 8,
-              "offset of ScheduleDCLayerCHROMIUM background_color should be 8");
-static_assert(offsetof(ScheduleDCLayerCHROMIUM, edge_aa_mask) == 12,
-              "offset of ScheduleDCLayerCHROMIUM edge_aa_mask should be 12");
-static_assert(offsetof(ScheduleDCLayerCHROMIUM, filter) == 16,
-              "offset of ScheduleDCLayerCHROMIUM filter should be 16");
-static_assert(offsetof(ScheduleDCLayerCHROMIUM, shm_id) == 20,
-              "offset of ScheduleDCLayerCHROMIUM shm_id should be 20");
-static_assert(offsetof(ScheduleDCLayerCHROMIUM, shm_offset) == 24,
-              "offset of ScheduleDCLayerCHROMIUM shm_offset should be 24");
+static_assert(offsetof(ScheduleDCLayerCHROMIUM, y_texture_id) == 4,
+              "offset of ScheduleDCLayerCHROMIUM y_texture_id should be 4");
+static_assert(offsetof(ScheduleDCLayerCHROMIUM, uv_texture_id) == 8,
+              "offset of ScheduleDCLayerCHROMIUM uv_texture_id should be 8");
+static_assert(offsetof(ScheduleDCLayerCHROMIUM, z_order) == 12,
+              "offset of ScheduleDCLayerCHROMIUM z_order should be 12");
+static_assert(offsetof(ScheduleDCLayerCHROMIUM, content_x) == 16,
+              "offset of ScheduleDCLayerCHROMIUM content_x should be 16");
+static_assert(offsetof(ScheduleDCLayerCHROMIUM, content_y) == 20,
+              "offset of ScheduleDCLayerCHROMIUM content_y should be 20");
+static_assert(offsetof(ScheduleDCLayerCHROMIUM, content_width) == 24,
+              "offset of ScheduleDCLayerCHROMIUM content_width should be 24");
+static_assert(offsetof(ScheduleDCLayerCHROMIUM, content_height) == 28,
+              "offset of ScheduleDCLayerCHROMIUM content_height should be 28");
+static_assert(offsetof(ScheduleDCLayerCHROMIUM, quad_x) == 32,
+              "offset of ScheduleDCLayerCHROMIUM quad_x should be 32");
+static_assert(offsetof(ScheduleDCLayerCHROMIUM, quad_y) == 36,
+              "offset of ScheduleDCLayerCHROMIUM quad_y should be 36");
+static_assert(offsetof(ScheduleDCLayerCHROMIUM, quad_width) == 40,
+              "offset of ScheduleDCLayerCHROMIUM quad_width should be 40");
+static_assert(offsetof(ScheduleDCLayerCHROMIUM, quad_height) == 44,
+              "offset of ScheduleDCLayerCHROMIUM quad_height should be 44");
+static_assert(offsetof(ScheduleDCLayerCHROMIUM, transform_c1r1) == 48,
+              "offset of ScheduleDCLayerCHROMIUM transform_c1r1 should be 48");
+static_assert(offsetof(ScheduleDCLayerCHROMIUM, transform_c2r1) == 52,
+              "offset of ScheduleDCLayerCHROMIUM transform_c2r1 should be 52");
+static_assert(offsetof(ScheduleDCLayerCHROMIUM, transform_c1r2) == 56,
+              "offset of ScheduleDCLayerCHROMIUM transform_c1r2 should be 56");
+static_assert(offsetof(ScheduleDCLayerCHROMIUM, transform_c2r2) == 60,
+              "offset of ScheduleDCLayerCHROMIUM transform_c2r2 should be 60");
+static_assert(offsetof(ScheduleDCLayerCHROMIUM, transform_tx) == 64,
+              "offset of ScheduleDCLayerCHROMIUM transform_tx should be 64");
+static_assert(offsetof(ScheduleDCLayerCHROMIUM, transform_ty) == 68,
+              "offset of ScheduleDCLayerCHROMIUM transform_ty should be 68");
+static_assert(offsetof(ScheduleDCLayerCHROMIUM, is_clipped) == 72,
+              "offset of ScheduleDCLayerCHROMIUM is_clipped should be 72");
+static_assert(offsetof(ScheduleDCLayerCHROMIUM, clip_x) == 76,
+              "offset of ScheduleDCLayerCHROMIUM clip_x should be 76");
+static_assert(offsetof(ScheduleDCLayerCHROMIUM, clip_y) == 80,
+              "offset of ScheduleDCLayerCHROMIUM clip_y should be 80");
+static_assert(offsetof(ScheduleDCLayerCHROMIUM, clip_width) == 84,
+              "offset of ScheduleDCLayerCHROMIUM clip_width should be 84");
+static_assert(offsetof(ScheduleDCLayerCHROMIUM, clip_height) == 88,
+              "offset of ScheduleDCLayerCHROMIUM clip_height should be 88");
 static_assert(
-    offsetof(ScheduleDCLayerCHROMIUM, is_protected_video) == 28,
-    "offset of ScheduleDCLayerCHROMIUM is_protected_video should be 28");
+    offsetof(ScheduleDCLayerCHROMIUM, protected_video_type) == 92,
+    "offset of ScheduleDCLayerCHROMIUM protected_video_type should be 92");
 
 struct SetActiveURLCHROMIUM {
   typedef SetActiveURLCHROMIUM ValueType;
@@ -16784,5 +17096,125 @@ static_assert(offsetof(MaxShaderCompilerThreadsKHR, header) == 0,
               "offset of MaxShaderCompilerThreadsKHR header should be 0");
 static_assert(offsetof(MaxShaderCompilerThreadsKHR, count) == 4,
               "offset of MaxShaderCompilerThreadsKHR count should be 4");
+
+struct CreateAndTexStorage2DSharedImageINTERNALImmediate {
+  typedef CreateAndTexStorage2DSharedImageINTERNALImmediate ValueType;
+  static const CommandId kCmdId =
+      kCreateAndTexStorage2DSharedImageINTERNALImmediate;
+  static const cmd::ArgFlags kArgFlags = cmd::kAtLeastN;
+  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(2);
+
+  static uint32_t ComputeDataSize() {
+    return static_cast<uint32_t>(sizeof(GLbyte) * 16);
+  }
+
+  static uint32_t ComputeSize() {
+    return static_cast<uint32_t>(sizeof(ValueType) + ComputeDataSize());
+  }
+
+  void SetHeader() { header.SetCmdByTotalSize<ValueType>(ComputeSize()); }
+
+  void Init(GLuint _texture, const GLbyte* _mailbox) {
+    SetHeader();
+    texture = _texture;
+    memcpy(ImmediateDataAddress(this), _mailbox, ComputeDataSize());
+  }
+
+  void* Set(void* cmd, GLuint _texture, const GLbyte* _mailbox) {
+    static_cast<ValueType*>(cmd)->Init(_texture, _mailbox);
+    const uint32_t size = ComputeSize();
+    return NextImmediateCmdAddressTotalSize<ValueType>(cmd, size);
+  }
+
+  gpu::CommandHeader header;
+  uint32_t texture;
+};
+
+static_assert(
+    sizeof(CreateAndTexStorage2DSharedImageINTERNALImmediate) == 8,
+    "size of CreateAndTexStorage2DSharedImageINTERNALImmediate should be 8");
+static_assert(offsetof(CreateAndTexStorage2DSharedImageINTERNALImmediate,
+                       header) == 0,
+              "offset of CreateAndTexStorage2DSharedImageINTERNALImmediate "
+              "header should be 0");
+static_assert(offsetof(CreateAndTexStorage2DSharedImageINTERNALImmediate,
+                       texture) == 4,
+              "offset of CreateAndTexStorage2DSharedImageINTERNALImmediate "
+              "texture should be 4");
+
+struct BeginSharedImageAccessDirectCHROMIUM {
+  typedef BeginSharedImageAccessDirectCHROMIUM ValueType;
+  static const CommandId kCmdId = kBeginSharedImageAccessDirectCHROMIUM;
+  static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
+
+  static uint32_t ComputeSize() {
+    return static_cast<uint32_t>(sizeof(ValueType));  // NOLINT
+  }
+
+  void SetHeader() { header.SetCmd<ValueType>(); }
+
+  void Init(GLuint _texture, GLenum _mode) {
+    SetHeader();
+    texture = _texture;
+    mode = _mode;
+  }
+
+  void* Set(void* cmd, GLuint _texture, GLenum _mode) {
+    static_cast<ValueType*>(cmd)->Init(_texture, _mode);
+    return NextCmdAddress<ValueType>(cmd);
+  }
+
+  gpu::CommandHeader header;
+  uint32_t texture;
+  uint32_t mode;
+};
+
+static_assert(sizeof(BeginSharedImageAccessDirectCHROMIUM) == 12,
+              "size of BeginSharedImageAccessDirectCHROMIUM should be 12");
+static_assert(
+    offsetof(BeginSharedImageAccessDirectCHROMIUM, header) == 0,
+    "offset of BeginSharedImageAccessDirectCHROMIUM header should be 0");
+static_assert(
+    offsetof(BeginSharedImageAccessDirectCHROMIUM, texture) == 4,
+    "offset of BeginSharedImageAccessDirectCHROMIUM texture should be 4");
+static_assert(
+    offsetof(BeginSharedImageAccessDirectCHROMIUM, mode) == 8,
+    "offset of BeginSharedImageAccessDirectCHROMIUM mode should be 8");
+
+struct EndSharedImageAccessDirectCHROMIUM {
+  typedef EndSharedImageAccessDirectCHROMIUM ValueType;
+  static const CommandId kCmdId = kEndSharedImageAccessDirectCHROMIUM;
+  static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
+
+  static uint32_t ComputeSize() {
+    return static_cast<uint32_t>(sizeof(ValueType));  // NOLINT
+  }
+
+  void SetHeader() { header.SetCmd<ValueType>(); }
+
+  void Init(GLuint _texture) {
+    SetHeader();
+    texture = _texture;
+  }
+
+  void* Set(void* cmd, GLuint _texture) {
+    static_cast<ValueType*>(cmd)->Init(_texture);
+    return NextCmdAddress<ValueType>(cmd);
+  }
+
+  gpu::CommandHeader header;
+  uint32_t texture;
+};
+
+static_assert(sizeof(EndSharedImageAccessDirectCHROMIUM) == 8,
+              "size of EndSharedImageAccessDirectCHROMIUM should be 8");
+static_assert(
+    offsetof(EndSharedImageAccessDirectCHROMIUM, header) == 0,
+    "offset of EndSharedImageAccessDirectCHROMIUM header should be 0");
+static_assert(
+    offsetof(EndSharedImageAccessDirectCHROMIUM, texture) == 4,
+    "offset of EndSharedImageAccessDirectCHROMIUM texture should be 4");
 
 #endif  // GPU_COMMAND_BUFFER_COMMON_GLES2_CMD_FORMAT_AUTOGEN_H_

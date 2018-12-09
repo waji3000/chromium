@@ -36,8 +36,8 @@
 #include "services/network/public/mojom/cors.mojom-blink.h"
 #include "services/network/public/mojom/fetch_api.mojom-blink.h"
 #include "services/network/public/mojom/request_context_frame_type.mojom-shared.h"
+#include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-shared.h"
 #include "third_party/blink/public/mojom/net/ip_address_space.mojom-blink.h"
-#include "third_party/blink/public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
 #include "third_party/blink/public/platform/resource_request_blocked_reason.h"
 #include "third_party/blink/public/platform/web_content_security_policy_struct.h"
 #include "third_party/blink/public/platform/web_url_request.h"
@@ -84,8 +84,9 @@ class PLATFORM_EXPORT ResourceRequest final {
       const KURL& new_url,
       const AtomicString& new_method,
       const KURL& new_site_for_cookies,
+      scoped_refptr<const SecurityOrigin> new_top_frame_origin,
       const String& new_referrer,
-      ReferrerPolicy new_referrer_policy,
+      network::mojom::ReferrerPolicy new_referrer_policy,
       bool skip_service_worker) const;
 
   bool IsNull() const;
@@ -103,6 +104,9 @@ class PLATFORM_EXPORT ResourceRequest final {
 
   const KURL& SiteForCookies() const;
   void SetSiteForCookies(const KURL&);
+
+  const SecurityOrigin* TopFrameOrigin() const;
+  void SetTopFrameOrigin(scoped_refptr<const SecurityOrigin>);
 
   // The origin of the request, specified at
   // https://fetch.spec.whatwg.org/#concept-request-origin. This origin can be
@@ -143,10 +147,12 @@ class PLATFORM_EXPORT ResourceRequest final {
   bool DidSetHTTPReferrer() const { return did_set_http_referrer_; }
   void ClearHTTPReferrer();
 
-  void SetReferrerPolicy(ReferrerPolicy referrer_policy) {
+  void SetReferrerPolicy(network::mojom::ReferrerPolicy referrer_policy) {
     referrer_policy_ = referrer_policy;
   }
-  ReferrerPolicy GetReferrerPolicy() const { return referrer_policy_; }
+  network::mojom::ReferrerPolicy GetReferrerPolicy() const {
+    return referrer_policy_;
+  }
 
   void SetReferrerString(const String& referrer_string) {
     referrer_string_ = referrer_string;
@@ -339,10 +345,10 @@ class PLATFORM_EXPORT ResourceRequest final {
   bool IsExternalRequest() const { return is_external_request_; }
   void SetExternalRequestStateFromRequestorAddressSpace(mojom::IPAddressSpace);
 
-  network::mojom::CORSPreflightPolicy CORSPreflightPolicy() const {
+  network::mojom::CorsPreflightPolicy CorsPreflightPolicy() const {
     return cors_preflight_policy_;
   }
-  void SetCORSPreflightPolicy(network::mojom::CORSPreflightPolicy policy) {
+  void SetCorsPreflightPolicy(network::mojom::CorsPreflightPolicy policy) {
     cors_preflight_policy_ = policy;
   }
 
@@ -384,6 +390,13 @@ class PLATFORM_EXPORT ResourceRequest final {
   void SetAllowStaleResponse(bool value) { allow_stale_response_ = value; }
   bool AllowsStaleResponse() const { return allow_stale_response_; }
 
+  void SetStaleRevalidateCandidate(bool value) {
+    stale_revalidate_candidate_ = value;
+  }
+  bool IsStaleRevalidateCandidate() const {
+    return stale_revalidate_candidate_;
+  }
+
   const base::Optional<base::UnguessableToken>& GetDevToolsToken() const {
     return devtools_token_;
   }
@@ -395,11 +408,27 @@ class PLATFORM_EXPORT ResourceRequest final {
   void SetOriginPolicy(const String& policy) { origin_policy_ = policy; }
   const String& GetOriginPolicy() const { return origin_policy_; }
 
-  void SetRequestedWith(const String& value) { requested_with_ = value; }
-  const String& GetRequestedWith() const { return requested_with_; }
+  void SetRequestedWithHeader(const String& value) {
+    requested_with_header_ = value;
+  }
+  const String& GetRequestedWithHeader() const {
+    return requested_with_header_;
+  }
+
+  void SetClientDataHeader(const String& value) { client_data_header_ = value; }
+  const String& GetClientDataHeader() const { return client_data_header_; }
 
   void SetUkmSourceId(int64_t ukm_source_id) { ukm_source_id_ = ukm_source_id; }
   int64_t GetUkmSourceId() const { return ukm_source_id_; }
+
+  // https://fetch.spec.whatwg.org/#concept-request-window
+  // See network::ResourceRequest::fetch_window_id for details.
+  void SetFetchWindowId(const base::UnguessableToken& id) {
+    fetch_window_id_ = id;
+  }
+  const base::UnguessableToken& GetFetchWindowId() const {
+    return fetch_window_id_;
+  }
 
  private:
   using SharableExtraData =
@@ -413,6 +442,7 @@ class PLATFORM_EXPORT ResourceRequest final {
   // TimeDelta::Max() represents the default timeout on platforms that have one.
   base::TimeDelta timeout_interval_;
   KURL site_for_cookies_;
+  scoped_refptr<const SecurityOrigin> top_frame_origin_;
 
   scoped_refptr<const SecurityOrigin> requestor_origin_;
 
@@ -428,6 +458,7 @@ class PLATFORM_EXPORT ResourceRequest final {
   bool keepalive_ : 1;
   bool should_reset_app_cache_ : 1;
   bool allow_stale_response_ : 1;
+  bool stale_revalidate_candidate_ : 1;
   mojom::FetchCacheMode cache_mode_;
   bool skip_service_worker_ : 1;
   bool download_to_cache_only_ : 1;
@@ -449,11 +480,11 @@ class PLATFORM_EXPORT ResourceRequest final {
   // off-main-thread fetch is fully implemented and ResourceRequest never gets
   // transferred between threads. See https://crbug.com/706331.
   String referrer_string_;
-  ReferrerPolicy referrer_policy_;
+  network::mojom::ReferrerPolicy referrer_policy_;
   bool did_set_http_referrer_;
   bool was_discarded_;
   bool is_external_request_;
-  network::mojom::CORSPreflightPolicy cors_preflight_policy_;
+  network::mojom::CorsPreflightPolicy cors_preflight_policy_;
   RedirectStatus redirect_status_;
   base::Optional<String> suggested_filename_;
 
@@ -473,9 +504,12 @@ class PLATFORM_EXPORT ResourceRequest final {
 
   base::Optional<base::UnguessableToken> devtools_token_;
   String origin_policy_;
-  String requested_with_;
+  String requested_with_header_;
+  String client_data_header_;
 
   int64_t ukm_source_id_;
+
+  base::UnguessableToken fetch_window_id_;
 };
 
 }  // namespace blink

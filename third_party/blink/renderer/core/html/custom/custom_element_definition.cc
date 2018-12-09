@@ -17,6 +17,7 @@
 #include "third_party/blink/renderer/core/html/custom/custom_element_reaction.h"
 #include "third_party/blink/renderer/core/html/custom/custom_element_reaction_stack.h"
 #include "third_party/blink/renderer/core/html/custom/custom_element_upgrade_reaction.h"
+#include "third_party/blink/renderer/core/html/custom/element_internals.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
 #include "third_party/blink/renderer/core/html_element_factory.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
@@ -29,11 +30,16 @@ CustomElementDefinition::CustomElementDefinition(
 
 CustomElementDefinition::CustomElementDefinition(
     const CustomElementDescriptor& descriptor,
-    const HashSet<AtomicString>& observed_attributes)
+    const HashSet<AtomicString>& observed_attributes,
+    const Vector<String>& disabled_features,
+    FormAssociationFlag form_association_flag)
     : descriptor_(descriptor),
       observed_attributes_(observed_attributes),
       has_style_attribute_changed_callback_(
-          observed_attributes.Contains(html_names::kStyleAttr.LocalName())) {}
+          observed_attributes.Contains(html_names::kStyleAttr.LocalName())),
+      disable_internals_(disabled_features.Contains(String("internals"))),
+      is_form_associated_(form_association_flag == FormAssociationFlag::kYes) {}
+
 CustomElementDefinition::~CustomElementDefinition() = default;
 
 void CustomElementDefinition::Trace(blink::Visitor* visitor) {
@@ -206,6 +212,9 @@ void CustomElementDefinition::Upgrade(Element* element) {
   }
 
   element->SetCustomElementDefinition(this);
+
+  if (IsFormAssociated())
+    ToHTMLElement(element)->EnsureElementInternals().DidUpgrade();
   AddDefaultStylesTo(*element);
 }
 
@@ -247,25 +256,29 @@ bool CustomElementDefinition::HasStyleAttributeChangedCallback() const {
 void CustomElementDefinition::EnqueueUpgradeReaction(
     Element* element,
     bool upgrade_invisible_elements) {
-  CustomElement::Enqueue(element, new CustomElementUpgradeReaction(
-                                      this, upgrade_invisible_elements));
+  CustomElement::Enqueue(element,
+                         MakeGarbageCollected<CustomElementUpgradeReaction>(
+                             this, upgrade_invisible_elements));
 }
 
 void CustomElementDefinition::EnqueueConnectedCallback(Element* element) {
-  CustomElement::Enqueue(element,
-                         new CustomElementConnectedCallbackReaction(this));
+  CustomElement::Enqueue(
+      element,
+      MakeGarbageCollected<CustomElementConnectedCallbackReaction>(this));
 }
 
 void CustomElementDefinition::EnqueueDisconnectedCallback(Element* element) {
-  CustomElement::Enqueue(element,
-                         new CustomElementDisconnectedCallbackReaction(this));
+  CustomElement::Enqueue(
+      element,
+      MakeGarbageCollected<CustomElementDisconnectedCallbackReaction>(this));
 }
 
 void CustomElementDefinition::EnqueueAdoptedCallback(Element* element,
                                                      Document* old_document,
                                                      Document* new_document) {
-  CustomElementReaction* reaction = new CustomElementAdoptedCallbackReaction(
-      this, old_document, new_document);
+  CustomElementReaction* reaction =
+      MakeGarbageCollected<CustomElementAdoptedCallbackReaction>(
+          this, old_document, new_document);
   CustomElement::Enqueue(element, reaction);
 }
 
@@ -274,9 +287,10 @@ void CustomElementDefinition::EnqueueAttributeChangedCallback(
     const QualifiedName& name,
     const AtomicString& old_value,
     const AtomicString& new_value) {
-  CustomElement::Enqueue(element,
-                         new CustomElementAttributeChangedCallbackReaction(
-                             this, name, old_value, new_value));
+  CustomElement::Enqueue(
+      element,
+      MakeGarbageCollected<CustomElementAttributeChangedCallbackReaction>(
+          this, name, old_value, new_value));
 }
 
 void CustomElementDefinition::EnqueueAttributeChangedCallbackForAllAttributes(

@@ -5,16 +5,20 @@
 #ifndef DEVICE_FIDO_WIN_WEBAUTHN_API_H_
 #define DEVICE_FIDO_WIN_WEBAUTHN_API_H_
 
-#include <webauthn.h>
 #include <windows.h>
 #include <functional>
 #include <memory>
 
+#include "base/callback.h"
 #include "base/component_export.h"
 #include "base/macros.h"
+#include "base/optional.h"
+#include "device/fido/public_key_credential_descriptor.h"
+#include "device/fido/public_key_credential_rp_entity.h"
+#include "device/fido/public_key_credential_user_entity.h"
+#include "third_party/microsoft_webauthn/webauthn.h"
 
 namespace device {
-namespace fido {
 
 // WinWebAuthnApi is a wrapper for the native Windows WebAuthn API.
 //
@@ -22,9 +26,6 @@ namespace fido {
 // Users must check the result of |IsAvailable| on the instance to verify that
 // the native library was loaded successfully before invoking any of the other
 // methods.
-//
-// TODO(martinkr): Add a ScopedFakeWinWebAuthnApi that overrides
-// |GetDefault| for testing.
 class COMPONENT_EXPORT(DEVICE_FIDO) WinWebAuthnApi {
  public:
   // ScopedCredentialAttestation is a scoped deleter for a
@@ -42,6 +43,11 @@ class COMPONENT_EXPORT(DEVICE_FIDO) WinWebAuthnApi {
       std::unique_ptr<WEBAUTHN_ASSERTION,
                       std::function<void(WEBAUTHN_ASSERTION*)>>;
 
+  using AuthenticatorMakeCredentialCallback =
+      base::OnceCallback<void(HRESULT, ScopedCredentialAttestation)>;
+  using AuthenticatorGetAssertionCallback =
+      base::OnceCallback<void(HRESULT, ScopedAssertion)>;
+
   // Returns the default implementation of WinWebAuthnApi backed by
   // webauthn.dll. May return nullptr if webauthn.dll cannot be loaded.
   static WinWebAuthnApi* GetDefault();
@@ -58,36 +64,53 @@ class COMPONENT_EXPORT(DEVICE_FIDO) WinWebAuthnApi {
 
   // See WebAuthNAuthenticatorMakeCredential in <webauthn.h>.
   //
-  // The lifetime of |credential_attestation| must not exceed the lifetime of
-  // the WinWebAuthnApi instance.
-  virtual HRESULT AuthenticatorMakeCredential(
+  // The following fields in |options| are ignored because they get filled in
+  // from the other parameters:
+  //  - Extensions
+  //  - pCancellationId
+  //  - CredentialList / pExcludeCredentialList
+  virtual void AuthenticatorMakeCredential(
       HWND h_wnd,
-      const WEBAUTHN_RP_ENTITY_INFORMATION* rp_information,
-      const WEBAUTHN_USER_ENTITY_INFORMATION* user_information,
-      const WEBAUTHN_COSE_CREDENTIAL_PARAMETERS* pub_key_cred_params,
-      const WEBAUTHN_CLIENT_DATA* client_data,
-      const WEBAUTHN_AUTHENTICATOR_MAKE_CREDENTIAL_OPTIONS* options,
-      ScopedCredentialAttestation* credential_attestation) = 0;
+      GUID cancellation_id,
+      PublicKeyCredentialRpEntity rp,
+      PublicKeyCredentialUserEntity user,
+      std::vector<WEBAUTHN_COSE_CREDENTIAL_PARAMETER>
+          cose_credential_parameter_values,
+      std::string client_data_json,
+      std::vector<WEBAUTHN_EXTENSION> extensions,
+      base::Optional<std::vector<PublicKeyCredentialDescriptor>> exclude_list,
+      WEBAUTHN_AUTHENTICATOR_MAKE_CREDENTIAL_OPTIONS options,
+      AuthenticatorMakeCredentialCallback callback) = 0;
 
   // See WebAuthNAuthenticatorGetAssertion in <webauthn.h>.
   //
-  // The lifetime of |assertion| must not exceed the lifetime of
-  // the WinWebAuthnApi instance.
-  virtual HRESULT AuthenticatorGetAssertion(
+  // The following fields in |options| are ignored because they get filled in
+  // from the other parameters:
+  //  - pwszU2fAppId / pbU2fAppId
+  //  - pCancellationId
+  //  - CredentialList / pAllowCredentialList
+  virtual void AuthenticatorGetAssertion(
       HWND h_wnd,
-      const wchar_t* rp_id_utf16,
-      const WEBAUTHN_CLIENT_DATA* client_data,
-      const WEBAUTHN_AUTHENTICATOR_GET_ASSERTION_OPTIONS* options,
-      ScopedAssertion* assertion) = 0;
+      GUID cancellation_id,
+      base::string16 rp_id,
+      base::Optional<base::string16> opt_app_id,
+      std::string client_data_json,
+      base::Optional<std::vector<PublicKeyCredentialDescriptor>> allow_list,
+      WEBAUTHN_AUTHENTICATOR_GET_ASSERTION_OPTIONS options,
+      AuthenticatorGetAssertionCallback callback) = 0;
 
   // See WebAuthNCancelCurrentOperation in <webauthn.h>.
   virtual HRESULT CancelCurrentOperation(GUID* cancellation_id) = 0;
 
   // See WebAuthNGetErrorName in <webauthn.h>.
   virtual const wchar_t* GetErrorName(HRESULT hr) = 0;
+
+ private:
+  friend class ScopedFakeWinWebAuthnApi;
+  static void SetDefaultForTesting(WinWebAuthnApi* api);
+  static void ClearDefaultForTesting();
 };
 
-}  // namespace fido
 }  // namespace device
 
 #endif  // DEVICE_FIDO_WIN_WEBAUTHN_API_H_

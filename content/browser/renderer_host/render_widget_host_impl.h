@@ -409,6 +409,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       const blink::WebMouseWheelEvent& wheel_event,
       const ui::LatencyInfo& latency) override;
 
+  // Retrieve an iterator over any RenderWidgetHosts that are immediately
+  // embedded within this one. This does not return hosts that are embedded
+  // indirectly (i.e. nested within embedded hosts).
+  std::unique_ptr<RenderWidgetHostIterator> GetEmbeddedRenderWidgetHosts();
+
   // Returns an emulator for this widget. See TouchEmulator for more details.
   TouchEmulator* GetTouchEmulator();
 
@@ -545,6 +550,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void SetAutoResize(bool enable,
                      const gfx::Size& min_size,
                      const gfx::Size& max_size);
+
+  // Allows the main frame's page scale factor to be tracked.
+  void SetPageScaleFactor(float page_scale_factor);
 
   // Fills in the |visual_properties| struct.
   // Returns |false| if the update is redundant, |true| otherwise.
@@ -711,6 +719,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // NotifyRendererResponsive.
   void RendererIsResponsive();
 
+  // Called during frame eviction to return all SurfaceIds in the frame tree.
+  // Marks all views in the frame tree as evicted.
+  std::vector<viz::SurfaceId> CollectSurfaceIdsForEviction();
+
  protected:
   // ---------------------------------------------------------------------------
   // The following method is overridden by RenderViewHost to send upwards to
@@ -835,6 +847,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void OnCommitAndDrawCompositorFrame();
   void OnHasTouchEventHandlers(bool has_handlers);
   void OnIntrinsicSizingInfoChanged(blink::WebIntrinsicSizingInfo info);
+  void OnAnimateDoubleTapZoomInMainFrame(const gfx::Point& point,
+                                         const gfx::Rect& rect_to_zoom);
 
   // Called when visual properties have changed in the renderer.
   void DidUpdateVisualProperties(const cc::RenderFrameMetadata& metadata);
@@ -976,6 +990,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   // The maximum size for the render widget if auto-resize is enabled.
   gfx::Size max_size_for_auto_resize_;
+
+  // The page-scale factor of the main-frame.
+  float page_scale_factor_;
 
   bool waiting_for_screen_rects_ack_;
   gfx::Rect last_view_screen_rect_;

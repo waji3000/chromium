@@ -11,11 +11,11 @@
 #include "base/memory/ptr_util.h"
 #include "base/no_destructor.h"
 #include "base/strings/string_util.h"
+#include "chromeos/components/multidevice/remote_device_ref.h"
 #include "chromeos/components/proximity_auth/logging/logging.h"
 #include "chromeos/services/secure_channel/ble_constants.h"
 #include "chromeos/services/secure_channel/ble_synchronizer_base.h"
 #include "components/cryptauth/proto/cryptauth_api.pb.h"
-#include "components/cryptauth/remote_device_ref.h"
 #include "device/bluetooth/bluetooth_device.h"
 #include "device/bluetooth/bluetooth_discovery_session.h"
 #include "device/bluetooth/bluetooth_uuid.h"
@@ -88,14 +88,11 @@ void BleScannerImpl::HandleScanFilterChange() {
   UpdateDiscoveryStatus();
 }
 
-void BleScannerImpl::DeviceAdded(device::BluetoothAdapter* adapter,
-                                 device::BluetoothDevice* bluetooth_device) {
-  DCHECK_EQ(adapter_.get(), adapter);
-  HandleDeviceUpdated(bluetooth_device);
-}
-
-void BleScannerImpl::DeviceChanged(device::BluetoothAdapter* adapter,
-                                   device::BluetoothDevice* bluetooth_device) {
+void BleScannerImpl::DeviceAdvertisementReceived(
+    device::BluetoothAdapter* adapter,
+    device::BluetoothDevice* bluetooth_device,
+    int16_t rssi,
+    const std::vector<uint8_t>& eir) {
   DCHECK_EQ(adapter_.get(), adapter);
   HandleDeviceUpdated(bluetooth_device);
 }

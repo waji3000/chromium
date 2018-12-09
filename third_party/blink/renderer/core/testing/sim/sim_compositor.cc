@@ -38,12 +38,12 @@ void SimCompositor::SetWebView(WebViewImpl& web_view,
   // SimCompositor starts with defer commits enabled, but uses synchronous
   // compositing which does not use defer commits anyhow, it only uses it for
   // reading deferred state in tests.
-  web_view_->DeferCommitsForTesting();
+  web_view_->DeferMainFrameUpdateForTesting();
 }
 
 SimCanvas::Commands SimCompositor::BeginFrame(double time_delta_in_seconds) {
   DCHECK(web_view_);
-  DCHECK(!layer_tree_view_->layer_tree_host()->defer_commits());
+  DCHECK(!layer_tree_view_->layer_tree_host()->defer_main_frame_update());
   DCHECK(layer_tree_view_->layer_tree_host()->RequestedMainFramePending());
   DCHECK_GT(time_delta_in_seconds, 0);
 
@@ -76,7 +76,7 @@ SimCanvas::Commands SimCompositor::PaintFrame() {
 }
 
 void SimCompositor::ApplyViewportChanges(const ApplyViewportChangesArgs& args) {
-  web_view_->ApplyViewportChanges(args);
+  web_view_->MainFrameWidget()->ApplyViewportChanges(args);
 }
 
 void SimCompositor::RequestNewLayerTreeFrameSink(
@@ -89,8 +89,9 @@ void SimCompositor::RequestNewLayerTreeFrameSink(
 void SimCompositor::BeginMainFrame(base::TimeTicks frame_time) {
   // There is no WebWidget like RenderWidget would have..? So go right to the
   // WebViewImpl.
-  web_view_->BeginFrame(last_frame_time_);
-  web_view_->UpdateAllLifecyclePhases();
+  web_view_->MainFrameWidget()->BeginFrame(last_frame_time_);
+  web_view_->MainFrameWidget()->UpdateAllLifecyclePhases(
+      WebWidget::LifecycleUpdateReason::kTest);
   *paint_commands_ = PaintFrame();
 }
 

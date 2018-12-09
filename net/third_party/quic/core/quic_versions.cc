@@ -158,7 +158,7 @@ ParsedQuicVersionVector FilterSupportedVersions(
   filtered_versions.reserve(versions.size());
   for (ParsedQuicVersion version : versions) {
     if (version.transport_version == QUIC_VERSION_99) {
-      if (GetQuicFlag(FLAGS_quic_enable_version_99) &&
+      if (GetQuicReloadableFlag(quic_enable_version_99) &&
           GetQuicReloadableFlag(quic_enable_version_46) &&
           GetQuicReloadableFlag(quic_enable_version_45) &&
           GetQuicReloadableFlag(quic_enable_version_44) &&
@@ -324,6 +324,12 @@ QuicString ParsedQuicVersionVectorToString(
     result.append(ParsedQuicVersionToString(versions[i]));
   }
   return result;
+}
+
+ParsedQuicVersion UnsupportedQuicVersion() {
+  static const ParsedQuicVersion kUnsupportedQuicVersion(
+      PROTOCOL_UNSUPPORTED, QUIC_VERSION_UNSUPPORTED);
+  return kUnsupportedQuicVersion;
 }
 
 #undef RETURN_STRING_LITERAL  // undef for jumbo builds

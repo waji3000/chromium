@@ -14,7 +14,8 @@
 #include "third_party/blink/renderer/modules/background_fetch/background_fetch_icon_loader.h"
 #include "third_party/blink/renderer/modules/background_fetch/background_fetch_registration.h"
 #include "third_party/blink/renderer/modules/background_fetch/background_fetch_ui_options.h"
-#include "third_party/blink/renderer/modules/event_modules_names.h"
+#include "third_party/blink/renderer/modules/event_interface_modules_names.h"
+#include "third_party/blink/renderer/modules/service_worker/wait_until_observer.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 
 namespace blink {
@@ -43,12 +44,19 @@ void BackgroundFetchUpdateUIEvent::Trace(blink::Visitor* visitor) {
 ScriptPromise BackgroundFetchUpdateUIEvent::updateUI(
     ScriptState* script_state,
     const BackgroundFetchUIOptions* ui_options) {
+  if (observer_ && !observer_->IsEventActive(script_state)) {
+    // Return a rejected promise as the event is no longer active.
+    return ScriptPromise::RejectWithDOMException(
+        script_state,
+        DOMException::Create(DOMExceptionCode::kInvalidStateError,
+                             "ExtendableEvent is no longer active."));
+  }
   if (update_ui_called_) {
     // Return a rejected promise as this method should only be called once.
-    return ScriptPromise::Reject(
+    return ScriptPromise::RejectWithDOMException(
         script_state,
-        V8ThrowException::CreateTypeError(script_state->GetIsolate(),
-                                          "updateUI may only be called once."));
+        DOMException::Create(DOMExceptionCode::kInvalidStateError,
+                             "updateUI may only be called once."));
   }
 
   update_ui_called_ = true;
@@ -75,7 +83,7 @@ ScriptPromise BackgroundFetchUpdateUIEvent::updateUI(
                -1 /* ideal_to_chosen_icon_size */);
   } else {
     DCHECK(!loader_);
-    loader_ = new BackgroundFetchIconLoader();
+    loader_ = MakeGarbageCollected<BackgroundFetchIconLoader>();
     DCHECK(loader_);
     loader_->Start(BackgroundFetchBridge::From(service_worker_registration_),
                    ExecutionContext::From(script_state), ui_options->icons(),

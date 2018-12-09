@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 
+#include <memory>
 #include <ostream>
 #include <vector>
 
@@ -16,6 +17,7 @@
 namespace ui {
 
 class AXTableInfo;
+class AXLanguageInfo;
 
 // One node in an AXTree.
 class AX_EXPORT AXNode final {
@@ -30,6 +32,11 @@ class AX_EXPORT AXNode final {
     virtual AXTableInfo* GetTableInfo(const AXNode* table_node) const = 0;
     // See AXTree.
     virtual AXNode* GetFromId(int32_t id) const = 0;
+
+    virtual int32_t GetPosInSet(const int32_t node_id,
+                                const AXNode* ordered_set) = 0;
+    virtual int32_t GetSetSize(const int32_t node_id,
+                               const AXNode* ordered_set) = 0;
   };
 
   // The constructor requires a parent, id, and index in parent, but
@@ -181,24 +188,50 @@ class AX_EXPORT AXNode final {
     return data().GetHtmlAttribute(attribute, value);
   }
 
+  // PosInSet and SetSize public methods
+  int32_t GetPosInSet();
+  int32_t GetSetSize();
+
+  // Helpers for GetPosInSet and GetSetSize.
+  // Returns true if the role of ordered set matches the role of item.
+  // Returns false otherwise.
+  bool SetRoleMatchesItemRole(const AXNode* ordered_set) const;
+
   const std::string& GetInheritedStringAttribute(
       ax::mojom::StringAttribute attribute) const;
   base::string16 GetInheritedString16Attribute(
       ax::mojom::StringAttribute attribute) const;
+
+  // Return a pointer to a string for the language code.
+  // This will consider the language declared in the DOM, and may eventually
+  // attempt to automatically detect the language from the text.
+  //
+  // This language code will be BCP 47.
+  //
+  // Returns empty string if no appropriate language was found.
+  std::string GetLanguage();
 
   //
   // Helper functions for tables, table rows, and table cells.
   // Most of these functions construct and cache an AXTableInfo behind
   // the scenes to infer many properties of tables.
   //
-  // TODO(dmazzoni): Make these const - not trivial because AXTableInfo
-  // does need to modify the AXTree.
+  // These interfaces use attributes provided by the source of the
+  // AX tree where possible, but fills in missing details and ignores
+  // specified attributes when they're bad or inconsistent. That way
+  // you're guaranteed to get a valid, consistent table when using these
+  // interfaces.
   //
 
-  // Table-like nodes (including grids).
+  // Table-like nodes (including grids). All indices are 0-based except
+  // ARIA indices are all 1-based. In other words, the top-left corner
+  // of the table is row 0, column 0, cell index 0 - but that same cell
+  // has a minimum ARIA row index of 1 and column index of 1.
   bool IsTable() const;
   int32_t GetTableColCount() const;
   int32_t GetTableRowCount() const;
+  int32_t GetTableAriaColCount() const;
+  int32_t GetTableAriaRowCount() const;
   int32_t GetTableCellCount() const;
   AXNode* GetTableCellFromIndex(int32_t index) const;
   AXNode* GetTableCellFromCoords(int32_t row_index, int32_t col_index) const;
@@ -239,11 +272,25 @@ class AX_EXPORT AXNode final {
   void IdVectorToNodeVector(std::vector<int32_t>& ids,
                             std::vector<AXNode*>* nodes) const;
 
+  // Finds and returns a pointer to ordered set containing node.
+  AXNode* GetOrderedSet() const;
+
   OwnerTree* tree_;  // Owns this.
   int index_in_parent_;
   AXNode* parent_;
   std::vector<AXNode*> children_;
   AXNodeData data_;
+
+  std::unique_ptr<AXLanguageInfo> language_info_;
+
+  // Return an object containing information about the languages used.
+  // Will walk up tree if needed to determine language.
+  //
+  // Clients should not retain this pointer, instead they should request it
+  // every time it is needed.
+  //
+  // Returns nullptr if the node has no detectable language.
+  const AXLanguageInfo* GetLanguageInfo();
 };
 
 AX_EXPORT std::ostream& operator<<(std::ostream& stream, const AXNode& node);

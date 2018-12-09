@@ -43,7 +43,6 @@
 #include "components/policy/core/common/cloud/cloud_policy_core.h"
 #include "components/policy/core/common/cloud/cloud_policy_refresh_scheduler.h"
 #include "components/policy/core/common/cloud/device_management_service.h"
-#include "components/policy/core/common/cloud/dm_auth.h"
 #include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/policy_pref_names.h"
 #include "components/policy/core/common/policy_types.h"
@@ -266,7 +265,7 @@ void UserCloudPolicyManagerChromeOS::Connect(
 
     // Initialization has completed before our observer was registered
     // so invoke our callback directly.
-    OnInitializationCompleted(service());
+    OnCloudPolicyServiceInitializationCompleted();
   } else {
     // Wait for the CloudPolicyStore to finish initializing.
     service()->AddObserver(this);
@@ -352,10 +351,9 @@ bool UserCloudPolicyManagerChromeOS::IsInitializationComplete(
   return true;
 }
 
-void UserCloudPolicyManagerChromeOS::OnInitializationCompleted(
-    CloudPolicyService* cloud_policy_service) {
-  DCHECK_EQ(service(), cloud_policy_service);
-  cloud_policy_service->RemoveObserver(this);
+void UserCloudPolicyManagerChromeOS::
+    OnCloudPolicyServiceInitializationCompleted() {
+  service()->RemoveObserver(this);
 
   time_init_completed_ = base::Time::Now();
   UMA_HISTOGRAM_MEDIUM_TIMES(kUMADelayInitialization,
@@ -628,9 +626,9 @@ void UserCloudPolicyManagerChromeOS::OnOAuth2PolicyTokenFetched(
       client_id = client()->client_id();
     client()->Register(em::DeviceRegisterRequest::USER,
                        em::DeviceRegisterRequest::FLAVOR_USER_REGISTRATION,
-                       lifetime, em::LicenseType::UNDEFINED,
-                       DMAuth::FromOAuthToken(policy_token), client_id,
-                       std::string(), std::string());
+                       lifetime, em::LicenseType::UNDEFINED, policy_token,
+                       client_id, std::string() /* requisition */,
+                       std::string() /* current_state_key */);
   } else {
     UMA_HISTOGRAM_ENUMERATION(kUMAInitialFetchOAuth2Error, error.state(),
                               GoogleServiceAuthError::NUM_STATES);

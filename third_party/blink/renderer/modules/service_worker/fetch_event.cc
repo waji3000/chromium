@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <utility>
+
 #include "third_party/blink/renderer/modules/service_worker/fetch_event.h"
 
 #include "base/memory/scoped_refptr.h"
@@ -26,8 +28,8 @@ namespace blink {
 FetchEvent* FetchEvent::Create(ScriptState* script_state,
                                const AtomicString& type,
                                const FetchEventInit* initializer) {
-  return new FetchEvent(script_state, type, initializer, nullptr, nullptr,
-                        false);
+  return MakeGarbageCollected<FetchEvent>(script_state, type, initializer,
+                                          nullptr, nullptr, false);
 }
 
 FetchEvent* FetchEvent::Create(ScriptState* script_state,
@@ -36,8 +38,9 @@ FetchEvent* FetchEvent::Create(ScriptState* script_state,
                                FetchRespondWithObserver* respond_with_observer,
                                WaitUntilObserver* wait_until_observer,
                                bool navigation_preload_sent) {
-  return new FetchEvent(script_state, type, initializer, respond_with_observer,
-                        wait_until_observer, navigation_preload_sent);
+  return MakeGarbageCollected<FetchEvent>(
+      script_state, type, initializer, respond_with_observer,
+      wait_until_observer, navigation_preload_sent);
 }
 
 Request* FetchEvent::request() const {
@@ -46,6 +49,10 @@ Request* FetchEvent::request() const {
 
 String FetchEvent::clientId() const {
   return client_id_;
+}
+
+String FetchEvent::resultingClientId() const {
+  return resulting_client_id_;
 }
 
 bool FetchEvent::isReload() const {
@@ -66,7 +73,7 @@ ScriptPromise FetchEvent::preloadResponse(ScriptState* script_state) {
 }
 
 const AtomicString& FetchEvent::InterfaceName() const {
-  return EventNames::FetchEvent;
+  return event_interface_names::kFetchEvent;
 }
 
 bool FetchEvent::HasPendingActivity() const {
@@ -89,7 +96,7 @@ FetchEvent::FetchEvent(ScriptState* script_state,
     : ExtendableEvent(type, initializer, wait_until_observer),
       ContextClient(ExecutionContext::From(script_state)),
       observer_(respond_with_observer),
-      preload_response_property_(new PreloadResponseProperty(
+      preload_response_property_(MakeGarbageCollected<PreloadResponseProperty>(
           ExecutionContext::From(script_state),
           this,
           PreloadResponseProperty::kPreloadResponse)) {
@@ -97,6 +104,7 @@ FetchEvent::FetchEvent(ScriptState* script_state,
     preload_response_property_->ResolveWithUndefined();
 
   client_id_ = initializer->clientId();
+  resulting_client_id_ = initializer->resultingClientId();
   is_reload_ = initializer->isReload();
   request_ = initializer->request();
 }
@@ -116,20 +124,21 @@ void FetchEvent::OnNavigationPreloadResponse(
   DataPipeBytesConsumer* bytes_consumer = nullptr;
   if (data_pipe.is_valid()) {
     DataPipeBytesConsumer::CompletionNotifier* completion_notifier = nullptr;
-    bytes_consumer =
-        new DataPipeBytesConsumer(ExecutionContext::From(script_state),
-                                  std::move(data_pipe), &completion_notifier);
+    bytes_consumer = MakeGarbageCollected<DataPipeBytesConsumer>(
+        ExecutionContext::From(script_state), std::move(data_pipe),
+        &completion_notifier);
     body_completion_notifier_ = completion_notifier;
   }
   // TODO(ricea): Verify that this response can't be aborted from JS.
   FetchResponseData* response_data =
-      bytes_consumer
-          ? FetchResponseData::CreateWithBuffer(new BodyStreamBuffer(
-                script_state, bytes_consumer,
-                new AbortSignal(ExecutionContext::From(script_state))))
-          : FetchResponseData::Create();
+      bytes_consumer ? FetchResponseData::CreateWithBuffer(
+                           MakeGarbageCollected<BodyStreamBuffer>(
+                               script_state, bytes_consumer,
+                               MakeGarbageCollected<AbortSignal>(
+                                   ExecutionContext::From(script_state))))
+                     : FetchResponseData::Create();
   Vector<KURL> url_list(1);
-  url_list[0] = preload_response_->Url();
+  url_list[0] = preload_response_->CurrentRequestUrl();
   response_data->SetURLList(url_list);
   response_data->SetStatus(preload_response_->HttpStatusCode());
   response_data->SetStatusMessage(preload_response_->HttpStatusText());

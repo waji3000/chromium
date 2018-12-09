@@ -165,7 +165,7 @@ void NGBoxFragmentBuilder::AddBaseline(NGBaselineRequest request,
   for (const auto& baseline : baselines_)
     DCHECK(baseline.request != request);
 #endif
-  baselines_.push_back(NGBaseline{request, offset});
+  baselines_.emplace_back(request, offset);
 }
 
 EBreakBetween NGBoxFragmentBuilder::JoinedBreakBetweenValue(
@@ -207,77 +207,49 @@ scoped_refptr<NGLayoutResult> NGBoxFragmentBuilder::Abort(
 // inline containing blocks are required.
 // Not finding a required block is an unexpected behavior (DCHECK).
 void NGBoxFragmentBuilder::ComputeInlineContainerFragments(
-    HashMap<const LayoutObject*, FragmentPair>* inline_container_fragments,
-    NGLogicalSize* container_size) {
+    HashMap<const LayoutObject*, FragmentPair>* inline_container_fragments) {
   // This function has detailed knowledge of inline fragment tree structure,
   // and will break if this changes.
   DCHECK_GE(InlineSize(), LayoutUnit());
   DCHECK_GE(BlockSize(), LayoutUnit());
-  *container_size = Size();
 
   for (wtf_size_t i = 0; i < children_.size(); i++) {
     if (children_[i]->IsLineBox()) {
       const NGPhysicalLineBoxFragment* linebox =
           ToNGPhysicalLineBoxFragment(children_[i].get());
+      const NGPhysicalOffset linebox_offset = offsets_[i].ConvertToPhysical(
+          GetWritingMode(), Direction(),
+          ToNGPhysicalSize(Size(), GetWritingMode()), linebox->Size());
+
       for (auto& descendant :
            NGInlineFragmentTraversal::DescendantsOf(*linebox)) {
-        LayoutObject* key = {};
-        if (descendant.fragment->IsText()) {
-          key = descendant.fragment->GetLayoutObject();
-          DCHECK(key);
-          key = key->Parent();
-          DCHECK(key);
-        } else if (descendant.fragment->IsBox()) {
-          key = descendant.fragment->GetLayoutObject();
-        }
-        if (key && inline_container_fragments->Contains(key)) {
-          NGBoxFragmentBuilder::FragmentPair value =
-              inline_container_fragments->at(key);
-          if (!value.start_fragment) {
-            value.start_fragment = descendant.fragment.get();
-            value.start_fragment_union_rect.offset =
-                descendant.offset_to_container_box;
-            value.start_fragment_union_rect =
-                NGPhysicalOffsetRect(descendant.offset_to_container_box,
-                                     value.start_fragment->Size());
-            value.start_linebox_fragment = linebox;
-            value.start_linebox_offset = offsets_.at(i);
-          }
-          if (!value.end_fragment || value.end_linebox_fragment != linebox) {
-            value.end_fragment = descendant.fragment.get();
-            value.end_fragment_union_rect = NGPhysicalOffsetRect(
-                descendant.offset_to_container_box, value.end_fragment->Size());
-            value.end_linebox_fragment = linebox;
-            value.end_linebox_offset = offsets_.at(i);
-          }
-          // Extend the union size
+        if (!descendant.fragment->IsBox())
+          continue;
+
+        LayoutObject* key = descendant.fragment->GetLayoutObject();
+        auto it = inline_container_fragments->find(key);
+        if (it != inline_container_fragments->end()) {
+          NGBoxFragmentBuilder::FragmentPair& value = it->value;
+          // |DescendantsOf| returns the offset from the given fragment. Since
+          // we give it the line box, need to add the |linebox_offset|.
+          NGPhysicalOffsetRect fragment_rect(
+              linebox_offset + descendant.offset_to_container_box,
+              descendant.fragment->Size());
           if (value.start_linebox_fragment == linebox) {
-            // std::max because initial box might have larger extent than its
-            // descendants.
-            value.start_fragment_union_rect.size.width =
-                std::max(descendant.offset_to_container_box.left +
-                             descendant.fragment->Size().width -
-                             value.start_fragment_union_rect.offset.left,
-                         value.start_fragment_union_rect.size.width);
-            value.start_fragment_union_rect.size.height =
-                std::max(descendant.offset_to_container_box.top +
-                             descendant.fragment->Size().height -
-                             value.start_fragment_union_rect.offset.top,
-                         value.start_fragment_union_rect.size.height);
+            value.start_fragment_union_rect.Unite(fragment_rect);
+          } else if (!value.start_fragment) {
+            value.start_fragment = descendant.fragment.get();
+            value.start_fragment_union_rect = fragment_rect;
+            value.start_linebox_fragment = linebox;
           }
+          // Skip fragments within an empty line boxes for the end fragment.
           if (value.end_linebox_fragment == linebox) {
-            value.end_fragment_union_rect.size.width =
-                std::max(descendant.offset_to_container_box.left +
-                             descendant.fragment->Size().width -
-                             value.start_fragment_union_rect.offset.left,
-                         value.end_fragment_union_rect.size.width);
-            value.end_fragment_union_rect.size.height =
-                std::max(descendant.offset_to_container_box.top +
-                             descendant.fragment->Size().height -
-                             value.start_fragment_union_rect.offset.top,
-                         value.end_fragment_union_rect.size.height);
+            value.end_fragment_union_rect.Unite(fragment_rect);
+          } else if (!value.end_fragment || !linebox->IsEmptyLineBox()) {
+            value.end_fragment = descendant.fragment.get();
+            value.end_fragment_union_rect = fragment_rect;
+            value.end_linebox_fragment = linebox;
           }
-          inline_container_fragments->Set(key, value);
         }
       }
     }

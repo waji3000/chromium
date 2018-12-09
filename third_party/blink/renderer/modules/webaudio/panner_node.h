@@ -71,11 +71,11 @@ class PannerHandler final : public AudioHandler {
   ~PannerHandler() override;
 
   // AudioHandler
-  void Process(size_t frames_to_process) override;
+  void Process(uint32_t frames_to_process) override;
   void ProcessSampleAccurateValues(AudioBus* destination,
                                    const AudioBus* source,
-                                   size_t frames_to_process);
-  void ProcessOnlyAudioParams(size_t frames_to_process) override;
+                                   uint32_t frames_to_process);
+  void ProcessOnlyAudioParams(uint32_t frames_to_process) override;
   void Initialize() override;
   void Uninitialize() override;
 
@@ -118,7 +118,7 @@ class PannerHandler final : public AudioHandler {
   }
   bool RequiresTailProcessing() const final;
 
-  void SetChannelCount(unsigned long, ExceptionState&) final;
+  void SetChannelCount(unsigned, ExceptionState&) final;
   void SetChannelCountMode(const String&, ExceptionState&) final;
 
  private:
@@ -214,6 +214,8 @@ class PannerNode final : public AudioNode {
                             ExceptionState&);
   PannerHandler& GetPannerHandler() const;
 
+  PannerNode(BaseAudioContext&);
+
   void Trace(blink::Visitor*) override;
 
   // Uses a 3D cartesian coordinate system
@@ -245,8 +247,6 @@ class PannerNode final : public AudioNode {
   void setConeOuterGain(double, ExceptionState&);
 
  private:
-  PannerNode(BaseAudioContext&);
-
   Member<AudioParam> position_x_;
   Member<AudioParam> position_y_;
   Member<AudioParam> position_z_;

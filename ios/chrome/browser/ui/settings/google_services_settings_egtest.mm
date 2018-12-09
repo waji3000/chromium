@@ -6,7 +6,6 @@
 #import <XCTest/XCTest.h>
 
 #include "components/prefs/pref_service.h"
-#include "components/unified_consent/pref_names.h"
 #include "ios/chrome/browser/browser_state/chrome_browser_state.h"
 #import "ios/chrome/browser/ui/authentication/signin_earl_grey_ui.h"
 #import "ios/chrome/browser/ui/authentication/signin_earlgrey_utils.h"
@@ -28,7 +27,6 @@ using chrome_test_util::GetOriginalBrowserState;
 using chrome_test_util::GoogleServicesSettingsButton;
 using chrome_test_util::SettingsMenuBackButton;
 using chrome_test_util::SettingsDoneButton;
-using unified_consent::prefs::kUnifiedConsentGiven;
 
 // Integration tests using the Google services settings screen.
 @interface GoogleServicesSettingsTestCase : ChromeTestCase
@@ -73,7 +71,6 @@ using unified_consent::prefs::kUnifiedConsentGiven;
 // expanded.
 - (void)testOpeningServicesWhileSignedIn {
   [SigninEarlGreyUI signinWithIdentity:[SigninEarlGreyUtils fakeIdentity1]];
-  [self resetUnifiedConsent];
   [self openGoogleServicesSettings];
   [self assertSyncEverythingSection];
   [self assertPersonalizedServicesCollapsed:NO];
@@ -87,9 +84,6 @@ using unified_consent::prefs::kUnifiedConsentGiven;
 // collapsed.
 - (void)testOpeningServicesWhileSignedInAndConsentGiven {
   [SigninEarlGreyUI signinWithIdentity:[SigninEarlGreyUtils fakeIdentity1]];
-  PrefService* prefService = GetOriginalBrowserState()->GetPrefs();
-  GREYAssert(prefService->GetBoolean(kUnifiedConsentGiven),
-             @"Unified consent should be given");
   [self openGoogleServicesSettings];
   [self assertSyncEverythingSection];
   [self assertPersonalizedServicesCollapsed:YES];
@@ -102,9 +96,7 @@ using unified_consent::prefs::kUnifiedConsentGiven;
   [self assertPersonalizedServicesCollapsed:YES];
   [self togglePersonalizedServicesSection];
   [self assertPersonalizedServicesCollapsed:NO];
-  [[EarlGrey selectElementWithMatcher:self.scrollViewMatcher]
-      performAction:grey_scrollToContentEdgeWithStartPoint(kGREYContentEdgeTop,
-                                                           0.1f, 0.1f)];
+  [self scrollUp];
   [self togglePersonalizedServicesSection];
   [self assertPersonalizedServicesCollapsed:YES];
 }
@@ -113,9 +105,7 @@ using unified_consent::prefs::kUnifiedConsentGiven;
 - (void)testToggleNonPersonalizedServices {
   [self openGoogleServicesSettings];
   [self assertNonPersonalizedServicesCollapsed:NO];
-  [[EarlGrey selectElementWithMatcher:self.scrollViewMatcher]
-      performAction:grey_scrollToContentEdgeWithStartPoint(kGREYContentEdgeTop,
-                                                           0.1f, 0.1f)];
+  [self scrollUp];
   [self toggleNonPersonalizedServicesSection];
   [self assertNonPersonalizedServicesCollapsed:YES];
   [self toggleNonPersonalizedServicesSection];
@@ -125,7 +115,6 @@ using unified_consent::prefs::kUnifiedConsentGiven;
 // Tests the "Manage synced data" cell does nothing when the user is not signed
 // in.
 - (void)testOpenManageSyncedDataWebPage {
-  [self resetUnifiedConsent];
   [self openGoogleServicesSettings];
   [self togglePersonalizedServicesSection];
   [[self cellElementInteractionWithTitleID:
@@ -139,7 +128,6 @@ using unified_consent::prefs::kUnifiedConsentGiven;
 // page, while the user is signed in without user consent.
 - (void)testOpenManageSyncedDataWebPageWhileSignedIn {
   [SigninEarlGreyUI signinWithIdentity:[SigninEarlGreyUtils fakeIdentity1]];
-  [self resetUnifiedConsent];
   [self openGoogleServicesSettings];
   [[self cellElementInteractionWithTitleID:
              IDS_IOS_GOOGLE_SERVICES_SETTINGS_MANAGED_SYNC_DATA_TEXT
@@ -150,12 +138,7 @@ using unified_consent::prefs::kUnifiedConsentGiven;
 
 #pragma mark - Helpers
 
-// Resets the unified consent given by the user.
-- (void)resetUnifiedConsent {
-  PrefService* prefService = GetOriginalBrowserState()->GetPrefs();
-  prefService->SetBoolean(kUnifiedConsentGiven, false);
-}
-
+// Opens the Google services settings.
 - (void)openGoogleServicesSettings {
   [ChromeEarlGreyUI openSettingsMenu];
   [ChromeEarlGreyUI tapSettingsMenuButton:GoogleServicesSettingsButton()];
@@ -165,6 +148,14 @@ using unified_consent::prefs::kUnifiedConsentGiven;
       assertWithMatcher:grey_notNil()];
 }
 
+// Scrolls Google services settings to the top.
+- (void)scrollUp {
+  [[EarlGrey selectElementWithMatcher:self.scrollViewMatcher]
+      performAction:grey_scrollToContentEdgeWithStartPoint(kGREYContentEdgeTop,
+                                                           0.1f, 0.1f)];
+}
+
+// Toggles personalized services section.
 - (void)togglePersonalizedServicesSection {
   [[EarlGrey
       selectElementWithMatcher:
@@ -173,6 +164,7 @@ using unified_consent::prefs::kUnifiedConsentGiven;
       performAction:grey_tap()];
 }
 
+// Toggles non personalized services section.
 - (void)toggleNonPersonalizedServicesSection {
   [[EarlGrey
       selectElementWithMatcher:
@@ -181,30 +173,42 @@ using unified_consent::prefs::kUnifiedConsentGiven;
       performAction:grey_tap()];
 }
 
-// Returns GREYElementInteraction for a cell based on the title string ID and
-// the detail text string ID. |detailTextID| should be set to 0 if it doesn't
-// exist in the cell.
-- (GREYElementInteraction*)cellElementInteractionWithTitleID:(int)titleID
-                                                detailTextID:(int)detailTextID {
+// Returns grey matcher for a cell with |titleID| and |detailTextID|.
+- (id<GREYMatcher>)cellMatcherWithTitleID:(int)titleID
+                             detailTextID:(int)detailTextID {
   NSString* accessibilityLabel = GetNSString(titleID);
   if (detailTextID) {
     accessibilityLabel =
         [NSString stringWithFormat:@"%@, %@", accessibilityLabel,
                                    GetNSString(detailTextID)];
   }
-  id<GREYMatcher> cellMatcher =
-      grey_allOf(grey_accessibilityLabel(accessibilityLabel),
-                 grey_kindOfClass([UICollectionViewCell class]),
-                 grey_sufficientlyVisible(), nil);
+  return grey_allOf(grey_accessibilityLabel(accessibilityLabel),
+                    grey_kindOfClass([UICollectionViewCell class]),
+                    grey_sufficientlyVisible(), nil);
+}
+
+// Returns GREYElementInteraction for |matcher|, with a scroll down action.
+- (GREYElementInteraction*)elementInteractionWithGreyMatcher:
+    (id<GREYMatcher>)matcher {
   // Needs to scroll slowly to make sure to not miss a cell if it is not
   // currently on the screen. It should not be bigger than the visible part
   // of the collection view.
   const CGFloat kPixelsToScroll = 300;
   id<GREYAction> searchAction =
       grey_scrollInDirection(kGREYDirectionDown, kPixelsToScroll);
-  return [[EarlGrey selectElementWithMatcher:cellMatcher]
+  return [[EarlGrey selectElementWithMatcher:matcher]
          usingSearchAction:searchAction
       onElementWithMatcher:self.scrollViewMatcher];
+}
+
+// Returns GREYElementInteraction for a cell based on the title string ID and
+// the detail text string ID. |detailTextID| should be set to 0 if it doesn't
+// exist in the cell.
+- (GREYElementInteraction*)cellElementInteractionWithTitleID:(int)titleID
+                                                detailTextID:(int)detailTextID {
+  id<GREYMatcher> cellMatcher =
+      [self cellMatcherWithTitleID:titleID detailTextID:detailTextID];
+  return [self elementInteractionWithGreyMatcher:cellMatcher];
 }
 
 // Asserts that a cell exists, based on its title string ID and its detail text
@@ -214,11 +218,33 @@ using unified_consent::prefs::kUnifiedConsentGiven;
       assertWithMatcher:grey_notNil()];
 }
 
+// Asserts that the switch is enabled/disabled inside a cell with |titleID| and
+// |detailTextID|.
+- (void)assertSwitchCellWithTitleID:(int)titleID
+                       detailTextID:(int)detailTextID
+                            enabled:(BOOL)enabled {
+  id<GREYMatcher> cellMatcher =
+      [self cellMatcherWithTitleID:titleID detailTextID:detailTextID];
+  id<GREYMatcher> enabledMatcher = grey_enabled();
+  if (!enabled) {
+    enabledMatcher = grey_not(grey_enabled());
+  }
+  id<GREYMatcher> switchMatcher =
+      grey_allOf(enabledMatcher, grey_kindOfClass([UISwitch class]),
+                 grey_ancestor(cellMatcher), nil);
+  GREYElementInteraction* element =
+      [self elementInteractionWithGreyMatcher:switchMatcher];
+  [element assertWithMatcher:grey_notNil()];
+}
+
+// Asserts that the sync everthing section cell is visible.
 - (void)assertSyncEverythingSection {
   [self assertCellWithTitleID:IDS_IOS_GOOGLE_SERVICES_SETTINGS_SYNC_EVERYTHING
                  detailTextID:0];
 }
 
+// Asserts that the personalized service section is visible and collapsed or
+// expended.
 - (void)assertPersonalizedServicesCollapsed:(BOOL)collapsed {
   [self
       assertCellWithTitleID:
@@ -243,11 +269,6 @@ using unified_consent::prefs::kUnifiedConsentGiven;
                  detailTextID:0];
     [self
         assertCellWithTitleID:
-            IDS_IOS_GOOGLE_SERVICES_SETTINGS_ACTIVITY_AND_INTERACTIONS_TEXT
-                 detailTextID:
-                     IDS_IOS_GOOGLE_SERVICES_SETTINGS_ACTIVITY_AND_INTERACTIONS_DETAIL];
-    [self
-        assertCellWithTitleID:
             IDS_IOS_GOOGLE_SERVICES_SETTINGS_GOOGLE_ACTIVITY_CONTROL_TEXT
                  detailTextID:
                      IDS_IOS_GOOGLE_SERVICES_SETTINGS_GOOGLE_ACTIVITY_CONTROL_DETAIL];
@@ -259,6 +280,8 @@ using unified_consent::prefs::kUnifiedConsentGiven;
   }
 }
 
+// Asserts that the non-personalized service section is visible and collapsed or
+// expended.
 - (void)assertNonPersonalizedServicesCollapsed:(BOOL)collapsed {
   [self
       assertCellWithTitleID:

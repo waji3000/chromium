@@ -119,7 +119,7 @@ void SVGElement::WillRecalcStyle(StyleRecalcChange change) {
 
 SVGElementRareData* SVGElement::EnsureSVGRareData() {
   if (!svg_rare_data_)
-    svg_rare_data_ = new SVGElementRareData();
+    svg_rare_data_ = MakeGarbageCollected<SVGElementRareData>();
   return svg_rare_data_.Get();
 }
 
@@ -575,10 +575,10 @@ void SVGElement::InvalidateRelativeLengthClients(
     if (HasRelativeLengths() && layout_object->IsSVGResourceContainer()) {
       ToLayoutSVGResourceContainer(layout_object)
           ->InvalidateCacheAndMarkForLayout(
-              LayoutInvalidationReason::kSizeChanged, layout_scope);
+              layout_invalidation_reason::kSizeChanged, layout_scope);
     } else if (SelfHasRelativeLengths()) {
       layout_object->SetNeedsLayoutAndFullPaintInvalidation(
-          LayoutInvalidationReason::kUnknown, kMarkContainerChain,
+          layout_invalidation_reason::kUnknown, kMarkContainerChain,
           layout_scope);
     }
   }

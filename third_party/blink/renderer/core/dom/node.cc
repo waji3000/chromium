@@ -27,6 +27,7 @@
 #include "third_party/blink/renderer/core/dom/node.h"
 
 #include "third_party/blink/renderer/bindings/core/v8/node_or_string.h"
+#include "third_party/blink/renderer/bindings/core/v8/string_or_trusted_script.h"
 #include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
 #include "third_party/blink/renderer/core/css/css_selector.h"
 #include "third_party/blink/renderer/core/css/resolver/style_resolver.h"
@@ -47,6 +48,7 @@
 #include "third_party/blink/renderer/core/dom/events/event_dispatch_forbidden_scope.h"
 #include "third_party/blink/renderer/core/dom/events/event_dispatcher.h"
 #include "third_party/blink/renderer/core/dom/events/event_listener.h"
+#include "third_party/blink/renderer/core/dom/flat_tree_node_data.h"
 #include "third_party/blink/renderer/core/dom/flat_tree_traversal.h"
 #include "third_party/blink/renderer/core/dom/get_root_node_options.h"
 #include "third_party/blink/renderer/core/dom/layout_tree_builder_traversal.h"
@@ -108,6 +110,7 @@
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/svg/graphics/svg_image.h"
 #include "third_party/blink/renderer/core/svg/svg_element.h"
+#include "third_party/blink/renderer/core/trustedtypes/trusted_script.h"
 #include "third_party/blink/renderer/platform/bindings/dom_data_store.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/microtask.h"
@@ -137,7 +140,7 @@ namespace {
 ScrollCustomizationCallbacks& GetScrollCustomizationCallbacks() {
   DEFINE_STATIC_LOCAL(Persistent<ScrollCustomizationCallbacks>,
                       scroll_customization_callbacks,
-                      (new ScrollCustomizationCallbacks));
+                      (MakeGarbageCollected<ScrollCustomizationCallbacks>()));
   return *scroll_customization_callbacks;
 }
 
@@ -466,7 +469,6 @@ Node* Node::getRootNode(const GetRootNodeOptions* options) const {
 
 void Node::setDistributeScroll(V8ScrollStateCallback* scroll_state_callback,
                                const String& native_scroll_behavior) {
-  DCHECK(IsElementNode());
   GetScrollCustomizationCallbacks().SetDistributeScroll(
       this, ScrollStateCallbackV8Impl::Create(scroll_state_callback,
                                               native_scroll_behavior));
@@ -474,28 +476,23 @@ void Node::setDistributeScroll(V8ScrollStateCallback* scroll_state_callback,
 
 void Node::setApplyScroll(V8ScrollStateCallback* scroll_state_callback,
                           const String& native_scroll_behavior) {
-  DCHECK(IsElementNode());
   SetApplyScroll(ScrollStateCallbackV8Impl::Create(scroll_state_callback,
                                                    native_scroll_behavior));
 }
 
 void Node::SetApplyScroll(ScrollStateCallback* scroll_state_callback) {
-  DCHECK(IsElementNode());
   GetScrollCustomizationCallbacks().SetApplyScroll(this, scroll_state_callback);
 }
 
 void Node::RemoveApplyScroll() {
-  DCHECK(IsElementNode());
   GetScrollCustomizationCallbacks().RemoveApplyScroll(this);
 }
 
 ScrollStateCallback* Node::GetApplyScroll() {
-  DCHECK(IsElementNode());
   return GetScrollCustomizationCallbacks().GetApplyScroll(this);
 }
 
 void Node::NativeDistributeScroll(ScrollState& scroll_state) {
-  DCHECK(IsElementNode());
   if (scroll_state.FullyConsumed())
     return;
 
@@ -518,10 +515,11 @@ void Node::NativeDistributeScroll(ScrollState& scroll_state) {
 }
 
 void Node::NativeApplyScroll(ScrollState& scroll_state) {
-  DCHECK(IsElementNode());
+  if (!GetLayoutObject())
+    return;
 
   // All elements in the scroll chain should be boxes.
-  DCHECK(!GetLayoutObject() || GetLayoutObject()->IsBox());
+  DCHECK(GetLayoutObject()->IsBox());
 
   if (scroll_state.FullyConsumed())
     return;
@@ -535,15 +533,7 @@ void Node::NativeApplyScroll(ScrollState& scroll_state) {
   // updateStyleAndLayoutIgnorePendingStylesheetsForNode.
   GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
 
-  LayoutBox* box_to_scroll = nullptr;
-
-  if (this == GetDocument().documentElement())
-    box_to_scroll = GetDocument().GetLayoutView();
-  else if (GetLayoutObject())
-    box_to_scroll = ToLayoutBox(GetLayoutObject());
-
-  if (!box_to_scroll)
-    return;
+  LayoutBox* box_to_scroll = ToLayoutBox(GetLayoutObject());
 
   ScrollableArea* scrollable_area =
       box_to_scroll->EnclosingBox()->GetScrollableArea();
@@ -571,7 +561,6 @@ void Node::NativeApplyScroll(ScrollState& scroll_state) {
 
 void Node::CallDistributeScroll(ScrollState& scroll_state) {
   TRACE_EVENT0("input", "Node::CallDistributeScroll");
-  DCHECK(IsElementNode());
   ScrollStateCallback* callback =
       GetScrollCustomizationCallbacks().GetDistributeScroll(this);
 
@@ -585,8 +574,11 @@ void Node::CallDistributeScroll(ScrollState& scroll_state) {
                                        ->GlobalRootScrollerController()
                                        .IsViewportScrollCallback(callback);
 
+  bool is_global_root_scroller =
+      GetLayoutObject() && GetLayoutObject()->IsGlobalRootScroller();
+
   disable_custom_callbacks |=
-      !root_scroller_util::IsGlobal(this) &&
+      !is_global_root_scroller &&
       RuntimeEnabledFeatures::ScrollCustomizationEnabled() &&
       !GetScrollCustomizationCallbacks().InScrollPhase(this);
 
@@ -607,7 +599,6 @@ void Node::CallDistributeScroll(ScrollState& scroll_state) {
 
 void Node::CallApplyScroll(ScrollState& scroll_state) {
   TRACE_EVENT0("input", "Node::CallApplyScroll");
-  DCHECK(IsElementNode());
   // Hits ASSERTs when trying to determine whether we need to scroll on main
   // or CC. http://crbug.com/625676.
   DisableCompositingQueryAsserts disabler;
@@ -630,8 +621,12 @@ void Node::CallApplyScroll(ScrollState& scroll_state) {
                                        .GetPage()
                                        ->GlobalRootScrollerController()
                                        .IsViewportScrollCallback(callback);
+
+  bool is_global_root_scroller =
+      GetLayoutObject() && GetLayoutObject()->IsGlobalRootScroller();
+
   disable_custom_callbacks |=
-      !root_scroller_util::IsGlobal(this) &&
+      !is_global_root_scroller &&
       RuntimeEnabledFeatures::ScrollCustomizationEnabled() &&
       !GetScrollCustomizationCallbacks().InScrollPhase(this);
 
@@ -651,14 +646,13 @@ void Node::CallApplyScroll(ScrollState& scroll_state) {
 }
 
 void Node::WillBeginCustomizedScrollPhase(
-    ScrollCustomization::ScrollDirection direction) {
-  DCHECK(IsElementNode());
+    scroll_customization::ScrollDirection direction) {
   DCHECK(!GetScrollCustomizationCallbacks().InScrollPhase(this));
   LayoutBox* box = GetLayoutBox();
   if (!box)
     return;
 
-  ScrollCustomization::ScrollDirection scroll_customization =
+  scroll_customization::ScrollDirection scroll_customization =
       box->Style()->ScrollCustomization();
 
   GetScrollCustomizationCallbacks().SetInScrollPhase(
@@ -666,7 +660,6 @@ void Node::WillBeginCustomizedScrollPhase(
 }
 
 void Node::DidEndCustomizedScrollPhase() {
-  DCHECK(IsElementNode());
   GetScrollCustomizationCallbacks().SetInScrollPhase(this, false);
 }
 
@@ -1111,6 +1104,14 @@ void Node::MarkAncestorsWithChildNeedsStyleRecalc() {
     ancestor->SetChildNeedsStyleRecalc();
     if (ancestor->NeedsStyleRecalc())
       break;
+    // If we reach a locked ancestor, we should abort since the ancestor marking
+    // will be done when the lock is committed.
+    if (RuntimeEnabledFeatures::DisplayLockingEnabled()) {
+      if (ancestor->IsElementNode() &&
+          ToElement(ancestor)->StyleRecalcBlockedByDisplayLock()) {
+        break;
+      }
+    }
   }
   if (!isConnected())
     return;
@@ -1118,6 +1119,23 @@ void Node::MarkAncestorsWithChildNeedsStyleRecalc() {
   // early return here is a performance optimization.
   if (parent_dirty)
     return;
+
+  // If we're in a locked subtree, then we should not update the style recalc
+  // roots. These would be updated when we commit the lock.
+  // TODO(vmpstr): There's currently no easy way to determine whether we're in a
+  // locked subtree other than navigating up the ancestor chain. We can probably
+  // do better and only do this walk if there is in fact a lock somewhere in the
+  // document.
+  if (RuntimeEnabledFeatures::DisplayLockingEnabled()) {
+    for (auto* ancestor_copy = ancestor; ancestor_copy;
+         ancestor_copy = ancestor_copy->ParentOrShadowHostNode()) {
+      if (ancestor_copy->IsElementNode() &&
+          ToElement(ancestor_copy)->StyleRecalcBlockedByDisplayLock()) {
+        return;
+      }
+    }
+  }
+
   GetDocument().GetStyleEngine().UpdateStyleRecalcRoot(ancestor, this);
   GetDocument().ScheduleLayoutTreeUpdateIfNeeded();
 }
@@ -1176,7 +1194,7 @@ void Node::SetNeedsStyleRecalc(StyleChangeType change_type,
   TRACE_EVENT_INSTANT1(
       TRACE_DISABLED_BY_DEFAULT("devtools.timeline.invalidationTracking"),
       "StyleRecalcInvalidationTracking", TRACE_EVENT_SCOPE_THREAD, "data",
-      InspectorStyleRecalcInvalidationTrackingEvent::Data(this, reason));
+      inspector_style_recalc_invalidation_tracking_event::Data(this, reason));
 
   StyleChangeType existing_change_type = GetStyleChangeType();
   if (change_type > existing_change_type)
@@ -1194,6 +1212,7 @@ void Node::SetNeedsStyleRecalc(StyleChangeType change_type,
 
 void Node::ClearNeedsStyleRecalc() {
   node_flags_ &= ~kStyleChangeMask;
+  ClearFlag(kForceReattachLayoutTree);
 
   if (IsElementNode() && HasRareData())
     ToElement(*this).SetAnimationStyleChange(false);
@@ -1255,6 +1274,21 @@ NodeListsNodeData* Node::NodeLists() {
 
 void Node::ClearNodeLists() {
   RareData()->ClearNodeLists();
+}
+
+FlatTreeNodeData& Node::EnsureFlatTreeNodeData() {
+  return EnsureRareData().EnsureFlatTreeNodeData();
+}
+
+FlatTreeNodeData* Node::GetFlatTreeNodeData() const {
+  if (!HasRareData())
+    return nullptr;
+  return RareData()->GetFlatTreeNodeData();
+}
+
+void Node::ClearFlatTreeNodeData() {
+  if (FlatTreeNodeData* data = GetFlatTreeNodeData())
+    data->Clear();
 }
 
 bool Node::IsDescendantOf(const Node* other) const {
@@ -1393,7 +1427,6 @@ void Node::DetachLayoutTree(const AttachContext& context) {
     GetLayoutObject()->DestroyAndCleanupAnonymousWrappers();
   SetLayoutObject(nullptr);
   SetStyleChange(kNeedsReattachStyleChange);
-  ClearChildNeedsStyleInvalidation();
 }
 
 const ComputedStyle* Node::VirtualEnsureComputedStyle(
@@ -1752,6 +1785,23 @@ String Node::textContent(bool convert_brs_to_newlines) const {
     }
   }
   return content.ToString();
+}
+
+void Node::setTextContent(const StringOrTrustedScript& string_or_trusted_script,
+                          ExceptionState& exception_state) {
+  String value =
+      string_or_trusted_script.IsString()
+          ? string_or_trusted_script.GetAsString()
+          : string_or_trusted_script.IsTrustedScript()
+                ? string_or_trusted_script.GetAsTrustedScript()->toString()
+                : g_empty_string;
+  setTextContent(value);
+}
+
+void Node::textContent(StringOrTrustedScript& result) {
+  String value = textContent();
+  if (!value.IsNull())
+    result.SetString(value);
 }
 
 void Node::setTextContent(const String& text) {
@@ -2354,7 +2404,7 @@ EventTargetData& Node::EnsureEventTargetData() {
     return *GetEventTargetDataMap().at(this);
   DCHECK(!GetEventTargetDataMap().Contains(this));
   SetHasEventTargetData(true);
-  EventTargetData* data = new EventTargetData;
+  EventTargetData* data = MakeGarbageCollected<EventTargetData>();
   GetEventTargetDataMap().Set(this, data);
   return *data;
 }
@@ -2603,7 +2653,7 @@ void Node::DefaultEventHandler(Event& event) {
           ToMouseEvent(&event));
     }
   } else if (event_type == event_type_names::kTextInput) {
-    if (event.HasInterface(EventNames::TextEvent)) {
+    if (event.HasInterface(event_interface_names::kTextEvent)) {
       if (LocalFrame* frame = GetDocument().GetFrame()) {
         frame->GetEventHandler().DefaultTextInputEventHandler(
             ToTextEvent(&event));
@@ -2743,10 +2793,40 @@ StaticNodeList* Node::getDestinationInsertionPoints() {
 }
 
 HTMLSlotElement* Node::AssignedSlot() const {
-  // assignedSlot doesn't need to call updateDistribution().
+  // assignedSlot doesn't need to recalc assignment.
   DCHECK(!IsPseudoElement());
-  if (ShadowRoot* root = V1ShadowRootOfParent())
+  ShadowRoot* root = V1ShadowRootOfParent();
+  if (!root)
+    return nullptr;
+  if (!RuntimeEnabledFeatures::FastFlatTreeTraversalEnabled()) {
     return root->AssignedSlotFor(*this);
+  }
+
+  if (!root->HasSlotAssignment())
+    return nullptr;
+
+  // TODO(hayato): Node::AssignedSlot() shouldn't be called while
+  // in executing RecalcAssignment(), however, unfortunately,
+  // that could happen as follows:
+  //
+  // 1. RecalsAssignment() can detach a node
+  // 2. Then, DetachLayoutTree() may use FlatTreeTraversal via the hook of
+  // AXObjectCacheImpl::ChildrenChanged().
+  //
+  // Note that using FlatTreeTraversal in detaching layout tree should be banned
+  // in the long term.
+  //
+  // If we can remove such code path, we don't need to check
+  // IsInSlotAssignmentRecalc() here.
+  if (root->NeedsSlotAssignmentRecalc() ||
+      GetDocument().IsInSlotAssignmentRecalc()) {
+    // FlatTreeNodeData is not realiable here. Entering slow path.
+    return root->AssignedSlotFor(*this);
+  }
+  if (FlatTreeNodeData* data = GetFlatTreeNodeData()) {
+    DCHECK_EQ(root->AssignedSlotFor(*this), data->AssignedSlot());
+    return data->AssignedSlot();
+  }
   return nullptr;
 }
 
@@ -2762,10 +2842,10 @@ HTMLSlotElement* Node::FinalDestinationSlot() const {
 }
 
 HTMLSlotElement* Node::assignedSlotForBinding() {
-  // assignedSlot doesn't need to call updateDistribution().
+  // assignedSlot doesn't need to recalc slot assignment
   if (ShadowRoot* root = V1ShadowRootOfParent()) {
     if (root->GetType() == ShadowRootType::kOpen)
-      return root->AssignedSlotFor(*this);
+      return AssignedSlot();
   }
   return nullptr;
 }
@@ -2922,6 +3002,11 @@ void Node::CheckSlotChange(SlotChangeType slot_change_type) {
         parent_slot->DidSlotChange(slot_change_type);
     }
   }
+}
+
+bool Node::IsEffectiveRootScroller() const {
+  return GetLayoutObject() ? GetLayoutObject()->IsEffectiveRootScroller()
+                           : false;
 }
 
 WebPluginContainerImpl* Node::GetWebPluginContainer() const {

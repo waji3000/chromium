@@ -5,7 +5,6 @@
 package org.chromium.chrome.browser.media.router.caf;
 
 import android.support.annotation.Nullable;
-import android.support.v7.media.MediaRouter;
 
 import com.google.android.gms.cast.CastDevice;
 import com.google.android.gms.cast.framework.CastSession;
@@ -25,20 +24,16 @@ import java.util.List;
  *
  * Has persistent lifecycle and always attaches itself to the current {@link CastSession}.
  */
-public class BaseSessionController {
+public abstract class BaseSessionController {
     private static final String TAG = "BaseSessionCtrl";
 
     private CastSession mCastSession;
     private final CafBaseMediaRouteProvider mProvider;
-    private final MediaRouter.Callback mMediaRouterCallbackForSessionLaunch;
     private CreateRouteRequestInfo mRouteCreationInfo;
-    private final CafNotificationController mNotificationController;
     private final RemoteMediaClient.Callback mRemoteMediaClientCallback;
 
     public BaseSessionController(CafBaseMediaRouteProvider provider) {
         mProvider = provider;
-        mMediaRouterCallbackForSessionLaunch = new MediaRouterCallbackForSessionLaunch();
-        mNotificationController = new CafNotificationController(this);
         mRemoteMediaClientCallback = new RemoteMediaClientCallback();
     }
 
@@ -47,21 +42,10 @@ public class BaseSessionController {
         CastUtils.getCastContext().setReceiverApplicationId(
                 mRouteCreationInfo.source.getApplicationId());
 
-        if (mRouteCreationInfo.routeInfo.isSelected()) {
-            // If a route has just been selected, CAF might not be ready yet before setting the app
-            // ID. So unselect and select the route will let CAF be aware that the route has been
-            // selected thus it can start the session.
-            //
-            // An issue of this workaround is that if a route is unselected and selected in a very
-            // short time, the selection might be ignored by MediaRouter, so put the reselection in
-            // a callback.
-            mProvider.getAndroidMediaRouter().addCallback(
-                    mRouteCreationInfo.source.buildRouteSelector(),
-                    mMediaRouterCallbackForSessionLaunch);
-            mProvider.getAndroidMediaRouter().unselect(MediaRouter.UNSELECT_REASON_UNKNOWN);
-        } else {
-            mRouteCreationInfo.routeInfo.select();
-        }
+        // When the user clicks a route on the MediaRouteChooserDialog, we intercept the click event
+        // and do not select the route. Instead the route selection is postponed to here. This will
+        // trigger CAF to launch the session.
+        mRouteCreationInfo.routeInfo.select();
     }
 
     public MediaSource getSource() {
@@ -81,16 +65,14 @@ public class BaseSessionController {
     }
 
     public RemoteMediaClient getRemoteMediaClient() {
-        return mCastSession.getRemoteMediaClient();
+        return isConnected() ? mCastSession.getRemoteMediaClient() : null;
     }
 
-    public CafNotificationController getNotificationController() {
-        return mNotificationController;
-    }
+    public abstract BaseNotificationController getNotificationController();
 
     public void endSession() {
-        MediaRouter mediaRouter = mProvider.getAndroidMediaRouter();
-        mediaRouter.selectRoute(mediaRouter.getDefaultRoute());
+        CastUtils.getCastContext().getSessionManager().endCurrentSession(/* stopCasting= */ true);
+        CastUtils.getCastContext().setReceiverApplicationId(null);
     }
 
     public List<String> getCapabilities() {
@@ -126,25 +108,31 @@ public class BaseSessionController {
     /** Attaches the controller to the current {@link CastSession}. */
     public void attachToCastSession(CastSession session) {
         mCastSession = session;
-        getRemoteMediaClient().registerCallback(mRemoteMediaClientCallback);
+        RemoteMediaClient uncheckedRemoteMediaClient = mCastSession.getRemoteMediaClient();
+        if (uncheckedRemoteMediaClient != null) {
+            uncheckedRemoteMediaClient.registerCallback(mRemoteMediaClientCallback);
+        }
     }
 
     /** Detaches the controller from any {@link CastSession}. */
     public void detachFromCastSession() {
         if (mCastSession == null) return;
 
-        getRemoteMediaClient().unregisterCallback(mRemoteMediaClientCallback);
+        RemoteMediaClient uncheckedRemoteMediaClient = mCastSession.getRemoteMediaClient();
+        if (uncheckedRemoteMediaClient != null) {
+            uncheckedRemoteMediaClient.unregisterCallback(mRemoteMediaClientCallback);
+        }
         mCastSession = null;
     }
 
     /** Called when session started. */
     public void onSessionStarted() {
-        mNotificationController.onSessionStarted();
+        getNotificationController().onSessionStarted();
     }
 
     /** Called when session ended. */
     public void onSessionEnded() {
-        mNotificationController.onSessionEnded();
+        getNotificationController().onSessionEnded();
         mRouteCreationInfo = null;
     }
 
@@ -165,20 +153,6 @@ public class BaseSessionController {
         }
     }
 
-    private class MediaRouterCallbackForSessionLaunch extends MediaRouter.Callback {
-        @Override
-        public void onRouteUnselected(MediaRouter mediaRouter, MediaRouter.RouteInfo routeInfo) {
-            if (mProvider.getPendingCreateRouteRequestInfo() == null) return;
-
-            if (routeInfo.getId().equals(
-                        mProvider.getPendingCreateRouteRequestInfo().routeInfo.getId())) {
-                routeInfo.select();
-                mProvider.getAndroidMediaRouter().removeCallback(
-                        mMediaRouterCallbackForSessionLaunch);
-            }
-        }
-    }
-
     private class RemoteMediaClientCallback extends RemoteMediaClient.Callback {
         @Override
         public void onStatusUpdated() {
@@ -192,15 +166,23 @@ public class BaseSessionController {
     }
 
     protected void onStatusUpdated() {
-        mNotificationController.onStatusUpdated();
+        getNotificationController().onStatusUpdated();
     }
 
     protected void onMetadataUpdated() {
-        mNotificationController.onMetadataUpdated();
+        getNotificationController().onMetadataUpdated();
     }
 
     @Nullable
     public FlingingController getFlingingController() {
         return null;
+    }
+
+    /**
+     *  Helper message to get the session ID of the attached session. For stubbing in tests as
+     * {@link CastSession#getSessionId()} is final.
+     */
+    public String getSessionId() {
+        return isConnected() ? getSession().getSessionId() : null;
     }
 }

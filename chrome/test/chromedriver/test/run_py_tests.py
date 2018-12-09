@@ -98,6 +98,11 @@ _VERSION_SPECIFIC_FILTER['HEAD'] = [
     'ChromeDriverPageLoadTimeoutTest.testRefreshWithPageLoadTimeout',
 ]
 
+_VERSION_SPECIFIC_FILTER['72'] = [
+    # https://bugs.chromium.org/p/chromedriver/issues/detail?id=2532
+    'ChromeDriverPageLoadTimeoutTest.testRefreshWithPageLoadTimeout',
+]
+
 _VERSION_SPECIFIC_FILTER['71'] = [
     # https://bugs.chromium.org/p/chromedriver/issues/detail?id=2532
     'ChromeDriverPageLoadTimeoutTest.testRefreshWithPageLoadTimeout',
@@ -106,13 +111,6 @@ _VERSION_SPECIFIC_FILTER['71'] = [
 _VERSION_SPECIFIC_FILTER['70'] = [
     # https://bugs.chromium.org/p/chromedriver/issues/detail?id=2532
     'ChromeDriverPageLoadTimeoutTest.testRefreshWithPageLoadTimeout',
-    # Feature not yet supported in this version
-    'ChromeDriverTest.testGenerateTestReport',
-]
-
-_VERSION_SPECIFIC_FILTER['69'] = [
-    # https://bugs.chromium.org/p/chromedriver/issues/detail?id=2515
-    'HeadlessInvalidCertificateTest.*',
     # Feature not yet supported in this version
     'ChromeDriverTest.testGenerateTestReport',
 ]
@@ -181,6 +179,8 @@ _INTEGRATION_NEGATIVE_FILTER = [
     'RemoteBrowserTest.*',
     # Flaky: https://crbug.com/899919
     'SessionHandlingTest.testGetSessions',
+    # Flaky and affects subsequent tests: https://crbug.com/904061
+    'ChromeDriverSiteIsolation.testCanClickOOPIF',
 ]
 
 
@@ -705,6 +705,48 @@ class ChromeDriverTest(ChromeDriverBaseTestWithWebServer):
     alert_button = self._driver.FindElement('id', 'aa1')
     alert_button.Click()
     self.assertTrue(self._driver.IsAlertOpen())
+
+  def testActionsMouseMove(self):
+    self._driver.Load(self.GetHttpUrlForFile('/chromedriver/empty.html'))
+    div = self._driver.ExecuteScript(
+        'document.body.innerHTML = "<div>old</div>";'
+        'var div = document.getElementsByTagName("div")[0];'
+        'div.style["width"] = "100px";'
+        'div.style["height"] = "100px";'
+        'div.addEventListener("mouseover", function() {'
+        '  var div = document.getElementsByTagName("div")[0];'
+        '  div.innerHTML="new<br>";'
+        '});'
+        'return div;')
+    actions = ({"actions": [{
+      "type":"pointer",
+      "actions":[{"type": "pointerMove", "x": 10, "y": 10}],
+      "parameters": {"pointerType": "mouse"},
+      "id": "pointer1"}]})
+    self._driver.PerformActions(actions)
+    self.assertEquals(1, len(self._driver.FindElements('tag name', 'br')))
+
+  def testActionsMouseClick(self):
+    self._driver.Load(self.GetHttpUrlForFile('/chromedriver/empty.html'))
+    div = self._driver.ExecuteScript(
+        'document.body.innerHTML = "<div>old</div>";'
+        'var div = document.getElementsByTagName("div")[0];'
+        'div.style["width"] = "100px";'
+        'div.style["height"] = "100px";'
+        'div.addEventListener("click", function() {'
+        '  var div = document.getElementsByTagName("div")[0];'
+        '  div.innerHTML="new<br>";'
+        '});'
+        'return div;')
+    actions = ({"actions": [{
+      "type":"pointer",
+      "actions":[{"type": "pointerMove", "x": 10, "y": 10},
+                 {"type": "pointerDown", "button": 0},
+                 {"type": "pointerUp", "button": 0}],
+      "parameters": {"pointerType": "mouse"},
+      "id": "pointer1"}]})
+    self._driver.PerformActions(actions)
+    self.assertEquals(1, len(self._driver.FindElements('tag name', 'br')))
 
   def testPageLoadStrategyIsNormalByDefault(self):
     self.assertEquals('normal',
@@ -1274,7 +1316,7 @@ class ChromeDriverTest(ChromeDriverBaseTestWithWebServer):
   def testSendCommandNoParams(self):
     """Sends a custom command to the DevTools debugger without params"""
     self.assertRaisesRegexp(
-            chromedriver.UnknownError, "params not passed",
+            chromedriver.InvalidArgument, "params not passed",
             self._driver.SendCommandAndGetResult, 'CSS.enable', None)
 
   def testSendCommandAndGetResult(self):
@@ -1757,6 +1799,38 @@ class ChromeDriverTest(ChromeDriverBaseTestWithWebServer):
     self.assertEquals('test', report['type']);
     self.assertEquals('test report message', report['body']['message']);
 
+# Tests in the following class are expected to be moved to ChromeDriverTest
+# class when we no longer support the legacy mode.
+class ChromeDriverW3cTest(ChromeDriverBaseTestWithWebServer):
+  """W3C mode specific tests."""
+
+  def setUp(self):
+    self._driver = self.CreateDriver(
+        send_w3c_capability=True, send_w3c_request=True)
+
+  def testSendKeysToElement(self):
+    self._driver.Load(self.GetHttpUrlForFile('/chromedriver/empty.html'))
+    text = self._driver.ExecuteScript(
+        'document.body.innerHTML = \'<input type="text">\';'
+        'var input = document.getElementsByTagName("input")[0];'
+        'input.addEventListener("change", function() {'
+        '  document.body.appendChild(document.createElement("br"));'
+        '});'
+        'return input;')
+    text.SendKeysW3c('0123456789+-*/ Hi')
+    text.SendKeysW3c(', there!')
+    value = self._driver.ExecuteScript('return arguments[0].value;', text)
+    self.assertEquals('0123456789+-*/ Hi, there!', value)
+
+  def testUnexpectedAlertOpenExceptionMessage(self):
+    self._driver.Load(self.GetHttpUrlForFile('/chromedriver/empty.html'))
+    self._driver.ExecuteScript('window.alert("Hi");')
+    self.assertRaisesRegexp(chromedriver.UnexpectedAlertOpen,
+                            '{Alert text : Hi}',
+                            self._driver.FindElement, 'tag name', 'divine')
+    # In W3C mode, the alert is dismissed by default.
+    self.assertFalse(self._driver.IsAlertOpen())
+
 class ChromeDriverSiteIsolation(ChromeDriverBaseTestWithWebServer):
   """Tests for ChromeDriver with the new Site Isolation Chrome feature.
 
@@ -2193,6 +2267,19 @@ class ChromeDesiredCapabilityTest(ChromeDriverBaseTest):
     self.assertRaisesRegexp(chromedriver.UnexpectedAlertOpen,
                             'unexpected alert open: {Alert text : HI}',
                             driver.FindElement, 'tag name', 'div')
+    self.assertFalse(driver.IsAlertOpen())
+
+  def testUnexpectedAlertBehaviourW3c(self):
+    driver = self.CreateDriver(unexpected_alert_behaviour='accept',
+                               send_w3c_capability=True, send_w3c_request=True)
+    self.assertEquals('accept',
+                      driver.capabilities['unhandledPromptBehavior'])
+    driver.ExecuteScript('alert("HI");')
+    self.WaitForCondition(driver.IsAlertOpen)
+    # With unhandledPromptBehavior=accept, calling GetTitle (and most other
+    # endpoints) automatically dismisses the alert, so IsAlertOpen() becomes
+    # False afterwards.
+    self.assertEquals(driver.GetTitle(), '')
     self.assertFalse(driver.IsAlertOpen())
 
 
@@ -2992,7 +3079,9 @@ class ZChromeStartRetryCountTest(unittest.TestCase):
 
   def testChromeStartRetryCount(self):
     self.assertEquals(0, chromedriver.ChromeDriver.retry_count,
-                      "Chrome was retried to start during suite execution")
+                      "Chrome was retried to start during suite execution "
+                      "in following tests:\n" +
+                      ', \n'.join(chromedriver.ChromeDriver.retried_tests))
 
 if __name__ == '__main__':
   parser = optparse.OptionParser()

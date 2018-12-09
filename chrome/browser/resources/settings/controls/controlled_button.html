@@ -31,8 +31,6 @@
       }
 
       :host(:not([end-justified])) cr-policy-pref-indicator {
-        margin-inline-end: calc(
-            var(--cr-controlled-by-spacing) - var(--justify-margin));
         margin-inline-start: var(--cr-controlled-by-spacing);
       }
 
@@ -44,7 +42,8 @@
       }
     </style>
 
-    <paper-button class$="[[getClass_(actionButton)]]" disabled="[[enforced_]]">
+    <paper-button class$="[[getClass_(actionButton)]]"
+      disabled="[[!buttonEnabled_(enforced_, disabled)]]">
       [[label]]
     </paper-button>
 

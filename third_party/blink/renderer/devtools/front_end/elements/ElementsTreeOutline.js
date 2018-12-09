@@ -441,9 +441,13 @@ Elements.ElementsTreeOutline = class extends UI.TreeOutline {
 
     // Walk down to populate each ancestor's children, to fill in the tree and the cache.
     for (let i = ancestors.length - 1; i >= 0; --i) {
+      const child = ancestors[i - 1] || node;
       const treeElement = ancestors[i][this._treeElementSymbol];
-      if (treeElement)
+      if (treeElement) {
         treeElement.onpopulate();  // fill the cache with the children of treeElement
+        if (child.index >= treeElement.expandedChildrenLimit())
+          this.setExpandedChildrenLimit(treeElement, child.index + 1);
+      }
     }
 
     return node[this._treeElementSymbol];
@@ -550,7 +554,8 @@ Elements.ElementsTreeOutline = class extends UI.TreeOutline {
     const listItem = event.target.enclosingNodeOrSelfWithNodeName('li');
     if (!listItem || !listItem.treeElement || !listItem.treeElement.selected)
       return;
-    this._highlightTreeElement(/** @type {!UI.TreeElement} */ (listItem.treeElement), true /* showInfo */);
+    if (event.relatedTarget)
+      this._highlightTreeElement(/** @type {!UI.TreeElement} */ (listItem.treeElement), true /* showInfo */);
   }
 
   /**
@@ -1229,7 +1234,8 @@ Elements.ElementsTreeOutline = class extends UI.TreeOutline {
       visibleChildren.push(beforePseudoElement);
 
     if (node.childNodeCount()) {
-      let children = node.children();
+      // Children may be stale when the outline is not wired to receive DOMModel updates.
+      let children = node.children() || [];
       if (!this._showHTMLCommentsSetting.get())
         children = children.filter(n => n.nodeType() !== Node.COMMENT_NODE);
       visibleChildren = visibleChildren.concat(children);
@@ -1596,7 +1602,7 @@ Elements.ElementsTreeOutline.Renderer = class {
           treeOutline._element.classList.add('single-node');
         treeOutline.setVisible(true);
         treeOutline.element.treeElementForTest = treeOutline.firstChild();
-        treeOutline.setShowSelectionOnKeyboardFocus(true);
+        treeOutline.setShowSelectionOnKeyboardFocus(true, true);
         resolve({node: treeOutline.element, tree: treeOutline});
       }
     }

@@ -24,7 +24,7 @@
 
 #include "third_party/blink/renderer/core/html/html_embed_element.h"
 
-#include "third_party/blink/renderer/core/css_property_names.h"
+#include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/dom/attribute.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
@@ -50,7 +50,7 @@ inline HTMLEmbedElement::HTMLEmbedElement(Document& document,
 
 HTMLEmbedElement* HTMLEmbedElement::Create(Document& document,
                                            const CreateElementFlags flags) {
-  auto* element = new HTMLEmbedElement(document, flags);
+  auto* element = MakeGarbageCollected<HTMLEmbedElement>(document, flags);
   element->EnsureUserAgentShadowRoot();
   return element;
 }

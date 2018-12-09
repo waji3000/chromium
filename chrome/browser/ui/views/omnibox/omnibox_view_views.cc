@@ -17,8 +17,6 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/in_product_help/reopen_tab_in_product_help.h"
-#include "chrome/browser/ui/in_product_help/reopen_tab_in_product_help_factory.h"
 #include "chrome/browser/ui/omnibox/clipboard_utils.h"
 #include "chrome/browser/ui/omnibox/omnibox_theme.h"
 #include "chrome/browser/ui/view_ids.h"
@@ -243,14 +241,14 @@ void OmniboxViewViews::InstallPlaceholderText() {
   }
 }
 
-bool OmniboxViewViews::SelectionAtBeginning() {
+bool OmniboxViewViews::SelectionAtBeginning() const {
   const gfx::Range sel = GetSelectedRange();
-  return sel.GetMin() == 0;
+  return sel.GetMax() == 0;
 }
 
-bool OmniboxViewViews::SelectionAtEnd() {
+bool OmniboxViewViews::SelectionAtEnd() const {
   const gfx::Range sel = GetSelectedRange();
-  return sel.GetMax() == text().size();
+  return sel.GetMin() == text().size();
 }
 
 void OmniboxViewViews::EmphasizeURLComponents() {
@@ -275,15 +273,12 @@ void OmniboxViewViews::Update() {
     RevertAll();
 
     // Only select all when we have focus.  If we don't have focus, selecting
-    // all is unnecessary since the selection will change on regaining focus,
-    // and can in fact cause artifacts, e.g. if the user is on the NTP and
-    // clicks a link to navigate, causing |was_select_all| to be vacuously true
-    // for the empty omnibox, and we then select all here, leading to the
-    // trailing portion of a long URL being scrolled into view.  We could try
-    // and address cases like this, but it seems better to just not muck with
-    // things when the omnibox isn't focused to begin with.
-    if (model()->has_focus())
-      SelectAll(true);
+    // all is unnecessary since the selection will change on regaining focus.
+    if (model()->has_focus()) {
+      // Treat this select-all as resulting from a user gesture, since most
+      // URL updates result from a user gesture or navigation.
+      SelectAllForUserGesture();
+    }
   } else if (old_security_level != security_level_) {
     EmphasizeURLComponents();
   }
@@ -551,14 +546,33 @@ void OmniboxViewViews::UpdateSecurityLevel() {
       controller()->GetLocationBarModel()->GetSecurityLevel(false);
 }
 
-bool OmniboxViewViews::AtEndWithTabMatch() {
+// The following 2 methods implement the following table, which attempts to
+// handle left and right arrow keys versus LTR/RTL text and UI (which can be
+// different) as expected.
+//
+// LTR UI, LTR text, right arrow, at end (rightmost) - focuses
+// LTR UI, LTR text, left arrow, (regardless) - unfocuses
+// LTR UI, RTL text, right arrow, at beginning (rightmost) - focuses
+// LTR UI, RTL text, left arrow, (regardless) - unfocuses
+//
+// RTL UI, RTL text, left arrow, at end (leftmost) - focuses
+// RTL UI, RTL text, right arrow, (regardless) - unfocuses
+// RTL UI, LTR text, left arrow, at beginning (leftmost) - focuses
+// RTL UI, LTR text, right arrow, (regardless) - unfocuses
+
+bool OmniboxViewViews::TextAndUIDirectionMatch() const {
+  // If text and UI direction are RTL, or both aren't.
+  return (GetRenderText()->GetDisplayTextDirection() ==
+          base::i18n::RIGHT_TO_LEFT) == base::i18n::IsRTL();
+}
+
+bool OmniboxViewViews::AtEndWithTabMatch() const {
   if (model()->popup_model() &&  // Can be null in tests.
       model()->popup_model()->SelectedLineHasTabMatch()) {
-    const bool text_and_ui_direction_match =
-        (GetRenderText()->GetDisplayTextDirection() ==
-         base::i18n::RIGHT_TO_LEFT) == base::i18n::IsRTL();
-    return text_and_ui_direction_match ? SelectionAtEnd()
-                                       : SelectionAtBeginning();
+    // When text and UI direction match, 'end' is as expected,
+    // otherwise we use beginning.
+    return TextAndUIDirectionMatch() ? SelectionAtEnd()
+                                     : SelectionAtBeginning();
   }
   return false;
 }
@@ -644,8 +658,8 @@ void OmniboxViewViews::OnTemporaryTextMaybeChanged(
       match, display_text, model()->popup_model()->selected_line(),
       model()->result().size(), is_tab_switch_button_focused,
       &friendly_suggestion_text_prefix_length_);
-  SetWindowTextAndCaretPos(display_text, display_text.length(), false,
-                           notify_text_changed);
+  int caret_pos = TextAndUIDirectionMatch() ? display_text.length() : 0;
+  SetWindowTextAndCaretPos(display_text, caret_pos, false, notify_text_changed);
 #if defined(OS_MACOSX)
   // On macOS, the text field value changed notification is not
   // announced, so we need to explicitly announce the suggestion text.
@@ -687,6 +701,17 @@ void OmniboxViewViews::OnRevertTemporaryText() {
 void OmniboxViewViews::ClearAccessibilityLabel() {
   friendly_suggestion_text_.clear();
   friendly_suggestion_text_prefix_length_ = 0;
+}
+
+void OmniboxViewViews::SelectAllForUserGesture() {
+  if (base::FeatureList::IsEnabled(omnibox::kOneClickUnelide) &&
+      UnapplySteadyStateElisions(UnelisionGesture::OTHER)) {
+    TextChanged();
+  }
+
+  // Select all in the reverse direction so as not to scroll the caret
+  // into view and shift the contents jarringly.
+  SelectAll(true);
 }
 
 bool OmniboxViewViews::UnapplySteadyStateElisions(UnelisionGesture gesture) {
@@ -939,9 +964,7 @@ void OmniboxViewViews::OnMouseReleased(const ui::MouseEvent& event) {
   // When the user has clicked and released to give us focus, select all.
   if ((event.IsOnlyLeftMouseButton() || event.IsOnlyRightMouseButton()) &&
       select_all_on_mouse_release_) {
-    // Select all in the reverse direction so as not to scroll the caret
-    // into view and shift the contents jarringly.
-    SelectAll(true);
+    SelectAllForUserGesture();
   }
   select_all_on_mouse_release_ = false;
 
@@ -964,7 +987,7 @@ void OmniboxViewViews::OnGestureEvent(ui::GestureEvent* event) {
   views::Textfield::OnGestureEvent(event);
 
   if (select_all_on_gesture_tap_ && event->type() == ui::ET_GESTURE_TAP)
-    SelectAll(true);
+    SelectAllForUserGesture();
 
   if (event->type() == ui::ET_GESTURE_TAP ||
       event->type() == ui::ET_GESTURE_TAP_CANCEL ||
@@ -1110,22 +1133,17 @@ void OmniboxViewViews::OnFocus() {
     location_bar_view_->Layout();
 
 #if BUILDFLAG(ENABLE_DESKTOP_IN_PRODUCT_HELP)
-  if (location_bar_view_) {
-    // The user must be starting a session in the same tab as a previous one in
-    // order to display the new tab in-product help promo.  While focusing the
-    // omnibox is not always a precursor to starting a new session, we don't
-    // want to wait until the user is in the middle of editing or navigating,
-    // because we'd like to show them the promo at the time when it would be
-    // immediately useful.
-    if (controller()->GetLocationBarModel()->ShouldDisplayURL()) {
-      feature_engagement::NewTabTrackerFactory::GetInstance()
-          ->GetForProfile(location_bar_view_->profile())
-          ->OnOmniboxFocused();
-    }
-
-    auto* reopen_tab_iph = ReopenTabInProductHelpFactory::GetForProfile(
-        location_bar_view_->profile());
-    reopen_tab_iph->OmniboxFocused();
+  // The user must be starting a session in the same tab as a previous one in
+  // order to display the new tab in-product help promo.  While focusing the
+  // omnibox is not always a precursor to starting a new session, we don't
+  // want to wait until the user is in the middle of editing or navigating,
+  // because we'd like to show them the promo at the time when it would be
+  // immediately useful.
+  if (location_bar_view_ &&
+      controller()->GetLocationBarModel()->ShouldDisplayURL()) {
+    feature_engagement::NewTabTrackerFactory::GetInstance()
+        ->GetForProfile(location_bar_view_->profile())
+        ->OnOmniboxFocused();
   }
 #endif
 
@@ -1541,10 +1559,9 @@ int OmniboxViewViews::OnDrop(const ui::OSExchangeData& data) {
     }
   } else if (data.HasString() && data.GetString(&text)) {
     text = StripJavascriptSchemas(base::CollapseWhitespace(text, true));
-  }
-
-  if (text.empty())
+  } else {
     return ui::DragDropTypes::DRAG_NONE;
+  }
 
   SetUserText(text);
   if (!HasFocus())

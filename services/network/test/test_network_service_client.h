@@ -35,6 +35,7 @@ class TestNetworkServiceClient : public network::mojom::NetworkServiceClient {
       const base::Optional<ResourceResponseHead>& head,
       mojom::AuthChallengeResponderPtr auth_challenge_responder) override;
   void OnCertificateRequested(
+      const base::Optional<base::UnguessableToken>& window_id,
       uint32_t process_id,
       uint32_t routing_id,
       uint32_t request_id,
@@ -62,7 +63,7 @@ class TestNetworkServiceClient : public network::mojom::NetworkServiceClient {
                       const net::CanonicalCookie& cookie,
                       bool blocked_by_policy) override;
 #if defined(OS_CHROMEOS)
-  void OnUsedTrustAnchor(const std::string& username_hash) override;
+  void OnTrustAnchorUsed(const std::string& username_hash) override;
 #endif
   void OnFileUploadRequested(uint32_t process_id,
                              bool async,

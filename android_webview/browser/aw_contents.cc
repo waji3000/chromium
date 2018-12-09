@@ -112,6 +112,8 @@ using content::WebContents;
 
 namespace android_webview {
 
+class CompositorFrameConsumer;
+
 namespace {
 
 bool g_should_download_favicons = false;
@@ -192,7 +194,6 @@ AwContents* AwContents::FromID(int render_process_id, int render_view_id) {
 // static
 void JNI_AwContents_UpdateDefaultLocale(
     JNIEnv* env,
-    const JavaParamRef<jclass>&,
     const JavaParamRef<jstring>& locale,
     const JavaParamRef<jstring>& locale_list) {
   *g_locale() = ConvertJavaStringToUTF8(env, locale);
@@ -235,7 +236,6 @@ AwRenderProcessGoneDelegate* AwRenderProcessGoneDelegate::FromWebContents(
 
 AwContents::AwContents(std::unique_ptr<WebContents> web_contents)
     : content::WebContentsObserver(web_contents.get()),
-      functor_(nullptr),
       browser_view_renderer_(
           this,
           base::CreateSingleThreadTaskRunnerWithTraits({BrowserThread::UI})),
@@ -379,7 +379,7 @@ AwContents::~AwContents() {
     base::MemoryPressureListener::NotifyMemoryPressure(
         base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL);
   }
-  SetAwGLFunctor(nullptr);
+  browser_view_renderer_.SetCurrentCompositorFrameConsumer(nullptr);
   AwContentsLifecycleNotifier::OnWebViewDestroyed();
 }
 
@@ -394,23 +394,12 @@ base::android::ScopedJavaLocalRef<jobject> AwContents::GetWebContents(
   return web_contents_->GetJavaWebContents();
 }
 
-void AwContents::SetAwGLFunctor(AwGLFunctor* functor) {
-  if (functor == functor_) {
-    return;
-  }
-  functor_ = functor;
-  if (functor_) {
-    browser_view_renderer_.SetCurrentCompositorFrameConsumer(
-        functor_->GetCompositorFrameConsumer());
-  } else {
-    browser_view_renderer_.SetCurrentCompositorFrameConsumer(nullptr);
-  }
-}
-
-void AwContents::SetAwGLFunctor(JNIEnv* env,
-                                const base::android::JavaParamRef<jobject>& obj,
-                                jlong gl_functor) {
-  SetAwGLFunctor(reinterpret_cast<AwGLFunctor*>(gl_functor));
+void AwContents::SetCompositorFrameConsumer(
+    JNIEnv* env,
+    const base::android::JavaParamRef<jobject>& obj,
+    jlong compositor_frame_consumer) {
+  browser_view_renderer_.SetCurrentCompositorFrameConsumer(
+      reinterpret_cast<CompositorFrameConsumer*>(compositor_frame_consumer));
 }
 
 ScopedJavaLocalRef<jobject> AwContents::GetRenderProcess(
@@ -433,7 +422,6 @@ void AwContents::Destroy(JNIEnv* env, const JavaParamRef<jobject>& obj) {
 }
 
 static jlong JNI_AwContents_Init(JNIEnv* env,
-                                 const JavaParamRef<jclass>&,
                                  const JavaParamRef<jobject>& browser_context) {
   // TODO(joth): Use |browser_context| to get the native BrowserContext, rather
   // than hard-code the default instance lookup here.
@@ -444,9 +432,7 @@ static jlong JNI_AwContents_Init(JNIEnv* env,
   return reinterpret_cast<intptr_t>(new AwContents(std::move(web_contents)));
 }
 
-static jboolean JNI_AwContents_HasRequiredHardwareExtensions(
-    JNIEnv* env,
-    const JavaParamRef<jclass>&) {
+static jboolean JNI_AwContents_HasRequiredHardwareExtensions(JNIEnv* env) {
   ScopedAllowInitGLBindings scoped_allow_init_gl_bindings;
   // Make sure GPUInfo is collected. This will initialize GL bindings,
   // collect GPUInfo, and compute GpuFeatureInfo if they have not been
@@ -456,26 +442,22 @@ static jboolean JNI_AwContents_HasRequiredHardwareExtensions(
 }
 
 static void JNI_AwContents_SetAwDrawSWFunctionTable(JNIEnv* env,
-                                                    const JavaParamRef<jclass>&,
                                                     jlong function_table) {
   RasterHelperSetAwDrawSWFunctionTable(
       reinterpret_cast<AwDrawSWFunctionTable*>(function_table));
 }
 
 static void JNI_AwContents_SetAwDrawGLFunctionTable(JNIEnv* env,
-                                                    const JavaParamRef<jclass>&,
                                                     jlong function_table) {}
 
 // static
-jint JNI_AwContents_GetNativeInstanceCount(JNIEnv* env,
-                                           const JavaParamRef<jclass>&) {
+jint JNI_AwContents_GetNativeInstanceCount(JNIEnv* env) {
   return base::subtle::NoBarrier_Load(&g_instance_count);
 }
 
 // static
 ScopedJavaLocalRef<jstring> JNI_AwContents_GetSafeBrowsingLocaleForTesting(
-    JNIEnv* env,
-    const JavaParamRef<jclass>&) {
+    JNIEnv* env) {
   ScopedJavaLocalRef<jstring> locale =
       ConvertUTF8ToJavaString(env, base::i18n::GetConfiguredLocale());
   return locale;
@@ -1366,9 +1348,7 @@ jlong AwContents::GetAutofillProvider(
   return reinterpret_cast<jlong>(autofill_provider_.get());
 }
 
-void JNI_AwContents_SetShouldDownloadFavicons(
-    JNIEnv* env,
-    const JavaParamRef<jclass>& jclazz) {
+void JNI_AwContents_SetShouldDownloadFavicons(JNIEnv* env) {
   g_should_download_favicons = true;
 }
 
@@ -1477,6 +1457,34 @@ void AwContents::EvaluateJavaScriptOnInterstitialForTesting(
 
   interstitial->GetMainFrame()->ExecuteJavaScriptForTests(
       ConvertJavaStringToUTF16(env, script), js_callback);
+}
+
+void AwContents::RendererUnresponsive(
+    content::RenderProcessHost* render_process_host) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return;
+
+  AwRenderProcess* aw_render_process =
+      AwRenderProcess::GetInstanceForRenderProcessHost(render_process_host);
+  Java_AwContents_onRendererUnresponsive(env, obj,
+                                         aw_render_process->GetJavaObject());
+}
+
+void AwContents::RendererResponsive(
+    content::RenderProcessHost* render_process_host) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return;
+
+  AwRenderProcess* aw_render_process =
+      AwRenderProcess::GetInstanceForRenderProcessHost(render_process_host);
+  Java_AwContents_onRendererResponsive(env, obj,
+                                       aw_render_process->GetJavaObject());
 }
 
 void AwContents::OnRenderProcessGone(int child_process_id) {

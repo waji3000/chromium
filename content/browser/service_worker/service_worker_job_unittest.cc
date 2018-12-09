@@ -501,7 +501,7 @@ class FailToStartWorkerTestHelper : public EmbeddedWorkerTestHelper {
       const GURL& script_url,
       bool pause_after_download,
       mojom::ServiceWorkerRequest service_worker_request,
-      mojom::ControllerServiceWorkerRequest controller_request,
+      blink::mojom::ControllerServiceWorkerRequest controller_request,
       mojom::EmbeddedWorkerInstanceHostAssociatedPtrInfo instance_host,
       mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info,
       blink::mojom::ServiceWorkerInstalledScriptsInfoPtr installed_scripts_info)
@@ -769,6 +769,44 @@ TEST_F(ServiceWorkerJobTest, AbortAll_RegUnreg) {
   EXPECT_EQ(scoped_refptr<ServiceWorkerRegistration>(), registration);
 }
 
+TEST_F(ServiceWorkerJobTest, AbortScope) {
+  GURL script_url("https://www.example.com/service_worker.js");
+  blink::mojom::ServiceWorkerRegistrationOptions options1;
+  options1.scope = GURL("https://www.example.com/1");
+  blink::mojom::ServiceWorkerRegistrationOptions options2;
+  options2.scope = GURL("https://www.example.com/2");
+
+  bool registration1_called = false;
+  scoped_refptr<ServiceWorkerRegistration> registration1;
+  job_coordinator()->Register(
+      script_url, options1,
+      SaveRegistration(blink::ServiceWorkerStatusCode::kErrorAbort,
+                       &registration1_called, &registration1));
+
+  bool registration2_called = false;
+  scoped_refptr<ServiceWorkerRegistration> registration2;
+  job_coordinator()->Register(
+      script_url, options2,
+      SaveRegistration(blink::ServiceWorkerStatusCode::kOk,
+                       &registration2_called, &registration2));
+
+  ASSERT_FALSE(registration1_called);
+  ASSERT_FALSE(registration2_called);
+  job_coordinator()->Abort(options1.scope);
+
+  base::RunLoop().RunUntilIdle();
+  ASSERT_TRUE(registration1_called);
+  ASSERT_TRUE(registration2_called);
+
+  registration1 = FindRegistrationForScope(
+      options1.scope, blink::ServiceWorkerStatusCode::kErrorNotFound);
+  EXPECT_EQ(nullptr, registration1);
+
+  registration2 = FindRegistrationForScope(options2.scope,
+                                           blink::ServiceWorkerStatusCode::kOk);
+  EXPECT_NE(nullptr, registration2);
+}
+
 // Tests that the waiting worker enters the 'redundant' state upon
 // unregistration.
 TEST_F(ServiceWorkerJobTest, UnregisterWaitingSetsRedundant) {
@@ -971,7 +1009,7 @@ class UpdateJobTestHelper : public EmbeddedWorkerTestHelper,
       const GURL& script,
       bool pause_after_download,
       mojom::ServiceWorkerRequest service_worker_request,
-      mojom::ControllerServiceWorkerRequest controller_request,
+      blink::mojom::ControllerServiceWorkerRequest controller_request,
       mojom::EmbeddedWorkerInstanceHostAssociatedPtrInfo instance_host,
       mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info,
       blink::mojom::ServiceWorkerInstalledScriptsInfoPtr installed_scripts_info)
@@ -1114,7 +1152,7 @@ class EvictIncumbentVersionHelper : public UpdateJobTestHelper {
       const GURL& script,
       bool pause_after_download,
       mojom::ServiceWorkerRequest service_worker_request,
-      mojom::ControllerServiceWorkerRequest controller_request,
+      blink::mojom::ControllerServiceWorkerRequest controller_request,
       mojom::EmbeddedWorkerInstanceHostAssociatedPtrInfo instance_host,
       mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info,
       blink::mojom::ServiceWorkerInstalledScriptsInfoPtr installed_scripts_info)
@@ -1689,13 +1727,12 @@ class EventCallbackHelper : public EmbeddedWorkerTestHelper {
       mojom::ServiceWorker::DispatchInstallEventCallback callback) override {
     if (!install_callback_.is_null())
       std::move(install_callback_).Run();
-    std::move(callback).Run(install_event_result_, has_fetch_handler_,
-                            base::TimeTicks::Now());
+    std::move(callback).Run(install_event_result_, has_fetch_handler_);
   }
 
   void OnActivateEvent(
       mojom::ServiceWorker::DispatchActivateEventCallback callback) override {
-    std::move(callback).Run(activate_event_result_, base::TimeTicks::Now());
+    std::move(callback).Run(activate_event_result_);
   }
 
   void set_install_callback(base::OnceClosure callback) {
@@ -2008,18 +2045,18 @@ TEST_F(ServiceWorkerJobTest, AddRegistrationToMatchingProviderHosts) {
 
   // Make an in-scope client.
   ServiceWorkerProviderHost* client = CreateControllee();
-  client->SetDocumentUrl(in_scope);
+  client->UpdateUrls(in_scope, in_scope);
 
   // Make an in-scope reserved client.
   base::WeakPtr<ServiceWorkerProviderHost> reserved_client =
       ServiceWorkerProviderHost::PreCreateNavigationHost(
           helper_->context()->AsWeakPtr(), true /* are_ancestors_secure */,
           {} /* web_contents_getter */);
-  reserved_client->SetDocumentUrl(in_scope);
+  reserved_client->UpdateUrls(in_scope, in_scope);
 
   // Make an out-scope client.
   ServiceWorkerProviderHost* out_scope_client = CreateControllee();
-  out_scope_client->SetDocumentUrl(out_scope);
+  out_scope_client->UpdateUrls(out_scope, out_scope);
 
   // Make a new registration.
   GURL script("https://www.example.com/service_worker.js");

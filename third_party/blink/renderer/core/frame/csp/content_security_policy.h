@@ -139,12 +139,17 @@ class CORE_EXPORT ContentSecurityPolicy
 
   static const size_t kMaxSampleLength = 40;
 
-  static ContentSecurityPolicy* Create() { return new ContentSecurityPolicy(); }
+  static ContentSecurityPolicy* Create() {
+    return MakeGarbageCollected<ContentSecurityPolicy>();
+  }
+
+  ContentSecurityPolicy();
   ~ContentSecurityPolicy();
   void Trace(blink::Visitor*);
 
   void BindToExecutionContext(ExecutionContext*);
   void SetupSelf(const SecurityOrigin&);
+  void SetupSelf(const ContentSecurityPolicy&);
   void CopyStateFrom(const ContentSecurityPolicy*);
   void CopyPluginTypesFrom(const ContentSecurityPolicy*);
 
@@ -497,8 +502,6 @@ class CORE_EXPORT ContentSecurityPolicy
                            AllowResponseChecksReportedAndEnforcedCSP);
   FRIEND_TEST_ALL_PREFIXES(FrameFetchContextTest,
                            PopulateResourceRequestChecksReportOnlyCSP);
-
-  ContentSecurityPolicy();
 
   void ApplyPolicySideEffectsToExecutionContext();
 

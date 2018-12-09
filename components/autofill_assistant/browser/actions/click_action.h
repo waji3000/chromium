@@ -13,7 +13,8 @@
 #include "components/autofill_assistant/browser/actions/action.h"
 
 namespace autofill_assistant {
-// An action to perform a mouse left button click on a given element on Web.
+// An action to perform a mouse left button click on a given element on Web,
+// which is implemented as a touch tap on Mobile.
 class ClickAction : public Action {
  public:
   explicit ClickAction(const ActionProto& proto);
@@ -29,7 +30,6 @@ class ClickAction : public Action {
                         bool element_found);
   void OnClick(ProcessActionCallback callback, bool status);
 
-  std::vector<std::string> target_element_selectors_;
   base::WeakPtrFactory<ClickAction> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ClickAction);

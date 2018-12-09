@@ -114,9 +114,10 @@ void ArCoreJavaUtils::OnRequestInstallArModuleResult(
 }
 
 bool ArCoreJavaUtils::EnsureLoaded() {
-  JNIEnv* env = AttachCurrentThread();
-  if (!Java_ArCoreJavaUtils_shouldLoadArCoreSdk(env))
+  if (!vr::SupportsArCore())
     return false;
+
+  JNIEnv* env = AttachCurrentThread();
 
   // TODO(crbug.com/884780): Allow loading the ARCore shim by name instead of by
   // absolute path.
@@ -131,8 +132,7 @@ ScopedJavaLocalRef<jobject> ArCoreJavaUtils::GetApplicationContext() {
 }
 
 static void JNI_ArCoreJavaUtils_InstallArCoreDeviceProviderFactory(
-    JNIEnv* env,
-    const base::android::JavaParamRef<jclass>& clazz) {
+    JNIEnv* env) {
   device::ArCoreDeviceProviderFactory::Install(
       std::make_unique<ArCoreDeviceProviderFactoryImpl>());
 }

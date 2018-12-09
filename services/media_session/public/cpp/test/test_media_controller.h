@@ -22,24 +22,35 @@ class COMPONENT_EXPORT(MEDIA_SESSION_TEST_SUPPORT_CPP) TestMediaController
   mojom::MediaControllerPtr CreateMediaControllerPtr();
 
   // mojom::MediaController:
-  void Suspend() override {}
-  void Resume() override {}
+  void Suspend() override;
+  void Resume() override;
   void ToggleSuspendResume() override;
-  void AddObserver(mojom::MediaSessionObserverPtr) override {}
+  void AddObserver(mojom::MediaSessionObserverPtr) override;
   void PreviousTrack() override;
   void NextTrack() override;
+  void Seek(base::TimeDelta seek_time) override;
 
   int toggle_suspend_resume_count() const {
     return toggle_suspend_resume_count_;
   }
 
+  int suspend_count() const { return suspend_count_; }
+  int resume_count() const { return resume_count_; }
+  int add_observer_count() const { return add_observer_count_; }
   int previous_track_count() const { return previous_track_count_; }
   int next_track_count() const { return next_track_count_; }
+  int seek_backward_count() const { return seek_backward_count_; }
+  int seek_forward_count() const { return seek_forward_count_; }
 
  private:
   int toggle_suspend_resume_count_ = 0;
+  int suspend_count_ = 0;
+  int resume_count_ = 0;
+  int add_observer_count_ = 0;
   int previous_track_count_ = 0;
   int next_track_count_ = 0;
+  int seek_backward_count_ = 0;
+  int seek_forward_count_ = 0;
 
   mojo::Binding<mojom::MediaController> binding_{this};
 

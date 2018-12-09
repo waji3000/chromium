@@ -142,7 +142,6 @@ Ytterligare anvisningar har skickats med e-post till dig på <ph name="ACCOUNT_E
 <translation id="4600710005438004015">Det gick inte att uppdatera Chrome till den senaste versionen. Därför går du miste om nya funktioner och säkerhetskorrigeringar.</translation>
 <translation id="4631713731678262610">Dölj i Chrome-menyn</translation>
 <translation id="4633000520311261472">Vi har gjort Chrome säkrare genom att inaktivera vissa tillägg som inte finns i <ph name="IDS_EXTENSION_WEB_STORE_TITLE" /> och som kan ha lagts till utan att du vet om det.</translation>
-<translation id="4664415150087723341">En särskild säkerhetsuppdatering för Google Chrome installerades precis. Tillämpa uppdateringen genom att starta om (vi återställer flikarna).</translation>
 <translation id="4700157086864140907">Google Chrome kan ge smartare stavningskontroll genom att skicka det som du skriver i webbläsaren till Googles servrar så att du kan använda samma stavningsteknik som används i Googles webbsökning.</translation>
 <translation id="4728575227883772061">Installationen misslyckades på grund av ett ospecificerat fel. Stäng Google Chrome, om det är igång, och försök sedan igen.</translation>
 <translation id="4750550185319565338">Starta om Chrome om du vill aktivera <ph name="PLUGIN_NAME" /></translation>
@@ -222,7 +221,6 @@ Google Chrome kan inte återställa dina inställningar.</translation>
 <translation id="7242029209006116544">Du loggar in med ett hanterat konto och ger dess administratör kontroll över din Google Chrome-profil. Dina Chrome-uppgifter, t.ex. dina appar, bokmärken, din historik, dina lösenord och andra inställningar, knyts permanent till <ph name="USER_NAME" />. Du kommer att kunna ta bort dessa uppgifter via instrumentpanelen i Google Konton, men du kommer inte att kunna koppla dessa uppgifter till ett annat konto. Du kan skapa en ny profil om du vill hålla dina befintliga Chrome-uppgifter separata. <ph name="LEARN_MORE" /></translation>
 <translation id="7296210096911315575">Viktig användnings- och säkerhetsinformation</translation>
 <translation id="7308322188646931570">Du behöver ge Chrome åtkomst till lagringsutrymmet om det ska gå att ladda ned filer</translation>
-<translation id="7330164299247909639">Autentiseringscertifikatet fungerade inte. Logga in i Google Chrome igen som <ph name="USER_NAME" /> eller kontakta administratören. <ph name="ADDITIONAL_EXPLANATION" /></translation>
 <translation id="7339898014177206373">Nytt fönster</translation>
 <translation id="7398801000654795464">Du var inloggad i Chrome som <ph name="USER_EMAIL_ADDRESS" />. Använd samma konto när du loggar in igen.</translation>
 <translation id="7408085963519505752">Villkor för Chrome OS</translation>
@@ -267,8 +265,10 @@ Google Chrome kan inte återställa dina inställningar.</translation>
 <translation id="8380166467911888159">Chrome skickar det du skriver i textfält till Google för att kontrollera stavningen</translation>
 <translation id="840084489713044809">Lösenorden exporteras från Google Chrome.</translation>
 <translation id="8406086379114794905">Hjälp till att göra Chrome bättre</translation>
+<translation id="8432724323949790809">Starta om Google Chrome nu</translation>
 <translation id="8455999171311319804">Valfritt: Hjälp oss att göra Chrome bättre genom att automatiskt skicka diagnostik- och användningsdata till Google.</translation>
 <translation id="8478823064122749032">Installera Chrome på mobilen. Vi skickar ett sms till ditt telefonnummer för kontoåterställning: <ph name="PHONE_NUMBER" /></translation>
+<translation id="8498858610309223613">En särskild säkerhetsuppdatering för Google Chrome installerades precis. Starta om webbläsaren nu. Flikarna återställs efteråt.</translation>
 <translation id="8521348052903287641">Regel som tillåter inkommande mDNS-trafik för Google Chrome Dev.</translation>
 <translation id="8540666473246803645">Google Chrome</translation>
 <translation id="8547799825197623713">Startprogrammet för appar i Chrome Canary</translation>
@@ -283,14 +283,12 @@ Google Chrome kan inte återställa dina inställningar.</translation>
 <translation id="873133009373065397">Google Chrome kan inte fastställa eller ange standardwebbläsaren</translation>
 <translation id="8736674169840206667">Administratören meddelar att du måste starta om Chrome så att en uppdatering tillämpas</translation>
 <translation id="8791470158600044404">{0,plural, =1{Om en minut startas Chrome OS om}other{Om # minuter startas Chrome OS om}}</translation>
-<translation id="8796108026289707191">Starta om Google Chrome nu.</translation>
 <translation id="8823341990149967727">Den här versionen av Chrome är inaktuell</translation>
 <translation id="884296878221830158">Det styr också vilken sida som visas när du startar Chrome eller klickar på hemknappen.</translation>
 <translation id="8862326446509486874">Du har inte behörighet att göra en installation på systemnivå. Försök köra installationsprogrammet igen som administratör.</translation>
 <translation id="8914504000324227558">Starta om Chrome</translation>
 <translation id="9026991721384951619">Det gick inte att synkronisera data med Chrome OS eftersom inloggningsuppgifterna för kontot är inaktuella.</translation>
 <translation id="9067395829937117663">För Google Chrome krävs Windows 7 eller senare.</translation>
-<translation id="9084668267983921457">Autentiseringscertifikatet fungerade inte. Logga in i Google Chrome igen eller kontakta administratören. <ph name="ADDITIONAL_EXPLANATION" /></translation>
 <translation id="909149346112452267">{0,plural, =1{Om en timme startas Chrome OS om}other{Om # timmar startas Chrome OS om}}</translation>
 <translation id="911206726377975832">Vill du även ta bort din webbinformation?</translation>
 <translation id="9138603949443464873">Ändringarna tillämpas när du startar om Chrome</translation>

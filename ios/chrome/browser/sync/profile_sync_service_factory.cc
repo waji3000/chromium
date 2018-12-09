@@ -15,10 +15,8 @@
 #include "components/keyed_service/ios/browser_state_dependency_manager.h"
 #include "components/network_time/network_time_tracker.h"
 #include "components/signin/core/browser/device_id_helper.h"
-#include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/sync/driver/startup_controller.h"
 #include "components/sync/driver/sync_util.h"
-#include "components/unified_consent/feature.h"
 #include "ios/chrome/browser/application_context.h"
 #include "ios/chrome/browser/autofill/personal_data_manager_factory.h"
 #include "ios/chrome/browser/bookmarks/bookmark_model_factory.h"
@@ -154,8 +152,6 @@ ProfileSyncServiceFactory::BuildServiceInstanceFor(
       GetApplicationContext()->GetNetworkConnectionTracker();
   init_params.debug_identifier = browser_state->GetDebugName();
   init_params.channel = ::GetChannel();
-  init_params.user_events_separate_pref_group =
-      unified_consent::IsUnifiedConsentFeatureEnabled();
 
   bool use_fcm_invalidations =
       base::FeatureList::IsEnabled(invalidation::switches::kFCMInvalidations);

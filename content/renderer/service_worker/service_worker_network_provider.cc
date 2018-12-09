@@ -9,7 +9,6 @@
 #include "content/common/navigation_params.h"
 #include "content/common/service_worker/service_worker_provider.mojom.h"
 #include "content/common/service_worker/service_worker_utils.h"
-#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/origin_util.h"
 #include "content/renderer/loader/request_extra_data.h"
 #include "content/renderer/render_thread_impl.h"
@@ -78,6 +77,14 @@ class WebServiceWorkerNetworkProviderForFrame
             blink::mojom::ControllerServiceWorkerMode::kNoController) {
       request.SetSkipServiceWorker(true);
     }
+
+    // Inject this frame's fetch window id into the request. This is really only
+    // needed for subresource requests in S13nServiceWorker. For main resource
+    // requests or non-S13nSW case, the browser process sets the id on the
+    // request when dispatching the fetch event to the service worker. But it
+    // doesn't hurt to set it always.
+    if (provider_->context())
+      request.SetFetchWindowId(provider_->context()->fetch_request_window_id());
   }
 
   int ProviderID() const override { return provider_->provider_id(); }
@@ -153,7 +160,7 @@ ServiceWorkerNetworkProvider::CreateForNavigation(
     int route_id,
     const RequestNavigationParams* request_params,
     blink::WebLocalFrame* frame,
-    mojom::ControllerServiceWorkerInfoPtr controller_info,
+    blink::mojom::ControllerServiceWorkerInfoPtr controller_info,
     scoped_refptr<network::SharedURLLoaderFactory> fallback_loader_factory) {
   // Determine if a ServiceWorkerNetworkProvider should be created and properly
   // initialized for the navigation. A default ServiceWorkerNetworkProvider
@@ -207,7 +214,7 @@ ServiceWorkerNetworkProvider::CreateForSharedWorker(
     mojom::ServiceWorkerProviderInfoForSharedWorkerPtr info,
     network::mojom::URLLoaderFactoryAssociatedPtrInfo
         script_loader_factory_info,
-    mojom::ControllerServiceWorkerInfoPtr controller_info,
+    blink::mojom::ControllerServiceWorkerInfoPtr controller_info,
     scoped_refptr<network::SharedURLLoaderFactory> fallback_loader_factory) {
   // S13nServiceWorker: |info| holds info about the precreated provider host.
   if (info) {
@@ -279,7 +286,7 @@ ServiceWorkerNetworkProvider::ServiceWorkerNetworkProvider(
     blink::mojom::ServiceWorkerProviderType provider_type,
     int provider_id,
     bool is_parent_frame_secure,
-    mojom::ControllerServiceWorkerInfoPtr controller_info,
+    blink::mojom::ControllerServiceWorkerInfoPtr controller_info,
     scoped_refptr<network::SharedURLLoaderFactory> fallback_loader_factory) {
   DCHECK_NE(provider_id, kInvalidServiceWorkerProviderId);
   DCHECK(provider_type == blink::mojom::ServiceWorkerProviderType::kForWindow ||
@@ -318,7 +325,7 @@ ServiceWorkerNetworkProvider::ServiceWorkerNetworkProvider(
     mojom::ServiceWorkerProviderInfoForSharedWorkerPtr info,
     network::mojom::URLLoaderFactoryAssociatedPtrInfo
         script_loader_factory_info,
-    mojom::ControllerServiceWorkerInfoPtr controller_info,
+    blink::mojom::ControllerServiceWorkerInfoPtr controller_info,
     scoped_refptr<network::SharedURLLoaderFactory> fallback_loader_factory) {
   context_ = base::MakeRefCounted<ServiceWorkerProviderContext>(
       info->provider_id,

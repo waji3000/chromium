@@ -2,9 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//services/service_manager/public/cpp/service.gni")
 import("//services/service_manager/public/service_manifest.gni")
-import("//services/service_manager/public/tools/test/service_test.gni")
 
 assert(is_chromeos, "Non-ChromeOS builds cannot depend on //chromeos")
 
@@ -23,6 +21,7 @@ static_library("device_sync") {
   ]
 
   public_deps = [
+    "//chromeos/components/multidevice",
     "//chromeos/components/proximity_auth/logging",
     "//chromeos/services/device_sync/public/mojom",
     "//components/cryptauth",
@@ -83,16 +82,16 @@ source_set("unit_tests") {
     "//base",
     "//base/test:test_support",
     "//chromeos",
+    "//chromeos/components/multidevice",
+    "//chromeos/components/multidevice:test_support",
     "//chromeos/services/device_sync/public/cpp:unit_tests",
     "//chromeos/services/device_sync/public/mojom",
-    "//chromeos/services/device_sync/public/mojom:unit_tests",
     "//components/cryptauth",
     "//components/cryptauth:test_support",
     "//components/gcm_driver:test_support",
     "//components/prefs:test_support",
     "//services/identity/public/cpp:test_support",
     "//services/network:test_support",
-    "//services/service_manager/public/cpp:service_test_support",
     "//services/service_manager/public/cpp/test:test_support",
     "//testing/gtest",
   ]

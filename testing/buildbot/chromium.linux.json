@@ -638,18 +638,15 @@
       "all"
     ]
   },
-  "Fuchsia ARM64 Cast Audio": {
-    "additional_compile_targets": [
-      "cast_shell",
-      "cast_test_lists"
-    ]
-  },
   "Fuchsia x64": {
     "additional_compile_targets": [
       "all"
     ],
     "gtest_tests": [
       {
+        "args": [
+          "--qemu-require-kvm"
+        ],
         "swarming": {
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
@@ -662,7 +659,8 @@
       },
       {
         "args": [
-          "--test-launcher-filter-file=../../testing/buildbot/filters/fuchsia.content_unittests.filter"
+          "--test-launcher-filter-file=../../testing/buildbot/filters/fuchsia.content_unittests.filter",
+          "--qemu-require-kvm"
         ],
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -675,6 +673,9 @@
         "test": "content_unittests"
       },
       {
+        "args": [
+          "--qemu-require-kvm"
+        ],
         "swarming": {
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
@@ -686,6 +687,9 @@
         "test": "cronet_tests"
       },
       {
+        "args": [
+          "--qemu-require-kvm"
+        ],
         "swarming": {
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
@@ -697,6 +701,9 @@
         "test": "cronet_unittests"
       },
       {
+        "args": [
+          "--qemu-require-kvm"
+        ],
         "swarming": {
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
@@ -708,6 +715,9 @@
         "test": "crypto_unittests"
       },
       {
+        "args": [
+          "--qemu-require-kvm"
+        ],
         "swarming": {
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
@@ -720,7 +730,22 @@
       },
       {
         "args": [
-          "--test-launcher-filter-file=../../testing/buildbot/filters/fuchsia.ipc_tests.filter"
+          "--qemu-require-kvm"
+        ],
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "kvm": "1"
+            }
+          ]
+        },
+        "test": "http_service_tests"
+      },
+      {
+        "args": [
+          "--test-launcher-filter-file=../../testing/buildbot/filters/fuchsia.ipc_tests.filter",
+          "--qemu-require-kvm"
         ],
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -733,6 +758,9 @@
         "test": "ipc_tests"
       },
       {
+        "args": [
+          "--qemu-require-kvm"
+        ],
         "swarming": {
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
@@ -745,7 +773,8 @@
       },
       {
         "args": [
-          "--test-launcher-filter-file=../../testing/buildbot/filters/fuchsia.mojo_unittests.filter"
+          "--test-launcher-filter-file=../../testing/buildbot/filters/fuchsia.mojo_unittests.filter",
+          "--qemu-require-kvm"
         ],
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -758,6 +787,9 @@
         "test": "mojo_unittests"
       },
       {
+        "args": [
+          "--qemu-require-kvm"
+        ],
         "swarming": {
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
@@ -769,6 +801,9 @@
         "test": "service_manager_unittests"
       },
       {
+        "args": [
+          "--qemu-require-kvm"
+        ],
         "swarming": {
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
@@ -780,6 +815,9 @@
         "test": "skia_unittests"
       },
       {
+        "args": [
+          "--qemu-require-kvm"
+        ],
         "swarming": {
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
@@ -792,7 +830,8 @@
       },
       {
         "args": [
-          "--test-launcher-filter-file=../../testing/buildbot/filters/fuchsia.ui_base_unittests.filter"
+          "--test-launcher-filter-file=../../testing/buildbot/filters/fuchsia.ui_base_unittests.filter",
+          "--qemu-require-kvm"
         ],
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -805,6 +844,9 @@
         "test": "ui_base_unittests"
       },
       {
+        "args": [
+          "--qemu-require-kvm"
+        ],
         "swarming": {
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
@@ -816,6 +858,9 @@
         "test": "webrunner_browsertests"
       },
       {
+        "args": [
+          "--qemu-require-kvm"
+        ],
         "swarming": {
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
@@ -828,17 +873,11 @@
       }
     ]
   },
-  "Fuchsia x64 Cast Audio": {
-    "additional_compile_targets": [
-      "cast_shell",
-      "cast_test_lists"
-    ]
-  },
   "Leak Detection Linux": {
     "isolated_scripts": [
       {
         "args": [
-          "--smoke-test-mode",
+          "--pageset-repeat=1",
           "--test-shard-map-filename=linux_leak_detection_shard_map.json",
           "--upload-results",
           "--output-format=histograms",
@@ -1527,11 +1566,7 @@
       {
         "args": [
           "--additional-driver-flag",
-          "--site-per-process",
-          "--additional-driver-flag",
-          "--isolate-origins=http://www.web-platform.test:8001/,http://www1.web-platform.test:8001/,http://www2.web-platform.test:8001/,http://xn--n8j6ds53lwwkrqhv28a.web-platform.test:8001/,http://xn--lve-6lad.web-platform.test:8001/,http://www.web-platform.test:8081/,http://www1.web-platform.test:8081/,http://www2.web-platform.test:8081/,http://xn--n8j6ds53lwwkrqhv28a.web-platform.test:8081/,http://xn--lve-6lad.web-platform.test:8081/,https://www.web-platform.test:8444/,https://www1.web-platform.test:8444/,https://www2.web-platform.test:8444/,https://xn--n8j6ds53lwwkrqhv28a.web-platform.test:8444/,https://xn--lve-6lad.web-platform.test:8444/",
-          "--additional-expectations",
-          "src/third_party/WebKit/LayoutTests/FlagExpectations/site-per-process",
+          "--disable-site-isolation-trials",
           "--num-retries=3"
         ],
         "isolate_name": "webkit_layout_tests_exparchive",
@@ -1541,7 +1576,7 @@
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
-        "name": "site_per_process_webkit_layout_tests",
+        "name": "not_site_per_process_webkit_layout_tests",
         "results_handler": "layout tests",
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -1627,6 +1662,10 @@
       }
     ],
     "scripts": [
+      {
+        "name": "check_static_initializers",
+        "script": "check_static_initializers.py"
+      },
       {
         "name": "checkdeps",
         "script": "checkdeps.py"
@@ -2978,6 +3017,18 @@
       }
     ]
   },
+  "fuchsia-arm64-cast": {
+    "additional_compile_targets": [
+      "cast_shell",
+      "cast_test_lists"
+    ]
+  },
+  "fuchsia-x64-cast": {
+    "additional_compile_targets": [
+      "cast_shell",
+      "cast_test_lists"
+    ]
+  },
   "linux-gcc-rel": {
     "additional_compile_targets": [
       "empty_main"
@@ -4127,11 +4178,7 @@
       {
         "args": [
           "--additional-driver-flag",
-          "--site-per-process",
-          "--additional-driver-flag",
-          "--isolate-origins=http://www.web-platform.test:8001/,http://www1.web-platform.test:8001/,http://www2.web-platform.test:8001/,http://xn--n8j6ds53lwwkrqhv28a.web-platform.test:8001/,http://xn--lve-6lad.web-platform.test:8001/,http://www.web-platform.test:8081/,http://www1.web-platform.test:8081/,http://www2.web-platform.test:8081/,http://xn--n8j6ds53lwwkrqhv28a.web-platform.test:8081/,http://xn--lve-6lad.web-platform.test:8081/,https://www.web-platform.test:8444/,https://www1.web-platform.test:8444/,https://www2.web-platform.test:8444/,https://xn--n8j6ds53lwwkrqhv28a.web-platform.test:8444/,https://xn--lve-6lad.web-platform.test:8444/",
-          "--additional-expectations",
-          "src/third_party/WebKit/LayoutTests/FlagExpectations/site-per-process",
+          "--disable-site-isolation-trials",
           "--num-retries=3"
         ],
         "isolate_name": "webkit_layout_tests_exparchive",
@@ -4141,7 +4188,7 @@
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
-        "name": "site_per_process_webkit_layout_tests",
+        "name": "not_site_per_process_webkit_layout_tests",
         "results_handler": "layout tests",
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -4252,6 +4299,10 @@
       }
     ],
     "scripts": [
+      {
+        "name": "check_static_initializers",
+        "script": "check_static_initializers.py"
+      },
       {
         "name": "checkdeps",
         "script": "checkdeps.py"

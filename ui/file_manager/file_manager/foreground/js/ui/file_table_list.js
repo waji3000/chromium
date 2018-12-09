@@ -132,11 +132,12 @@ filelist.decorateListItem = function(li, entry, metadataModel) {
   // The metadata may not yet be ready. In that case, the list item will be
   // updated when the metadata is ready via updateListItemsMetadata. For files
   // not on an external backend, externalProps is not available.
-  var externalProps = metadataModel.getCache(
-      [entry], ['hosted', 'availableOffline', 'customIconUrl', 'shared'])[0];
+  var externalProps = metadataModel.getCache([entry], [
+    'hosted', 'availableOffline', 'customIconUrl', 'shared', 'isMachineRoot',
+    'isExternalMedia'
+  ])[0];
   filelist.updateListItemExternalProps(
-      li, externalProps, util.isTeamDriveRoot(entry),
-      util.isComputersRoot(entry));
+      li, externalProps, util.isTeamDriveRoot(entry));
 
   // Overriding the default role 'list' to 'listbox' for better
   // accessibility on ChromeOS.
@@ -201,10 +202,9 @@ filelist.renderFileNameLabel = function(doc, entry) {
  * Updates grid item or table row for the externalProps.
  * @param {cr.ui.ListItem} li List item.
  * @param {Object} externalProps Metadata.
- * @param {boolean} isTeamDriveRoot Whether the item is a team drive root entry.
  */
 filelist.updateListItemExternalProps = function(
-    li, externalProps, isTeamDriveRoot, isComputersRoot) {
+    li, externalProps, isTeamDriveRoot) {
   if (li.classList.contains('file')) {
     if (externalProps.availableOffline === false)
       li.classList.add('dim-offline');
@@ -213,6 +213,11 @@ filelist.updateListItemExternalProps = function(
     // TODO(mtomasz): Consider adding some vidual indication for files which
     // are not cached on LTE. Currently we show them as normal files.
     // crbug.com/246611.
+
+    if (externalProps.hosted === true)
+      li.classList.add('dim-hosted');
+    else
+      li.classList.remove('dim-hosted');
   }
 
   var iconDiv = li.querySelector('.detail-icon');
@@ -227,7 +232,9 @@ filelist.updateListItemExternalProps = function(
   if (li.classList.contains('directory')) {
     iconDiv.classList.toggle('shared', !!externalProps.shared);
     iconDiv.classList.toggle('team-drive-root', !!isTeamDriveRoot);
-    iconDiv.classList.toggle('computers-root', !!isComputersRoot);
+    iconDiv.classList.toggle('computers-root', !!externalProps.isMachineRoot);
+    iconDiv.classList.toggle(
+        'external-media-root', !!externalProps.isExternalMedia);
   }
 };
 
@@ -458,6 +465,7 @@ filelist.handleKeyDown = function(e) {
   // Ctrl/Meta+A
   if (sm.multiple && e.keyCode == 65 &&
       (cr.isMac && e.metaKey || !cr.isMac && e.ctrlKey)) {
+    sm.setCheckSelectMode(true);
     sm.selectAll();
     e.preventDefault();
     return;

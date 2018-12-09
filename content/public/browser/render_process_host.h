@@ -14,6 +14,7 @@
 
 #include "base/callback_list.h"
 #include "base/containers/id_map.h"
+#include "base/optional.h"
 #include "base/process/kill.h"
 #include "base/process/process.h"
 #include "base/supports_user_data.h"
@@ -23,8 +24,9 @@
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_sender.h"
 #include "media/media_buildflags.h"
+#include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
-#include "third_party/blink/public/platform/modules/cache_storage/cache_storage.mojom.h"
+#include "third_party/blink/public/mojom/cache_storage/cache_storage.mojom.h"
 #include "ui/gfx/native_widget_types.h"
 
 #if defined(OS_ANDROID)
@@ -36,6 +38,7 @@ class GURL;
 namespace base {
 class SharedPersistentMemoryAllocator;
 class TimeDelta;
+class Token;
 }
 
 namespace service_manager {
@@ -316,7 +319,8 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
 
   // Start/stop event log output from WebRTC on this RPH for the peer connection
   // identified locally within the RPH using the ID |lid|.
-  virtual void SetWebRtcEventLogOutput(int lid, bool enabled) = 0;
+  virtual void EnableWebRtcEventLogOutput(int lid, int output_period_ms) = 0;
+  virtual void DisableWebRtcEventLogOutput(int lid) = 0;
 
   // Binds interfaces exposed to the browser process from the renderer.
   virtual void BindInterface(const std::string& interface_name,
@@ -410,8 +414,14 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // auto-reconnect after a crash of Network Service.
   // When NetworkService is not enabled, |request| will be bound with a
   // URLLoaderFactory which routes requests to ResourceDispatcherHost.
+  //
+  // |header_client| will be used in URLLoaderFactoryParams when creating the
+  // factory.
+  //
+  // TODO(lukasza, nasko): https://crbug.com/888079: Make |origin| mandatory.
   virtual void CreateURLLoaderFactory(
-      const url::Origin& origin,
+      const base::Optional<url::Origin>& origin,
+      network::mojom::TrustedURLLoaderHeaderClientPtrInfo header_client,
       network::mojom::URLLoaderFactoryRequest request) = 0;
 
   // Whether this process is locked out from ever being reused for sites other
@@ -516,11 +526,11 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // not correspond to a live RenderProcessHost.
   static RenderProcessHost* FromID(int render_process_id);
 
-  // Returns the RenderProcessHost given its renderer's service Identity.
-  // Returns nullptr if the Identity does not correspond to a live
-  // RenderProcessHost.
-  static RenderProcessHost* FromRendererIdentity(
-      const service_manager::Identity& identity);
+  // Returns the RenderProcessHost given its renderer's service instance ID,
+  // generated randomly when launching the renderer. Returns nullptr if the
+  // instance does not correspond to a live RenderProcessHost.
+  static RenderProcessHost* FromRendererInstanceId(
+      const base::Token& instance_id);
 
   // Returns whether the process-per-site model is in use (globally or just for
   // the current site), in which case we should ensure there is only one

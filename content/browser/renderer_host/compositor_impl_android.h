@@ -20,6 +20,7 @@
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
 #include "components/viz/common/surfaces/local_surface_id.h"
+#include "components/viz/common/surfaces/local_surface_id_allocation.h"
 #include "components/viz/host/host_frame_sink_client.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/android/compositor.h"
@@ -112,7 +113,7 @@ class CONTENT_EXPORT CompositorImpl
   void BeginMainFrame(const viz::BeginFrameArgs& args) override {}
   void BeginMainFrameNotExpectedSoon() override {}
   void BeginMainFrameNotExpectedUntil(base::TimeTicks time) override {}
-  void UpdateLayerTreeHost() override;
+  void UpdateLayerTreeHost(bool record_main_frame_metrics) override;
   void ApplyViewportChanges(const cc::ApplyViewportChangesArgs& args) override {
   }
   void RecordWheelAndTouchScrollingCount(bool has_scrolled_by_wheel,
@@ -182,12 +183,7 @@ class CONTENT_EXPORT CompositorImpl
 
   // Returns a new surface ID when in surface-synchronization mode. Otherwise
   // returns an empty surface.
-  viz::LocalSurfaceId GenerateLocalSurfaceId() const;
-
-  // Returns the time at which the viz::LocalSurfaceId created by
-  // GenerateLocalSurfaceID() was allocated. When not in surface-synchronization
-  // mode this returns the null base::TimeTicks.
-  base::TimeTicks GetLocalSurfaceIdAllocationTime() const;
+  viz::LocalSurfaceIdAllocation GenerateLocalSurfaceId() const;
 
   // Tears down the display for both Viz and non-Viz, unregistering the root
   // frame sink ID in the process.

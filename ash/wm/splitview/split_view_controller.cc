@@ -36,7 +36,7 @@
 #include "base/metrics/user_metrics.h"
 #include "base/optional.h"
 #include "base/stl_util.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
@@ -237,7 +237,7 @@ bool SplitViewController::ShouldAllowSplitView() {
 
   // TODO(crubg.com/853588): Disallow window dragging and split screen while
   // ChromeVox is on until they are in a usable state.
-  if (Shell::Get()->accessibility_controller()->IsSpokenFeedbackEnabled())
+  if (Shell::Get()->accessibility_controller()->spoken_feedback_enabled())
     return false;
 
   return true;
@@ -617,9 +617,6 @@ void SplitViewController::OnWindowDragEnded(
     aura::Window* dragged_window,
     SnapPosition desired_snap_position,
     const gfx::Point& last_location_in_screen) {
-  if (IsSplitViewModeActive())
-    split_view_divider_->OnWindowDragEnded();
-
   if (wm::IsDraggingTabs(dragged_window)) {
     dragged_window->SetProperty(
         kTabDroppedWindowStateTypeKey,
@@ -697,7 +694,15 @@ void SplitViewController::OnPostWindowStateTypeChange(
 void SplitViewController::OnWindowActivated(ActivationReason reason,
                                             aura::Window* gained_active,
                                             aura::Window* lost_active) {
-  DCHECK(IsSplitViewModeActive());
+  // This may be called while SnapWindow is still underway because SnapWindow
+  // will end the overview start animations which will cause the overview text
+  // filter to be activated.
+  aura::Window* text_filter_widget =
+      GetWindowSelector()
+          ? GetWindowSelector()->text_filter_widget()->GetNativeWindow()
+          : nullptr;
+  DCHECK(IsSplitViewModeActive() ||
+         (text_filter_widget && text_filter_widget == gained_active));
 
   // If |gained_active| was activated as a side effect of a window disposition
   // change, do nothing. For example, when a snapped window is closed, another
@@ -867,7 +872,7 @@ void SplitViewController::OnTabletModeEnding() {
 void SplitViewController::OnAccessibilityStatusChanged() {
   // TODO(crubg.com/853588): Exit split screen if ChromeVox is turned on until
   // they are compatible.
-  if (Shell::Get()->accessibility_controller()->IsSpokenFeedbackEnabled())
+  if (Shell::Get()->accessibility_controller()->spoken_feedback_enabled())
     EndSplitView();
 }
 
@@ -1505,6 +1510,9 @@ void SplitViewController::EndWindowDragImpl(
     aura::Window* window,
     SnapPosition desired_snap_position,
     const gfx::Point& last_location_in_screen) {
+  if (IsSplitViewModeActive())
+    split_view_divider_->OnWindowDragEnded();
+
   // If dragged window was in overview before or it has been added to overview
   // window by dropping on the new selector item, do nothing.
   if (GetWindowSelector() && GetWindowSelector()->IsWindowInOverview(window))

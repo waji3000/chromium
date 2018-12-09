@@ -150,9 +150,8 @@ ContentRendererClient::GetPrescientNetworking() {
   return nullptr;
 }
 
-bool ContentRendererClient::ShouldOverridePageVisibilityState(
-    const RenderFrame* render_frame,
-    blink::mojom::PageVisibilityState* override_state) {
+bool ContentRendererClient::IsPrerenderingFrame(
+    const RenderFrame* render_frame) {
   return false;
 }
 
@@ -173,16 +172,14 @@ bool ContentRendererClient::IsKeySystemsUpdateNeeded() {
   return false;
 }
 
-bool ContentRendererClient::IsSupportedAudioConfig(
-    const media::AudioConfig& config) {
+bool ContentRendererClient::IsSupportedAudioType(const media::AudioType& type) {
   // Defer to media's default support.
-  return ::media::IsSupportedAudioConfig(config);
+  return ::media::IsDefaultSupportedAudioType(type);
 }
 
-bool ContentRendererClient::IsSupportedVideoConfig(
-    const media::VideoConfig& config) {
+bool ContentRendererClient::IsSupportedVideoType(const media::VideoType& type) {
   // Defer to media's default support.
-  return ::media::IsSupportedVideoConfig(config);
+  return ::media::IsDefaultSupportedVideoType(type);
 }
 
 bool ContentRendererClient::IsSupportedBitstreamAudioCodec(
@@ -269,6 +266,10 @@ bool ContentRendererClient::OverrideLegacySymantecCertConsoleMessage(
   return false;
 }
 
+bool ContentRendererClient::SuppressLegacyTLSVersionConsoleMessage() {
+  return false;
+}
+
 std::unique_ptr<URLLoaderThrottleProvider>
 ContentRendererClient::CreateURLLoaderThrottleProvider(
     URLLoaderThrottleProviderType provider_type) {
@@ -284,5 +285,7 @@ blink::WebFrame* ContentRendererClient::FindFrame(
 bool ContentRendererClient::IsSafeRedirectTarget(const GURL& url) {
   return true;
 }
+
+void ContentRendererClient::DidSetUserAgent(const std::string& user_agent) {}
 
 }  // namespace content

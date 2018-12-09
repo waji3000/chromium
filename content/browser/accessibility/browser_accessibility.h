@@ -114,6 +114,9 @@ class CONTENT_EXPORT BrowserAccessibility : public ui::AXPlatformNodeDelegate {
   // that might send notifications.
   virtual bool PlatformIsLeaf() const;
 
+  // Returns true if this object can fire events.
+  virtual bool CanFireEvents() const;
+
   // Returns the number of children of this object, or 0 if PlatformIsLeaf()
   // returns true.
   virtual uint32_t PlatformChildCount() const;
@@ -334,7 +337,7 @@ class CONTENT_EXPORT BrowserAccessibility : public ui::AXPlatformNodeDelegate {
   // AXPlatformNodeDelegate.
   const ui::AXNodeData& GetData() const override;
   const ui::AXTreeData& GetTreeData() const override;
-  gfx::NativeWindow GetTopLevelWidget() override;
+  gfx::NativeViewAccessible GetNSWindow() override;
   gfx::NativeViewAccessible GetParent() override;
   int GetChildCount() override;
   gfx::NativeViewAccessible ChildAtIndex(int index) override;

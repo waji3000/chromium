@@ -131,12 +131,14 @@ SKIP_GN_ISOLATE_MAP_TARGETS = {
   'net_junit_tests',
   'net_junit_tests',
   'service_junit_tests',
+  'shipped_binaries',
   'system_webview_apk',
   'ui_junit_tests',
-  'vrcore_fps_test',
   'vr_common_perftests',
   'vr_perf_tests',
+  'vrcore_fps_test',
   'webapk_client_junit_tests',
+  'webapk_shell_apk_h2o_junit_tests',
   'webapk_shell_apk_junit_tests',
 
   # These tests are only run on WebRTC CI.
@@ -448,8 +450,10 @@ def main():
                           ninja_targets, ninja_targets_seen):
         result = 1
 
-    extra_targets = (set(ninja_targets) - ninja_targets_seen -
-                     SKIP_GN_ISOLATE_MAP_TARGETS)
+    skip_targets = [k for k, v in gn_isolate_map.items() if
+                    ('skip_usage_check' in v and v['skip_usage_check'])]
+    extra_targets = (set(ninja_targets) - set(skip_targets) -
+                     ninja_targets_seen - SKIP_GN_ISOLATE_MAP_TARGETS)
     if extra_targets:
       if len(extra_targets) > 1:
         extra_targets_str = ', '.join(extra_targets) + ' are'

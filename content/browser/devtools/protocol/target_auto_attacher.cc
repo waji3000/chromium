@@ -12,7 +12,6 @@
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/navigation_handle_impl.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
-#include "content/public/common/browser_side_navigation_policy.h"
 
 namespace content {
 namespace protocol {
@@ -224,7 +223,8 @@ void TargetAutoAttacher::ReattachTargetsOfType(const Hosts& new_hosts,
 }
 
 void TargetAutoAttacher::SetAutoAttach(bool auto_attach,
-                                       bool wait_for_debugger_on_start) {
+                                       bool wait_for_debugger_on_start,
+                                       base::OnceClosure callback) {
   wait_for_debugger_on_start_ = wait_for_debugger_on_start;
   if (auto_attach && !auto_attach_) {
     auto_attach_ = true;
@@ -249,8 +249,8 @@ void TargetAutoAttacher::SetAutoAttach(bool auto_attach,
                           false);
     DCHECK(auto_attached_hosts_.empty());
   }
-  renderer_channel_->SetReportChildWorkers(this, auto_attach,
-                                           wait_for_debugger_on_start);
+  renderer_channel_->SetReportChildWorkers(
+      this, auto_attach, wait_for_debugger_on_start, std::move(callback));
 }
 
 // -------- ServiceWorkerDevToolsManager::Observer ----------

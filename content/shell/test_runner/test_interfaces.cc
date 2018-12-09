@@ -25,17 +25,6 @@
 
 namespace test_runner {
 
-namespace {
-bool ShouldUseInnerTextDump(const std::string& test_path) {
-  // We are switching the text dump implementation to spec-conformant
-  // Element.innerText. To avoid gigantic patch, we control the rebaseline
-  // progress here in a per-directory manner.
-  // TODO(xiaochengh): Progressively allow more tests to use innerText.
-  // Remove this function once rebaseline is complete.
-  return test_path >= "LayoutTests/a" && test_path < "LayoutTests/fast/f";
-}
-}  // namespace
-
 TestInterfaces::TestInterfaces()
     : gamepad_controller_(new GamepadController()),
       test_runner_(new TestRunner(this)),
@@ -96,14 +85,9 @@ void TestInterfaces::SetTestIsRunning(bool running) {
 void TestInterfaces::ConfigureForTestWithURL(const blink::WebURL& test_url,
                                              bool protocol_mode) {
   std::string spec = GURL(test_url).spec();
-  size_t path_start = spec.rfind("LayoutTests/");
-  if (path_start != std::string::npos) {
+  size_t path_start = spec.rfind("web_tests/");
+  if (path_start != std::string::npos)
     spec = spec.substr(path_start);
-  } else {
-    path_start = spec.rfind("web_tests/");
-    if (path_start != std::string::npos)
-      spec = spec.substr(path_start);
-  }
 
   bool is_devtools_test = spec.find("/devtools/") != std::string::npos;
   if (is_devtools_test) {
@@ -139,9 +123,6 @@ void TestInterfaces::ConfigureForTestWithURL(const blink::WebURL& test_url,
       spec.find("://web-platform.test") != std::string::npos ||
       spec.find("/harness-tests/wpt/") != std::string::npos)
     test_runner_->set_is_web_platform_tests_mode();
-
-  const bool should_use_inner_text = ShouldUseInnerTextDump(spec);
-  test_runner_->SetShouldUseInnerTextDump(should_use_inner_text);
 }
 
 void TestInterfaces::WindowOpened(WebViewTestProxyBase* proxy) {

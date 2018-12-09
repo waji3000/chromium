@@ -132,15 +132,13 @@ class ChromeContentRendererClient
   void PrepareErrorPage(content::RenderFrame* render_frame,
                         const blink::WebURLRequest& failed_request,
                         const blink::WebURLError& error,
-                        std::string* error_html,
-                        base::string16* error_description) override;
+                        std::string* error_html) override;
   void PrepareErrorPageForHttpStatusError(
       content::RenderFrame* render_frame,
       const blink::WebURLRequest& failed_request,
       const GURL& unreachable_url,
       int http_status,
-      std::string* error_html,
-      base::string16* error_description) override;
+      std::string* error_html) override;
 
   void GetErrorDescription(const blink::WebURLRequest& failed_request,
                            const blink::WebURLError& error,
@@ -172,9 +170,7 @@ class ChromeContentRendererClient
                                      size_t length) override;
   bool IsLinkVisited(unsigned long long link_hash) override;
   blink::WebPrescientNetworking* GetPrescientNetworking() override;
-  bool ShouldOverridePageVisibilityState(
-      const content::RenderFrame* render_frame,
-      blink::mojom::PageVisibilityState* override_state) override;
+  bool IsPrerenderingFrame(const content::RenderFrame* render_frame) override;
   bool IsExternalPepperPlugin(const std::string& module_name) override;
   bool IsOriginIsolatedPepperPlugin(const base::FilePath& plugin_path) override;
   std::unique_ptr<content::WebSocketHandshakeThrottleProvider>
@@ -240,6 +236,7 @@ class ChromeContentRendererClient
   blink::WebFrame* FindFrame(blink::WebLocalFrame* relative_to_frame,
                              const std::string& name) override;
   bool IsSafeRedirectTarget(const GURL& url) override;
+  void DidSetUserAgent(const std::string& user_agent) override;
 
 #if BUILDFLAG(ENABLE_PLUGINS)
   static chrome::mojom::PluginInfoHostAssociatedPtr& GetPluginInfoHost();
@@ -284,8 +281,7 @@ class ChromeContentRendererClient
   void PrepareErrorPageInternal(content::RenderFrame* render_frame,
                                 const blink::WebURLRequest& failed_request,
                                 const error_page::Error& error,
-                                std::string* error_html,
-                                base::string16* error_description);
+                                std::string* error_html);
 
   void GetErrorDescriptionInternal(const blink::WebURLRequest& failed_request,
                                    const error_page::Error& error,

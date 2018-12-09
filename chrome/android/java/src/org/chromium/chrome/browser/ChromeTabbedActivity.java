@@ -121,6 +121,7 @@ import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.TabDelegateFactory;
 import org.chromium.chrome.browser.tab.TabRedirectHandler;
 import org.chromium.chrome.browser.tab.TabStateBrowserControlsVisibilityDelegate;
+import org.chromium.chrome.browser.tab.TabThemeColorHelper;
 import org.chromium.chrome.browser.tabmodel.AsyncTabParamsManager;
 import org.chromium.chrome.browser.tabmodel.ChromeTabCreator;
 import org.chromium.chrome.browser.tabmodel.EmptyTabModelSelectorObserver;
@@ -135,7 +136,7 @@ import org.chromium.chrome.browser.tabmodel.TabModelUtils;
 import org.chromium.chrome.browser.tabmodel.TabWindowManager;
 import org.chromium.chrome.browser.tasks.TasksUma;
 import org.chromium.chrome.browser.toolbar.ToolbarButtonInProductHelpController;
-import org.chromium.chrome.browser.toolbar.ToolbarControlContainer;
+import org.chromium.chrome.browser.toolbar.top.ToolbarControlContainer;
 import org.chromium.chrome.browser.util.AccessibilityUtil;
 import org.chromium.chrome.browser.util.FeatureUtilities;
 import org.chromium.chrome.browser.util.IntentUtils;
@@ -621,9 +622,7 @@ public class ChromeTabbedActivity
                         ChromePreferenceManager.PROMOS_SKIPPED_ON_FIRST_START, true);
             }
 
-            if (!isShowingPromo) {
-                ToolbarButtonInProductHelpController.maybeShowColdStartIPH(this);
-            }
+            ToolbarButtonInProductHelpController.create(this, isShowingPromo);
 
             if (ChromeFeatureList.isEnabled(ChromeFeatureList.INTEREST_FEED_CONTENT_SUGGESTIONS)) {
                 // We call getFeedAppLifecycle() here to ensure the app lifecycle is created so that
@@ -639,7 +638,6 @@ public class ChromeTabbedActivity
 
     private boolean maybeShowPromo() {
         // Only one promo can be shown in one run to avoid nagging users too much.
-        if (SigninPromoUtil.launchConsentBumpIfNeeded(this)) return true;
         if (SigninPromoUtil.launchSigninPromoIfNeeded(this)) return true;
         if (DataReductionPromoScreen.launchDataReductionPromo(
                     this, mTabModelSelectorImpl.getCurrentModel().isIncognito())) {
@@ -845,29 +843,15 @@ public class ChromeTabbedActivity
                 // newtab button on the toolbar.
                 getCurrentTabCreator().launchNTP();
                 mLocaleManager.showSearchEnginePromoIfNeeded(ChromeTabbedActivity.this, null);
+                RecordUserAction.record("MobileToolbarStackViewNewTab");
+                RecordUserAction.record("MobileNewTabOpened");
             };
             OnClickListener bookmarkClickHandler = v -> addOrEditBookmark(getActivityTab());
-            OnClickListener incognitoClickHandler = v -> {
-                Layout activeLayout = mLayoutManager.getActiveLayout();
-                if (!activeLayout.shouldAllowIncognitoSwitching()) return;
-
-                if (activeLayout instanceof StackLayout) {
-                    // Without this call, tapping the incognito toggle immediately after closing a
-                    // non-incognito tab will not work properly, because the tab closure will bring
-                    // us back to normal mode. We need to handle the tab closure here before running
-                    // the animation.
-                    ((StackLayout) activeLayout).commitOutstandingModelState(LayoutManager.time());
-                }
-
-                if (mTabModelSelectorImpl != null) {
-                    mTabModelSelectorImpl.selectModel(!mTabModelSelectorImpl.isIncognitoSelected());
-                }
-            };
 
             getToolbarManager().initializeWithNative(mTabModelSelectorImpl,
                     getFullscreenManager().getBrowserVisibilityDelegate(), getFindToolbarManager(),
                     mLayoutManager, mLayoutManager, tabSwitcherClickHandler, newTabClickHandler,
-                    bookmarkClickHandler, null, incognitoClickHandler);
+                    bookmarkClickHandler, null);
 
             mLayoutManager.setToolbarManager(getToolbarManager());
 
@@ -1420,6 +1404,11 @@ public class ChromeTabbedActivity
     }
 
     @Override
+    public int getControlContainerHeightResource() {
+        return R.dimen.control_container_height;
+    }
+
+    @Override
     protected int getToolbarLayoutId() {
         return isTablet() ? R.layout.toolbar_tablet : R.layout.toolbar_phone;
     }
@@ -1497,7 +1486,7 @@ public class ChromeTabbedActivity
 
         mTabModelSelectorTabObserver = new TabModelSelectorTabObserver(mTabModelSelectorImpl) {
             @Override
-            public void onPageLoadFinished(final Tab tab) {
+            public void onPageLoadFinished(final Tab tab, String url) {
                 mAppIndexingUtil.extractCopylessPasteMetadata(tab);
             }
 
@@ -1602,7 +1591,7 @@ public class ChromeTabbedActivity
         DeferredStartupHandler.getInstance().addDeferredTask(() -> {
             ActivityManager am =
                     (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
-            RecordHistogram.recordSparseSlowlyHistogram(
+            RecordHistogram.recordSparseHistogram(
                     "MemoryAndroid.DeviceMemoryClass", am.getMemoryClass());
 
             AutocompleteController.nativePrefetchZeroSuggestResults();
@@ -1969,6 +1958,7 @@ public class ChromeTabbedActivity
         if (!mLayoutManager.overviewVisible()) {
             getCompositorViewHolder().hideKeyboard(() -> mLayoutManager.showOverview(true));
             updateAccessibilityState(false);
+            TasksUma.recordTabLaunchType(getCurrentTabModel());
         } else {
             Layout activeLayout = mLayoutManager.getActiveLayout();
             if (activeLayout instanceof StackLayout) {
@@ -2013,11 +2003,6 @@ public class ChromeTabbedActivity
         if (mUndoBarPopupController != null) {
             mUndoBarPopupController.destroy();
             mUndoBarPopupController = null;
-        }
-
-        if (mTabModalHandler != null) {
-            mTabModalHandler.destroy();
-            mTabModalHandler = null;
         }
 
         if (mNavigationBarColorController != null) mNavigationBarColorController.destroy();
@@ -2207,7 +2192,7 @@ public class ChromeTabbedActivity
     public void onOverviewModeFinishedHiding() {
         if (getAssistStatusHandler() != null) getAssistStatusHandler().updateAssistState();
         if (getActivityTab() != null) {
-            setStatusBarColor(getActivityTab(), getActivityTab().getThemeColor());
+            setStatusBarColor(getActivityTab(), TabThemeColorHelper.getColor(getActivityTab()));
         }
     }
 

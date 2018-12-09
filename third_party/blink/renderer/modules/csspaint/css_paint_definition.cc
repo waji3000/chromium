@@ -39,7 +39,7 @@ CSSPaintDefinition* CSSPaintDefinition::Create(
     const Vector<AtomicString>& custom_invalidation_properties,
     const Vector<CSSSyntaxDescriptor>& input_argument_types,
     const PaintRenderingContext2DSettings* context_settings) {
-  return new CSSPaintDefinition(
+  return MakeGarbageCollected<CSSPaintDefinition>(
       script_state, constructor, paint, native_invalidation_properties,
       custom_invalidation_properties, input_argument_types, context_settings);
 }
@@ -97,7 +97,7 @@ scoped_refptr<Image> CSSPaintDefinition::Paint(
       RoundedIntSize(container_size), color_params, context_settings_, zoom);
   PaintSize* paint_size = PaintSize::Create(specified_size);
   StylePropertyMapReadOnly* style_map =
-      new PrepopulatedComputedStylePropertyMap(
+      MakeGarbageCollected<PrepopulatedComputedStylePropertyMap>(
           layout_object.GetDocument(), layout_object.StyleRef(),
           layout_object.GetNode(), native_invalidation_properties_,
           custom_invalidation_properties_);
@@ -154,8 +154,8 @@ void CSSPaintDefinition::MaybeCreatePaintInstance() {
 }
 
 void CSSPaintDefinition::Trace(Visitor* visitor) {
-  visitor->Trace(constructor_.Cast<v8::Value>());
-  visitor->Trace(paint_.Cast<v8::Value>());
+  visitor->Trace(constructor_);
+  visitor->Trace(paint_);
   visitor->Trace(instance_);
   visitor->Trace(context_settings_);
   visitor->Trace(script_state_);

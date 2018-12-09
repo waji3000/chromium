@@ -206,8 +206,16 @@ StyleRecalcChange ComputedStyle::StylePropagationDiff(
     return kReattach;
   }
 
-  if (old_style->ForceLegacyLayout() != new_style->ForceLegacyLayout())
-    return kReattach;
+  if (RuntimeEnabledFeatures::LayoutNGEnabled()) {
+    // LayoutNG needs an anonymous inline wrapper if ::first-line is applied.
+    // Also see |LayoutBlockFlow::NeedsAnonymousInlineWrapper()|.
+    if (new_style->HasPseudoStyle(kPseudoIdFirstLine) &&
+        !old_style->HasPseudoStyle(kPseudoIdFirstLine))
+      return kReattach;
+
+    if (old_style->ForceLegacyLayout() != new_style->ForceLegacyLayout())
+      return kReattach;
+  }
 
   bool independent_equal = old_style->IndependentInheritedEqual(*new_style);
   bool non_independent_equal =
@@ -407,10 +415,6 @@ bool ComputedStyle::operator==(const ComputedStyle& o) const {
   return InheritedEqual(o) && NonInheritedEqual(o);
 }
 
-bool ComputedStyle::IsStyleAvailable() const {
-  return this != StyleResolver::StyleNotYetAvailable();
-}
-
 const ComputedStyle* ComputedStyle::GetCachedPseudoStyle(PseudoId pid) const {
   if (!cached_pseudo_styles_ || !cached_pseudo_styles_->size())
     return nullptr;
@@ -536,8 +540,8 @@ StyleDifference ComputedStyle::VisualInvalidationDiff(
 
   if (DiffNeedsPaintInvalidationSubtree(other))
     diff.SetNeedsPaintInvalidationSubtree();
-  else if (DiffNeedsPaintInvalidationObject(other))
-    diff.SetNeedsPaintInvalidationObject();
+  else
+    AdjustDiffForNeedsPaintInvalidationObject(other, diff);
 
   if (DiffNeedsVisualRectUpdate(other))
     diff.SetNeedsVisualRectUpdate();
@@ -699,24 +703,46 @@ bool ComputedStyle::DiffNeedsPaintInvalidationSubtree(
   return ComputedStyleBase::DiffNeedsPaintInvalidationSubtree(*this, other);
 }
 
-bool ComputedStyle::DiffNeedsPaintInvalidationObject(
-    const ComputedStyle& other) const {
-  if (ComputedStyleBase::DiffNeedsPaintInvalidationObject(*this, other))
-    return true;
+void ComputedStyle::AdjustDiffForNeedsPaintInvalidationObject(
+    const ComputedStyle& other,
+    StyleDifference& diff) const {
+  if (ComputedStyleBase::DiffNeedsPaintInvalidationObject(*this, other) ||
+      !BorderVisuallyEqual(other) || !RadiiEqual(other))
+    diff.SetNeedsPaintInvalidationObject();
 
-  if (!BorderVisuallyEqual(other) || !RadiiEqual(other) ||
-      !BackgroundVisuallyEqual(other))
-    return true;
+  AdjustDiffForBackgroundVisuallyEqual(other, diff);
+
+  if (diff.NeedsPaintInvalidationObject())
+    return;
 
   if (PaintImagesInternal()) {
     for (const auto& image : *PaintImagesInternal()) {
       DCHECK(image);
-      if (DiffNeedsPaintInvalidationObjectForPaintImage(*image, other))
-        return true;
+      if (DiffNeedsPaintInvalidationObjectForPaintImage(*image, other)) {
+        diff.SetNeedsPaintInvalidationObject();
+        return;
+      }
     }
   }
+}
 
-  return false;
+void ComputedStyle::AdjustDiffForBackgroundVisuallyEqual(
+    const ComputedStyle& other,
+    StyleDifference& diff) const {
+  if (BackgroundColorInternal() != other.BackgroundColorInternal()) {
+    diff.SetNeedsPaintInvalidationObject();
+    if (BackgroundColorInternal().HasAlpha() !=
+        other.BackgroundColorInternal().HasAlpha()) {
+      diff.SetHasAlphaChanged();
+      return;
+    }
+  }
+  if (!BackgroundInternal().VisuallyEqual(other.BackgroundInternal())) {
+    diff.SetNeedsPaintInvalidationObject();
+    // Changes of background fill layers, such as images, may have
+    // changed alpha.
+    diff.SetHasAlphaChanged();
+  }
 }
 
 bool ComputedStyle::DiffNeedsPaintInvalidationObjectForPaintImage(

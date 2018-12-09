@@ -66,8 +66,7 @@ public class ChannelsInitializerTest {
         mNativeLibraryTestRule.loadNativeLibraryNoBrowserProcess();
 
         mContext = InstrumentationRegistry.getTargetContext();
-        mNotificationManagerProxy = new NotificationManagerProxyImpl(
-                (NotificationManager) mContext.getSystemService(Context.NOTIFICATION_SERVICE));
+        mNotificationManagerProxy = new NotificationManagerProxyImpl(mContext);
         mChannelsInitializer =
                 new ChannelsInitializer(mNotificationManagerProxy, mContext.getResources());
 
@@ -132,6 +131,24 @@ public class ChannelsInitializerTest {
         assertThat(mNotificationManagerProxy.getNotificationChannelGroups(), hasSize(1));
         assertThat(mNotificationManagerProxy.getNotificationChannelGroups().get(0).getId(),
                 is(ChannelDefinitions.ChannelGroupId.GENERAL));
+    }
+
+    @Test
+    @SmallTest
+    @MinAndroidSdkLevel(Build.VERSION_CODES.O)
+    @TargetApi(Build.VERSION_CODES.O)
+    @Feature({"Browser", "Notifications"})
+    public void testUpdateLocale_otherChannelsDoNotThrowException() throws Exception {
+        NotificationChannelGroup group =
+                ChannelDefinitions.getChannelGroup(ChannelDefinitions.ChannelGroupId.GENERAL)
+                        .toNotificationChannelGroup(mContext.getResources());
+        NotificationChannel channel =
+                new NotificationChannel("ACCOUNT", "Account", NotificationManager.IMPORTANCE_LOW);
+        channel.setGroup(ChannelDefinitions.ChannelGroupId.GENERAL);
+        mNotificationManagerProxy.createNotificationChannelGroup(group);
+        mNotificationManagerProxy.createNotificationChannel(channel);
+        mContext = InstrumentationRegistry.getTargetContext();
+        mChannelsInitializer.updateLocale(mContext.getResources());
     }
 
     @Test

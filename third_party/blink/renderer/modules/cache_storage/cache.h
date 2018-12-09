@@ -8,7 +8,7 @@
 #include <memory>
 #include "base/macros.h"
 
-#include "third_party/blink/public/platform/modules/cache_storage/cache_storage.mojom-blink.h"
+#include "third_party/blink/public/mojom/cache_storage/cache_storage.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/core/fetch/global_fetch.h"
 #include "third_party/blink/renderer/modules/cache_storage/cache_query_options.h"
@@ -33,6 +33,9 @@ class MODULES_EXPORT Cache final : public ScriptWrappable {
  public:
   static Cache* Create(GlobalFetch::ScopedFetcher*,
                        mojom::blink::CacheStorageCacheAssociatedPtrInfo);
+
+  Cache(GlobalFetch::ScopedFetcher*,
+        mojom::blink::CacheStorageCacheAssociatedPtrInfo);
 
   // From Cache.idl:
   ScriptPromise match(ScriptState*,
@@ -72,8 +75,6 @@ class MODULES_EXPORT Cache final : public ScriptWrappable {
   class CodeCacheHandleCallbackForPut;
   class FetchResolvedForAdd;
   friend class FetchResolvedForAdd;
-  Cache(GlobalFetch::ScopedFetcher*,
-        mojom::blink::CacheStorageCacheAssociatedPtrInfo);
 
   ScriptPromise MatchImpl(ScriptState*,
                           const Request*,

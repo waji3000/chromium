@@ -163,7 +163,7 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
       LoadCommittedDetails* details,
       bool is_same_document_navigation,
-      NavigationHandleImpl* navigation_handle);
+      NavigationRequest* navigation_request);
 
   // Notifies us that we just became active. This is used by the WebContentsImpl
   // so that we know to load URLs that were pending as "lazy" loads.
@@ -248,6 +248,15 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
   FRIEND_TEST_ALL_PREFIXES(TimeSmoother, SingleDuplicate);
   FRIEND_TEST_ALL_PREFIXES(TimeSmoother, ManyDuplicates);
   FRIEND_TEST_ALL_PREFIXES(TimeSmoother, ClockBackwardsJump);
+
+  // These values are persisted to logs. Entries should not be renumbered and
+  // numeric values should never be reused.
+  enum class NeedsReloadType {
+    kRequestedByClient = 0,
+    kRestoreSession = 1,
+    kCopyStateFrom = 2,
+    kMaxValue = kCopyStateFrom
+  };
 
   // Helper class to smooth out runs of duplicate timestamps while still
   // allowing time to jump backwards.
@@ -366,6 +375,7 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
   void RendererDidNavigateToSamePage(
       RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
+      bool is_same_document,
       NavigationHandleImpl* handle);
   void RendererDidNavigateNewSubframe(
       RenderFrameHostImpl* rfh,
@@ -475,6 +485,10 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
 
   // Whether we need to be reloaded when made active.
   bool needs_reload_;
+
+  // Source of when |needs_reload_| is set. Only valid when |needs_reload_|
+  // is set.
+  NeedsReloadType needs_reload_type_ = NeedsReloadType::kRequestedByClient;
 
   // Whether this is the initial navigation.
   // Becomes false when initial navigation commits.

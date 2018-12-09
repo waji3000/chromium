@@ -53,13 +53,11 @@ std::unique_ptr<net::test_server::HttpResponse> StandardResponse(
 
 // Test that tapping the prerendered suggestions opens it.
 - (void)testTapPrerenderSuggestions {
-  // TODO(crbug.com/793306): Re-enable the test on iOS 11 iPad once the
-  // alternate letters problem is fixed.
+  // TODO(crbug.com/793306): Re-enable the test on iPad once the alternate
+  // letters problem is fixed.
   if (IsIPadIdiom()) {
-    if (@available(iOS 11, *)) {
-      EARL_GREY_TEST_DISABLED(
-          @"Disabled for iPad due to alternate letters educational screen.");
-    }
+    EARL_GREY_TEST_DISABLED(
+        @"Disabled for iPad due to alternate letters educational screen.");
   }
 
   GREYAssertTrue(chrome_test_util::ClearBrowsingHistory(),
@@ -76,8 +74,7 @@ std::unique_ptr<net::test_server::HttpResponse> StandardResponse(
   [ChromeEarlGrey loadURL:pageURL];
   [ChromeEarlGrey goBack];
   [[self class] closeAllTabs];
-  chrome_test_util::OpenNewTab();
-  [[GREYUIThreadExecutor sharedInstance] drainUntilIdle];
+  [ChromeEarlGrey openNewTab];
 
   [[EarlGrey
       selectElementWithMatcher:grey_accessibilityID(
@@ -89,8 +86,7 @@ std::unique_ptr<net::test_server::HttpResponse> StandardResponse(
       performAction:grey_typeText([pageString stringByAppendingString:@"\n"])];
   [ChromeEarlGrey waitForPageToFinishLoading];
   [[self class] closeAllTabs];
-  chrome_test_util::OpenNewTab();
-  [[GREYUIThreadExecutor sharedInstance] drainUntilIdle];
+  [ChromeEarlGrey openNewTab];
 
   // Type the begining of the address to have the autocomplete suggestion.
   [[EarlGrey

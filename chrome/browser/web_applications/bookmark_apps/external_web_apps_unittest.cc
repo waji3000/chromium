@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/web_applications/bookmark_apps/external_web_apps.h"
+#include "chrome/browser/web_applications/external_web_apps.h"
 
 #include <algorithm>
 #include <vector>
@@ -47,26 +47,26 @@ TEST_F(ScanDirForExternalWebAppsTest, GoodJson) {
   // google_io_2016.json is missing a "create_shortcuts" field, so the default
   // value of false should be used.
   EXPECT_EQ(2u, app_infos.size());
-  static const web_app::PendingAppManager::AppInfo test_app_infos[] = {
-      web_app::PendingAppManager::AppInfo(
-          GURL("https://www.chromestatus.com/features"),
-          web_app::LaunchContainer::kTab,
-          web_app::InstallSource::kExternalDefault,
-          /* create_shortcuts */ true,
-          web_app::PendingAppManager::AppInfo::
-              kDefaultOverridePreviousUserUninstall,
-          web_app::PendingAppManager::AppInfo::kDefaultBypassServiceWorkerCheck,
-          /* require_manifest */ true),
-      web_app::PendingAppManager::AppInfo(
-          GURL("https://events.google.com/io2016/?utm_source=web_app_manifest"),
-          web_app::LaunchContainer::kWindow,
-          web_app::InstallSource::kExternalDefault,
-          /* create_shortcuts */ false,
-          web_app::PendingAppManager::AppInfo::
-              kDefaultOverridePreviousUserUninstall,
-          web_app::PendingAppManager::AppInfo::kDefaultBypassServiceWorkerCheck,
-          /* require_manifest */ true),
-  };
+
+  std::vector<web_app::PendingAppManager::AppInfo> test_app_infos;
+  {
+    web_app::PendingAppManager::AppInfo info(
+        GURL("https://www.chromestatus.com/features"),
+        web_app::LaunchContainer::kTab,
+        web_app::InstallSource::kExternalDefault);
+    info.create_shortcuts = true;
+    info.require_manifest = true;
+    test_app_infos.push_back(std::move(info));
+  }
+  {
+    web_app::PendingAppManager::AppInfo info(
+        GURL("https://events.google.com/io2016/?utm_source=web_app_manifest"),
+        web_app::LaunchContainer::kWindow,
+        web_app::InstallSource::kExternalDefault);
+    info.create_shortcuts = false;
+    info.require_manifest = true;
+    test_app_infos.push_back(std::move(info));
+  }
   for (const auto& app_info : test_app_infos) {
     EXPECT_TRUE(base::ContainsValue(app_infos, app_info));
   }
@@ -109,6 +109,15 @@ TEST_F(ScanDirForExternalWebAppsTest, MissingAppUrl) {
 
   // The missing_app_url directory contains one JSON file which is correct
   // except for a missing "app_url" field.
+  EXPECT_EQ(0u, app_infos.size());
+}
+
+TEST_F(ScanDirForExternalWebAppsTest, EmptyAppUrl) {
+  auto app_infos =
+      web_app::ScanDirForExternalWebAppsForTesting(test_dir("empty_app_url"));
+
+  // The empty_app_url directory contains one JSON file which is correct
+  // except for an empty "app_url" field.
   EXPECT_EQ(0u, app_infos.size());
 }
 

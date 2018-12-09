@@ -37,7 +37,7 @@
 #include "net/cert/ct_policy_status.h"
 #include "net/http/http_response_info.h"
 #include "services/network/public/mojom/fetch_api.mojom-shared.h"
-#include "third_party/blink/public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
+#include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-shared.h"
 #include "third_party/blink/public/platform/web_common.h"
 #include "third_party/blink/public/platform/web_security_style.h"
 #include "third_party/blink/public/platform/web_string.h"
@@ -147,13 +147,27 @@ class WebURLResponse {
 
   BLINK_PLATFORM_EXPORT WebURLResponse();
   BLINK_PLATFORM_EXPORT WebURLResponse(const WebURLResponse&);
-  BLINK_PLATFORM_EXPORT explicit WebURLResponse(const WebURL&);
+  BLINK_PLATFORM_EXPORT explicit WebURLResponse(
+      const WebURL& current_request_url);
   BLINK_PLATFORM_EXPORT WebURLResponse& operator=(const WebURLResponse&);
 
   BLINK_PLATFORM_EXPORT bool IsNull() const;
 
-  BLINK_PLATFORM_EXPORT WebURL Url() const;
-  BLINK_PLATFORM_EXPORT void SetURL(const WebURL&);
+  // The current request URL for this resource (the URL after redirects).
+  // Corresponds to:
+  // https://fetch.spec.whatwg.org/#concept-request-current-url
+  //
+  // It is usually wrong to use this for security checks. See detailed
+  // documentation at blink::ResourceResponse::CurrentRequestUrl().
+  BLINK_PLATFORM_EXPORT WebURL CurrentRequestUrl() const;
+  BLINK_PLATFORM_EXPORT void SetCurrentRequestUrl(const WebURL&);
+
+  // The response URL of this resource. Corresponds to:
+  // https://fetch.spec.whatwg.org/#concept-response-url
+  //
+  // This may be the empty URL. See detailed documentation at
+  // blink::ResourceResponse::ResponseUrl().
+  BLINK_PLATFORM_EXPORT WebURL ResponseUrl() const;
 
   BLINK_PLATFORM_EXPORT void SetConnectionID(unsigned);
 
@@ -202,6 +216,7 @@ class WebURLResponse {
   BLINK_PLATFORM_EXPORT void SetHasMajorCertificateErrors(bool);
   BLINK_PLATFORM_EXPORT void SetCTPolicyCompliance(net::ct::CTPolicyCompliance);
   BLINK_PLATFORM_EXPORT void SetIsLegacySymantecCert(bool);
+  BLINK_PLATFORM_EXPORT void SetIsLegacyTLSVersion(bool);
 
   BLINK_PLATFORM_EXPORT void SetSecurityStyle(WebSecurityStyle);
 
@@ -209,6 +224,7 @@ class WebURLResponse {
   BLINK_PLATFORM_EXPORT WebSecurityDetails SecurityDetailsForTesting();
 
   BLINK_PLATFORM_EXPORT void SetAsyncRevalidationRequested(bool);
+  BLINK_PLATFORM_EXPORT void SetNetworkAccessed(bool);
 
 #if INSIDE_BLINK
   BLINK_PLATFORM_EXPORT const ResourceResponse& ToResourceResponse() const;
@@ -240,11 +256,6 @@ class WebURLResponse {
   // for details.
   BLINK_PLATFORM_EXPORT void SetURLListViaServiceWorker(
       const WebVector<WebURL>&);
-
-  // Returns the last URL of the URL list of the Response object the
-  // ServiceWorker passed to respondWith() if it did. Otherwise returns an empty
-  // URL.
-  BLINK_PLATFORM_EXPORT WebURL OriginalURLViaServiceWorker() const;
 
   // The boundary of the response. Set only when this is a multipart response.
   BLINK_PLATFORM_EXPORT void SetMultipartBoundary(const char* bytes,
@@ -296,8 +307,6 @@ class WebURLResponse {
   // dissociated from any existing non-null extra data pointer.
   BLINK_PLATFORM_EXPORT ExtraData* GetExtraData() const;
   BLINK_PLATFORM_EXPORT void SetExtraData(ExtraData*);
-
-  BLINK_PLATFORM_EXPORT void AppendRedirectResponse(const WebURLResponse&);
 
 #if INSIDE_BLINK
  protected:

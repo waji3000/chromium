@@ -48,8 +48,37 @@ class GPU_GLES2_EXPORT SharedImageBackingFactoryGLTexture
       const gfx::Size& size,
       const gfx::ColorSpace& color_space,
       uint32_t usage) override;
+  std::unique_ptr<SharedImageBacking> CreateSharedImage(
+      const Mailbox& mailbox,
+      int client_id,
+      gfx::GpuMemoryBufferHandle handle,
+      gfx::BufferFormat format,
+      SurfaceHandle surface_handle,
+      const gfx::Size& size,
+      const gfx::ColorSpace& color_space,
+      uint32_t usage) override;
 
  private:
+  scoped_refptr<gl::GLImage> MakeGLImage(int client_id,
+                                         gfx::GpuMemoryBufferHandle handle,
+                                         gfx::BufferFormat format,
+                                         SurfaceHandle surface_handle,
+                                         const gfx::Size& size);
+  std::unique_ptr<SharedImageBacking> MakeBacking(
+      const Mailbox& mailbox,
+      GLenum target,
+      GLuint service_id,
+      scoped_refptr<gl::GLImage> image,
+      gles2::Texture::ImageState image_state,
+      GLuint internal_format,
+      GLuint gl_format,
+      GLuint gl_type,
+      const gles2::Texture::CompatibilitySwizzle* swizzle,
+      bool is_cleared,
+      viz::ResourceFormat format,
+      const gfx::Size& size,
+      const gfx::ColorSpace& color_space,
+      uint32_t usage);
   struct FormatInfo {
     FormatInfo();
     ~FormatInfo();
@@ -57,20 +86,24 @@ class GPU_GLES2_EXPORT SharedImageBackingFactoryGLTexture
     // Whether this format is supported.
     bool enabled = false;
 
-    // Whether to use glTexStorage2D or glTexImage2D.
-    bool use_storage = false;
+    // Whether this format supports TexStorage2D.
+    bool supports_storage = false;
 
     // Whether to allow SHARED_IMAGE_USAGE_SCANOUT.
     bool allow_scanout = false;
 
-    // GL internal_format/format/type triplet.
-    GLuint internal_format = 0;
     GLenum gl_format = 0;
     GLenum gl_type = 0;
-
     const gles2::Texture::CompatibilitySwizzle* swizzle = nullptr;
-    GLuint adjusted_internal_format = 0;
     GLenum adjusted_format = 0;
+
+    // The internalformat portion of the format/type/internalformat triplet
+    // used when calling TexImage2D
+    GLuint image_internal_format = 0;
+
+    // The internalformat portion of the format/type/internalformat triplet
+    // used when calling TexStorage2D
+    GLuint storage_internal_format = 0;
 
     // GL target to use for scanout images.
     GLenum target_for_scanout = GL_TEXTURE_2D;
@@ -89,6 +122,7 @@ class GPU_GLES2_EXPORT SharedImageBackingFactoryGLTexture
   ImageFactory* image_factory_ = nullptr;
 
   FormatInfo format_info_[viz::RESOURCE_FORMAT_MAX + 1];
+  GpuMemoryBufferFormatSet gpu_memory_buffer_formats_;
   int32_t max_texture_size_ = 0;
   bool texture_usage_angle_ = false;
   bool es3_capable_ = false;

@@ -149,7 +149,7 @@ class APP_LIST_EXPORT AppListView : public views::WidgetDelegateView {
   void OnWallpaperColorsChanged();
 
   // Handles scroll events from various sources.
-  bool HandleScroll(int offset, ui::EventType type);
+  bool HandleScroll(const gfx::Vector2d& offset, ui::EventType type);
 
   // Changes the app list state.
   void SetState(AppListViewState new_state);
@@ -241,12 +241,6 @@ class APP_LIST_EXPORT AppListView : public views::WidgetDelegateView {
   void set_onscreen_keyboard_shown(bool onscreen_keyboard_shown) {
     onscreen_keyboard_shown_ = onscreen_keyboard_shown;
   }
-
-  // Returns true if the home launcher is enabled in tablet mode.
-  bool IsHomeLauncherEnabledInTabletMode() const;
-
-  // Returns true if the home_launcher feature is enabled.
-  bool is_home_launcher_enabled() const { return is_home_launcher_enabled_; }
 
   views::View* GetAppListBackgroundShieldForTest();
 
@@ -415,12 +409,6 @@ class APP_LIST_EXPORT AppListView : public views::WidgetDelegateView {
 
   // Whether the on-screen keyboard is shown.
   bool onscreen_keyboard_shown_ = false;
-
-  // Whether the home launcher feature is enabled.
-  const bool is_home_launcher_enabled_;
-
-  // True if new style launcher feature is enabled.
-  const bool is_new_style_launcher_enabled_;
 
   base::WeakPtrFactory<AppListView> weak_ptr_factory_;
 

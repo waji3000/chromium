@@ -17,9 +17,9 @@
 #include "base/memory/weak_ptr.h"
 #include "base/optional.h"
 #include "base/strings/string16.h"
-#include "content/shell/test_runner/layout_test_runtime_flags.h"
 #include "content/shell/test_runner/test_runner_export.h"
 #include "content/shell/test_runner/web_test_runner.h"
+#include "content/shell/test_runner/web_test_runtime_flags.h"
 #include "media/midi/midi_service.mojom.h"
 #include "third_party/blink/public/platform/web_effective_connection_type.h"
 #include "third_party/blink/public/platform/web_image.h"
@@ -92,7 +92,7 @@ class TestRunner : public WebTestRunner {
   bool DumpPixelsAsync(
       blink::WebLocalFrame* frame,
       base::OnceCallback<void(const SkBitmap&)> callback) override;
-  void ReplicateLayoutTestRuntimeFlagsChanges(
+  void ReplicateWebTestRuntimeFlagsChanges(
       const base::DictionaryValue& changed_values) override;
   bool HasCustomTextDump(std::string* custom_text_dump) const override;
   bool ShouldDumpBackForwardList() const override;
@@ -134,9 +134,6 @@ class TestRunner : public WebTestRunner {
     return is_web_platform_tests_mode_;
   }
   void set_is_web_platform_tests_mode() { is_web_platform_tests_mode_ = true; }
-  const base::Optional<std::vector<std::string>>& file_chooser_paths() const {
-    return file_chooser_paths_;
-  }
   bool animation_requires_raster() const { return animation_requires_raster_; }
   void SetAnimationRequiresRaster(bool do_raster);
 
@@ -170,8 +167,6 @@ class TestRunner : public WebTestRunner {
   void SetDumpConsoleMessages(bool value);
 
   bool ShouldDumpJavaScriptDialogs() const;
-
-  void SetShouldUseInnerTextDump(bool value);
 
   blink::WebEffectiveConnectionType effective_connection_type() const {
     return effective_connection_type_;
@@ -504,13 +499,9 @@ class TestRunner : public WebTestRunner {
   // Simulates closing a Web Notification.
   void SimulateWebNotificationClose(const std::string& title, bool by_user);
 
-  // Takes care of notifying the delegate after a change to layout test runtime
+  // Takes care of notifying the delegate after a change to web test runtime
   // flags.
-  void OnLayoutTestRuntimeFlagsChanged();
-
-  // Sets a list of file paths to be selected in the next file chooser session.
-  // If an empty list is specified, the next file chooser will be canceled.
-  void SetFileChooserPaths(const std::vector<std::string>& paths);
+  void OnWebTestRuntimeFlagsChanged();
 
   ///////////////////////////////////////////////////////////////////////////
   // Internal helpers
@@ -543,7 +534,7 @@ class TestRunner : public WebTestRunner {
   int web_history_item_count_;
 
   // Flags controlling what content gets dumped as a layout text result.
-  LayoutTestRuntimeFlags layout_test_runtime_flags_;
+  WebTestRuntimeFlags web_test_runtime_flags_;
 
   // If true, the test runner will output a base64 encoded WAVE file.
   bool dump_as_audio_;
@@ -594,7 +585,7 @@ class TestRunner : public WebTestRunner {
   // is ok, because this is taken care of in WebTestDelegate::SetFocus).
   blink::WebView* previously_focused_view_;
 
-  // True when running a test in LayoutTests/external/wpt/.
+  // True when running a test in web_tests/external/wpt/.
   bool is_web_platform_tests_mode_;
 
   // True if rasterization should be performed during tests that examine
@@ -607,8 +598,6 @@ class TestRunner : public WebTestRunner {
 
   // Forces v8 compilation cache to be disabled (used for inspector tests).
   bool disable_v8_cache_ = false;
-
-  base::Optional<std::vector<std::string>> file_chooser_paths_;
 
   base::WeakPtrFactory<TestRunner> weak_factory_;
 

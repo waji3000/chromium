@@ -12,7 +12,9 @@
 #include "third_party/blink/renderer/core/script/modulator.h"
 #include "third_party/blink/renderer/core/script/module_script.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_client_settings_object_snapshot.h"
+#include "third_party/blink/renderer/platform/loader/fetch/fetch_context.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource.h"
+#include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loader_options.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loading_log.h"
 #include "third_party/blink/renderer/platform/weborigin/security_policy.h"
@@ -78,25 +80,29 @@ void ModuleScriptLoader::AdvanceState(ModuleScriptLoader::State new_state) {
 
 void ModuleScriptLoader::Fetch(
     const ModuleScriptFetchRequest& module_request,
-    FetchClientSettingsObjectSnapshot* fetch_client_settings_object,
+    ResourceFetcher* fetch_client_settings_object_fetcher,
     ModuleGraphLevel level,
     Modulator* module_map_settings_object,
     ModuleScriptCustomFetchType custom_fetch_type,
     ModuleScriptLoaderRegistry* registry,
     ModuleScriptLoaderClient* client) {
-  ModuleScriptLoader* loader = new ModuleScriptLoader(
+  ModuleScriptLoader* loader = MakeGarbageCollected<ModuleScriptLoader>(
       module_map_settings_object, module_request.Options(), registry, client);
   registry->AddLoader(loader);
-  loader->FetchInternal(module_request, fetch_client_settings_object, level,
-                        custom_fetch_type);
+  loader->FetchInternal(module_request, fetch_client_settings_object_fetcher,
+                        level, custom_fetch_type);
 }
 
 // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
 void ModuleScriptLoader::FetchInternal(
     const ModuleScriptFetchRequest& module_request,
-    FetchClientSettingsObjectSnapshot* fetch_client_settings_object,
+    ResourceFetcher* fetch_client_settings_object_fetcher,
     ModuleGraphLevel level,
     ModuleScriptCustomFetchType custom_fetch_type) {
+  const FetchClientSettingsObject* fetch_client_settings_object =
+      fetch_client_settings_object_fetcher->Context()
+          .GetFetchClientSettingsObject();
+
   // Step 4. "Set moduleMap[url] to "fetching"." [spec text]
   AdvanceState(State::kFetching);
 
@@ -154,8 +160,9 @@ void ModuleScriptLoader::FetchInternal(
 
   // [SMSR] "... its referrer policy to options's referrer policy." [spec text]
   // Note: For now this is done below with SetHTTPReferrer()
-  ReferrerPolicy referrer_policy = module_request.Options().GetReferrerPolicy();
-  if (referrer_policy == kReferrerPolicyDefault)
+  network::mojom::ReferrerPolicy referrer_policy =
+      module_request.Options().GetReferrerPolicy();
+  if (referrer_policy == network::mojom::ReferrerPolicy::kDefault)
     referrer_policy = fetch_client_settings_object->GetReferrerPolicy();
 
   // Step 5. "... mode is "cors", ..."
@@ -208,7 +215,8 @@ void ModuleScriptLoader::FetchInternal(
   // steps as part of the fetch's process response for the response response."
   // [spec text]
   module_fetcher_ = modulator_->CreateModuleScriptFetcher(custom_fetch_type);
-  module_fetcher_->Fetch(fetch_params, level, this);
+  module_fetcher_->Fetch(fetch_params, fetch_client_settings_object_fetcher,
+                         level, this);
 }
 
 void ModuleScriptLoader::NotifyFetchFinished(

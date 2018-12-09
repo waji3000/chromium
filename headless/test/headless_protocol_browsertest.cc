@@ -44,7 +44,7 @@ class HeadlessProtocolBrowserTest
  public:
   HeadlessProtocolBrowserTest() {
     embedded_test_server()->ServeFilesFromSourceDirectory(
-        "third_party/WebKit/LayoutTests/http/tests/inspector-protocol");
+        "third_party/blink/web_tests/http/tests/inspector-protocol");
     EXPECT_TRUE(embedded_test_server()->Start());
   }
 
@@ -224,6 +224,8 @@ HEADLESS_PROTOCOL_TEST(VirtualTimeStarvation,
 HEADLESS_PROTOCOL_TEST(VirtualTimeVideo, "emulation/virtual-time-video.js");
 HEADLESS_PROTOCOL_TEST(VirtualTimeErrorLoop,
                        "emulation/virtual-time-error-loop.js");
+HEADLESS_PROTOCOL_TEST(VirtualTimeFetchStream,
+                       "emulation/virtual-time-fetch-stream.js");
 
 // Flaky Test crbug.com/859382
 HEADLESS_PROTOCOL_TEST(DISABLED_VirtualTimeHistoryNavigation,

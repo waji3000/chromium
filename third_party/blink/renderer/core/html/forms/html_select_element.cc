@@ -99,7 +99,7 @@ HTMLSelectElement::HTMLSelectElement(Document& document)
 }
 
 HTMLSelectElement* HTMLSelectElement::Create(Document& document) {
-  HTMLSelectElement* select = new HTMLSelectElement(document);
+  HTMLSelectElement* select = MakeGarbageCollected<HTMLSelectElement>(document);
   select->EnsureUserAgentShadowRoot();
   return select;
 }
@@ -700,7 +700,7 @@ void HTMLSelectElement::SetOptionsChangedOnLayoutObject() {
       return;
     ToLayoutMenuList(layout_object)
         ->SetNeedsLayoutAndPrefWidthsRecalc(
-            LayoutInvalidationReason::kMenuOptionsChanged);
+            layout_invalidation_reason::kMenuOptionsChanged);
   }
 }
 
@@ -1730,7 +1730,7 @@ void HTMLSelectElement::DefaultEventHandler(Event& event) {
     auto& keyboard_event = ToKeyboardEvent(event);
     if (!keyboard_event.ctrlKey() && !keyboard_event.altKey() &&
         !keyboard_event.metaKey() &&
-        WTF::Unicode::IsPrintableChar(keyboard_event.charCode())) {
+        WTF::unicode::IsPrintableChar(keyboard_event.charCode())) {
       TypeAheadFind(keyboard_event);
       event.SetDefaultHandled();
       return;
@@ -2072,7 +2072,7 @@ class HTMLSelectElement::PopupUpdater : public MutationObserver::Delegate {
 
 void HTMLSelectElement::ObserveTreeMutation() {
   DCHECK(!popup_updater_);
-  popup_updater_ = new PopupUpdater(*this);
+  popup_updater_ = MakeGarbageCollected<PopupUpdater>(*this);
 }
 
 void HTMLSelectElement::UnobserveTreeMutation() {

@@ -33,9 +33,11 @@ namespace {
 class PromiseResolverCallbacks final : public UserMediaRequest::Callbacks {
  public:
   static PromiseResolverCallbacks* Create(ScriptPromiseResolver* resolver) {
-    return new PromiseResolverCallbacks(resolver);
+    return MakeGarbageCollected<PromiseResolverCallbacks>(resolver);
   }
 
+  explicit PromiseResolverCallbacks(ScriptPromiseResolver* resolver)
+      : resolver_(resolver) {}
   ~PromiseResolverCallbacks() override = default;
 
   void OnSuccess(ScriptWrappable* callback_this_value,
@@ -53,16 +55,13 @@ class PromiseResolverCallbacks final : public UserMediaRequest::Callbacks {
   }
 
  private:
-  explicit PromiseResolverCallbacks(ScriptPromiseResolver* resolver)
-      : resolver_(resolver) {}
-
   Member<ScriptPromiseResolver> resolver_;
 };
 
 }  // namespace
 
 MediaDevices* MediaDevices::Create(ExecutionContext* context) {
-  MediaDevices* media_devices = new MediaDevices(context);
+  MediaDevices* media_devices = MakeGarbageCollected<MediaDevices>(context);
   media_devices->PauseIfNeeded();
   return media_devices;
 }
@@ -156,6 +155,15 @@ ScriptPromise MediaDevices::SendUserMediaRequest(
   auto promise = resolver->Promise();
   request->Start();
   return promise;
+}
+
+ScriptPromise MediaDevices::getDisplayMedia(
+    ScriptState* script_state,
+    const MediaStreamConstraints* options,
+    ExceptionState& exception_state) {
+  return SendUserMediaRequest(script_state,
+                              WebUserMediaRequest::MediaType::kDisplayMedia,
+                              options, exception_state);
 }
 
 const AtomicString& MediaDevices::InterfaceName() const {

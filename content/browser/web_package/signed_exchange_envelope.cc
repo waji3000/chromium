@@ -33,7 +33,7 @@ bool IsStatefulRequestHeader(base::StringPiece name) {
 
   const char* const kStatefulRequestHeaders[] = {
       "authorization", "cookie", "cookie2", "proxy-authorization",
-      "sec-webSocket-key"};
+      "sec-websocket-key"};
 
   for (const char* field : kStatefulRequestHeaders) {
     if (name == field)
@@ -89,20 +89,15 @@ bool ParseRequestMap(const cbor::Value& value,
     return false;
   }
   base::StringPiece method_str = method_iter->second.GetBytestringAsString();
-  // 3. If exchange’s request method is not safe (Section 4.2.1 of [RFC7231])
-  // or not cacheable (Section 4.2.3 of [RFC7231]), return “invalid”.
-  // [spec text]
-  //
-  // Note: Per [RFC7231],
-  //       Safe methods are "GET", "HEAD", "OPTIONS", and "TRACE".
-  //       Cachable methods are "GET", "HEAD", and "POST",
-  //       and we only allow methods that satisfy both.
-  if (method_str != "GET" && method_str != "HEAD") {
+  // https://wicg.github.io/webpackage/loading.html#parse-cbor-headers
+  // If any of the following is true, return a failure:
+  // - ...
+  // - headers[0][`:method`] is not `GET`. [spec text]
+  if (method_str != "GET") {
     signed_exchange_utils::ReportErrorAndTraceEvent(
         devtools_proxy,
-        base::StringPrintf(
-            "Request method is not safe or not cacheable. method: %s",
-            method_str.as_string().c_str()));
+        base::StringPrintf("Request method must be GET, but is %s",
+                           method_str.as_string().c_str()));
     return false;
   }
   out->set_request_method(method_str);
@@ -125,8 +120,11 @@ bool ParseRequestMap(const cbor::Value& value,
     if (name_str == kMethodKey)
       continue;
 
-    // TODO(kouhei): Add spec ref here once
-    // https://github.com/WICG/webpackage/issues/161 is resolved.
+    // https://tools.ietf.org/html/draft-yasskin-httpbis-origin-signed-exchanges-impl-02
+    // Section 3.2:
+    // "For each request header field in `exchange`, the header field's
+    // lowercase name as a byte string to the header field's value as a byte
+    // string."
     if (name_str != base::ToLowerASCII(name_str)) {
       signed_exchange_utils::ReportErrorAndTraceEvent(
           devtools_proxy,
@@ -180,6 +178,14 @@ bool ParseResponseMap(const cbor::Value& value,
         devtools_proxy, "Failed to parse status code to integer.");
     return false;
   }
+
+  // TODO(kouhei): Add spec ref here once
+  // https://github.com/WICG/webpackage/issues/326 is resolved.
+  if (response_code != 200) {
+    signed_exchange_utils::ReportErrorAndTraceEvent(devtools_proxy,
+                                                    "Status code is not 200.");
+    return false;
+  }
   out->set_response_code(static_cast<net::HttpStatusCode>(response_code));
 
   for (const auto& it : response_map) {
@@ -199,8 +205,11 @@ bool ParseResponseMap(const cbor::Value& value,
       return false;
     }
 
-    // TODO(kouhei): Add spec ref here once
-    // https://github.com/WICG/webpackage/issues/161 is resolved.
+    // https://tools.ietf.org/html/draft-yasskin-httpbis-origin-signed-exchanges-impl-02
+    // Section 3.2:
+    // "For each response header field in `exchange`, the header field's
+    // lowercase name as a byte string to the header field's value as a byte
+    // string."
     if (name_str != base::ToLowerASCII(name_str)) {
       signed_exchange_utils::ReportErrorAndTraceEvent(
           devtools_proxy,

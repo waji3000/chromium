@@ -21,7 +21,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "base/task/post_task.h"
 #include "base/task_runner_util.h"
 #include "base/timer/elapsed_timer.h"
@@ -64,10 +64,11 @@
 #endif  // OS_ANDROID
 
 namespace variations {
-namespace {
 
 const base::Feature kHttpRetryFeature{"VariationsHttpRetry",
                                       base::FEATURE_ENABLED_BY_DEFAULT};
+
+namespace {
 
 // Constants used for encrypting the if-none-match header if we are retrieving a
 // seed over http.
@@ -116,9 +117,14 @@ std::string GetPlatformString() {
 #endif
 }
 
-// Gets the restrict parameter from either the client or |policy_pref_service|.
-std::string GetRestrictParameterPref(VariationsServiceClient* client,
-                                     PrefService* policy_pref_service) {
+// Gets the restrict parameter from either the passed override, the client or
+// |policy_pref_service|.
+std::string GetRestrictParameterValue(const std::string& restrict_mode_override,
+                                      VariationsServiceClient* client,
+                                      PrefService* policy_pref_service) {
+  if (!restrict_mode_override.empty())
+    return restrict_mode_override;
+
   std::string parameter;
   if (client->OverridesRestrictParameter(&parameter) || !policy_pref_service)
     return parameter;
@@ -291,6 +297,7 @@ VariationsService::VariationsService(
                                MaybeImportFirstRunSeed(local_state),
                                base::BindOnce(&OnInitialSeedStored)),
                            ui_string_overrider),
+      last_request_was_http_retry_(false),
       weak_ptr_factory_(this) {
   DCHECK(client_);
   DCHECK(resource_request_allowed_notifier_);
@@ -369,11 +376,16 @@ void VariationsService::SetRestrictMode(const std::string& restrict_mode) {
   restrict_mode_ = restrict_mode;
 }
 
-GURL VariationsService::GetVariationsServerURL(
-    PrefService* policy_pref_service,
-    const std::string& restrict_mode_override,
-    HttpOptions http_options) {
-  bool secure = http_options == USE_HTTPS;
+GURL VariationsService::GetVariationsServerURL(HttpOptions http_options) {
+  const bool secure = http_options == USE_HTTPS;
+  const std::string restrict_mode = GetRestrictParameterValue(
+      restrict_mode_, client_.get(), policy_pref_service_);
+
+  // If there's a restrict mode, we don't want to fall back to HTTP to avoid
+  // toggling restrict mode state.
+  if (!secure && !restrict_mode.empty())
+    return GURL();
+
   std::string server_url_string(
       base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           secure ? switches::kVariationsServerURL
@@ -381,15 +393,10 @@ GURL VariationsService::GetVariationsServerURL(
   if (server_url_string.empty())
     server_url_string = secure ? kDefaultServerUrl : kDefaultInsecureServerUrl;
   GURL server_url = GURL(server_url_string);
-  if (secure) {
-    const std::string restrict_param =
-        !restrict_mode_override.empty()
-            ? restrict_mode_override
-            : GetRestrictParameterPref(client_.get(), policy_pref_service);
-    if (!restrict_param.empty()) {
-      server_url = net::AppendOrReplaceQueryParameter(server_url, "restrict",
-                                                      restrict_param);
-    }
+  if (!restrict_mode.empty()) {
+    DCHECK(secure);
+    server_url = net::AppendOrReplaceQueryParameter(server_url, "restrict",
+                                                    restrict_mode);
   }
   server_url = net::AppendOrReplaceQueryParameter(server_url, "osname",
                                                   GetPlatformString());
@@ -412,6 +419,26 @@ GURL VariationsService::GetVariationsServerURL(
 
   DCHECK(server_url.is_valid());
   return server_url;
+}
+
+void VariationsService::EnsureLocaleEquals(const std::string& locale) {
+#if defined(OS_CHROMEOS)
+  // Chrome OS may switch language on the fly.
+  DCHECK_EQ(locale, field_trial_creator_.application_locale());
+#else
+
+#if defined(OS_ANDROID)
+  // TODO(asvitkine): Speculative early return to silence CHECK failures on
+  // Android, see crbug.com/912320.
+  if (locale.empty())
+    return;
+#endif
+
+  // Uses a CHECK rather than a DCHECK to ensure that issues are caught since
+  // problems in this area may only appear in the wild due to official builds
+  // and end user machines.
+  CHECK_EQ(locale, field_trial_creator_.application_locale());
+#endif
 }
 
 // static
@@ -470,49 +497,6 @@ void VariationsService::DoActualFetch() {
   DoFetchFromURL(variations_server_url_, false);
 }
 
-bool VariationsService::StoreSeed(const std::string& seed_data,
-                                  const std::string& seed_signature,
-                                  const std::string& country_code,
-                                  base::Time date_fetched,
-                                  bool is_delta_compressed,
-                                  bool is_gzip_compressed,
-                                  bool fetched_insecurely) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-
-  std::unique_ptr<VariationsSeed> seed(new VariationsSeed);
-  if (!field_trial_creator_.seed_store()->StoreSeedData(
-          seed_data, seed_signature, country_code, date_fetched,
-          is_delta_compressed, is_gzip_compressed, fetched_insecurely,
-          seed.get())) {
-    return false;
-  }
-
-  RecordSuccessfulFetch();
-
-  // Now, do simulation to determine if there are any kill-switches that were
-  // activated by this seed. To do this, first get the Chrome version to do a
-  // simulation with, which must be done on a background thread, and then do the
-  // actual simulation on the UI thread.
-  base::PostTaskWithTraitsAndReplyWithResult(
-      FROM_HERE, {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
-      client_->GetVersionForSimulationCallback(),
-      base::Bind(&VariationsService::PerformSimulationWithVersion,
-                 weak_ptr_factory_.GetWeakPtr(), base::Passed(&seed)));
-  return true;
-}
-
-std::unique_ptr<const base::FieldTrial::EntropyProvider>
-VariationsService::CreateLowEntropyProvider() {
-  return state_manager_->CreateLowEntropyProvider();
-}
-
-void VariationsService::InitResourceRequestedAllowedNotifier() {
-  // ResourceRequestAllowedNotifier does not install an observer if there is no
-  // NetworkChangeNotifier, which results in never being notified of changes to
-  // network status.
-  resource_request_allowed_notifier_->Init(this, false /* leaky */);
-}
-
 bool VariationsService::DoFetchFromURL(const GURL& url, bool is_http_retry) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(IsFetchingEnabled());
@@ -526,6 +510,8 @@ bool VariationsService::DoFetchFromURL(const GURL& url, bool is_http_retry) {
   // new request and just let the previous one finish.
   if (pending_seed_request_)
     return false;
+
+  last_request_was_http_retry_ = is_http_retry;
 
   net::NetworkTrafficAnnotationTag traffic_annotation =
       net::DefineNetworkTrafficAnnotation("chrome_variations_service", R"(
@@ -575,8 +561,11 @@ bool VariationsService::DoFetchFromURL(const GURL& url, bool is_http_retry) {
       std::move(resource_request), traffic_annotation);
   // Ensure our callback is called even with "304 Not Modified" responses.
   pending_seed_request_->SetAllowHttpErrorResults(true);
+  // Set the redirect callback so we can cancel on redirects.
   // base::Unretained is safe here since this class owns
   // |pending_seed_request_|'s lifetime.
+  pending_seed_request_->SetOnRedirectCallback(base::BindRepeating(
+      &VariationsService::OnSimpleLoaderRedirect, base::Unretained(this)));
   pending_seed_request_->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
       client_->GetURLLoaderFactory().get(),
       base::BindOnce(&VariationsService::OnSimpleLoaderComplete,
@@ -597,18 +586,58 @@ bool VariationsService::DoFetchFromURL(const GURL& url, bool is_http_retry) {
   return true;
 }
 
+bool VariationsService::StoreSeed(const std::string& seed_data,
+                                  const std::string& seed_signature,
+                                  const std::string& country_code,
+                                  base::Time date_fetched,
+                                  bool is_delta_compressed,
+                                  bool is_gzip_compressed,
+                                  bool fetched_insecurely) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  std::unique_ptr<VariationsSeed> seed(new VariationsSeed);
+  if (!field_trial_creator_.seed_store()->StoreSeedData(
+          seed_data, seed_signature, country_code, date_fetched,
+          is_delta_compressed, is_gzip_compressed, fetched_insecurely,
+          seed.get())) {
+    return false;
+  }
+
+  RecordSuccessfulFetch();
+
+  // Now, do simulation to determine if there are any kill-switches that were
+  // activated by this seed. To do this, first get the Chrome version to do a
+  // simulation with, which must be done on a background thread, and then do the
+  // actual simulation on the UI thread.
+  base::PostTaskWithTraitsAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
+      client_->GetVersionForSimulationCallback(),
+      base::Bind(&VariationsService::PerformSimulationWithVersion,
+                 weak_ptr_factory_.GetWeakPtr(), base::Passed(&seed)));
+  return true;
+}
+
+std::unique_ptr<const base::FieldTrial::EntropyProvider>
+VariationsService::CreateLowEntropyProvider() {
+  return state_manager_->CreateLowEntropyProvider();
+}
+
+void VariationsService::InitResourceRequestedAllowedNotifier() {
+  // ResourceRequestAllowedNotifier does not install an observer if there is no
+  // NetworkChangeNotifier, which results in never being notified of changes to
+  // network status.
+  resource_request_allowed_notifier_->Init(this, false /* leaky */);
+}
+
 void VariationsService::StartRepeatedVariationsSeedFetch() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   // Initialize the Variations server URL.
-  variations_server_url_ =
-      GetVariationsServerURL(policy_pref_service_, restrict_mode_, USE_HTTPS);
+  variations_server_url_ = GetVariationsServerURL(USE_HTTPS);
 
   // Initialize the fallback HTTP URL if the HTTP retry feature is enabled.
-  if (base::FeatureList::IsEnabled(kHttpRetryFeature)) {
-    insecure_variations_server_url_ =
-        GetVariationsServerURL(policy_pref_service_, restrict_mode_, USE_HTTP);
-  }
+  if (base::FeatureList::IsEnabled(kHttpRetryFeature))
+    insecure_variations_server_url_ = GetVariationsServerURL(USE_HTTP);
 
   DCHECK(!request_scheduler_);
   request_scheduler_.reset(VariationsRequestScheduler::Create(
@@ -650,23 +679,53 @@ void VariationsService::NotifyObservers(
 void VariationsService::OnSimpleLoaderComplete(
     std::unique_ptr<std::string> response_body) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  OnSimpleLoaderCompleteOrRedirect(std::move(response_body), false);
+}
 
+void VariationsService::OnSimpleLoaderRedirect(
+    const net::RedirectInfo& redirect_info,
+    const network::ResourceResponseHead& response_head,
+    std::vector<std::string>* to_be_removed_headers) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  OnSimpleLoaderCompleteOrRedirect(nullptr, true);
+}
+
+void VariationsService::OnSimpleLoaderCompleteOrRedirect(
+    std::unique_ptr<std::string> response_body,
+    bool was_redirect) {
   const bool is_first_request = !initial_request_completed_;
   initial_request_completed_ = true;
 
-  int net_error = pending_seed_request_->NetError();
-  int response_code = -1;
+  bool is_success = false;
+  int net_error = net::ERR_ABORTED;
   scoped_refptr<net::HttpResponseHeaders> headers;
-  if (pending_seed_request_->ResponseInfo() &&
-      pending_seed_request_->ResponseInfo()->headers) {
-    headers = pending_seed_request_->ResponseInfo()->headers;
-    response_code = headers->response_code();
+
+  int response_code = -1;
+  // We use the final URL HTTPS/HTTP value to pass to StoreSeed, since
+  // signature validation should be forced on for any HTTP fetch, including
+  // redirects from HTTPS to HTTP. We default to false since we can't get this
+  // value (nor will it be used) in the redirect case.
+  bool final_url_was_https = false;
+
+  // Variations seed fetches should not follow redirects, so if this request was
+  // redirected, keep the default values for |net_error| and |is_success| (treat
+  // it as a net::ERR_ABORTED), and the fetch will be cancelled when
+  // pending_seed_request is reset.
+  if (!was_redirect) {
+    final_url_was_https =
+        pending_seed_request_->GetFinalURL().SchemeIs(url::kHttpsScheme);
+    const network::ResourceResponseHead* response_info =
+        pending_seed_request_->ResponseInfo();
+    if (response_info && response_info->headers) {
+      headers = response_info->headers;
+      response_code = headers->response_code();
+    }
+    net_error = pending_seed_request_->NetError();
+    is_success = headers && (net_error == net::OK);
   }
-  bool is_success = headers && (net_error == net::OK);
-  bool was_https =
-      pending_seed_request_->GetFinalURL().SchemeIs(url::kHttpsScheme);
+
   pending_seed_request_.reset();
-  if (was_https) {
+  if (last_request_was_http_retry_) {
     base::UmaHistogramSparse("Variations.SeedFetchResponseOrErrorCode",
                              is_success ? response_code : net_error);
   } else {
@@ -676,23 +735,21 @@ void VariationsService::OnSimpleLoaderComplete(
   if (!is_success) {
     DVLOG(1) << "Variations server request failed with error: " << net_error
              << ": " << net::ErrorToString(net_error);
-    // If the current fetch attempt was over an HTTPS connection, retry the
-    // fetch immediately over an HTTP connection.
-    // Currently we only do this if if the 'VariationsHttpRetry' feature is
-    // enabled.
-    if (was_https && !insecure_variations_server_url_.is_empty()) {
-      // When re-trying via HTTP, return immediately. OnURLFetchComplete() will
-      // be called with the result of that retry.
-      if (DoFetchFromURL(insecure_variations_server_url_, true))
-        return;
-    }
     // It's common for the very first fetch attempt to fail (e.g. the network
     // may not yet be available). In such a case, try again soon, rather than
     // waiting the full time interval.
     // |request_scheduler_| will be null during unit tests.
-    if (is_first_request && request_scheduler_)
+    if (is_first_request && request_scheduler_) {
       request_scheduler_->ScheduleFetchShortly();
-    return;
+      return;
+    }
+
+    if (MaybeRetryOverHTTP()) {
+      // If the retry was successfully started, return immediately,
+      // OnSimpleLoaderComplete will be called again when the new fetch
+      // finishes.
+      return;
+    }
   }
 
   const base::TimeDelta latency =
@@ -744,13 +801,25 @@ void VariationsService::OnSimpleLoaderComplete(
   const std::string country_code = GetHeaderValue(headers.get(), "X-Country");
   const bool store_success =
       StoreSeed(*response_body, signature, country_code, response_date,
-                is_delta_compressed, is_gzip_compressed, !was_https);
+                is_delta_compressed, is_gzip_compressed, !final_url_was_https);
   if (!store_success && is_delta_compressed) {
     disable_deltas_for_next_request_ = true;
     // |request_scheduler_| will be null during unit tests.
     if (request_scheduler_)
       request_scheduler_->ScheduleFetchShortly();
   }
+}
+
+bool VariationsService::MaybeRetryOverHTTP() {
+  // If the current fetch attempt was over an HTTPS connection, retry the
+  // fetch immediately over an HTTP connection. We only do this if an insecure
+  // variations URL is set and its scheme is HTTP.
+  if (!last_request_was_http_retry_ &&
+      !insecure_variations_server_url_.is_empty() &&
+      insecure_variations_server_url_.SchemeIs(url::kHttpScheme)) {
+    return DoFetchFromURL(insecure_variations_server_url_, true);
+  }
+  return false;
 }
 
 void VariationsService::OnResourceRequestsAllowed() {
@@ -802,6 +871,10 @@ void VariationsService::PerformSimulationWithVersion(
   UMA_HISTOGRAM_TIMES("Variations.SimulateSeed.Duration", timer.Elapsed());
 
   NotifyObservers(result);
+}
+
+bool VariationsService::CallMaybeRetryOverHTTPForTesting() {
+  return MaybeRetryOverHTTP();
 }
 
 void VariationsService::RecordSuccessfulFetch() {

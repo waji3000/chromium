@@ -6,6 +6,7 @@
 
 #include "base/containers/flat_set.h"
 #include "base/memory/ptr_util.h"
+#include "base/metrics/histogram_macros.h"
 #include "third_party/skia/include/core/SkPath.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "ui/aura/client/aura_constants.h"
@@ -533,12 +534,11 @@ gfx::Rect DesktopWindowTreeHostWin::GetBoundsInPixels() const {
 
 void DesktopWindowTreeHostWin::SetBoundsInPixels(
     const gfx::Rect& bounds,
-    const viz::LocalSurfaceId& local_surface_id,
-    base::TimeTicks local_surface_id_allocation_time) {
+    const viz::LocalSurfaceIdAllocation& local_surface_id_allocation) {
   // On Windows, the callers of SetBoundsInPixels() shouldn't need to (or be
   // able to) allocate LocalSurfaceId for the compositor. Aura itself should
   // allocate the new ids as needed, instead.
-  DCHECK(!local_surface_id.is_valid());
+  DCHECK(!local_surface_id_allocation.IsValid());
 
   // If the window bounds have to be expanded we need to subtract the
   // window_expansion_top_left_delta_ from the origin and add the
@@ -579,7 +579,7 @@ bool DesktopWindowTreeHostWin::CaptureSystemKeyEventsImpl(
   // problems with event routing (i.e. which Hook takes precedence) and
   // destruction ordering.
   DCHECK(!keyboard_hook_);
-  keyboard_hook_ = ui::KeyboardHook::Create(
+  keyboard_hook_ = ui::KeyboardHook::CreateModifierKeyboardHook(
       std::move(dom_codes), GetAcceleratedWidget(),
       base::BindRepeating(&DesktopWindowTreeHostWin::HandleKeyEvent,
                           base::Unretained(this)));
@@ -857,6 +857,23 @@ void DesktopWindowTreeHostWin::HandleVisibilityChanged(bool visible) {
   native_widget_delegate_->OnNativeWidgetVisibilityChanged(visible);
 }
 
+void DesktopWindowTreeHostWin::HandleWindowMinimizedOrRestored(bool restored) {
+  // Ignore minimize/restore events that happen before widget initialization is
+  // done. If a window is created minimized, and then activated, restoring
+  // focus will fail because the root window is not visible, which is exposed by
+  // ExtensionWindowCreateTest.AcceptState.
+  if (!native_widget_delegate_->IsNativeWidgetInitialized())
+    return;
+
+  if (restored)
+    window()->Show();
+  else
+    window()->Hide();
+
+  if (compositor())
+    compositor()->SetVisible(restored);
+}
+
 void DesktopWindowTreeHostWin::HandleClientSizeChanged(
     const gfx::Size& new_size) {
   CheckForMonitorChange();
@@ -881,9 +898,13 @@ void DesktopWindowTreeHostWin::HandleNativeBlur(HWND focused_window) {
 }
 
 bool DesktopWindowTreeHostWin::HandleMouseEvent(ui::MouseEvent* event) {
-  // TODO(davidbienvenu): Check for getting mouse events for an occluded window
-  // with either a DCHECK or a stat.  Event can cause this object to be deleted
-  // so look at occlusion state before we do anything with the event.
+  // Mouse events in occluded windows should be very rare. If this stat isn't
+  // very close to 0, that would indicate that windows are incorrectly getting
+  // marked occluded, or getting stuck in the occluded state. Event can cause
+  // this object to be deleted so check occlusion state before we do anything
+  // with the event.
+  if (window()->occlusion_state() == aura::Window::OcclusionState::OCCLUDED)
+    UMA_HISTOGRAM_BOOLEAN("OccludedWindowMouseEvents", true);
   SendEventToSink(event);
   return event->handled();
 }
@@ -1005,8 +1026,7 @@ void DesktopWindowTreeHostWin::HandleWindowScaleFactorChanged(
   if (compositor()) {
     compositor()->SetScaleAndSize(
         window_scale_factor, message_handler_->GetClientAreaBounds().size(),
-        window()->GetLocalSurfaceId(),
-        window()->GetLocalSurfaceIdAllocationTime());
+        window()->GetLocalSurfaceIdAllocation());
   }
 }
 

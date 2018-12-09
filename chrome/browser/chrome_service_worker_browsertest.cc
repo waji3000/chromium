@@ -9,6 +9,7 @@
 #include "base/command_line.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -22,23 +23,30 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/test_chrome_web_ui_controller_factory.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
+#include "components/favicon/content/content_favicon_driver.h"
+#include "components/favicon/core/favicon_driver_observer.h"
 #include "components/nacl/common/buildflags.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/service_worker_context.h"
 #include "content/public/browser/storage_partition.h"
+#include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_ui_controller.h"
 #include "content/public/test/browser_test_utils.h"
+#include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "ppapi/shared_impl/ppapi_switches.h"
 #include "third_party/blink/public/common/messaging/string_message_codec.h"
 
-namespace {
+namespace chrome_service_worker_browser_test {
 
 const char kInstallAndWaitForActivatedPage[] =
     "<script>"
@@ -331,12 +339,51 @@ class ChromeServiceWorkerFetchTest : public ChromeServiceWorkerTest {
   DISALLOW_COPY_AND_ASSIGN(ChromeServiceWorkerFetchTest);
 };
 
-class ChromeServiceWorkerManifestFetchTest
-    : public ChromeServiceWorkerFetchTest {
- protected:
-  ChromeServiceWorkerManifestFetchTest() {}
-  ~ChromeServiceWorkerManifestFetchTest() override {}
+class FaviconUpdateWaiter : public favicon::FaviconDriverObserver {
+ public:
+  explicit FaviconUpdateWaiter(content::WebContents* web_contents)
+      : updated_(false), scoped_observer_(this) {
+    scoped_observer_.Add(
+        favicon::ContentFaviconDriver::FromWebContents(web_contents));
+  }
 
+  void Wait() {
+    if (updated_)
+      return;
+
+    base::RunLoop run_loop;
+    quit_closure_ = run_loop.QuitClosure();
+    run_loop.Run();
+  }
+
+ private:
+  void OnFaviconUpdated(favicon::FaviconDriver* favicon_driver,
+                        NotificationIconType notification_icon_type,
+                        const GURL& icon_url,
+                        bool icon_url_changed,
+                        const gfx::Image& image) override {
+    updated_ = true;
+    if (!quit_closure_.is_null())
+      std::move(quit_closure_).Run();
+  }
+
+  bool updated_;
+  ScopedObserver<favicon::FaviconDriver, FaviconUpdateWaiter> scoped_observer_;
+  base::OnceClosure quit_closure_;
+
+  DISALLOW_COPY_AND_ASSIGN(FaviconUpdateWaiter);
+};
+
+class ChromeServiceWorkerLinkFetchTest : public ChromeServiceWorkerFetchTest {
+ protected:
+  ChromeServiceWorkerLinkFetchTest() {}
+  ~ChromeServiceWorkerLinkFetchTest() override {}
+  void SetUpOnMainThread() override {
+    // Map all hosts to localhost and setup the EmbeddedTestServer for
+    // redirects.
+    host_resolver()->AddRule("*", "127.0.0.1");
+    ChromeServiceWorkerFetchTest::SetUpOnMainThread();
+  }
   std::string ExecuteManifestFetchTest(const std::string& url,
                                        const std::string& cross_origin) {
     std::string js(
@@ -352,6 +399,29 @@ class ChromeServiceWorkerManifestFetchTest
     js += "document.head.appendChild(link);";
     ExecuteJavaScriptForTests(js);
     return GetManifestAndIssuedRequests();
+  }
+
+  std::string ExecuteFaviconFetchTest(const std::string& url) {
+    FaviconUpdateWaiter waiter(
+        browser()->tab_strip_model()->GetActiveWebContents());
+    std::string js(
+        base::StringPrintf("reportOnFetch = false;"
+                           "var link = document.createElement('link');"
+                           "link.rel = 'icon';"
+                           "link.href = '%s';"
+                           "document.head.appendChild(link);",
+                           url.c_str()));
+    ExecuteJavaScriptForTests(js);
+    waiter.Wait();
+    return ExecuteScriptAndExtractString("reportRequests();");
+  }
+
+  void CopyTestFile(const std::string& src, const std::string& dst) {
+    base::ScopedAllowBlockingForTesting allow_blocking;
+    base::FilePath test_data_dir;
+    base::PathService::Get(chrome::DIR_TEST_DATA, &test_data_dir);
+    EXPECT_TRUE(base::CopyFile(test_data_dir.AppendASCII(src),
+                               service_worker_dir_.GetPath().AppendASCII(dst)));
   }
 
  private:
@@ -385,37 +455,55 @@ class ChromeServiceWorkerManifestFetchTest
     continuation.Run();
   }
 
-  DISALLOW_COPY_AND_ASSIGN(ChromeServiceWorkerManifestFetchTest);
+  DISALLOW_COPY_AND_ASSIGN(ChromeServiceWorkerLinkFetchTest);
 };
 
-IN_PROC_BROWSER_TEST_F(ChromeServiceWorkerManifestFetchTest, SameOrigin) {
+IN_PROC_BROWSER_TEST_F(ChromeServiceWorkerLinkFetchTest, ManifestSameOrigin) {
   // <link rel="manifest" href="manifest.json">
   EXPECT_EQ(RequestString(GetURL("/manifest.json"), "cors", "omit"),
             ExecuteManifestFetchTest("manifest.json", ""));
 }
 
-IN_PROC_BROWSER_TEST_F(ChromeServiceWorkerManifestFetchTest,
-                       SameOriginUseCredentials) {
+IN_PROC_BROWSER_TEST_F(ChromeServiceWorkerLinkFetchTest,
+                       ManifestSameOriginUseCredentials) {
   // <link rel="manifest" href="manifest.json" crossorigin="use-credentials">
   EXPECT_EQ(RequestString(GetURL("/manifest.json"), "cors", "include"),
             ExecuteManifestFetchTest("manifest.json", "use-credentials"));
 }
 
-IN_PROC_BROWSER_TEST_F(ChromeServiceWorkerManifestFetchTest, OtherOrigin) {
-  // <link rel="manifest" href="https://www.example.com/manifest.json">
-  EXPECT_EQ(
-      RequestString("https://www.example.com/manifest.json", "cors", "omit"),
-      ExecuteManifestFetchTest("https://www.example.com/manifest.json", ""));
+IN_PROC_BROWSER_TEST_F(ChromeServiceWorkerLinkFetchTest, ManifestOtherOrigin) {
+  // <link rel="manifest" href="http://www.example.com:PORT/manifest.json">
+  const std::string url = embedded_test_server()
+                              ->GetURL("www.example.com", "/manifest.json")
+                              .spec();
+  EXPECT_EQ(RequestString(url, "cors", "omit"),
+            ExecuteManifestFetchTest(url, ""));
 }
 
-IN_PROC_BROWSER_TEST_F(ChromeServiceWorkerManifestFetchTest,
-                       OtherOriginUseCredentials) {
-  // <link rel="manifest" href="https://www.example.com/manifest.json"
+IN_PROC_BROWSER_TEST_F(ChromeServiceWorkerLinkFetchTest,
+                       ManifestOtherOriginUseCredentials) {
+  // <link rel="manifest" href="http://www.example.com:PORT/manifest.json"
   //  crossorigin="use-credentials">
-  EXPECT_EQ(
-      RequestString("https://www.example.com/manifest.json", "cors", "include"),
-      ExecuteManifestFetchTest("https://www.example.com/manifest.json",
-                               "use-credentials"));
+  const std::string url = embedded_test_server()
+                              ->GetURL("www.example.com", "/manifest.json")
+                              .spec();
+  EXPECT_EQ(RequestString(url, "cors", "include"),
+            ExecuteManifestFetchTest(url, "use-credentials"));
+}
+
+IN_PROC_BROWSER_TEST_F(ChromeServiceWorkerLinkFetchTest, FaviconSameOrigin) {
+  // <link rel="favicon" href="fav.png">
+  CopyTestFile("favicon/icon.png", "fav.png");
+  EXPECT_EQ(RequestString(GetURL("/fav.png"), "no-cors", "include"),
+            ExecuteFaviconFetchTest("/fav.png"));
+}
+
+IN_PROC_BROWSER_TEST_F(ChromeServiceWorkerLinkFetchTest, FaviconOtherOrigin) {
+  // <link rel="favicon" href="http://www.example.com:PORT/fav.png">
+  CopyTestFile("favicon/icon.png", "fav.png");
+  const std::string url =
+      embedded_test_server()->GetURL("www.example.com", "/fav.png").spec();
+  EXPECT_EQ("", ExecuteFaviconFetchTest(url));
 }
 
 #if BUILDFLAG(ENABLE_NACL)
@@ -578,4 +666,99 @@ IN_PROC_BROWSER_TEST_F(ChromeServiceWorkerNavigationHintTest, NoFetchHandler) {
       false);
 }
 
-}  // namespace
+// Copied from devtools_sanity_browsertest.cc.
+class StaticURLDataSource : public content::URLDataSource {
+ public:
+  StaticURLDataSource(const std::string& source, const std::string& content)
+      : source_(source), content_(content) {}
+  ~StaticURLDataSource() override = default;
+
+  // content::URLDataSource:
+  std::string GetSource() const override { return source_; }
+  void StartDataRequest(
+      const std::string& path,
+      const content::ResourceRequestInfo::WebContentsGetter& wc_getter,
+      const GotDataCallback& callback) override {
+    std::string data(content_);
+    callback.Run(base::RefCountedString::TakeString(&data));
+  }
+  std::string GetMimeType(const std::string& path) const override {
+    return "application/javascript";
+  }
+  bool ShouldAddContentSecurityPolicy() const override { return false; }
+
+ private:
+  const std::string source_;
+  const std::string content_;
+
+  DISALLOW_COPY_AND_ASSIGN(StaticURLDataSource);
+};
+
+// Copied from devtools_sanity_browsertest.cc.
+class MockWebUIProvider
+    : public TestChromeWebUIControllerFactory::WebUIProvider {
+ public:
+  MockWebUIProvider(const std::string& source, const std::string& content)
+      : source_(source), content_(content) {}
+  ~MockWebUIProvider() override = default;
+
+  std::unique_ptr<content::WebUIController> NewWebUI(content::WebUI* web_ui,
+                                                     const GURL& url) override {
+    content::URLDataSource::Add(
+        Profile::FromWebUI(web_ui),
+        std::make_unique<StaticURLDataSource>(source_, content_));
+    return std::make_unique<content::WebUIController>(web_ui);
+  }
+
+ private:
+  const std::string source_;
+  const std::string content_;
+  DISALLOW_COPY_AND_ASSIGN(MockWebUIProvider);
+};
+
+// Tests that registering a service worker with a chrome:// URL fails.
+IN_PROC_BROWSER_TEST_F(ChromeServiceWorkerTest, DisallowChromeScheme) {
+  const GURL kScript("chrome://dummyurl/sw.js");
+  const GURL kScope("chrome://dummyurl");
+
+  // Make chrome://dummyurl/sw.js serve a service worker script.
+  TestChromeWebUIControllerFactory test_factory;
+  MockWebUIProvider mock_provider("serviceworker", "// empty service worker");
+  test_factory.AddFactoryOverride(kScript.host(), &mock_provider);
+  content::WebUIControllerFactory::RegisterFactory(&test_factory);
+
+  // Try to register the service worker.
+  base::RunLoop run_loop;
+  bool result = true;
+  blink::mojom::ServiceWorkerRegistrationOptions options(
+      kScope, blink::mojom::ScriptType::kClassic,
+      blink::mojom::ServiceWorkerUpdateViaCache::kImports);
+  GetServiceWorkerContext()->RegisterServiceWorker(
+      kScript, options,
+      base::BindOnce(
+          [](base::OnceClosure quit_closure, bool* out_result, bool result) {
+            *out_result = result;
+            std::move(quit_closure).Run();
+          },
+          run_loop.QuitClosure(), &result));
+  run_loop.Run();
+
+  // Registration should fail. This is the desired behavior. At the time of this
+  // writing, there are a few reasons the registration fails:
+  // * OriginCanAccessServiceWorkers() returns false for the "chrome" scheme.
+  // * Even if that returned true, the URL loader factory bundle used to make
+  //   the resource request in ServiceWorkerNewScriptLoader doesn't support
+  //   the "chrome" scheme. This is because:
+  //     * The call to RegisterNonNetworkSubresourceURLLoaderFactories() from
+  //       CreateFactoryBundle() in embedded_worker_instance.cc doesn't register
+  //       the "chrome" scheme, because there is no frame/web_contents.
+  //     * Even if that registered a factory, CreateFactoryBundle() would
+  //       skip it because GetServiceWorkerSchemes() doesn't include "chrome".
+  //
+  // It's difficult to change all these, so the test author hasn't actually
+  // changed Chrome in a way that makes this test fail, to prove that the test
+  // would be effective at catching a regression.
+  EXPECT_FALSE(result);
+}
+
+}  // namespace chrome_service_worker_browser_test

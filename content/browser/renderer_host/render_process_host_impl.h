@@ -53,6 +53,7 @@
 #include "mojo/public/cpp/system/invitation.h"
 #include "services/network/public/mojom/mdns_responder.mojom.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
+#include "services/resource_coordinator/public/cpp/process_resource_coordinator.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "services/service_manager/public/mojom/service.mojom.h"
 #include "services/viz/public/interfaces/compositing/compositing_mode_watcher.mojom.h"
@@ -198,7 +199,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
       bool incoming,
       bool outgoing,
       const WebRtcRtpPacketCallback& packet_callback) override;
-  void SetWebRtcEventLogOutput(int lid, bool enabled) override;
+  void EnableWebRtcEventLogOutput(int lid, int output_period_ms) override;
+  void DisableWebRtcEventLogOutput(int lid) override;
   void BindInterface(const std::string& interface_name,
                      mojo::ScopedMessagePipeHandle interface_pipe) override;
   const service_manager::Identity& GetChildIdentity() const override;
@@ -218,7 +220,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
   resource_coordinator::ProcessResourceCoordinator*
   GetProcessResourceCoordinator() override;
   void CreateURLLoaderFactory(
-      const url::Origin& origin,
+      const base::Optional<url::Origin>& origin,
+      network::mojom::TrustedURLLoaderHeaderClientPtrInfo header_client,
       network::mojom::URLLoaderFactoryRequest request) override;
 
   void SetIsNeverSuitableForReuse() override;
@@ -744,12 +747,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // The globally-unique identifier for this RPH.
   const int id_;
 
-  // A secondary ID used by the Service Manager to distinguish different
-  // incarnations of the same RPH from each other. Unlike |id_| this is not
-  // globally unique, but it is guaranteed to change every time ProcessDied() is
-  // called.
-  int instance_id_ = 1;
-
   BrowserContext* const browser_context_;
 
   // Owned by |browser_context_|.
@@ -840,15 +837,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   bool channel_connected_;
   bool sent_render_process_ready_;
 
-#if defined(OS_ANDROID)
-  // UI thread is the source of sync IPCs and all shutdown signals.
-  // Therefore a proper shutdown event to unblock the UI thread is not
-  // possible without massive refactoring shutdown code.
-  // Luckily Android never performs a clean shutdown. So explicitly
-  // ignore this problem.
-  base::WaitableEvent never_signaled_;
-#endif
-
   scoped_refptr<ResourceMessageFilter> resource_message_filter_;
   std::unique_ptr<FileSystemManagerImpl, BrowserThread::DeleteOnIOThread>
       file_system_manager_impl_;
@@ -869,7 +857,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // determine if if a process should be backgrounded.
   int media_stream_count_ = 0;
 
-  std::unique_ptr<resource_coordinator::ProcessResourceCoordinator>
+  resource_coordinator::ProcessResourceCoordinator
       process_resource_coordinator_;
 
   // A WeakPtrFactory which is reset every time Cleanup() runs. Used to vend

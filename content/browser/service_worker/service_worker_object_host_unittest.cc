@@ -55,8 +55,7 @@ class ExtendableMessageEventTestHelper : public EmbeddedWorkerTestHelper {
       mojom::ServiceWorker::DispatchExtendableMessageEventCallback callback)
       override {
     events_.push_back(std::move(event));
-    std::move(callback).Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED,
-                            base::TimeTicks::Now());
+    std::move(callback).Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED);
   }
 
   const std::vector<mojom::ExtendableMessageEventPtr>& events() {
@@ -78,7 +77,7 @@ class FailToStartWorkerTestHelper : public ExtendableMessageEventTestHelper {
       const GURL& script_url,
       bool pause_after_download,
       mojom::ServiceWorkerRequest service_worker_request,
-      mojom::ControllerServiceWorkerRequest controller_request,
+      blink::mojom::ControllerServiceWorkerRequest controller_request,
       mojom::EmbeddedWorkerInstanceHostAssociatedPtrInfo instance_host,
       mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info,
       blink::mojom::ServiceWorkerInstalledScriptsInfoPtr installed_scripts_info)
@@ -227,7 +226,7 @@ TEST_F(ServiceWorkerObjectHostTest, OnVersionStateChanged) {
           helper_->mock_render_process_id(), kProviderId,
           true /* is_parent_frame_secure */, helper_->context()->AsWeakPtr(),
           &remote_endpoint);
-  provider_host->SetDocumentUrl(scope);
+  provider_host->UpdateUrls(scope, scope);
   blink::mojom::ServiceWorkerRegistrationObjectInfoPtr registration_info =
       GetRegistrationFromRemote(remote_endpoint.host_ptr()->get(), scope);
   // |version_| is the installing version of |registration_| now.
@@ -340,7 +339,7 @@ TEST_F(ServiceWorkerObjectHostTest, DispatchExtendableMessageEvent_FromClient) {
       ServiceWorkerProviderHost::Create(frame_host->GetProcess()->GetID(),
                                         std::move(provider_host_info),
                                         helper_->context()->AsWeakPtr());
-  provider_host->SetDocumentUrl(scope);
+  provider_host->UpdateUrls(scope, scope);
   // Prepare a ServiceWorkerObjectHost for the above |provider_host|.
   blink::mojom::ServiceWorkerObjectInfoPtr info =
       provider_host->GetOrCreateServiceWorkerObjectHost(version_)
@@ -395,7 +394,7 @@ TEST_F(ServiceWorkerObjectHostTest, DispatchExtendableMessageEvent_Fail) {
       ServiceWorkerProviderHost::Create(frame_host->GetProcess()->GetID(),
                                         std::move(provider_host_info),
                                         helper_->context()->AsWeakPtr());
-  provider_host->SetDocumentUrl(scope);
+  provider_host->UpdateUrls(scope, scope);
   // Prepare a ServiceWorkerObjectHost for the above |provider_host|.
   blink::mojom::ServiceWorkerObjectInfoPtr info =
       provider_host->GetOrCreateServiceWorkerObjectHost(version_)

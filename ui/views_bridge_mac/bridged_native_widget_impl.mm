@@ -44,6 +44,18 @@ namespace {
 constexpr auto kUIPaintTimeout = base::TimeDelta::FromSeconds(5);
 }  // namespace
 
+// The NSView that hosts the composited CALayer drawing the UI. It fills the
+// window but is not hittable so that accessibility hit tests always go to the
+// BridgedContentView.
+@interface ViewsCompositorSuperview : NSView
+@end
+
+@implementation ViewsCompositorSuperview
+- (NSView*)hitTest:(NSPoint)aPoint {
+  return nil;
+}
+@end
+
 // Self-owning animation delegate that starts a hide animation, then calls
 // -[NSWindow close] when the animation ends, releasing itself.
 @interface ViewsNSWindowCloseAnimator : NSObject<NSAnimationDelegate> {
@@ -172,6 +184,9 @@ NSComparisonResult SubviewSorter(NSViewComparatorValue lhs,
                                  void* rank_as_void) {
   DCHECK_NE(lhs, rhs);
 
+  if ([lhs isKindOfClass:[ViewsCompositorSuperview class]])
+    return NSOrderedAscending;
+
   const RankMap* rank = static_cast<const RankMap*>(rank_as_void);
   auto left_rank = rank->find(lhs);
   auto right_rank = rank->find(rhs);
@@ -227,6 +242,17 @@ BridgedNativeWidgetImpl* BridgedNativeWidgetImpl::GetFromId(
   if (found == GetIdToWidgetImplMap().end())
     return nullptr;
   return found->second;
+}
+
+// static
+BridgedNativeWidgetImpl* BridgedNativeWidgetImpl::GetFromNativeWindow(
+    gfx::NativeWindow native_window) {
+  NSWindow* window = native_window.GetNativeNSWindow();
+  if (NativeWidgetMacNSWindow* widget_window =
+          base::mac::ObjCCast<NativeWidgetMacNSWindow>(window)) {
+    return GetFromId([widget_window bridgedNativeWidgetId]);
+  }
+  return nullptr;
 }
 
 // static
@@ -310,6 +336,14 @@ void BridgedNativeWidgetImpl::SetWindow(
   [window_ setReleasedWhenClosed:NO];  // Owned by scoped_nsobject.
   [window_ setDelegate:window_delegate_];
   ui::CATransactionCoordinator::Get().AddPreCommitObserver(this);
+}
+
+void BridgedNativeWidgetImpl::SetCommandDispatcher(
+    NSObject<CommandDispatcherDelegate>* delegate,
+    id<UserInterfaceItemCommandHandler> command_handler) {
+  window_command_dispatcher_delegate_.reset([delegate retain]);
+  [window_ setCommandDispatcherDelegate:delegate];
+  [window_ setCommandHandler:command_handler];
 }
 
 void BridgedNativeWidgetImpl::SetParent(uint64_t new_parent_id) {
@@ -486,13 +520,20 @@ void BridgedNativeWidgetImpl::CreateContentView(uint64_t ns_view_id,
   // this should be treated as an error and caught early.
   CHECK(bridged_view_);
 
-  // Set the layer first to create a layer-hosting view (not layer-backed), and
-  // set the compositor output to go to that layer.
-  base::scoped_nsobject<CALayer> background_layer([[CALayer alloc] init]);
+  // Beware: This view was briefly removed (in favor of a bare CALayer) in
+  // crrev/c/1236675. The ordering of unassociated layers relative to NSView
+  // layers is undefined on macOS 10.12 and earlier, so the compositor layer
+  // ended up covering up subviews (see crbug/899499).
+  base::scoped_nsobject<NSView> compositor_view(
+      [[ViewsCompositorSuperview alloc] initWithFrame:[bridged_view_ bounds]]);
+  [compositor_view
+      setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
+  auto* background_layer = [CALayer layer];
   display_ca_layer_tree_ =
-      std::make_unique<ui::DisplayCALayerTree>(background_layer.get());
-  [bridged_view_ setLayer:background_layer];
-  [bridged_view_ setWantsLayer:YES];
+      std::make_unique<ui::DisplayCALayerTree>(background_layer);
+  [compositor_view setLayer:background_layer];
+  [compositor_view setWantsLayer:YES];
+  [bridged_view_ addSubview:compositor_view];
 
   [window_ setContentView:bridged_view_];
 }
@@ -681,8 +722,10 @@ bool BridgedNativeWidgetImpl::HasCapture() {
 }
 
 bool BridgedNativeWidgetImpl::RunMoveLoop(const gfx::Vector2d& drag_offset) {
-  DCHECK(!HasCapture());
   // https://crbug.com/876493
+  CHECK(!HasCapture());
+  // Does some *other* widget have capture?
+  CHECK(!CocoaMouseCapture::GetGlobalCaptureWindow());
   CHECK(!window_move_loop_);
 
   // RunMoveLoop caller is responsible for updating the window to be under the
@@ -718,6 +761,9 @@ void BridgedNativeWidgetImpl::SetCursor(NSCursor* cursor) {
 }
 
 void BridgedNativeWidgetImpl::OnWindowWillClose() {
+  [window_ setCommandHandler:nil];
+  [window_ setCommandDispatcherDelegate:nil];
+
   ui::CATransactionCoordinator::Get().RemovePreCommitObserver(this);
   host_->OnWindowWillClose();
 
@@ -991,12 +1037,7 @@ bool BridgedNativeWidgetImpl::ShouldRunCustomAnimationFor(
 }
 
 bool BridgedNativeWidgetImpl::RedispatchKeyEvent(NSEvent* event) {
-  NSWindow* window = ns_window();
-  DCHECK([window.class conformsToProtocol:@protocol(CommandDispatchingWindow)]);
-  NSObject<CommandDispatchingWindow>* command_dispatching_window =
-      base::mac::ObjCCastStrict<NSObject<CommandDispatchingWindow>>(window);
-  return
-      [[command_dispatching_window commandDispatcher] redispatchKeyEvent:event];
+  return [[window_ commandDispatcher] redispatchKeyEvent:event];
 }
 
 NSWindow* BridgedNativeWidgetImpl::ns_window() {

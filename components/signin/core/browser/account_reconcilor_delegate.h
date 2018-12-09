@@ -44,7 +44,7 @@ class AccountReconcilorDelegate {
   virtual bool IsAccountConsistencyEnforced() const;
 
   // Returns the value to set in the "source" parameter for Gaia API calls.
-  virtual std::string GetGaiaApiSource() const;
+  virtual gaia::GaiaSource GetGaiaApiSource() const;
 
   // Returns true if Reconcile should be aborted when the primary account is in
   // error state. Defaults to false.
@@ -108,18 +108,34 @@ class AccountReconcilorDelegate {
   }
   AccountReconcilor* reconcilor() { return reconcilor_; }
 
+ protected:
+  // Computes a new ordering for chrome_accounts. |first_account| must be in
+  // |chrome_accounts|. The returned order has the following properties:
+  // - first_account will be first.
+  // - if a chrome account is also in gaia_accounts, the function tries to keep
+  //   it at the same index. The function mimimizes account re-numbering.
+  // - if there are too many accounts, some accounts will be discarded.
+  //   |first_account| and accounts already in cookies will be kept in priority.
+  //   Aplhabetical order is used to break ties.
+  // Note: the input order of the accounts in |chrome_accounts| does not matter
+  // (different orders yield to the same result).
+  std::vector<std::string> ReorderChromeAccountsForReconcile(
+      const std::vector<std::string>& chrome_accounts,
+      const std::string& first_account,
+      const std::vector<gaia::ListedAccount>& gaia_accounts) const;
+
  private:
   // Reorders chrome accounts in the order they should appear in cookies with
   // respect to existing cookies.
-  virtual std::vector<std::string> ReorderChromeAccountsForReconcile(
+  virtual std::vector<std::string> GetChromeAccountsForReconcile(
       const std::vector<std::string>& chrome_accounts,
       const std::string& primary_account,
       const std::vector<gaia::ListedAccount>& gaia_accounts,
-      const signin::MultiloginMode mode) const;
+      const gaia::MultiloginMode mode) const;
 
   // Returns Mode which shows if it is allowed to change the order of the gaia
   // accounts (e.g. on mobile or on stratup). Default is UPDATE.
-  virtual MultiloginMode CalculateModeForReconcile(
+  virtual gaia::MultiloginMode CalculateModeForReconcile(
       const std::vector<gaia::ListedAccount>& gaia_accounts,
       const std::string primary_account,
       bool first_execution,

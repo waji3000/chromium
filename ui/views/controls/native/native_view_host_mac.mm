@@ -183,6 +183,10 @@ bool NativeViewHostMac::SetCustomMask(std::unique_ptr<ui::LayerOwner> mask) {
   return false;
 }
 
+void NativeViewHostMac::SetHitTestTopInset(int top_inset) {
+  NOTIMPLEMENTED();
+}
+
 void NativeViewHostMac::InstallClip(int x, int y, int w, int h) {
   NOTIMPLEMENTED();
 }
@@ -259,6 +263,10 @@ gfx::NativeCursor NativeViewHostMac::GetCursor(int x, int y) {
   // pointer is over a RenderWidgetHostViewCocoa, OSX won't ask for the fallback
   // cursor.
   return gfx::kNullCursor;
+}
+
+void NativeViewHostMac::SetVisible(bool visible) {
+  [native_view_ setHidden:!visible];
 }
 
 // static

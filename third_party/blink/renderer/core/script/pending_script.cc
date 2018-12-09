@@ -126,6 +126,7 @@ void PendingScript::MarkParserBlockingLoadStartTime() {
 
 // <specdef href="https://html.spec.whatwg.org/#execute-the-script-block">
 void PendingScript::ExecuteScriptBlock(const KURL& document_url) {
+  TRACE_EVENT0("blink", "PendingScript::ExecuteScriptBlock");
   Document* context_document = element_->GetDocument().ContextDocument();
   if (!context_document) {
     Dispose();
@@ -139,7 +140,7 @@ void PendingScript::ExecuteScriptBlock(const KURL& document_url) {
   }
 
   if (OriginalContextDocument() != context_document) {
-    if (GetScriptType() == ScriptType::kModule) {
+    if (GetScriptType() == mojom::ScriptType::kModule) {
       // Do not execute module scripts if they are moved between documents.
       Dispose();
       return;
@@ -154,7 +155,7 @@ void PendingScript::ExecuteScriptBlock(const KURL& document_url) {
 
   if (script && !IsExternal()) {
     bool should_bypass_main_world_csp =
-        frame->GetScriptController().ShouldBypassMainWorldCSP();
+        ContentSecurityPolicy::ShouldBypassMainWorld(&element_->GetDocument());
 
     AtomicString nonce = element_->GetNonceForElement();
     if (!should_bypass_main_world_csp &&
@@ -229,7 +230,7 @@ void PendingScript::ExecuteScriptBlockInternal(
     // <spec step="3">If the script is from an external file, or the script's
     // type is "module", ...</spec>
     const bool needs_increment =
-        is_external || script->GetScriptType() == ScriptType::kModule ||
+        is_external || script->GetScriptType() == mojom::ScriptType::kModule ||
         is_imported_script;
     // <spec step="3">... then increment the ignore-destructive-writes counter
     // of the script element's node document. Let neutralized doc be that
@@ -256,7 +257,7 @@ void PendingScript::ExecuteScriptBlockInternal(
     // <spec step="5.B.1">Set the script element's node document's currentScript
     // attribute to null.</spec>
     ScriptElementBase* current_script = nullptr;
-    if (script->GetScriptType() == ScriptType::kClassic)
+    if (script->GetScriptType() == mojom::ScriptType::kClassic)
       current_script = element;
     context_document->PushCurrentScript(current_script);
 

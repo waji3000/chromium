@@ -28,6 +28,7 @@
 #include "third_party/blink/renderer/modules/payments/payment_manager.h"
 #include "third_party/blink/renderer/modules/permissions/permission_utils.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
 namespace blink {
@@ -248,10 +249,11 @@ ScriptPromise PaymentInstruments::set(ScriptState* script_state,
               mojom::blink::PermissionName::PAYMENT_HANDLER),
           LocalFrame::HasTransientUserActivation(doc ? doc->GetFrame()
                                                      : nullptr),
-          WTF::Bind(&PaymentInstruments::OnRequestPermission,
-                    WrapPersistent(this), WrapPersistent(resolver),
-                    instrument_key,
-                    WrapPersistent(new PaymentInstrumentParameter(details))));
+          WTF::Bind(
+              &PaymentInstruments::OnRequestPermission, WrapPersistent(this),
+              WrapPersistent(resolver), instrument_key,
+              WrapPersistent(
+                  MakeGarbageCollected<PaymentInstrumentParameter>(details))));
   return resolver->Promise();
 }
 

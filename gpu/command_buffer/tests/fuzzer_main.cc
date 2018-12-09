@@ -9,6 +9,7 @@
 
 #include "base/at_exit.h"
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
@@ -335,7 +336,7 @@ class CommandBufferSetup {
   }
 
   bool InitDecoder() {
-    if (recreate_context_) {
+    if (!context_) {
       InitContext();
     }
 
@@ -363,12 +364,15 @@ class CommandBufferSetup {
     scoped_refptr<raster::RasterDecoderContextState> context_state =
         new raster::RasterDecoderContextState(
             share_group_, surface_, context_,
-            config_.workarounds.use_virtualized_gl_contexts);
+            config_.workarounds.use_virtualized_gl_contexts, base::DoNothing());
     context_state->InitializeGrContext(config_.workarounds, nullptr);
+    context_state->InitializeGL(config_.workarounds, gpu_feature_info);
+    auto* context = context_state->context();
     decoder_.reset(raster::RasterDecoder::Create(
         command_buffer_.get(), command_buffer_->service(), &outputter_,
         context_group.get(), std::move(context_state)));
 #else
+    auto* context = context_.get();
     decoder_.reset(gles2::GLES2Decoder::Create(
         command_buffer_.get(), command_buffer_->service(), &outputter_,
         context_group.get()));
@@ -376,7 +380,7 @@ class CommandBufferSetup {
 
     decoder_->GetLogger()->set_log_synthesized_gl_errors(false);
 
-    auto result = decoder_->Initialize(surface_.get(), context_.get(), true,
+    auto result = decoder_->Initialize(surface_.get(), context, true,
                                        gles2::DisallowedFeatures(),
                                        config_.attrib_helper);
     if (result != gpu::ContextResult::kSuccess)
@@ -403,9 +407,11 @@ class CommandBufferSetup {
     if (translator)
       translator->AddRef();
 #endif
-    decoder_->Destroy(true);
+    bool context_lost =
+        decoder_->WasContextLost() || !decoder_->CheckResetStatus();
+    decoder_->Destroy(!context_lost);
     decoder_.reset();
-    if (recreate_context_) {
+    if (recreate_context_ || context_lost) {
       context_->ReleaseCurrent(nullptr);
       context_ = nullptr;
     }

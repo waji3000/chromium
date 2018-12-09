@@ -46,8 +46,11 @@ const base::Feature kNotificationExpansionAnimation{
 const base::Feature kNotificationScrollBar{"NotificationScrollBar",
                                            base::FEATURE_DISABLED_BY_DEFAULT};
 
-const base::Feature kOverviewSwipeToClose{"OverviewSwipeToClose",
-                                          base::FEATURE_ENABLED_BY_DEFAULT};
+const base::Feature kPipRoundedCorners{"PipRoundedCorners",
+                                       base::FEATURE_ENABLED_BY_DEFAULT};
+
+const base::Feature kSeparateNetworkIcons{"SeparateNetworkIcons",
+                                          base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kTrilinearFiltering{"TrilinearFiltering",
                                         base::FEATURE_DISABLED_BY_DEFAULT};
@@ -55,10 +58,16 @@ const base::Feature kTrilinearFiltering{"TrilinearFiltering",
 const base::Feature kUnlockWithExternalBinary{
     "UnlockWithExternalBinary", base::FEATURE_DISABLED_BY_DEFAULT};
 
+const base::Feature kContainedShell{"ContainedShell",
+                                    base::FEATURE_DISABLED_BY_DEFAULT};
+
 const base::Feature kViewsLogin{"ViewsLogin", base::FEATURE_ENABLED_BY_DEFAULT};
 
 const base::Feature kUseBluetoothSystemInAsh{"UseBluetoothSystemInAsh",
                                              base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kSupervisedUserDeprecationNotice{
+    "SupervisedUserDeprecationNotice", base::FEATURE_ENABLED_BY_DEFAULT};
 
 bool IsDockedMagnifierEnabled() {
   return base::FeatureList::IsEnabled(kDockedMagnifier);
@@ -93,8 +102,12 @@ bool IsNotificationScrollBarEnabled() {
   return base::FeatureList::IsEnabled(kNotificationScrollBar);
 }
 
-bool IsSystemTrayUnifiedEnabled() {
-  return true;
+bool IsPipRoundedCornersEnabled() {
+  return base::FeatureList::IsEnabled(kPipRoundedCorners);
+}
+
+bool IsSeparateNetworkIconsEnabled() {
+  return base::FeatureList::IsEnabled(kSeparateNetworkIcons);
 }
 
 bool IsTrilinearFilteringEnabled() {
@@ -110,6 +123,10 @@ bool IsViewsLoginEnabled() {
   return !base::CommandLine::ForCurrentProcess()->HasSwitch(
              ash::switches::kShowWebUiLogin) &&
          base::FeatureList::IsEnabled(kViewsLogin);
+}
+
+bool IsSupervisedUserDeprecationNoticeEnabled() {
+  return base::FeatureList::IsEnabled(kSupervisedUserDeprecationNotice);
 }
 
 }  // namespace features

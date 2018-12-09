@@ -317,13 +317,11 @@ check_targets = [
   "//third_party/Python-Markdown/*",
 
   # "//third_party/SPIRV-Tools/*",  # 30ish errors
-  "//third_party/WebKit/*",
   "//third_party/abseil-cpp/*",
   "//third_party/accessibility-audit/*",
   "//third_party/accessibility_test_framework/*",
   "//third_party/adobe/*",
   "//third_party/afl/*",
-  "//third_party/analytics/*",
   "//third_party/android_build_tools/*",
   "//third_party/android_crazy_linker/*",
   "//third_party/android_data_chart/*",
@@ -357,6 +355,8 @@ check_targets = [
   "//third_party/blanketjs/*",
 
   # "//third_party/blink/*",  # Errors: https://crbug.com/800764
+  "//third_party/blink/public/*",
+
   #"//third_party/breakpad/*",  # Small errors.
   "//third_party/boringssl/*",
   "//third_party/bouncycastle/*",
@@ -412,7 +412,6 @@ check_targets = [
   "//third_party/gif_player/*",
   "//third_party/glfw/*",
   "//third_party/glslang/*",
-  "//third_party/glslang-angle/*",
   "//third_party/google_appengine_cloudstorage/*",
   "//third_party/google_input_tools/*",
   "//third_party/googletest/*",
@@ -497,7 +496,6 @@ check_targets = [
   "//third_party/markdown/*",
   "//third_party/markupsafe/*",
   "//third_party/material_design_icons/*",
-  "//third_party/mesa/*",
   "//third_party/mesa_headers/*",
   "//third_party/metrics_proto/*",
   "//third_party/minigbm/*",
@@ -561,7 +559,6 @@ check_targets = [
   "//third_party/speech-dispatcher/*",
   "//third_party/spirv-cross/*",
   "//third_party/spirv-headers/*",
-  "//third_party/spirv-tools-angle/*",
   "//third_party/sqlite/*",
   "//third_party/sqlite4java/*",
   "//third_party/stp/*",

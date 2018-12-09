@@ -46,6 +46,7 @@
 #include "chrome/browser/ui/views/translate/translate_bubble_view.h"
 #include "chrome/browser/ui/views/translate/translate_icon_view.h"
 #include "chrome/browser/upgrade_detector/upgrade_detector.h"
+#include "chrome/common/chrome_features.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
@@ -102,6 +103,18 @@ int GetToolbarHorizontalPadding() {
   return ui::MaterialDesignController::touch_ui() ? 0 : 8;
 }
 
+// Gets the display mode for a given browser.
+ToolbarView::DisplayMode GetDisplayMode(Browser* browser) {
+  if (browser->SupportsWindowFeature(Browser::FEATURE_TABSTRIP))
+    return ToolbarView::DisplayMode::NORMAL;
+
+  if (browser->hosted_app_controller() &&
+      base::FeatureList::IsEnabled(features::kDesktopPWAsCustomTabUI))
+    return ToolbarView::DisplayMode::CUSTOM_TAB;
+
+  return ToolbarView::DisplayMode::LOCATION;
+}
+
 }  // namespace
 
 // static
@@ -114,9 +127,7 @@ ToolbarView::ToolbarView(Browser* browser, BrowserView* browser_view)
     : browser_(browser),
       browser_view_(browser_view),
       app_menu_icon_controller_(browser->profile(), this),
-      display_mode_(browser->SupportsWindowFeature(Browser::FEATURE_TABSTRIP)
-                        ? DISPLAYMODE_NORMAL
-                        : DISPLAYMODE_LOCATION) {
+      display_mode_(GetDisplayMode(browser)) {
   set_id(VIEW_ID_TOOLBAR);
 
   chrome::AddCommandObserver(browser_, IDC_BACK, this);
@@ -144,11 +155,19 @@ ToolbarView::~ToolbarView() {
 void ToolbarView::Init() {
   location_bar_ = new LocationBarView(browser_, browser_->profile(),
                                       browser_->command_controller(), this,
-                                      !is_display_mode_normal());
+                                      display_mode_ != DisplayMode::NORMAL);
+  // Make sure the toolbar shows by default.
+  size_animation_.Reset(1);
 
-  if (!is_display_mode_normal()) {
+  if (display_mode_ != DisplayMode::NORMAL) {
     AddChildView(location_bar_);
     location_bar_->Init();
+
+    if (display_mode_ == DisplayMode::CUSTOM_TAB) {
+      custom_tab_bar_ = new CustomTabBarView(browser_, this);
+      AddChildView(custom_tab_bar_);
+    }
+
     initialized_ = true;
     return;
   }
@@ -267,6 +286,16 @@ void ToolbarView::Init() {
   initialized_ = true;
 }
 
+void ToolbarView::AnimationEnded(const gfx::Animation* animation) {
+  AnimationProgressed(animation);
+  if (animation->GetCurrentValue() == 0)
+    SetToolbarVisibility(false);
+}
+
+void ToolbarView::AnimationProgressed(const gfx::Animation* animation) {
+  GetWidget()->non_client_view()->Layout();
+}
+
 void ToolbarView::Update(WebContents* tab) {
   if (location_bar_)
     location_bar_->Update(tab);
@@ -274,6 +303,30 @@ void ToolbarView::Update(WebContents* tab) {
     browser_actions_->RefreshToolbarActionViews();
   if (reload_)
     reload_->set_menu_enabled(chrome::IsDebuggerAttachedToCurrentTab(browser_));
+}
+
+void ToolbarView::SetToolbarVisibility(bool visible) {
+  SetVisible(visible);
+  views::View* bar = display_mode_ == DisplayMode::CUSTOM_TAB
+                         ? static_cast<views::View*>(custom_tab_bar_)
+                         : static_cast<views::View*>(location_bar_);
+
+  bar->SetVisible(visible);
+}
+
+void ToolbarView::UpdateToolbarVisibility(bool visible, bool animate) {
+  if (!animate) {
+    size_animation_.Reset(visible ? 1.0 : 0.0);
+    SetToolbarVisibility(visible);
+    return;
+  }
+
+  if (visible) {
+    SetToolbarVisibility(true);
+    size_animation_.Show();
+  } else {
+    size_animation_.Hide();
+  }
 }
 
 void ToolbarView::ResetTabState(WebContents* tab) {
@@ -466,7 +519,14 @@ void ToolbarView::Layout() {
   if (!initialized_)
     return;
 
-  if (!is_display_mode_normal()) {
+  if (display_mode_ == DisplayMode::CUSTOM_TAB) {
+    custom_tab_bar_->SetBounds(0, 0, width(),
+                               custom_tab_bar_->GetPreferredSize().height());
+    location_bar_->SetVisible(false);
+    return;
+  }
+
+  if (display_mode_ == DisplayMode::LOCATION) {
     location_bar_->SetBounds(0, 0, width(),
                              location_bar_->GetPreferredSize().height());
     return;
@@ -594,7 +654,7 @@ void ToolbarView::Layout() {
 }
 
 void ToolbarView::OnPaintBackground(gfx::Canvas* canvas) {
-  if (!is_display_mode_normal())
+  if (display_mode_ != DisplayMode::NORMAL)
     return;
 
   const ui::ThemeProvider* tp = GetThemeProvider();
@@ -623,7 +683,7 @@ void ToolbarView::OnPaintBackground(gfx::Canvas* canvas) {
 }
 
 void ToolbarView::OnThemeChanged() {
-  if (is_display_mode_normal())
+  if (display_mode_ == DisplayMode::NORMAL)
     LoadImages();
 }
 
@@ -663,7 +723,7 @@ bool ToolbarView::SetPaneFocusAndFocusDefault() {
 
 // ui::MaterialDesignControllerObserver:
 void ToolbarView::OnTouchUiChanged() {
-  if (is_display_mode_normal()) {
+  if (display_mode_ == DisplayMode::NORMAL) {
     LoadImages();
     PreferredSizeChanged();
   }
@@ -673,19 +733,20 @@ void ToolbarView::OnTouchUiChanged() {
 // ToolbarView, private:
 
 // AppMenuIconController::Delegate:
-void ToolbarView::UpdateSeverity(AppMenuIconController::IconType type,
-                                 AppMenuIconController::Severity severity) {
+void ToolbarView::UpdateTypeAndSeverity(
+    AppMenuIconController::TypeAndSeverity type_and_severity) {
   // There's no app menu in tabless windows.
   if (!app_menu_button_)
     return;
 
   base::string16 accname_app = l10n_util::GetStringUTF16(IDS_ACCNAME_APP);
-  if (type == AppMenuIconController::IconType::UPGRADE_NOTIFICATION) {
+  if (type_and_severity.type ==
+      AppMenuIconController::IconType::UPGRADE_NOTIFICATION) {
     accname_app = l10n_util::GetStringFUTF16(
         IDS_ACCNAME_APP_UPGRADE_RECOMMENDED, accname_app);
   }
   app_menu_button_->SetAccessibleName(accname_app);
-  app_menu_button_->SetSeverity(type, severity);
+  app_menu_button_->SetTypeAndSeverity(type_and_severity);
 }
 
 // ToolbarButtonProvider:
@@ -722,6 +783,10 @@ views::AccessiblePaneView* ToolbarView::GetAsAccessiblePaneView() {
   return this;
 }
 
+views::View* ToolbarView::GetAnchorView() {
+  return location_bar_;
+}
+
 BrowserRootView::DropIndex ToolbarView::GetDropIndex(
     const ui::DropTargetEvent& event) {
   return {browser_->tab_strip_model()->active_index(), false};
@@ -733,8 +798,12 @@ views::View* ToolbarView::GetViewForDrop() {
 
 gfx::Size ToolbarView::GetSizeInternal(
     gfx::Size (View::*get_size)() const) const {
-  gfx::Size size((location_bar_->*get_size)());
-  if (is_display_mode_normal()) {
+  View* view = display_mode_ == DisplayMode::CUSTOM_TAB
+                   ? static_cast<View*>(custom_tab_bar_)
+                   : static_cast<View*>(location_bar_);
+
+  gfx::Size size = (view->*get_size)();
+  if (display_mode_ == DisplayMode::NORMAL) {
     const int element_padding = GetLayoutConstant(TOOLBAR_ELEMENT_PADDING);
     const int browser_actions_width =
         (browser_actions_->*get_size)().width();
@@ -756,7 +825,7 @@ gfx::Size ToolbarView::GetSizeInternal(
 }
 
 gfx::Size ToolbarView::SizeForContentSize(gfx::Size size) const {
-  if (is_display_mode_normal()) {
+  if (display_mode_ == DisplayMode::NORMAL) {
     // The size of the toolbar is computed using the size of the location bar
     // and constant padding values.
     int content_height = std::max(back_->GetPreferredSize().height(),
@@ -767,11 +836,13 @@ gfx::Size ToolbarView::SizeForContentSize(gfx::Size size) const {
         ui::MaterialDesignController::touch_ui() ? 0 : 9;
     size.SetToMax(gfx::Size(0, content_height + extra_vertical_space));
   }
+
+  size.set_height(size.height() * size_animation_.GetCurrentValue());
   return size;
 }
 
 void ToolbarView::LoadImages() {
-  DCHECK(is_display_mode_normal());
+  DCHECK_EQ(display_mode_, DisplayMode::NORMAL);
 
   const ui::ThemeProvider* tp = GetThemeProvider();
 

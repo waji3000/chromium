@@ -462,16 +462,40 @@ TEST_F(QuicDispatcherTest, DispatcherDoesNotRejectPacketNumberZero) {
 }
 
 TEST_F(QuicDispatcherTest, StatelessVersionNegotiation) {
+  CreateTimeWaitListManager();
+  SetQuicReloadableFlag(quic_limit_version_negotiation, false);
   QuicSocketAddress client_address(QuicIpAddress::Loopback4(), 1);
   server_address_ = QuicSocketAddress(QuicIpAddress::Any4(), 5);
 
-  EXPECT_CALL(*dispatcher_,
-              CreateQuicSession(1, client_address, QuicStringPiece("hq"), _))
-      .Times(0);
+  EXPECT_CALL(*dispatcher_, CreateQuicSession(_, _, _, _)).Times(0);
+  EXPECT_CALL(*time_wait_list_manager_,
+              SendVersionNegotiationPacket(_, _, _, _, _))
+      .Times(1);
   QuicTransportVersion version =
       static_cast<QuicTransportVersion>(QuicTransportVersionMin() - 1);
   ParsedQuicVersion parsed_version(PROTOCOL_QUIC_CRYPTO, version);
   ProcessPacket(client_address, 1, true, parsed_version, SerializeCHLO(),
+                PACKET_8BYTE_CONNECTION_ID, PACKET_4BYTE_PACKET_NUMBER, 1);
+}
+
+TEST_F(QuicDispatcherTest, NoVersionNegotiationWithSmallPacket) {
+  CreateTimeWaitListManager();
+  SetQuicReloadableFlag(quic_limit_version_negotiation, true);
+  QuicSocketAddress client_address(QuicIpAddress::Loopback4(), 1);
+  server_address_ = QuicSocketAddress(QuicIpAddress::Any4(), 5);
+
+  EXPECT_CALL(*dispatcher_, CreateQuicSession(_, _, _, _)).Times(0);
+  EXPECT_CALL(*time_wait_list_manager_,
+              SendVersionNegotiationPacket(_, _, _, _, _))
+      .Times(0);
+  QuicTransportVersion version =
+      static_cast<QuicTransportVersion>(QuicTransportVersionMin() - 1);
+  ParsedQuicVersion parsed_version(PROTOCOL_QUIC_CRYPTO, version);
+  QuicString chlo = SerializeCHLO();
+  // Truncate to 1100 bytes of payload which results in a packet just
+  // under 1200 bytes after framing, packet, and encryption overhead.
+  QuicString truncated_chlo = chlo.substr(0, 1100);
+  ProcessPacket(client_address, 1, true, parsed_version, truncated_chlo,
                 PACKET_8BYTE_CONNECTION_ID, PACKET_4BYTE_PACKET_NUMBER, 1);
 }
 
@@ -631,7 +655,7 @@ TEST_F(QuicDispatcherTest, SupportedTransportVersionsChangeInFlight) {
   SetQuicReloadableFlag(quic_enable_version_44, true);
   SetQuicReloadableFlag(quic_enable_version_45, true);
   SetQuicReloadableFlag(quic_enable_version_46, true);
-  SetQuicFlag(&FLAGS_quic_enable_version_99, true);
+  SetQuicReloadableFlag(quic_enable_version_99, true);
   QuicSocketAddress client_address(QuicIpAddress::Loopback4(), 1);
   server_address_ = QuicSocketAddress(QuicIpAddress::Any4(), 5);
   QuicConnectionId connection_id = 1;
@@ -1326,10 +1350,12 @@ TEST_F(QuicDispatcherWriteBlockedListTest, OnCanWriteHandleBlock) {
       .WillOnce(Invoke(this, &QuicDispatcherWriteBlockedListTest::SetBlocked));
   EXPECT_CALL(*connection2(), OnCanWrite()).Times(0);
   dispatcher_->OnCanWrite();
+  EXPECT_TRUE(dispatcher_->HasPendingWrites());
 
   // And we'll resume where we left off when we get another call.
   EXPECT_CALL(*connection2(), OnCanWrite());
   dispatcher_->OnCanWrite();
+  EXPECT_FALSE(dispatcher_->HasPendingWrites());
 }
 
 TEST_F(QuicDispatcherWriteBlockedListTest, LimitedWrites) {
@@ -1347,24 +1373,6 @@ TEST_F(QuicDispatcherWriteBlockedListTest, LimitedWrites) {
   EXPECT_TRUE(dispatcher_->HasPendingWrites());
 
   // Now call OnCanWrite again, and connection1 should get its second chance
-  EXPECT_CALL(*connection2(), OnCanWrite());
-  dispatcher_->OnCanWrite();
-  EXPECT_FALSE(dispatcher_->HasPendingWrites());
-}
-
-TEST_F(QuicDispatcherWriteBlockedListTest, TestWriteLimits) {
-  // Finally make sure if we write block on a write call, we stop calling.
-  InSequence s;
-  SetBlocked();
-  dispatcher_->OnWriteBlocked(connection1());
-  dispatcher_->OnWriteBlocked(connection2());
-  EXPECT_CALL(*connection1(), OnCanWrite())
-      .WillOnce(Invoke(this, &QuicDispatcherWriteBlockedListTest::SetBlocked));
-  EXPECT_CALL(*connection2(), OnCanWrite()).Times(0);
-  dispatcher_->OnCanWrite();
-  EXPECT_TRUE(dispatcher_->HasPendingWrites());
-
-  // And we'll resume where we left off when we get another call.
   EXPECT_CALL(*connection2(), OnCanWrite());
   dispatcher_->OnCanWrite();
   EXPECT_FALSE(dispatcher_->HasPendingWrites());
@@ -1831,6 +1839,9 @@ TEST_P(BufferedPacketStoreTest, ReceiveCHLOForBufferedConnection) {
 
 // Regression test for b/117874922.
 TEST_P(BufferedPacketStoreTest, ProcessBufferedChloWithDifferentVersion) {
+  // Turn off version 99, such that the preferred version is not supported by
+  // the server.
+  SetQuicReloadableFlag(quic_enable_version_99, false);
   QuicConnectionId last_connection_id = kMaxNumSessionsToCreate + 5;
   ParsedQuicVersionVector supported_versions = CurrentSupportedVersions();
   for (QuicConnectionId conn_id = 1; conn_id <= last_connection_id; ++conn_id) {
@@ -1962,13 +1973,13 @@ class AsyncGetProofTest : public QuicDispatcherTest {
  protected:
   const QuicSocketAddress client_addr_;
   const QuicSocketAddress client_addr_2_;
+  CryptoHandshakeMessage chlo_;
 
  private:
   QuicCryptoServerConfigPeer crypto_config_peer_;
   QuicSocketAddress server_addr_;
   QuicReferenceCountedPointer<QuicSignedServerConfig> signed_config_;
   const QuicClock* clock_;
-  CryptoHandshakeMessage chlo_;
   CryptoHandshakeMessage full_chlo_;    // CHLO for client_addr_
   CryptoHandshakeMessage full_chlo_2_;  // CHLO for client_addr_2_
 
@@ -2485,18 +2496,19 @@ TEST_F(AsyncGetProofTest, DispatcherFailedToPickUpVersionForAsyncProof) {
   // because of QUIC_INVALID_STREAM_DATA.
 
   SetQuicReloadableFlag(quic_disable_version_35, false);
-
+  ParsedQuicVersion chlo_version(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_39);
+  chlo_.SetVersion(kVER, chlo_version);
   // Send a CHLO with v39. Dispatcher framer's version is set to v39.
-  ProcessPacket(client_addr_, 1, true,
-                ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_39),
-                SerializeCHLO(), PACKET_8BYTE_CONNECTION_ID,
-                PACKET_4BYTE_PACKET_NUMBER, 1);
+  ProcessPacket(client_addr_, 1, true, chlo_version, SerializeCHLO(),
+                PACKET_8BYTE_CONNECTION_ID, PACKET_4BYTE_PACKET_NUMBER, 1);
 
   // Send another CHLO with v35. Dispatcher framer's version is set to v35.
-  ProcessPacket(client_addr_, 2, true,
-                ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_35),
-                SerializeCHLO(), PACKET_8BYTE_CONNECTION_ID,
-                PACKET_4BYTE_PACKET_NUMBER, 1);
+  chlo_version.transport_version = QUIC_VERSION_35;
+  chlo_.SetVersion(kVER, chlo_version);
+  // Invalidate the cached serialized form.
+  chlo_.MarkDirty();
+  ProcessPacket(client_addr_, 2, true, chlo_version, SerializeCHLO(),
+                PACKET_8BYTE_CONNECTION_ID, PACKET_4BYTE_PACKET_NUMBER, 1);
   ASSERT_EQ(GetFakeProofSource()->NumPendingCallbacks(), 2);
 
   // Complete the ProofSource::GetProof call for v39. This would cause the
@@ -2510,17 +2522,19 @@ TEST_F(AsyncGetProofTest, DispatcherHasWrongLastPacketIsIetfQuic) {
   SetQuicReloadableFlag(quic_fix_last_packet_is_ietf_quic, true);
 
   // Process a packet of v44.
-  ProcessPacket(client_addr_, 1, true,
-                ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_44),
-                SerializeCHLO(), PACKET_8BYTE_CONNECTION_ID,
-                PACKET_4BYTE_PACKET_NUMBER, 1);
+  ParsedQuicVersion chlo_version(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_44);
+  chlo_.SetVersion(kVER, chlo_version);
+  ProcessPacket(client_addr_, 1, true, chlo_version, SerializeCHLO(),
+                PACKET_8BYTE_CONNECTION_ID, PACKET_4BYTE_PACKET_NUMBER, 1);
   EXPECT_NE(GOOGLE_QUIC_PACKET, dispatcher_->GetLastPacketFormat());
 
   // Process another packet of v43.
-  ProcessPacket(client_addr_, 2, true,
-                ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_43),
-                SerializeCHLO(), PACKET_8BYTE_CONNECTION_ID,
-                PACKET_4BYTE_PACKET_NUMBER, 1);
+  chlo_version.transport_version = QUIC_VERSION_43;
+  chlo_.SetVersion(kVER, chlo_version);
+  // Invalidate the cached serialized form.
+  chlo_.MarkDirty();
+  ProcessPacket(client_addr_, 2, true, chlo_version, SerializeCHLO(),
+                PACKET_8BYTE_CONNECTION_ID, PACKET_4BYTE_PACKET_NUMBER, 1);
   EXPECT_EQ(GOOGLE_QUIC_PACKET, dispatcher_->GetLastPacketFormat());
   ASSERT_EQ(GetFakeProofSource()->NumPendingCallbacks(), 2);
 

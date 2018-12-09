@@ -241,9 +241,9 @@ gfx::Rect RenderWidgetHostViewGuest::GetBoundsInRootWindow() {
 
 gfx::PointF RenderWidgetHostViewGuest::TransformPointToRootCoordSpaceF(
     const gfx::PointF& point) {
+  viz::SurfaceId surface_id = GetCurrentSurfaceId();
   // LocalSurfaceId is not needed in Viz hit-test.
-  if (!guest_ ||
-      (!use_viz_hit_test_ && !last_activated_surface_info_.is_valid())) {
+  if (!guest_ || (!use_viz_hit_test_ && !surface_id.is_valid())) {
     return point;
   }
 
@@ -255,8 +255,8 @@ gfx::PointF RenderWidgetHostViewGuest::TransformPointToRootCoordSpaceF(
   // TODO(wjmaclean): If we knew that TransformPointToLocalCoordSpace would
   // guarantee not to change transformed_point on failure, then we could skip
   // checking the function return value and directly return transformed_point.
-  if (!root_rwhv->TransformPointToLocalCoordSpace(
-          point, last_activated_surface_info_.id(), &transformed_point)) {
+  if (!root_rwhv->TransformPointToLocalCoordSpace(point, surface_id,
+                                                  &transformed_point)) {
     return point;
   }
   return transformed_point;
@@ -266,19 +266,19 @@ bool RenderWidgetHostViewGuest::TransformPointToLocalCoordSpaceLegacy(
     const gfx::PointF& point,
     const viz::SurfaceId& original_surface,
     gfx::PointF* transformed_point) {
+  viz::SurfaceId surface_id = GetCurrentSurfaceId();
   *transformed_point = point;
-  if (!guest_ || !last_activated_surface_info_.is_valid())
+  if (!guest_ || !surface_id.is_valid())
     return false;
 
-  if (original_surface == last_activated_surface_info_.id())
+  if (original_surface == surface_id)
     return true;
 
   *transformed_point =
       gfx::ConvertPointToPixel(current_surface_scale_factor(), point);
   viz::SurfaceHittest hittest(nullptr,
                               GetFrameSinkManager()->surface_manager());
-  if (!hittest.TransformPointToTargetSurface(original_surface,
-                                             last_activated_surface_info_.id(),
+  if (!hittest.TransformPointToTargetSurface(original_surface, surface_id,
                                              transformed_point)) {
     return false;
   }
@@ -546,11 +546,11 @@ viz::FrameSinkId RenderWidgetHostViewGuest::GetRootFrameSinkId() {
   return viz::FrameSinkId();
 }
 
-const viz::LocalSurfaceId& RenderWidgetHostViewGuest::GetLocalSurfaceId()
-    const {
+const viz::LocalSurfaceIdAllocation&
+RenderWidgetHostViewGuest::GetLocalSurfaceIdAllocation() const {
   if (guest_)
-    return guest_->local_surface_id();
-  return viz::ParentLocalSurfaceIdAllocator::InvalidLocalSurfaceId();
+    return guest_->local_surface_id_allocation();
+  return viz::ParentLocalSurfaceIdAllocator::InvalidLocalSurfaceIdAllocation();
 }
 
 void RenderWidgetHostViewGuest::DidCreateNewRendererCompositorFrameSink(
@@ -643,6 +643,10 @@ void RenderWidgetHostViewGuest::WheelEventAck(
 void RenderWidgetHostViewGuest::GestureEventAck(
     const blink::WebGestureEvent& event,
     InputEventAckState ack_result) {
+  // Stops flinging if a GSU event with momentum phase is sent to the renderer
+  // but not consumed.
+  StopFlingingIfNecessary(event, ack_result);
+
   bool not_consumed = ack_result == INPUT_EVENT_ACK_STATE_NOT_CONSUMED ||
                       ack_result == INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS;
   // GestureScrollBegin/End are always consumed by the guest, so we only

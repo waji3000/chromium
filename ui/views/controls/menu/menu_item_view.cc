@@ -196,6 +196,7 @@ void MenuItemView::GetAccessibleNodeData(ui::AXNodeData* node_data) {
     case NORMAL:
     case SEPARATOR:
     case EMPTY:
+    case HIGHLIGHTED:
       // No additional accessibility states currently for these menu states.
       break;
   }
@@ -284,6 +285,11 @@ MenuItemView* MenuItemView::AddMenuItemAt(
     item->SetIcon(icon);
   if (type == SUBMENU || type == ACTIONABLE_SUBMENU)
     item->CreateSubmenu();
+  if (type == HIGHLIGHTED) {
+    const MenuConfig& config = MenuConfig::instance();
+    item->SetMargins(config.footnote_vertical_margin,
+                     config.footnote_vertical_margin);
+  }
   if (GetDelegate() && !GetDelegate()->IsCommandVisible(item_id))
     item->SetVisible(false);
   submenu_->AddChildViewAt(item, index);
@@ -692,6 +698,12 @@ void MenuItemView::SetForcedVisualSelection(bool selected) {
   SchedulePaint();
 }
 
+void MenuItemView::SetCornerRadius(int radius) {
+  DCHECK_EQ(GetType(), HIGHLIGHTED);
+  corner_radius_ = radius;
+  invalidate_dimensions();  // Triggers preferred size recalculation.
+}
+
 MenuItemView::MenuItemView(MenuItemView* parent,
                            int command,
                            MenuItemView::Type type)
@@ -781,6 +793,7 @@ void MenuItemView::Init(MenuItemView* parent,
   submenu_arrow_image_view_ = nullptr;
   vertical_separator_ = nullptr;
   show_mnemonics_ = false;
+  corner_radius_ = 0;
   // Assign our ID, this allows SubmenuItemView to find MenuItemViews.
   set_id(kMenuItemViewID);
   has_icons_ = false;
@@ -925,26 +938,7 @@ void MenuItemView::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
   // Render the background. As MenuScrollViewContainer draws the background, we
   // only need the background when we want it to look different, as when we're
   // selected.
-  ui::NativeTheme* native_theme = GetNativeTheme();
-  if (render_selection) {
-    gfx::Rect item_bounds(0, 0, width(), height());
-    if (type_ == ACTIONABLE_SUBMENU) {
-      if (submenu_area_of_actionable_submenu_selected_) {
-        item_bounds = GetSubmenuAreaOfActionableSubmenu();
-      } else {
-        item_bounds = gfx::Rect(gfx::Size(
-            width() - MenuConfig::instance().actionable_submenu_width - 1,
-            height()));
-      }
-    }
-    AdjustBoundsForRTLUI(&item_bounds);
-
-    native_theme->Paint(canvas->sk_canvas(),
-                        ui::NativeTheme::kMenuItemBackground,
-                        ui::NativeTheme::kHovered,
-                        item_bounds,
-                        ui::NativeTheme::ExtraParams());
-  }
+  PaintBackground(canvas, mode, render_selection);
 
   const int top_margin = GetTopMargin();
   const int bottom_margin = GetBottomMargin();
@@ -997,6 +991,48 @@ void MenuItemView::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
   // Set the submenu indicator (arrow) image and color.
   if (HasSubmenu())
     submenu_arrow_image_view_->SetImage(GetSubmenuArrowImage(icon_color));
+}
+
+void MenuItemView::PaintBackground(gfx::Canvas* canvas,
+                                   PaintButtonMode mode,
+                                   bool render_selection) {
+  if (GetType() == HIGHLIGHTED) {
+    // Highligted items always have a different-colored background, and ignore
+    // system theme.
+    ui::NativeTheme::ColorId color_id =
+        render_selection
+            ? ui::NativeTheme::
+                  kColorId_FocusedHighlightedMenuItemBackgroundColor
+            : ui::NativeTheme::kColorId_HighlightedMenuItemBackgroundColor;
+    cc::PaintFlags flags;
+    flags.setAntiAlias(true);
+    flags.setStyle(cc::PaintFlags::kFill_Style);
+    flags.setColor(GetNativeTheme()->GetSystemColor(color_id));
+    // Draw a rounded rect that spills outside of the clipping area, so that the
+    // rounded corners only show in the bottom 2 corners. Note that
+    // |corner_radius_| should only be set when the highlighted item is at the
+    // end of the menu.
+    gfx::RectF spilling_rect(GetLocalBounds());
+    spilling_rect.set_y(spilling_rect.y() - corner_radius_);
+    spilling_rect.set_height(spilling_rect.height() + corner_radius_);
+    canvas->DrawRoundRect(spilling_rect, corner_radius_, flags);
+  } else if (render_selection) {
+    gfx::Rect item_bounds = GetLocalBounds();
+    if (type_ == ACTIONABLE_SUBMENU) {
+      if (submenu_area_of_actionable_submenu_selected_) {
+        item_bounds = GetSubmenuAreaOfActionableSubmenu();
+      } else {
+        item_bounds.set_width(item_bounds.width() -
+                              MenuConfig::instance().actionable_submenu_width -
+                              1);
+      }
+    }
+    AdjustBoundsForRTLUI(&item_bounds);
+
+    GetNativeTheme()->Paint(
+        canvas->sk_canvas(), ui::NativeTheme::kMenuItemBackground,
+        ui::NativeTheme::kHovered, item_bounds, ui::NativeTheme::ExtraParams());
+  }
 }
 
 void MenuItemView::PaintMinorIconAndText(
@@ -1059,6 +1095,9 @@ SkColor MenuItemView::GetTextColor(bool minor, bool render_selection) const {
   if (GetMenuController() && GetMenuController()->use_touchable_layout())
     color_id = ui::NativeTheme::kColorId_TouchableMenuItemLabelColor;
 
+  if (GetType() == HIGHLIGHTED)
+    color_id = ui::NativeTheme::kColorId_HighlightedMenuItemForegroundColor;
+
   return GetNativeTheme()->GetSystemColor(color_id);
 }
 
@@ -1074,23 +1113,25 @@ void MenuItemView::DestroyAllMenuHosts() {
 }
 
 int MenuItemView::GetTopMargin() const {
-  if (top_margin_ >= 0)
-    return top_margin_;
-
-  const MenuItemView* root = GetRootMenuItem();
-  return root && root->has_icons_
-             ? MenuConfig::instance().item_top_margin
-             : MenuConfig::instance().item_no_icon_top_margin;
+  int margin = top_margin_;
+  if (margin < 0) {
+    const MenuItemView* root = GetRootMenuItem();
+    margin = root && root->has_icons_
+                 ? MenuConfig::instance().item_top_margin
+                 : MenuConfig::instance().item_no_icon_top_margin;
+  }
+  return margin;
 }
 
 int MenuItemView::GetBottomMargin() const {
-  if (bottom_margin_ >= 0)
-    return bottom_margin_;
-
-  const MenuItemView* root = GetRootMenuItem();
-  return root && root->has_icons_
-             ? MenuConfig::instance().item_bottom_margin
-             : MenuConfig::instance().item_no_icon_bottom_margin;
+  int margin = bottom_margin_;
+  if (margin < 0) {
+    const MenuItemView* root = GetRootMenuItem();
+    margin = root && root->has_icons_
+                 ? MenuConfig::instance().item_bottom_margin
+                 : MenuConfig::instance().item_no_icon_bottom_margin;
+  }
+  return margin;
 }
 
 gfx::Size MenuItemView::GetChildPreferredSize() const {
@@ -1210,6 +1251,12 @@ MenuItemView::MenuItemDimensions MenuItemView::CalculateDimensions() const {
 void MenuItemView::ApplyMinimumDimensions(MenuItemDimensions* dims) const {
   // Don't apply minimums to menus without controllers or to comboboxes.
   if (!GetMenuController() || GetMenuController()->is_combobox())
+    return;
+
+  // TODO(nicolaso): PaintBackground() doesn't cover the whole area in footnotes
+  // when minimum height is set too high. For now, just ignore minimum height
+  // for HIGHLIGHTED elements.
+  if (GetType() == HIGHLIGHTED)
     return;
 
   int used =

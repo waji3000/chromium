@@ -53,6 +53,7 @@ class LocalFrameClientImpl final : public LocalFrameClient {
  public:
   static LocalFrameClientImpl* Create(WebLocalFrameImpl*);
 
+  explicit LocalFrameClientImpl(WebLocalFrameImpl*);
   ~LocalFrameClientImpl() override;
 
   void Trace(blink::Visitor*) override;
@@ -96,10 +97,8 @@ class LocalFrameClientImpl final : public LocalFrameClient {
                                        WebHistoryCommitType,
                                        bool content_initiated) override;
   void DispatchWillCommitProvisionalLoad() override;
-  void DispatchDidStartProvisionalLoad(
-      DocumentLoader*,
-      ResourceRequest&,
-      mojo::ScopedMessagePipeHandle navigation_initiator_handle) override;
+  void DispatchDidStartProvisionalLoad(DocumentLoader*,
+                                       const ResourceRequest&) override;
   void DispatchDidReceiveTitle(const String&) override;
   void DispatchDidChangeIcons(IconType) override;
   void DispatchDidCommitLoad(HistoryItem*,
@@ -112,20 +111,22 @@ class LocalFrameClientImpl final : public LocalFrameClient {
   void DispatchDidFinishLoad() override;
 
   void DispatchDidChangeThemeColor() override;
-  NavigationPolicy DecidePolicyForNavigation(
+  void BeginNavigation(
       const ResourceRequest&,
       Document* origin_document,
       DocumentLoader*,
       WebNavigationType,
       NavigationPolicy,
       bool has_transient_activation,
-      bool should_replace_current_entry,
+      WebFrameLoadType,
       bool is_client_redirect,
       WebTriggeringEventInfo,
       HTMLFormElement*,
       ContentSecurityPolicyDisposition should_bypass_main_world_csp,
       mojom::blink::BlobURLTokenPtr,
-      base::TimeTicks input_start_time) override;
+      base::TimeTicks input_start_time,
+      const String& href_translate,
+      mojom::blink::NavigationInitiatorPtr) override;
   void DispatchWillSendSubmitEvent(HTMLFormElement*) override;
   void DidStartLoading() override;
   void DidStopLoading() override;
@@ -144,6 +145,7 @@ class LocalFrameClientImpl final : public LocalFrameClient {
   void DidDisplayContentWithCertificateErrors() override;
   void DidRunContentWithCertificateErrors() override;
   void ReportLegacySymantecCert(const KURL&, bool) override;
+  void ReportLegacyTLSVersion(const KURL&) override;
   void DidChangePerformanceTiming() override;
   void DidObserveLoadingBehavior(WebLoadingBehaviorFlag) override;
   void DidObserveNewFeatureUsage(mojom::WebFeature) override;
@@ -289,7 +291,7 @@ class LocalFrameClientImpl final : public LocalFrameClient {
                                  const KURL&,
                                  const String&) override;
 
-  std::unique_ptr<WebWorkerFetchContext> CreateWorkerFetchContext() override;
+  scoped_refptr<WebWorkerFetchContext> CreateWorkerFetchContext() override;
   std::unique_ptr<WebContentSettingsClient> CreateWorkerContentSettingsClient()
       override;
 
@@ -298,8 +300,6 @@ class LocalFrameClientImpl final : public LocalFrameClient {
   bool UsePrintingLayout() const override;
 
  private:
-  explicit LocalFrameClientImpl(WebLocalFrameImpl*);
-
   bool IsLocalFrameClientImpl() const override { return true; }
   WebDevToolsAgentImpl* DevToolsAgent();
 

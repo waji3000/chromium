@@ -12,6 +12,7 @@
 #include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 
 using testing::ElementsAre;
+using testing::UnorderedElementsAre;
 
 namespace blink {
 
@@ -22,13 +23,13 @@ class PaintLayerPainterTest : public PaintControllerPaintTest {
   void ExpectPaintedOutputInvisible(const char* element_name,
                                     bool expected_value) {
     // The optimization to skip painting for effectively-invisible content is
-    // limited to pre-SPv2.
-    if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+    // limited to pre-CAP.
+    if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
       return;
 
     PaintLayer* target_layer =
         ToLayoutBox(GetLayoutObjectByElementId(element_name))->Layer();
-    PaintLayerPaintingInfo painting_info(nullptr, LayoutRect(),
+    PaintLayerPaintingInfo painting_info(nullptr, CullRect(),
                                          kGlobalPaintNormalPhase, LayoutSize());
     bool invisible =
         PaintLayerPainter(*target_layer)
@@ -81,14 +82,21 @@ TEST_P(PaintLayerPainterTest, CachedSubsequence) {
   auto& filler2 = *GetLayoutObjectByElementId("filler2");
 
   const auto& view_client = ViewScrollingBackgroundClient();
-  EXPECT_THAT(RootPaintController().GetDisplayItemList(),
-              ElementsAre(IsSameId(&view_client, kDocumentBackgroundType),
-                          IsSameId(&container1, kBackgroundType),
-                          IsSameId(&content1, kBackgroundType),
-                          IsSameId(&filler1, kBackgroundType),
-                          IsSameId(&container2, kBackgroundType),
-                          IsSameId(&content2, kBackgroundType),
-                          IsSameId(&filler2, kBackgroundType)));
+  EXPECT_THAT(
+      RootPaintController().GetDisplayItemList(),
+      ElementsAre(IsSameId(&view_client, kDocumentBackgroundType),
+                  IsSameId(GetDisplayItemClientFromLayoutObject(&container1),
+                           kBackgroundType),
+                  IsSameId(GetDisplayItemClientFromLayoutObject(&content1),
+                           kBackgroundType),
+                  IsSameId(GetDisplayItemClientFromLayoutObject(&filler1),
+                           kBackgroundType),
+                  IsSameId(GetDisplayItemClientFromLayoutObject(&container2),
+                           kBackgroundType),
+                  IsSameId(GetDisplayItemClientFromLayoutObject(&content2),
+                           kBackgroundType),
+                  IsSameId(GetDisplayItemClientFromLayoutObject(&filler2),
+                           kBackgroundType)));
 
   auto* container1_layer = ToLayoutBoxModelObject(container1).Layer();
   auto* filler1_layer = ToLayoutBoxModelObject(filler1).Layer();
@@ -143,25 +151,27 @@ TEST_P(PaintLayerPainterTest, CachedSubsequence) {
 
   CommitAndFinishCycle();
 
-  EXPECT_THAT(RootPaintController().GetDisplayItemList(),
-              ElementsAre(IsSameId(&view_client, kDocumentBackgroundType),
-                          IsSameId(&container1, kBackgroundType),
-                          IsSameId(&content1, kBackgroundType),
-                          IsSameId(&filler1, kBackgroundType),
-                          IsSameId(&container2, kBackgroundType),
-                          IsSameId(&content2, kBackgroundType),
-                          IsSameId(&filler2, kBackgroundType)));
+  EXPECT_THAT(
+      RootPaintController().GetDisplayItemList(),
+      ElementsAre(IsSameId(&view_client, kDocumentBackgroundType),
+                  IsSameId(GetDisplayItemClientFromLayoutObject(&container1),
+                           kBackgroundType),
+                  IsSameId(GetDisplayItemClientFromLayoutObject(&content1),
+                           kBackgroundType),
+                  IsSameId(GetDisplayItemClientFromLayoutObject(&filler1),
+                           kBackgroundType),
+                  IsSameId(GetDisplayItemClientFromLayoutObject(&container2),
+                           kBackgroundType),
+                  IsSameId(GetDisplayItemClientFromLayoutObject(&content2),
+                           kBackgroundType),
+                  IsSameId(GetDisplayItemClientFromLayoutObject(&filler2),
+                           kBackgroundType)));
 
   // We should still have the paint chunks forced by the cached subsequences.
   check_chunks();
 }
 
-TEST_P(PaintLayerPainterTest, CachedSubsequenceOnInterestRectChange) {
-  // TODO(wangxianzhu): SPv2 deals with interest rect differently, so disable
-  // this test for SPv2 temporarily.
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
-    return;
-
+TEST_P(PaintLayerPainterTest, CachedSubsequenceOnCullRectChange) {
   SetBodyInnerHTML(R"HTML(
     <div id='container1' style='position: relative; z-index: 1;
        width: 200px; height: 200px; background-color: blue'>
@@ -184,24 +194,22 @@ TEST_P(PaintLayerPainterTest, CachedSubsequenceOnInterestRectChange) {
   )HTML");
   InvalidateAll(RootPaintController());
 
-  LayoutObject& container1 =
-      *GetDocument().getElementById("container1")->GetLayoutObject();
-  LayoutObject& content1 =
-      *GetDocument().getElementById("content1")->GetLayoutObject();
-  LayoutObject& container2 =
-      *GetDocument().getElementById("container2")->GetLayoutObject();
-  LayoutObject& content2a =
-      *GetDocument().getElementById("content2a")->GetLayoutObject();
-  LayoutObject& content2b =
-      *GetDocument().getElementById("content2b")->GetLayoutObject();
-  LayoutObject& container3 =
-      *GetDocument().getElementById("container3")->GetLayoutObject();
-  LayoutObject& content3 =
-      *GetDocument().getElementById("content3")->GetLayoutObject();
+  DisplayItemClient& container1 =
+      *GetDisplayItemClientFromElementId("container1");
+  DisplayItemClient& content1 = *GetDisplayItemClientFromElementId("content1");
+  DisplayItemClient& container2 =
+      *GetDisplayItemClientFromElementId("container2");
+  DisplayItemClient& content2a =
+      *GetDisplayItemClientFromElementId("content2a");
+  DisplayItemClient& content2b =
+      *GetDisplayItemClientFromElementId("content2b");
+  DisplayItemClient& container3 =
+      *GetDisplayItemClientFromElementId("container3");
+  DisplayItemClient& content3 = *GetDisplayItemClientFromElementId("content3");
 
   GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint();
-  IntRect interest_rect(0, 0, 400, 300);
-  Paint(&interest_rect);
+  IntRect cull_rect(0, 0, 400, 300);
+  Paint(&cull_rect);
 
   const auto& background_display_item_client = ViewScrollingBackgroundClient();
 
@@ -220,8 +228,8 @@ TEST_P(PaintLayerPainterTest, CachedSubsequenceOnInterestRectChange) {
                           IsSameId(&content3, kBackgroundType)));
 
   GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint();
-  IntRect new_interest_rect(0, 100, 300, 1000);
-  EXPECT_TRUE(PaintWithoutCommit(&new_interest_rect));
+  IntRect new_cull_rect(0, 100, 300, 1000);
+  EXPECT_TRUE(PaintWithoutCommit(&new_cull_rect));
 
   // Container1 becomes partly in the interest rect, but uses cached subsequence
   // because it was fully painted before;
@@ -244,7 +252,7 @@ TEST_P(PaintLayerPainterTest, CachedSubsequenceOnInterestRectChange) {
 }
 
 TEST_P(PaintLayerPainterTest,
-       CachedSubsequenceOnInterestRectChangeUnderInvalidationChecking) {
+       CachedSubsequenceOnCullRectChangeUnderInvalidationChecking) {
   ScopedPaintUnderInvalidationCheckingForTest under_invalidation_checking(true);
 
   SetBodyInnerHTML(R"HTML(
@@ -257,18 +265,18 @@ TEST_P(PaintLayerPainterTest,
 
   // |target| will be fully painted.
   GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint();
-  IntRect interest_rect(0, 0, 400, 300);
-  Paint(&interest_rect);
+  IntRect cull_rect(0, 0, 400, 300);
+  Paint(&cull_rect);
 
   // |target| will be partially painted. Should not trigger under-invalidation
   // checking DCHECKs.
   GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint();
-  IntRect new_interest_rect(0, 100, 300, 1000);
-  Paint(&new_interest_rect);
+  IntRect new_cull_rect(0, 100, 300, 1000);
+  Paint(&new_cull_rect);
 }
 
 TEST_P(PaintLayerPainterTest,
-       CachedSubsequenceOnStyleChangeWithInterestRectClipping) {
+       CachedSubsequenceOnStyleChangeWithCullRectClipping) {
   SetBodyInnerHTML(R"HTML(
     <div id='container1' style='position: relative; z-index: 1;
         width: 200px; height: 200px; background-color: blue'>
@@ -282,18 +290,16 @@ TEST_P(PaintLayerPainterTest,
     </div>
   )HTML");
   GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint();
-  // PaintResult of all subsequences will be MayBeClippedByPaintDirtyRect.
-  IntRect interest_rect(0, 0, 50, 300);
-  Paint(&interest_rect);
+  // PaintResult of all subsequences will be MayBeClippedByCullRect.
+  IntRect cull_rect(0, 0, 50, 300);
+  Paint(&cull_rect);
 
-  LayoutObject& container1 =
-      *GetDocument().getElementById("container1")->GetLayoutObject();
-  LayoutObject& content1 =
-      *GetDocument().getElementById("content1")->GetLayoutObject();
-  LayoutObject& container2 =
-      *GetDocument().getElementById("container2")->GetLayoutObject();
-  LayoutObject& content2 =
-      *GetDocument().getElementById("content2")->GetLayoutObject();
+  DisplayItemClient& container1 =
+      *GetDisplayItemClientFromElementId("container1");
+  DisplayItemClient& content1 = *GetDisplayItemClientFromElementId("content1");
+  DisplayItemClient& container2 =
+      *GetDisplayItemClientFromElementId("container2");
+  DisplayItemClient& content2 = *GetDisplayItemClientFromElementId("content2");
 
   const auto& background_display_item_client = ViewScrollingBackgroundClient();
   EXPECT_THAT(RootPaintController().GetDisplayItemList(),
@@ -304,12 +310,12 @@ TEST_P(PaintLayerPainterTest,
                           IsSameId(&container2, kBackgroundType),
                           IsSameId(&content2, kBackgroundType)));
 
-  ToHTMLElement(content1.GetNode())
+  ToHTMLElement(GetElementById("content1"))
       ->setAttribute(html_names::kStyleAttr,
                      "position: absolute; width: 100px; height: 100px; "
                      "background-color: green");
   GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint();
-  EXPECT_TRUE(PaintWithoutCommit(&interest_rect));
+  EXPECT_TRUE(PaintWithoutCommit(&cull_rect));
   EXPECT_EQ(4, NumCachedNewItems());
 
   CommitAndFinishCycle();
@@ -321,6 +327,126 @@ TEST_P(PaintLayerPainterTest,
                           IsSameId(&content1, kBackgroundType),
                           IsSameId(&container2, kBackgroundType),
                           IsSameId(&content2, kBackgroundType)));
+}
+
+TEST_P(PaintLayerPainterTest, CachedSubsequenceRetainsPreviousPaintResult) {
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      html, body { height: 100%; margin: 0 }
+      ::-webkit-scrollbar { display:none }
+    </style>
+    <div id="target" style="height: 8000px; contain: paint">
+      <div id="content1" style="height: 100px; background: blue"></div>
+      <div style="height: 6000px"></div>
+      <div id="content2" style="height: 100px; background: blue"></div>
+    </div>
+    <div id="change" style="display: none"></div>
+  )HTML");
+
+  const auto* target_layer =
+      ToLayoutBoxModelObject(GetLayoutObjectByElementId("target"))->Layer();
+  const auto* content1 = GetLayoutObjectByElementId("content1");
+  const auto* content2 = GetLayoutObjectByElementId("content2");
+  const auto& view_client = ViewScrollingBackgroundClient();
+  // |target| is partially painted.
+  EXPECT_EQ(kMayBeClippedByCullRect, target_layer->PreviousPaintResult());
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
+    // CAP doesn't clip the cull rect by the scrolling contents rect, which
+    // doesn't affect painted results.
+    EXPECT_EQ(CullRect(IntRect(-4000, -4000, 8800, 8600)),
+              target_layer->PreviousCullRect());
+    // |content2| is out of the cull rect.
+    EXPECT_THAT(
+        RootPaintController().GetDisplayItemList(),
+        ElementsAre(IsSameId(&GetLayoutView(), DisplayItem::kScrollHitTest),
+                    IsSameId(&view_client, kDocumentBackgroundType),
+                    IsSameId(content1, kBackgroundType)));
+    // |target| created subsequence.
+    EXPECT_SUBSEQUENCE(*target_layer, 2, 3);
+  } else {
+    EXPECT_EQ(CullRect(IntRect(0, 0, 800, 4600)),
+              target_layer->PreviousCullRect());
+    // |content2| is out of the cull rect.
+    EXPECT_THAT(RootPaintController().GetDisplayItemList(),
+                ElementsAre(IsSameId(&view_client, kDocumentBackgroundType),
+                            IsSameId(content1, kBackgroundType)));
+    // |target| created subsequence.
+    EXPECT_SUBSEQUENCE(*target_layer, 1, 2);
+  }
+
+  // Change something that triggers a repaint but |target| should use cached
+  // subsequence.
+  GetDocument().getElementById("change")->setAttribute(html_names::kStyleAttr,
+                                                       "display: block");
+  GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint();
+  EXPECT_FALSE(target_layer->NeedsRepaint());
+  EXPECT_TRUE(PaintWithoutCommit());
+  EXPECT_EQ(2, NumCachedNewItems());
+  CommitAndFinishCycle();
+
+  // |target| is still partially painted.
+  EXPECT_EQ(kMayBeClippedByCullRect, target_layer->PreviousPaintResult());
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
+    // CAP doens't clip the cull rect by the scrolling contents rect, which
+    // doesn't affect painted results.
+    EXPECT_EQ(CullRect(IntRect(-4000, -4000, 8800, 8600)),
+              target_layer->PreviousCullRect());
+    EXPECT_THAT(
+        RootPaintController().GetDisplayItemList(),
+        ElementsAre(IsSameId(&GetLayoutView(), DisplayItem::kScrollHitTest),
+                    IsSameId(&view_client, kDocumentBackgroundType),
+                    IsSameId(content1, kBackgroundType)));
+    // |target| still created subsequence (cached).
+    EXPECT_SUBSEQUENCE(*target_layer, 2, 3);
+  } else {
+    EXPECT_EQ(CullRect(IntRect(0, 0, 800, 4600)),
+              target_layer->PreviousCullRect());
+    EXPECT_THAT(RootPaintController().GetDisplayItemList(),
+                ElementsAre(IsSameId(&view_client, kDocumentBackgroundType),
+                            IsSameId(content1, kBackgroundType)));
+    // |target| still created subsequence (cached).
+    EXPECT_SUBSEQUENCE(*target_layer, 1, 2);
+  }
+
+  // Scroll the view so that both |content1| and |content2| are in the interest
+  // rect.
+  GetLayoutView().GetScrollableArea()->SetScrollOffset(ScrollOffset(0, 3000),
+                                                       kProgrammaticScroll);
+  GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint();
+  // Scrolling doesn't set NeedsRepaint flag. Change of paint dirty rect of
+  // a partially painted layer will trigger repaint.
+  EXPECT_FALSE(target_layer->NeedsRepaint());
+  EXPECT_TRUE(PaintWithoutCommit());
+  EXPECT_EQ(2, NumCachedNewItems());
+  CommitAndFinishCycle();
+
+  // |target| is still partially painted.
+  EXPECT_EQ(kMayBeClippedByCullRect, target_layer->PreviousPaintResult());
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
+    // CAP doens't clip the cull rect by the scrolling contents rect, which
+    // doesn't affect painted results.
+    EXPECT_EQ(CullRect(IntRect(-4000, -1000, 8800, 8600)),
+              target_layer->PreviousCullRect());
+    // Painted result should include both |content1| and |content2|.
+    EXPECT_THAT(
+        RootPaintController().GetDisplayItemList(),
+        ElementsAre(IsSameId(&GetLayoutView(), DisplayItem::kScrollHitTest),
+                    IsSameId(&view_client, kDocumentBackgroundType),
+                    IsSameId(content1, kBackgroundType),
+                    IsSameId(content2, kBackgroundType)));
+    // |target| still created subsequence (repainted).
+    EXPECT_SUBSEQUENCE(*target_layer, 2, 4);
+  } else {
+    EXPECT_EQ(CullRect(IntRect(0, 0, 800, 7600)),
+              target_layer->PreviousCullRect());
+    // Painted result should include both |content1| and |content2|.
+    EXPECT_THAT(RootPaintController().GetDisplayItemList(),
+                ElementsAre(IsSameId(&view_client, kDocumentBackgroundType),
+                            IsSameId(content1, kBackgroundType),
+                            IsSameId(content2, kBackgroundType)));
+    // |target| still created subsequence (repainted).
+    EXPECT_SUBSEQUENCE(*target_layer, 1, 3);
+  }
 }
 
 TEST_P(PaintLayerPainterTest, PaintPhaseOutline) {
@@ -341,7 +467,7 @@ TEST_P(PaintLayerPainterTest, PaintPhaseOutline) {
       *GetDocument().getElementById("outline")->GetLayoutObject();
   ToHTMLElement(outline_div.GetNode())
       ->setAttribute(html_names::kStyleAttr, style_without_outline);
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   LayoutBoxModelObject& self_painting_layer_object = *ToLayoutBoxModelObject(
       GetDocument().getElementById("self-painting-layer")->GetLayoutObject());
@@ -363,7 +489,7 @@ TEST_P(PaintLayerPainterTest, PaintPhaseOutline) {
   ToHTMLElement(self_painting_layer_object.GetNode())
       ->setAttribute(html_names::kStyleAttr,
                      "position: absolute; outline: 1px solid green");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_FALSE(self_painting_layer.NeedsPaintPhaseDescendantOutlines());
   EXPECT_FALSE(non_self_painting_layer.NeedsPaintPhaseDescendantOutlines());
   EXPECT_TRUE(DisplayItemListContains(
@@ -386,8 +512,8 @@ TEST_P(PaintLayerPainterTest, PaintPhaseOutline) {
   // actually painted.
   ToHTMLElement(outline_div.GetNode())
       ->setAttribute(html_names::kStyleAttr, style_without_outline);
-  GetDocument().View()->UpdateAllLifecyclePhases();
-  EXPECT_FALSE(self_painting_layer.NeedsPaintPhaseDescendantOutlines());
+  UpdateAllLifecyclePhasesForTest();
+  EXPECT_TRUE(self_painting_layer.NeedsPaintPhaseDescendantOutlines());
 }
 
 TEST_P(PaintLayerPainterTest, PaintPhaseFloat) {
@@ -408,7 +534,7 @@ TEST_P(PaintLayerPainterTest, PaintPhaseFloat) {
       *GetDocument().getElementById("float")->GetLayoutObject();
   ToHTMLElement(float_div.GetNode())
       ->setAttribute(html_names::kStyleAttr, style_without_float);
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   LayoutBoxModelObject& self_painting_layer_object = *ToLayoutBoxModelObject(
       GetDocument().getElementById("self-painting-layer")->GetLayoutObject());
@@ -441,8 +567,8 @@ TEST_P(PaintLayerPainterTest, PaintPhaseFloat) {
   // painted.
   ToHTMLElement(float_div.GetNode())
       ->setAttribute(html_names::kStyleAttr, style_without_float);
-  GetDocument().View()->UpdateAllLifecyclePhases();
-  EXPECT_FALSE(self_painting_layer.NeedsPaintPhaseFloat());
+  UpdateAllLifecyclePhasesForTest();
+  EXPECT_TRUE(self_painting_layer.NeedsPaintPhaseFloat());
 }
 
 TEST_P(PaintLayerPainterTest, PaintPhaseFloatUnderInlineLayer) {
@@ -456,7 +582,7 @@ TEST_P(PaintLayerPainterTest, PaintPhaseFloatUnderInlineLayer) {
       </div>
     </div>
   )HTML");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   LayoutObject& float_div =
       *GetDocument().getElementById("float")->GetLayoutObject();
@@ -501,7 +627,7 @@ TEST_P(PaintLayerPainterTest, PaintPhaseBlockBackground) {
       *GetDocument().getElementById("background")->GetLayoutObject();
   ToHTMLElement(background_div.GetNode())
       ->setAttribute(html_names::kStyleAttr, style_without_background);
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
 
   LayoutBoxModelObject& self_painting_layer_object = *ToLayoutBoxModelObject(
       GetDocument().getElementById("self-painting-layer")->GetLayoutObject());
@@ -524,7 +650,7 @@ TEST_P(PaintLayerPainterTest, PaintPhaseBlockBackground) {
   ToHTMLElement(self_painting_layer_object.GetNode())
       ->setAttribute(html_names::kStyleAttr,
                      "position: absolute; background: green");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_FALSE(self_painting_layer.NeedsPaintPhaseDescendantBlockBackgrounds());
   EXPECT_FALSE(
       non_self_painting_layer.NeedsPaintPhaseDescendantBlockBackgrounds());
@@ -549,44 +675,8 @@ TEST_P(PaintLayerPainterTest, PaintPhaseBlockBackground) {
   // is actually painted.
   ToHTMLElement(background_div.GetNode())
       ->setAttribute(html_names::kStyleAttr, style_without_background);
-  GetDocument().View()->UpdateAllLifecyclePhases();
-  EXPECT_FALSE(self_painting_layer.NeedsPaintPhaseDescendantBlockBackgrounds());
-}
-
-TEST_P(PaintLayerPainterTest, PaintPhasesUpdateOnLayerRemoval) {
-  SetBodyInnerHTML(R"HTML(
-    <div id='layer' style='position: relative'>
-      <div style='height: 100px'>
-        <div style='height: 20px; outline: 1px solid red;
-            background-color: green'>outline and background</div>
-        <div style='float: left'>float</div>
-      </div>
-    </div>
-  )HTML");
-
-  LayoutBoxModelObject& layer_div = *ToLayoutBoxModelObject(
-      GetDocument().getElementById("layer")->GetLayoutObject());
-  PaintLayer& layer = *layer_div.Layer();
-  ASSERT_TRUE(layer.IsSelfPaintingLayer());
-  EXPECT_TRUE(layer.NeedsPaintPhaseDescendantOutlines());
-  EXPECT_TRUE(layer.NeedsPaintPhaseFloat());
-  EXPECT_TRUE(layer.NeedsPaintPhaseDescendantBlockBackgrounds());
-
-  PaintLayer& html_layer =
-      *ToLayoutBoxModelObject(
-           GetDocument().documentElement()->GetLayoutObject())
-           ->Layer();
-  EXPECT_FALSE(html_layer.NeedsPaintPhaseDescendantOutlines());
-  EXPECT_FALSE(html_layer.NeedsPaintPhaseFloat());
-  EXPECT_FALSE(html_layer.NeedsPaintPhaseDescendantBlockBackgrounds());
-
-  ToHTMLElement(layer_div.GetNode())->setAttribute(html_names::kStyleAttr, "");
-  GetDocument().View()->UpdateAllLifecyclePhases();
-
-  EXPECT_FALSE(layer_div.HasLayer());
-  EXPECT_TRUE(html_layer.NeedsPaintPhaseDescendantOutlines());
-  EXPECT_TRUE(html_layer.NeedsPaintPhaseFloat());
-  EXPECT_TRUE(html_layer.NeedsPaintPhaseDescendantBlockBackgrounds());
+  UpdateAllLifecyclePhasesForTest();
+  EXPECT_TRUE(self_painting_layer.NeedsPaintPhaseDescendantBlockBackgrounds());
 }
 
 TEST_P(PaintLayerPainterTest, PaintPhasesUpdateOnLayerAddition) {
@@ -614,7 +704,7 @@ TEST_P(PaintLayerPainterTest, PaintPhasesUpdateOnLayerAddition) {
 
   ToHTMLElement(layer_div.GetNode())
       ->setAttribute(html_names::kStyleAttr, "position: relative");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   ASSERT_TRUE(layer_div.HasLayer());
   PaintLayer& layer = *layer_div.Layer();
   ASSERT_TRUE(layer.IsSelfPaintingLayer());
@@ -651,7 +741,7 @@ TEST_P(PaintLayerPainterTest, PaintPhasesUpdateOnBecomingSelfPainting) {
       ->setAttribute(
           html_names::kStyleAttr,
           "width: 100px; height: 100px; overflow: hidden; position: relative");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   PaintLayer& layer = *layer_div.Layer();
   ASSERT_TRUE(layer.IsSelfPaintingLayer());
   EXPECT_TRUE(layer.NeedsPaintPhaseDescendantOutlines());
@@ -690,7 +780,7 @@ TEST_P(PaintLayerPainterTest, PaintPhasesUpdateOnBecomingNonSelfPainting) {
   ToHTMLElement(layer_div.GetNode())
       ->setAttribute(html_names::kStyleAttr,
                      "width: 100px; height: 100px; overflow: hidden");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_FALSE(layer.IsSelfPaintingLayer());
   EXPECT_TRUE(html_layer.NeedsPaintPhaseDescendantOutlines());
   EXPECT_TRUE(html_layer.NeedsPaintPhaseDescendantBlockBackgrounds());
@@ -737,7 +827,7 @@ TEST_P(PaintLayerPainterTest,
   ToHTMLElement(table.GetNode())
       ->setAttribute(html_names::kStyleAttr,
                      "position: relative; border-collapse: collapse");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_TRUE(layer.NeedsPaintPhaseDescendantBlockBackgrounds());
 }
 
@@ -882,6 +972,305 @@ TEST_P(PaintLayerPainterTest,
     <div id='target'></div>
   )HTML");
   ExpectPaintedOutputInvisible("target", false);
+}
+
+using PaintLayerPainterTestCAP = PaintLayerPainterTest;
+
+INSTANTIATE_CAP_TEST_CASE_P(PaintLayerPainterTestCAP);
+
+TEST_P(PaintLayerPainterTestCAP, SimpleCullRect) {
+  SetBodyInnerHTML(R"HTML(
+    <div id='target'
+         style='width: 200px; height: 200px; position: relative'>
+    </div>
+  )HTML");
+
+  EXPECT_EQ(IntRect(0, 0, 800, 600),
+            GetPaintLayerByElementId("target")->PreviousCullRect().Rect());
+}
+
+TEST_P(PaintLayerPainterTestCAP, TallLayerCullRect) {
+  SetBodyInnerHTML(R"HTML(
+    <div id='target'
+         style='width: 200px; height: 10000px; position: relative'>
+    </div>
+  )HTML");
+
+  // Viewport rect (0, 0, 800, 600) expanded by 4000 for scrolling.
+  EXPECT_EQ(IntRect(-4000, -4000, 8800, 8600),
+            GetPaintLayerByElementId("target")->PreviousCullRect().Rect());
+}
+
+TEST_P(PaintLayerPainterTestCAP, WideLayerCullRect) {
+  SetBodyInnerHTML(R"HTML(
+    <div id='target'
+         style='width: 10000px; height: 200px; position: relative'>
+    </div>
+  )HTML");
+
+  // Same as TallLayerCullRect.
+  EXPECT_EQ(IntRect(-4000, -4000, 8800, 8600),
+            GetPaintLayerByElementId("target")->PreviousCullRect().Rect());
+}
+
+TEST_P(PaintLayerPainterTestCAP, TallScrolledLayerCullRect) {
+  SetBodyInnerHTML(R"HTML(
+    <div id='target' style='width: 200px; height: 10000px; position: relative'>
+    </div>
+  )HTML");
+
+  // Viewport rect (0, 0, 800, 600) expanded by 4000.
+  EXPECT_EQ(IntRect(-4000, -4000, 8800, 8600),
+            GetPaintLayerByElementId("target")->PreviousCullRect().Rect());
+
+  GetDocument().View()->LayoutViewport()->SetScrollOffset(ScrollOffset(0, 6000),
+                                                          kProgrammaticScroll);
+  UpdateAllLifecyclePhasesForTest();
+  EXPECT_EQ(IntRect(-4000, 2000, 8800, 8600),
+            GetPaintLayerByElementId("target")->PreviousCullRect().Rect());
+
+  GetDocument().View()->LayoutViewport()->SetScrollOffset(ScrollOffset(0, 6500),
+                                                          kProgrammaticScroll);
+  UpdateAllLifecyclePhasesForTest();
+  // Used the previous cull rect because the scroll amount is small.
+  EXPECT_EQ(IntRect(-4000, 2000, 8800, 8600),
+            GetPaintLayerByElementId("target")->PreviousCullRect().Rect());
+
+  GetDocument().View()->LayoutViewport()->SetScrollOffset(ScrollOffset(0, 6600),
+                                                          kProgrammaticScroll);
+  UpdateAllLifecyclePhasesForTest();
+  // Used new cull rect.
+  EXPECT_EQ(IntRect(-4000, 2600, 8800, 8600),
+            GetPaintLayerByElementId("target")->PreviousCullRect().Rect());
+}
+
+TEST_P(PaintLayerPainterTestCAP, WholeDocumentCullRect) {
+  GetDocument().GetSettings()->SetMainFrameClipsContent(false);
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      div { background: blue; }
+      ::-webkit-scrollbar { display: none; }
+    </style>
+    <div id='relative'
+         style='width: 200px; height: 10000px; position: relative'>
+    </div>
+    <div id='fixed' style='width: 200px; height: 200px; position: fixed'>
+    </div>
+    <div id='scroll' style='width: 200px; height: 200px; overflow: scroll'>
+      <div id='below-scroll' style='height: 5000px; position: relative'></div>
+      <div style='height: 200px'>Should not paint</div>
+    </div>
+    <div id='normal' style='width: 200px; height: 200px'></div>
+  )HTML");
+
+  // Viewport clipping is disabled.
+  EXPECT_TRUE(GetLayoutView().Layer()->PreviousCullRect().IsInfinite());
+  EXPECT_TRUE(
+      GetPaintLayerByElementId("relative")->PreviousCullRect().IsInfinite());
+  EXPECT_TRUE(
+      GetPaintLayerByElementId("fixed")->PreviousCullRect().IsInfinite());
+  EXPECT_TRUE(
+      GetPaintLayerByElementId("scroll")->PreviousCullRect().IsInfinite());
+
+  // Cull rect is normal for contents below scroll other than the viewport.
+  EXPECT_EQ(
+      IntRect(-4000, -4000, 8200, 8200),
+      GetPaintLayerByElementId("below-scroll")->PreviousCullRect().Rect());
+
+  EXPECT_THAT(
+      RootPaintController().GetDisplayItemList(),
+      UnorderedElementsAre(
+          IsSameId(&GetLayoutView(), DisplayItem::kScrollHitTest),
+          IsSameId(&ViewScrollingBackgroundClient(), kDocumentBackgroundType),
+          IsSameId(GetDisplayItemClientFromElementId("relative"),
+                   kBackgroundType),
+          IsSameId(GetDisplayItemClientFromElementId("normal"),
+                   kBackgroundType),
+          IsSameId(GetLayoutObjectByElementId("scroll"),
+                   DisplayItem::kScrollHitTest),
+          IsSameId(GetDisplayItemClientFromElementId("scroll"),
+                   kBackgroundType),
+          IsSameId(&ToLayoutBox(GetLayoutObjectByElementId("scroll"))
+                        ->GetScrollableArea()
+                        ->GetScrollingBackgroundDisplayItemClient(),
+                   kBackgroundType),
+          IsSameId(GetDisplayItemClientFromElementId("below-scroll"),
+                   kBackgroundType),
+          IsSameId(GetDisplayItemClientFromElementId("fixed"),
+                   kBackgroundType)));
+}
+
+TEST_P(PaintLayerPainterTestCAP, VerticalRightLeftWritingModeDocument) {
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      html { writing-mode: vertical-rl; }
+      body { margin: 0; }
+    </style>
+    <div id='target' style='width: 10000px; height: 200px; position: relative'>
+    </div>
+  )HTML");
+
+  GetDocument().View()->LayoutViewport()->SetScrollOffset(
+      ScrollOffset(-5000, 0), kProgrammaticScroll);
+  UpdateAllLifecyclePhasesForTest();
+
+  // A scroll by -5000px is equivalent to a scroll by (10000 - 5000 - 800)px =
+  // 4200px in non-RTL mode. Expanding the resulting rect by 4000px in each
+  // direction yields this result.
+  EXPECT_EQ(IntRect(200, -4000, 8800, 8600),
+            GetPaintLayerByElementId("target")->PreviousCullRect().Rect());
+}
+
+TEST_P(PaintLayerPainterTestCAP, ScaledCullRect) {
+  SetBodyInnerHTML(R"HTML(
+    <div style='width: 200px; height: 300px; overflow: scroll;
+                transform: scaleX(2) scaleY(0.5)'>
+      <div id='target' style='height: 400px; position: relative'></div>
+    </div>
+  )HTML");
+
+  // The scale doesn't affect the cull rect.
+  EXPECT_EQ(IntRect(-4000, -4000, 8200, 8300),
+            GetPaintLayerByElementId("target")->PreviousCullRect().Rect());
+}
+
+TEST_P(PaintLayerPainterTestCAP, ScaledAndRotatedCullRect) {
+  SetBodyInnerHTML(R"HTML(
+    <div style='width: 200px; height: 300px; overflow: scroll;
+                transform: scaleX(2) scaleY(0.5) rotateZ(45deg)'>
+      <div id='target' style='height: 400px; position: relative'></div>
+    </div>
+  )HTML");
+
+  // The scale and the rotation don't affect the cull rect.
+  EXPECT_EQ(IntRect(-4000, -4000, 8200, 8300),
+            GetPaintLayerByElementId("target")->PreviousCullRect().Rect());
+}
+
+TEST_P(PaintLayerPainterTestCAP, 3DRotated90DegreesCullRect) {
+  SetBodyInnerHTML(R"HTML(
+    <div style='width: 200px; height: 300px; overflow: scroll;
+                transform: rotateY(90deg)'>
+      <div id='target' style='height: 400px; position: relative'></div>
+    </div>
+  )HTML");
+
+  // It's rotated 90 degrees about the X axis, which means its visual content
+  // rect is empty, we fall back to the 4000px cull rect padding amount.
+  EXPECT_EQ(IntRect(-4000, -4000, 8200, 8300),
+            GetPaintLayerByElementId("target")->PreviousCullRect().Rect());
+}
+
+TEST_P(PaintLayerPainterTestCAP, 3DRotatedNear90DegreesCullRect) {
+  SetBodyInnerHTML(R"HTML(
+    <div style='width: 200px; height: 300px; overflow: scroll;
+                transform: rotateY(89.9999deg)'>
+      <div id='target' style='height: 400px; position: relative'></div>
+    </div>
+  )HTML");
+
+  // Because the layer is rotated to almost 90 degrees, floating-point error
+  // leads to a reverse-projected rect that is much much larger than the
+  // original layer size in certain dimensions. In such cases, we often fall
+  // back to the 4000px cull rect padding amount.
+  EXPECT_EQ(IntRect(-4000, -4000, 8200, 8300),
+            GetPaintLayerByElementId("target")->PreviousCullRect().Rect());
+}
+
+TEST_P(PaintLayerPainterTestCAP, PerspectiveCullRect) {
+  SetBodyInnerHTML(R"HTML(
+    <div id='target'
+         style='width: 100px; height: 100px; transform: perspective(1000px)'>
+    </div>
+  )HTML");
+
+  // Use infinite cull rect with perspective.
+  EXPECT_TRUE(
+      GetPaintLayerByElementId("target")->PreviousCullRect().IsInfinite());
+}
+
+TEST_P(PaintLayerPainterTestCAP, 3D45DegRotatedTallCullRect) {
+  SetBodyInnerHTML(R"HTML(
+    <div id='target'
+         style='width: 200px; height: 10000px; transform: rotateY(45deg)'>
+    </div>
+  )HTML");
+
+  // Use infinite cull rect with 3d transform.
+  EXPECT_TRUE(
+      GetPaintLayerByElementId("target")->PreviousCullRect().IsInfinite());
+}
+
+TEST_P(PaintLayerPainterTestCAP, FixedPositionCullRect) {
+  SetBodyInnerHTML(R"HTML(
+    <div id='target' style='width: 1000px; height: 2000px;
+                            position: fixed; top: 100px; left: 200px;'>
+    </div>
+  )HTML");
+
+  EXPECT_EQ(IntRect(0, 0, 800, 600),
+            GetPaintLayerByElementId("target")->PreviousCullRect().Rect());
+}
+
+TEST_P(PaintLayerPainterTestCAP, LayerOffscreenNearCullRect) {
+  SetBodyInnerHTML(R"HTML(
+    <div style='width: 200px; height: 300px; overflow: scroll;
+                position: absolute; top: 3000px; left: 0px;'>
+      <div id='target' style='height: 500px; position: relative'></div>
+    </div>
+  )HTML");
+
+  EXPECT_EQ(IntRect(-4000, -4000, 8200, 8300),
+            GetPaintLayerByElementId("target")->PreviousCullRect().Rect());
+}
+
+TEST_P(PaintLayerPainterTestCAP, LayerOffscreenFarCullRect) {
+  SetBodyInnerHTML(R"HTML(
+    <div style='width: 200px; height: 300px; overflow: scroll;
+                position: absolute; top: 9000px'>
+      <div id='target' style='height: 500px; position: relative'></div>
+    </div>
+  )HTML");
+
+  // The layer is too far away from the viewport.
+  EXPECT_EQ(IntRect(),
+            GetPaintLayerByElementId("target")->PreviousCullRect().Rect());
+}
+
+TEST_P(PaintLayerPainterTestCAP, ScrollingLayerCullRect) {
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      div::-webkit-scrollbar { width: 5px; }
+    </style>
+    <div style='width: 200px; height: 200px; overflow: scroll'>
+      <div id='target'
+           style='width: 100px; height: 10000px; position: relative'>
+      </div>
+    </div>
+  )HTML");
+
+  // In screen space, the scroller is (8, 8, 195, 193) (because of overflow clip
+  // of 'target', scrollbar and root margin).
+  // Applying the viewport clip of the root has no effect because
+  // the clip is already small. Mapping it down into the graphics layer
+  // space yields (0, 0, 195, 193). This is then expanded by 4000px.
+  EXPECT_EQ(IntRect(-4000, -4000, 8195, 8193),
+            GetPaintLayerByElementId("target")->PreviousCullRect().Rect());
+}
+
+TEST_P(PaintLayerPainterTestCAP, ClippedBigLayer) {
+  SetBodyInnerHTML(R"HTML(
+    <div style='width: 1px; height: 1px; overflow: hidden'>
+      <div id='target'
+           style='width: 10000px; height: 10000px; position: relative'>
+      </div>
+    </div>
+  )HTML");
+
+  // The viewport is not scrollable because of the clip, so the cull rect is
+  // just the viewport rect.
+  EXPECT_EQ(IntRect(0, 0, 800, 600),
+            GetPaintLayerByElementId("target")->PreviousCullRect().Rect());
 }
 
 }  // namespace blink

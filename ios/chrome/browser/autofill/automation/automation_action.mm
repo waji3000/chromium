@@ -16,6 +16,7 @@
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/ios/browser/autofill_driver_ios.h"
 #import "ios/chrome/browser/autofill/form_suggestion_label.h"
+#import "ios/chrome/browser/ui/infobars/infobar_constants.h"
 #import "ios/chrome/test/app/chrome_test_util.h"
 #import "ios/chrome/test/earl_grey/chrome_earl_grey.h"
 #import "ios/web/public/test/earl_grey/web_view_actions.h"
@@ -124,6 +125,31 @@ using web::test::ElementSelector;
 @interface AutomationActionLoadPage : AutomationAction
 @end
 
+// An action that types the provided text in the specified field.
+// This can be either of the "type" or "typePassword" type due to
+// the two actions needing to be handled differently on desktop in order
+// to ensure passwords are saved. They can be treated the same on iOS.
+// We assume this action has a format resembling:
+// {
+//   "type": "type" OR "typePassword",
+//   "selector": "//input[@autocapitalize=\"none\" and
+//   @name=\"session[password]\"]", "value": "mycoolpassword",
+// }
+@interface AutomationActionType : AutomationAction
+@end
+
+// An action that selects the affirmative option in an open confirmation dialog.
+// One main use case is selecting "Save" from the "Save password?" dialog,
+// but this action cannot tell the difference between different confirmation
+// dialogs, so it is multi-purpose. This action assumes that this dialog is
+// already open.
+// We assume this action has a format resembling:
+// {
+//   "type": "savePassword"
+// }
+@interface AutomationActionConfirmInfobar : AutomationAction
+@end
+
 @implementation AutomationAction
 
 + (instancetype)actionWithValueDictionary:
@@ -147,6 +173,9 @@ using web::test::ElementSelector;
     @"validateField" : [AutomationActionValidateField class],
     @"select" : [AutomationActionSelectDropdown class],
     @"loadPage" : [AutomationActionLoadPage class],
+    @"type" : [AutomationActionType class],
+    @"typePassword" : [AutomationActionType class],
+    @"savePassword" : [AutomationActionConfirmInfobar class],
     // More to come.
   };
 
@@ -177,9 +206,20 @@ using web::test::ElementSelector;
 
   // Wait for the element to be visible on the page.
   [ChromeEarlGrey waitForWebViewContainingElement:selector];
+
   // Potentially scroll into view if below the fold.
   [[EarlGrey selectElementWithMatcher:web::WebViewInWebState(web_state)]
       performAction:WebViewScrollElementToVisible(web_state, selector)];
+
+  // Calling WebViewTapElement right after WebViewScrollElement caused flaky
+  // issues with the wrong location being provided for the tap target,
+  // seemingly caused by the screen not redrawing in-between these two actions.
+  // We force a brief wait here to avoid this issue.
+  [[GREYCondition conditionWithName:@"forced wait to allow for redraw"
+                              block:^BOOL {
+                                return false;
+                              }] waitWithTimeout:0.1];
+
   // Tap on the element.
   [[EarlGrey selectElementWithMatcher:web::WebViewInWebState(web_state)]
       performAction:web::WebViewTapElement(web_state, selector)];
@@ -356,7 +396,7 @@ using web::test::ElementSelector;
       [self getStringFromDictionaryWithKey:"expectedValue"]);
 
   NSString* predictionType = base::mac::ObjCCastStrict<NSString>([self
-      executeJavascript:"return target.getAttribute('placeholder');"
+      executeJavascript:"return target.placeholder;"
                onTarget:[self selectorForTarget]]);
 
   NSString* autofilledValue = base::mac::ObjCCastStrict<NSString>(
@@ -399,6 +439,32 @@ using web::test::ElementSelector;
   const std::string type(typeValue->GetString());
 
   GREYAssert(NO, @"Unknown action of type %s", type.c_str());
+}
+
+@end
+
+@implementation AutomationActionType
+
+- (void)execute {
+  web::test::ElementSelector selector = [self selectorForTarget];
+  std::string value = [self getStringFromDictionaryWithKey:"value"];
+  [self executeJavascript:
+            base::SysNSStringToUTF8([NSString
+                stringWithFormat:
+                    @"__gCrWeb.fill.setInputElementValue(\"%s\", target);",
+                    value.c_str()])
+                 onTarget:selector];
+}
+
+@end
+
+@implementation AutomationActionConfirmInfobar
+
+- (void)execute {
+  [[EarlGrey
+      selectElementWithMatcher:
+          grey_accessibilityID(kConfirmInfobarButton1AccessibilityIdentifier)]
+      performAction:grey_tap()];
 }
 
 @end

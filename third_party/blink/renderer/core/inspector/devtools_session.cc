@@ -17,8 +17,7 @@
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
-#include "third_party/blink/renderer/platform/layout_test_support.h"
-#include "third_party/blink/renderer/platform/web_task_runner.h"
+#include "third_party/blink/renderer/platform/web_test_support.h"
 
 namespace blink {
 
@@ -232,7 +231,7 @@ void DevToolsSession::SendProtocolResponse(int call_id, const String& message) {
     v8_session_state_json_.Set(ToCoreString(v8_session_->stateJSON()));
   // Make tests more predictable by flushing all sessions before sending
   // protocol response in any of them.
-  if (LayoutTestSupport::IsRunningLayoutTest())
+  if (WebTestSupport::IsRunningWebTest())
     agent_->FlushProtocolNotifications();
   host_ptr_->DispatchProtocolResponse(message, call_id,
                                       session_state_.TakeUpdates());
@@ -252,6 +251,13 @@ class DevToolsSession::Notification {
         new Notification(std::move(notification)));
   }
 
+  explicit Notification(std::unique_ptr<protocol::Serializable> notification)
+      : blink_notification_(std::move(notification)) {}
+
+  explicit Notification(
+      std::unique_ptr<v8_inspector::StringBuffer> notification)
+      : v8_notification_(std::move(notification)) {}
+
   String Serialize() {
     if (blink_notification_) {
       serialized_ = blink_notification_->serialize();
@@ -264,13 +270,6 @@ class DevToolsSession::Notification {
   }
 
  private:
-  explicit Notification(std::unique_ptr<protocol::Serializable> notification)
-      : blink_notification_(std::move(notification)) {}
-
-  explicit Notification(
-      std::unique_ptr<v8_inspector::StringBuffer> notification)
-      : v8_notification_(std::move(notification)) {}
-
   std::unique_ptr<protocol::Serializable> blink_notification_;
   std::unique_ptr<v8_inspector::StringBuffer> v8_notification_;
   String serialized_;

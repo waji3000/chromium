@@ -49,6 +49,7 @@ class CORE_EXPORT MouseEventManager final
                                          const AtomicString&,
                                          const WebMouseEvent&,
                                          const String& canvas_region_id,
+                                         const FloatPoint* last_position,
                                          EventTarget* related_target,
                                          bool check_for_listener = false);
 
@@ -153,6 +154,8 @@ class CORE_EXPORT MouseEventManager final
   bool MouseDownMayStartDrag();
 
   bool FakeMouseMovePending() const;
+
+  void RecomputeMouseHoverState();
 
  private:
   class MouseEventBoundaryEventDispatcher : public BoundaryEventDispatcher {

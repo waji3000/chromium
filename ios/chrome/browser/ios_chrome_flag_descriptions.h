@@ -29,6 +29,11 @@ extern const char kAutofillDownstreamUseGooglePayBrandingOniOSDescription[];
 extern const char kBreakpadNoDelayInitialUploadName[];
 extern const char kBreakpadNoDelayInitialUploadDescription[];
 
+// Title and description for the flag to control if a crash report is generated
+// on main thread freeze.
+extern const char kDetectMainThreadFreezeName[];
+extern const char kDetectMainThreadFreezeDescription[];
+
 // Title and description for the flag to control the updated prompt explanation
 // when offering credit card upload.
 extern const char kEnableAutofillCreditCardUploadUpdatePromptExplanationName[];
@@ -36,10 +41,31 @@ extern const char
     kEnableAutofillCreditCardUploadUpdatePromptExplanationDescription[];
 
 // Title and description for the flag to control if credit card save should
-// utilize the Autofill StrikeDatabase when determining whether save should be
-// offered.
+// utilize the Autofill StrikeDatabase when determining whether save
+// should be offered.
 extern const char kEnableAutofillSaveCreditCardUsesStrikeSystemName[];
 extern const char kEnableAutofillSaveCreditCardUsesStrikeSystemDescription[];
+
+extern const char kEnableSyncUSSBookmarksName[];
+extern const char kEnableSyncUSSBookmarksDescription[];
+
+extern const char kSyncPseudoUSSFaviconsName[];
+extern const char kSyncPseudoUSSFaviconsDescription[];
+
+extern const char kSyncPseudoUSSHistoryDeleteDirectivesName[];
+extern const char kSyncPseudoUSSHistoryDeleteDirectivesDescription[];
+
+extern const char kSyncPseudoUSSPasswordsName[];
+extern const char kSyncPseudoUSSPasswordsDescription[];
+
+extern const char kSyncPseudoUSSPreferencesName[];
+extern const char kSyncPseudoUSSPreferencesDescription[];
+
+extern const char kSyncPseudoUSSPriorityPreferencesName[];
+extern const char kSyncPseudoUSSPriorityPreferencesDescription[];
+
+extern const char kSyncPseudoUSSSupervisedUsersName[];
+extern const char kSyncPseudoUSSSupervisedUsersDescription[];
 
 // Title and description for the flag to control if Chrome Sync should use the
 // sandbox servers.
@@ -103,6 +129,11 @@ extern const char kAutofillShowAllSuggestionsOnPrefilledFormsDescription[];
 extern const char kAutofillRestrictUnownedFieldsToFormlessCheckoutName[];
 extern const char kAutofillRestrictUnownedFieldsToFormlessCheckoutDescription[];
 
+// Title and description for the flag to enable rich autofill queries on
+// Canary/Dev.
+extern const char kAutofillRichMetadataQueriesName[];
+extern const char kAutofillRichMetadataQueriesDescription[];
+
 // Title and description for the flag to control GPay branding in credit card
 // upstream infobar.
 extern const char kAutofillUpstreamUseGooglePayBrandingOnMobileName[];
@@ -147,10 +178,6 @@ extern const char kDragAndDropDescription[];
 extern const char kNewClearBrowsingDataUIName[];
 extern const char kNewClearBrowsingDataUIDescription[];
 
-// Title and description for the flag to enable External Search.
-extern const char kExternalSearchName[];
-extern const char kExternalSearchDescription[];
-
 // Title and description for the flag to enable invaliations delivery via FCM.
 extern const char kFCMInvalidationsName[];
 extern const char kFCMInvalidationsDescription[];
@@ -164,6 +191,10 @@ extern const char kFullscreenViewportAdjustmentExperimentDescription[];
 extern const char kHistoryBatchUpdatesFilterName[];
 extern const char kHistoryBatchUpdatesFilterDescription[];
 
+// Title and description for the flag to enable the new UI Reboot on Infobars.
+extern const char kInfobarUIRebootName[];
+extern const char kInfobarUIRebootDescription[];
+
 // Title and description for the flag to enable feature_engagement::Tracker
 // demo mode.
 extern const char kInProductHelpDemoModeName[];
@@ -172,10 +203,6 @@ extern const char kInProductHelpDemoModeDescription[];
 // Title and description for the flag to enable ITunes links store kit handling.
 extern const char kITunesUrlsStoreKitHandlingName[];
 extern const char kITunesUrlsStoreKitHandlingDescription[];
-
-// Title, description, and options for Google UI menu for handling mailto links.
-extern const char kMailtoHandlingWithGoogleUIName[];
-extern const char kMailtoHandlingWithGoogleUIDescription[];
 
 // Title, description, and options for the MarkHttpAs setting that controls
 // display of omnibox warnings about non-secure pages.
@@ -189,6 +216,10 @@ extern const char kMemexTabSwitcherDescription[];
 // Title and description for the flag to enable new password form parsing.
 extern const char kNewPasswordFormParsingName[];
 extern const char kNewPasswordFormParsingDescription[];
+
+// Title and description for the flag to enable non-modal JavaScript dialogs.
+extern const char kNonModalDialogsName[];
+extern const char kNonModalDialogsDescription[];
 
 // Title and description for the flag to show most visited sites and collection
 // shortcuts in the omnibox popup instead of ZeroSuggest.
@@ -241,6 +272,11 @@ extern const char kSSOWithWKWebViewDescription[];
 extern const char kToolbarContainerName[];
 extern const char kToolbarContainerDescription[];
 
+// Title and description for the flag to use UIViewController for Sad Tab UI
+// presentation.
+extern const char kPresentSadTabInViewControllerName[];
+extern const char kPresentSadTabInViewControllerDescription[];
+
 // Title and description for the flag to enable the unified consent.
 extern const char kUnifiedConsentName[];
 extern const char kUnifiedConsentDescription[];
@@ -250,9 +286,9 @@ extern const char kUnifiedConsentDescription[];
 extern const char kUseMultiloginEndpointName[];
 extern const char kUseMultiloginEndpointDescription[];
 
-// Title and description for the flag to force the consent bump.
-extern const char kForceUnifiedConsentBumpName[];
-extern const char kForceUnifiedConsentBumpDescription[];
+// Title and description for the flag to enable previewing USDZ 3 model files.
+extern const char kUsdzPreviewName[];
+extern const char kUsdzPreviewDescription[];
 
 // Title and description for the flag to enable the ddljson Doodle API.
 extern const char kUseDdljsonApiName[];
@@ -278,6 +314,10 @@ extern const char kWKWebViewSnapshotsDescription[];
 // Title and description for the flag to allow custom search engines.
 extern const char kCustomSearchEnginesName[];
 extern const char kCustomSearchEnginesDescription[];
+
+// Title and description for the flag to search in iFrames in Find In Page.
+extern const char kFindInPageiFrameName[];
+extern const char kFindInPageiFrameDescription[];
 
 // Please insert your name/description above in alphabetical order.
 

@@ -19,13 +19,11 @@ public class H2OTransparentLauncherActivity extends TransparentLauncherActivity 
     @Override
     protected void onHostBrowserSelected(HostBrowserLauncherParams params) {
         if (params == null) {
-            finish();
             return;
         }
 
         boolean shouldLaunchSplash = H2OLauncher.shouldIntentLaunchSplashActivity(params);
         if (relaunchIfNeeded(params, shouldLaunchSplash)) {
-            finish();
             return;
         }
 
@@ -39,12 +37,10 @@ public class H2OTransparentLauncherActivity extends TransparentLauncherActivity 
             H2OLauncher.copyIntentExtrasAndLaunch(appContext, getIntent(),
                     params.getSelectedShareTargetActivityClassName(),
                     new ComponentName(appContext, SplashActivity.class));
-            finish();
             return;
         }
 
         HostBrowserLauncher.launch(getApplicationContext(), params);
-        finish();
     }
 
     /**
@@ -56,15 +52,19 @@ public class H2OTransparentLauncherActivity extends TransparentLauncherActivity 
         Context appContext = getApplicationContext();
 
         // {@link H2OLauncher#changeEnabledComponentsAndKillShellApk()} enables one
-        // component, THEN disables the other. Check for the disabled component in order to
-        // handle the case where both components are enabled.
+        // component, THEN disables the other. Relaunch if the wrong component is disabled (vs
+        // if the wrong component is enabled) to handle the case where both components are enabled.
         ComponentName relaunchComponent = null;
         if (shouldLaunchSplash) {
-            if (H2OMainActivity.checkComponentEnabled(appContext)) {
+            // Relaunch if H2OOpaqueMainActivity is disabled.
+            if (!H2OOpaqueMainActivity.checkComponentEnabled(appContext)) {
                 relaunchComponent = new ComponentName(appContext, H2OMainActivity.class);
             }
-        } else if (SplashActivity.checkComponentEnabled(appContext)) {
-            relaunchComponent = new ComponentName(appContext, SplashActivity.class);
+        } else {
+            // Relaunch if H2OMainActivity is disabled.
+            if (!H2OMainActivity.checkComponentEnabled(appContext)) {
+                relaunchComponent = new ComponentName(appContext, SplashActivity.class);
+            }
         }
 
         if (relaunchComponent == null) {

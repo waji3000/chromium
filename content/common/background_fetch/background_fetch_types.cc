@@ -21,13 +21,6 @@ blink::mojom::SerializedBlobPtr CloneSerializedBlob(
 
 namespace content {
 
-BackgroundFetchOptions::BackgroundFetchOptions() = default;
-
-BackgroundFetchOptions::BackgroundFetchOptions(
-    const BackgroundFetchOptions& other) = default;
-
-BackgroundFetchOptions::~BackgroundFetchOptions() = default;
-
 BackgroundFetchRegistration::BackgroundFetchRegistration()
     : result(blink::mojom::BackgroundFetchResult::UNSET),
       failure_reason(blink::mojom::BackgroundFetchFailureReason::NONE) {}
@@ -64,7 +57,7 @@ blink::mojom::FetchAPIResponsePtr BackgroundFetchSettledFetch::CloneResponse(
     return nullptr;
   return blink::mojom::FetchAPIResponse::New(
       response->url_list, response->status_code, response->status_text,
-      response->response_type, response->headers,
+      response->response_type, response->response_source, response->headers,
       CloneSerializedBlob(response->blob), response->error,
       response->response_time, response->cache_storage_cache_name,
       response->cors_exposed_header_names, response->is_in_cache_storage,
@@ -80,7 +73,7 @@ blink::mojom::FetchAPIRequestPtr BackgroundFetchSettledFetch::CloneRequest(
       request->mode, request->is_main_resource_load,
       request->request_context_type, request->frame_type, request->url,
       request->method, request->headers, CloneSerializedBlob(request->blob),
-      request->referrer, request->credentials_mode, request->cache_mode,
+      request->referrer.Clone(), request->credentials_mode, request->cache_mode,
       request->redirect_mode, request->integrity, request->keepalive,
       request->client_id, request->is_reload, request->is_history_navigation);
 }

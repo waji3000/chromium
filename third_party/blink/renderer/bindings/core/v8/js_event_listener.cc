@@ -42,13 +42,26 @@ v8::Local<v8::Value> JSEventListener::GetEffectiveFunction(
 }
 
 // https://dom.spec.whatwg.org/#concept-event-listener-inner-invoke
-void JSEventListener::CallListenerFunction(EventTarget&,
-                                           Event& event,
-                                           v8::Local<v8::Value> js_event) {
+void JSEventListener::InvokeInternal(EventTarget&,
+                                     Event& event,
+                                     v8::Local<v8::Value> js_event) {
   // Step 10: Call a listener with event's currentTarget as receiver and event
   // and handle errors if thrown.
-  v8::Maybe<void> maybe_result =
-      event_listener_->handleEvent(event.currentTarget(), &event);
+  const bool is_beforeunload_event =
+      event.IsBeforeUnloadEvent() &&
+      event.type() == event_type_names::kBeforeunload;
+  const bool is_print_event =
+      // TODO(yukishiino): Should check event.Is{Before,After}PrintEvent.
+      event.type() == event_type_names::kBeforeprint ||
+      event.type() == event_type_names::kAfterprint;
+  if (!event_listener_->IsRunnableOrThrowException(
+          (is_beforeunload_event || is_print_event)
+              ? V8EventListener::IgnorePause::kIgnore
+              : V8EventListener::IgnorePause::kDontIgnore)) {
+    return;
+  }
+  v8::Maybe<void> maybe_result = event_listener_->InvokeWithoutRunnabilityCheck(
+      event.currentTarget(), &event);
   ALLOW_UNUSED_LOCAL(maybe_result);
 }
 

@@ -13,28 +13,18 @@
 #include "ash/public/cpp/ash_features.h"
 #include "ash/public/cpp/ash_view_ids.h"
 #include "ash/resources/vector_icons/vector_icons.h"
-#include "ash/session/session_controller.h"
 #include "ash/shell.h"
 #include "ash/strings/grit/ash_strings.h"
 #include "ash/system/model/system_tray_model.h"
 #include "ash/system/tray/hover_highlight_view.h"
-#include "ash/system/tray/system_tray.h"
-#include "ash/system/tray/system_tray_item_detailed_view_delegate.h"
 #include "ash/system/tray/tray_detailed_view.h"
-#include "ash/system/tray/tray_item_more.h"
 #include "ash/system/tray/tray_popup_utils.h"
 #include "ash/system/tray/tray_utils.h"
 #include "ash/system/tray/tri_view.h"
-#include "base/command_line.h"
 #include "base/metrics/user_metrics.h"
-#include "chromeos/chromeos_switches.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/image/image.h"
-#include "ui/gfx/paint_vector_icon.h"
-#include "ui/gfx/vector_icon_types.h"
-#include "ui/native_theme/native_theme.h"
 #include "ui/views/controls/separator.h"
-#include "ui/views/widget/widget.h"
 
 namespace ash {
 namespace {
@@ -57,77 +47,9 @@ enum AccessibilityState {
   A11Y_DICTATION = 1 << 13,
 };
 
-uint32_t GetAccessibilityState() {
-  AccessibilityDelegate* delegate = Shell::Get()->accessibility_delegate();
-  AccessibilityController* controller =
-      Shell::Get()->accessibility_controller();
-  uint32_t state = A11Y_NONE;
-  if (controller->IsSpokenFeedbackEnabled())
-    state |= A11Y_SPOKEN_FEEDBACK;
-  if (controller->IsHighContrastEnabled())
-    state |= A11Y_HIGH_CONTRAST;
-  if (delegate->IsMagnifierEnabled())
-    state |= A11Y_SCREEN_MAGNIFIER;
-  if (controller->IsLargeCursorEnabled())
-    state |= A11Y_LARGE_CURSOR;
-  if (controller->IsAutoclickEnabled())
-    state |= A11Y_AUTOCLICK;
-  if (controller->IsVirtualKeyboardEnabled())
-    state |= A11Y_VIRTUAL_KEYBOARD;
-  if (controller->IsMonoAudioEnabled())
-    state |= A11Y_MONO_AUDIO;
-  if (controller->IsCaretHighlightEnabled())
-    state |= A11Y_CARET_HIGHLIGHT;
-  if (controller->IsCursorHighlightEnabled())
-    state |= A11Y_HIGHLIGHT_MOUSE_CURSOR;
-  if (controller->IsFocusHighlightEnabled())
-    state |= A11Y_HIGHLIGHT_KEYBOARD_FOCUS;
-  if (controller->IsStickyKeysEnabled())
-    state |= A11Y_STICKY_KEYS;
-  if (controller->IsSelectToSpeakEnabled())
-    state |= A11Y_SELECT_TO_SPEAK;
-  if (controller->IsDictationEnabled())
-    state |= A11Y_DICTATION;
-  if (features::IsDockedMagnifierEnabled() &&
-      Shell::Get()->docked_magnifier_controller()->GetEnabled()) {
-    state |= A11Y_DOCKED_MAGNIFIER;
-  }
-  return state;
-}
-
-LoginStatus GetCurrentLoginStatus() {
-  return Shell::Get()->session_controller()->login_status();
-}
-
 }  // namespace
 
 namespace tray {
-
-class DefaultAccessibilityView : public TrayItemMore {
- public:
-  explicit DefaultAccessibilityView(SystemTrayItem* owner)
-      : TrayItemMore(owner) {
-    base::string16 label =
-        l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_ACCESSIBILITY);
-    SetLabel(label);
-    SetAccessibleName(label);
-    set_id(VIEW_ID_ACCESSIBILITY_TRAY_ITEM);
-  }
-
-  ~DefaultAccessibilityView() override = default;
-
- protected:
-  // TrayItemMore:
-  void UpdateStyle() override {
-    TrayItemMore::UpdateStyle();
-    std::unique_ptr<TrayPopupItemStyle> style = CreateStyle();
-    SetImage(gfx::CreateVectorIcon(kSystemMenuAccessibilityIcon,
-                                   style->GetIconColor()));
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(DefaultAccessibilityView);
-};
 
 ////////////////////////////////////////////////////////////////////////////////
 // ash::tray::AccessibilityDetailedView
@@ -146,21 +68,21 @@ void AccessibilityDetailedView::OnAccessibilityStatusChanged() {
   AccessibilityController* controller =
       Shell::Get()->accessibility_controller();
 
-  spoken_feedback_enabled_ = controller->IsSpokenFeedbackEnabled();
+  spoken_feedback_enabled_ = controller->spoken_feedback_enabled();
   TrayPopupUtils::UpdateCheckMarkVisibility(spoken_feedback_view_,
                                             spoken_feedback_enabled_);
 
-  select_to_speak_enabled_ = controller->IsSelectToSpeakEnabled();
+  select_to_speak_enabled_ = controller->select_to_speak_enabled();
   TrayPopupUtils::UpdateCheckMarkVisibility(select_to_speak_view_,
                                             select_to_speak_enabled_);
 
   if (dictation_view_) {
-    dictation_enabled_ = controller->IsDictationEnabled();
+    dictation_enabled_ = controller->dictation_enabled();
     TrayPopupUtils::UpdateCheckMarkVisibility(dictation_view_,
                                               dictation_enabled_);
   }
 
-  high_contrast_enabled_ = controller->IsHighContrastEnabled();
+  high_contrast_enabled_ = controller->high_contrast_enabled();
   TrayPopupUtils::UpdateCheckMarkVisibility(high_contrast_view_,
                                             high_contrast_enabled_);
 
@@ -175,37 +97,37 @@ void AccessibilityDetailedView::OnAccessibilityStatusChanged() {
                                               docked_magnifier_enabled_);
   }
 
-  autoclick_enabled_ = controller->IsAutoclickEnabled();
+  autoclick_enabled_ = controller->autoclick_enabled();
   TrayPopupUtils::UpdateCheckMarkVisibility(autoclick_view_,
                                             autoclick_enabled_);
 
-  virtual_keyboard_enabled_ = controller->IsVirtualKeyboardEnabled();
+  virtual_keyboard_enabled_ = controller->virtual_keyboard_enabled();
   TrayPopupUtils::UpdateCheckMarkVisibility(virtual_keyboard_view_,
                                             virtual_keyboard_enabled_);
 
-  large_cursor_enabled_ = controller->IsLargeCursorEnabled();
+  large_cursor_enabled_ = controller->large_cursor_enabled();
   TrayPopupUtils::UpdateCheckMarkVisibility(large_cursor_view_,
                                             large_cursor_enabled_);
 
-  mono_audio_enabled_ = controller->IsMonoAudioEnabled();
+  mono_audio_enabled_ = controller->mono_audio_enabled();
   TrayPopupUtils::UpdateCheckMarkVisibility(mono_audio_view_,
                                             mono_audio_enabled_);
 
-  caret_highlight_enabled_ = controller->IsCaretHighlightEnabled();
+  caret_highlight_enabled_ = controller->caret_highlight_enabled();
   TrayPopupUtils::UpdateCheckMarkVisibility(caret_highlight_view_,
                                             caret_highlight_enabled_);
 
-  highlight_mouse_cursor_enabled_ = controller->IsCursorHighlightEnabled();
+  highlight_mouse_cursor_enabled_ = controller->cursor_highlight_enabled();
   TrayPopupUtils::UpdateCheckMarkVisibility(highlight_mouse_cursor_view_,
                                             highlight_mouse_cursor_enabled_);
 
   if (highlight_keyboard_focus_view_) {
-    highlight_keyboard_focus_enabled_ = controller->IsFocusHighlightEnabled();
+    highlight_keyboard_focus_enabled_ = controller->focus_highlight_enabled();
     TrayPopupUtils::UpdateCheckMarkVisibility(
         highlight_keyboard_focus_view_, highlight_keyboard_focus_enabled_);
   }
 
-  sticky_keys_enabled_ = controller->IsStickyKeysEnabled();
+  sticky_keys_enabled_ = controller->sticky_keys_enabled();
   TrayPopupUtils::UpdateCheckMarkVisibility(sticky_keys_view_,
                                             sticky_keys_enabled_);
 }
@@ -217,27 +139,27 @@ void AccessibilityDetailedView::AppendAccessibilityList() {
   AccessibilityController* controller =
       Shell::Get()->accessibility_controller();
 
-  spoken_feedback_enabled_ = controller->IsSpokenFeedbackEnabled();
+  spoken_feedback_enabled_ = controller->spoken_feedback_enabled();
   spoken_feedback_view_ = AddScrollListCheckableItem(
       kSystemMenuAccessibilityChromevoxIcon,
       l10n_util::GetStringUTF16(
           IDS_ASH_STATUS_TRAY_ACCESSIBILITY_SPOKEN_FEEDBACK),
       spoken_feedback_enabled_);
 
-  select_to_speak_enabled_ = controller->IsSelectToSpeakEnabled();
+  select_to_speak_enabled_ = controller->select_to_speak_enabled();
   select_to_speak_view_ = AddScrollListCheckableItem(
       kSystemMenuAccessibilitySelectToSpeakIcon,
       l10n_util::GetStringUTF16(
           IDS_ASH_STATUS_TRAY_ACCESSIBILITY_SELECT_TO_SPEAK),
       select_to_speak_enabled_);
 
-  dictation_enabled_ = controller->IsDictationEnabled();
+  dictation_enabled_ = controller->dictation_enabled();
   dictation_view_ = AddScrollListCheckableItem(
       kDictationMenuIcon,
       l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_ACCESSIBILITY_DICTATION),
       dictation_enabled_);
 
-  high_contrast_enabled_ = controller->IsHighContrastEnabled();
+  high_contrast_enabled_ = controller->high_contrast_enabled();
   high_contrast_view_ = AddScrollListCheckableItem(
       kSystemMenuAccessibilityContrastIcon,
       l10n_util::GetStringUTF16(
@@ -261,13 +183,16 @@ void AccessibilityDetailedView::AppendAccessibilityList() {
         docked_magnifier_enabled_);
   }
 
-  autoclick_enabled_ = controller->IsAutoclickEnabled();
+  autoclick_enabled_ = controller->autoclick_enabled();
   autoclick_view_ = AddScrollListCheckableItem(
       kSystemMenuAccessibilityAutoClickIcon,
       l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_ACCESSIBILITY_AUTOCLICK),
       autoclick_enabled_);
+  autoclick_view_->set_id(ash::VIEW_ID_ACCESSIBILITY_AUTOCLICK);
+  autoclick_view_->right_view()->set_id(
+      ash::VIEW_ID_ACCESSIBILITY_AUTOCLICK_ENABLED);
 
-  virtual_keyboard_enabled_ = controller->IsVirtualKeyboardEnabled();
+  virtual_keyboard_enabled_ = controller->virtual_keyboard_enabled();
   virtual_keyboard_view_ = AddScrollListCheckableItem(
       kSystemMenuKeyboardIcon,
       l10n_util::GetStringUTF16(
@@ -278,23 +203,23 @@ void AccessibilityDetailedView::AppendAccessibilityList() {
 
   AddScrollListSubHeader(IDS_ASH_STATUS_TRAY_ACCESSIBILITY_ADDITIONAL_SETTINGS);
 
-  large_cursor_enabled_ = controller->IsLargeCursorEnabled();
+  large_cursor_enabled_ = controller->large_cursor_enabled();
   large_cursor_view_ = AddScrollListCheckableItem(
       l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_ACCESSIBILITY_LARGE_CURSOR),
       large_cursor_enabled_);
 
-  mono_audio_enabled_ = controller->IsMonoAudioEnabled();
+  mono_audio_enabled_ = controller->mono_audio_enabled();
   mono_audio_view_ = AddScrollListCheckableItem(
       l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_ACCESSIBILITY_MONO_AUDIO),
       mono_audio_enabled_);
 
-  caret_highlight_enabled_ = controller->IsCaretHighlightEnabled();
+  caret_highlight_enabled_ = controller->caret_highlight_enabled();
   caret_highlight_view_ = AddScrollListCheckableItem(
       l10n_util::GetStringUTF16(
           IDS_ASH_STATUS_TRAY_ACCESSIBILITY_CARET_HIGHLIGHT),
       caret_highlight_enabled_);
 
-  highlight_mouse_cursor_enabled_ = controller->IsCursorHighlightEnabled();
+  highlight_mouse_cursor_enabled_ = controller->cursor_highlight_enabled();
   highlight_mouse_cursor_view_ = AddScrollListCheckableItem(
       l10n_util::GetStringUTF16(
           IDS_ASH_STATUS_TRAY_ACCESSIBILITY_HIGHLIGHT_MOUSE_CURSOR),
@@ -303,14 +228,14 @@ void AccessibilityDetailedView::AppendAccessibilityList() {
   // Focus highlighting can't be on when spoken feedback is on because
   // ChromeVox does its own focus highlighting.
   if (!spoken_feedback_enabled_) {
-    highlight_keyboard_focus_enabled_ = controller->IsFocusHighlightEnabled();
+    highlight_keyboard_focus_enabled_ = controller->focus_highlight_enabled();
     highlight_keyboard_focus_view_ = AddScrollListCheckableItem(
         l10n_util::GetStringUTF16(
             IDS_ASH_STATUS_TRAY_ACCESSIBILITY_HIGHLIGHT_KEYBOARD_FOCUS),
         highlight_keyboard_focus_enabled_);
   }
 
-  sticky_keys_enabled_ = controller->IsStickyKeysEnabled();
+  sticky_keys_enabled_ = controller->sticky_keys_enabled();
   sticky_keys_view_ = AddScrollListCheckableItem(
       l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_ACCESSIBILITY_STICKY_KEYS),
       sticky_keys_enabled_);
@@ -323,24 +248,24 @@ void AccessibilityDetailedView::HandleViewClicked(views::View* view) {
   using base::RecordAction;
   using base::UserMetricsAction;
   if (view == spoken_feedback_view_) {
-    bool new_state = !controller->IsSpokenFeedbackEnabled();
+    bool new_state = !controller->spoken_feedback_enabled();
     RecordAction(new_state
                      ? UserMetricsAction("StatusArea_SpokenFeedbackEnabled")
                      : UserMetricsAction("StatusArea_SpokenFeedbackDisabled"));
     controller->SetSpokenFeedbackEnabled(new_state, A11Y_NOTIFICATION_NONE);
   } else if (view == select_to_speak_view_) {
-    bool new_state = !controller->IsSelectToSpeakEnabled();
+    bool new_state = !controller->select_to_speak_enabled();
     RecordAction(new_state
                      ? UserMetricsAction("StatusArea_SelectToSpeakEnabled")
                      : UserMetricsAction("StatusArea_SelectToSpeakDisabled"));
     controller->SetSelectToSpeakEnabled(new_state);
   } else if (view == dictation_view_) {
-    bool new_state = !controller->IsDictationEnabled();
+    bool new_state = !controller->dictation_enabled();
     RecordAction(new_state ? UserMetricsAction("StatusArea_DictationEnabled")
                            : UserMetricsAction("StatusArea_DictationDisabled"));
     controller->SetDictationEnabled(new_state);
   } else if (view == high_contrast_view_) {
-    bool new_state = !controller->IsHighContrastEnabled();
+    bool new_state = !controller->high_contrast_enabled();
     RecordAction(new_state
                      ? UserMetricsAction("StatusArea_HighContrastEnabled")
                      : UserMetricsAction("StatusArea_HighContrastDisabled"));
@@ -360,36 +285,36 @@ void AccessibilityDetailedView::HandleViewClicked(views::View* view) {
                      : UserMetricsAction("StatusArea_DockedMagnifierDisabled"));
     docked_magnifier_controller->SetEnabled(new_state);
   } else if (large_cursor_view_ && view == large_cursor_view_) {
-    bool new_state = !controller->IsLargeCursorEnabled();
+    bool new_state = !controller->large_cursor_enabled();
     RecordAction(new_state
                      ? UserMetricsAction("StatusArea_LargeCursorEnabled")
                      : UserMetricsAction("StatusArea_LargeCursorDisabled"));
     controller->SetLargeCursorEnabled(new_state);
   } else if (autoclick_view_ && view == autoclick_view_) {
-    bool new_state = !controller->IsAutoclickEnabled();
+    bool new_state = !controller->autoclick_enabled();
     RecordAction(new_state ? UserMetricsAction("StatusArea_AutoClickEnabled")
                            : UserMetricsAction("StatusArea_AutoClickDisabled"));
     controller->SetAutoclickEnabled(new_state);
   } else if (virtual_keyboard_view_ && view == virtual_keyboard_view_) {
-    bool new_state = !controller->IsVirtualKeyboardEnabled();
+    bool new_state = !controller->virtual_keyboard_enabled();
     RecordAction(new_state
                      ? UserMetricsAction("StatusArea_VirtualKeyboardEnabled")
                      : UserMetricsAction("StatusArea_VirtualKeyboardDisabled"));
     controller->SetVirtualKeyboardEnabled(new_state);
   } else if (caret_highlight_view_ && view == caret_highlight_view_) {
-    bool new_state = !controller->IsCaretHighlightEnabled();
+    bool new_state = !controller->caret_highlight_enabled();
     RecordAction(new_state
                      ? UserMetricsAction("StatusArea_CaretHighlightEnabled")
                      : UserMetricsAction("StatusArea_CaretHighlightDisabled"));
     controller->SetCaretHighlightEnabled(new_state);
   } else if (mono_audio_view_ && view == mono_audio_view_) {
-    bool new_state = !controller->IsMonoAudioEnabled();
+    bool new_state = !controller->mono_audio_enabled();
     RecordAction(new_state ? UserMetricsAction("StatusArea_MonoAudioEnabled")
                            : UserMetricsAction("StatusArea_MonoAudioDisabled"));
     controller->SetMonoAudioEnabled(new_state);
   } else if (highlight_mouse_cursor_view_ &&
              view == highlight_mouse_cursor_view_) {
-    bool new_state = !controller->IsCursorHighlightEnabled();
+    bool new_state = !controller->cursor_highlight_enabled();
     RecordAction(
         new_state
             ? UserMetricsAction("StatusArea_HighlightMouseCursorEnabled")
@@ -397,14 +322,14 @@ void AccessibilityDetailedView::HandleViewClicked(views::View* view) {
     controller->SetCursorHighlightEnabled(new_state);
   } else if (highlight_keyboard_focus_view_ &&
              view == highlight_keyboard_focus_view_) {
-    bool new_state = !controller->IsFocusHighlightEnabled();
+    bool new_state = !controller->focus_highlight_enabled();
     RecordAction(
         new_state
             ? UserMetricsAction("StatusArea_HighlightKeyboardFocusEnabled")
             : UserMetricsAction("StatusArea_HighlightKeyboardFocusDisabled"));
     controller->SetFocusHighlightEnabled(new_state);
   } else if (sticky_keys_view_ && view == sticky_keys_view_) {
-    bool new_state = !controller->IsStickyKeysEnabled();
+    bool new_state = !controller->sticky_keys_enabled();
     RecordAction(new_state
                      ? UserMetricsAction("StatusArea_StickyKeysEnabled")
                      : UserMetricsAction("StatusArea_StickyKeysDisabled"));
@@ -451,105 +376,4 @@ void AccessibilityDetailedView::ShowHelp() {
 }
 
 }  // namespace tray
-
-////////////////////////////////////////////////////////////////////////////////
-// ash::TrayAccessibility
-
-TrayAccessibility::TrayAccessibility(SystemTray* system_tray)
-    : TrayImageItem(system_tray,
-                    kSystemTrayAccessibilityIcon,
-                    SystemTrayItemUmaType::UMA_ACCESSIBILITY),
-      default_(nullptr),
-      detailed_menu_(nullptr),
-      tray_icon_visible_(false),
-      login_(GetCurrentLoginStatus()),
-      show_a11y_menu_on_lock_screen_(true),
-      detailed_view_delegate_(
-          std::make_unique<SystemTrayItemDetailedViewDelegate>(this)) {
-  DCHECK(system_tray);
-  Shell::Get()->accessibility_controller()->AddObserver(this);
-}
-
-TrayAccessibility::~TrayAccessibility() {
-  Shell::Get()->accessibility_controller()->RemoveObserver(this);
-}
-
-void TrayAccessibility::SetTrayIconVisible(bool visible) {
-  if (tray_view())
-    tray_view()->SetVisible(visible);
-
-  SetIconColor(TrayIconColor(
-      ash::Shell::Get()->session_controller()->GetSessionState()));
-  tray_icon_visible_ = visible;
-}
-
-tray::AccessibilityDetailedView* TrayAccessibility::CreateDetailedMenu() {
-  return new tray::AccessibilityDetailedView(detailed_view_delegate_.get());
-}
-
-bool TrayAccessibility::GetInitialVisibility() {
-  // Shows accessibility icon if any accessibility feature is enabled.
-  // Otherwise, doen't show it.
-  return GetAccessibilityState() != A11Y_NONE;
-}
-
-views::View* TrayAccessibility::CreateDefaultView(LoginStatus status) {
-  CHECK(default_ == nullptr);
-
-  // Shows accessibility menu if:
-  // - on login screen (not logged in);
-  // - "Enable accessibility menu" on chrome://settings is checked;
-  // - or any of accessibility features is enabled
-  // Otherwise, not shows it.
-  AccessibilityDelegate* delegate = Shell::Get()->accessibility_delegate();
-  if (login_ != LoginStatus::NOT_LOGGED_IN &&
-      !delegate->ShouldShowAccessibilityMenu() &&
-      // On login screen, keeps the initial visibility of the menu.
-      (status != LoginStatus::LOCKED || !show_a11y_menu_on_lock_screen_))
-    return nullptr;
-
-  CHECK(default_ == nullptr);
-  default_ = new tray::DefaultAccessibilityView(this);
-
-  return default_;
-}
-
-views::View* TrayAccessibility::CreateDetailedView(LoginStatus status) {
-  CHECK(detailed_menu_ == nullptr);
-
-  Shell::Get()->metrics()->RecordUserMetricsAction(
-      UMA_STATUS_AREA_DETAILED_ACCESSIBILITY);
-  detailed_menu_ = CreateDetailedMenu();
-  return detailed_menu_;
-}
-
-void TrayAccessibility::OnDefaultViewDestroyed() {
-  default_ = nullptr;
-}
-
-void TrayAccessibility::OnDetailedViewDestroyed() {
-  detailed_menu_ = nullptr;
-}
-
-void TrayAccessibility::UpdateAfterLoginStatusChange(LoginStatus status) {
-  // Stores the a11y feature status on just entering the lock screen.
-  if (login_ != LoginStatus::LOCKED && status == LoginStatus::LOCKED)
-    show_a11y_menu_on_lock_screen_ = (GetAccessibilityState() != A11Y_NONE);
-
-  login_ = status;
-  SetTrayIconVisible(GetInitialVisibility());
-}
-
-void TrayAccessibility::OnAccessibilityStatusChanged() {
-  SetTrayIconVisible(GetInitialVisibility());
-
-  if (detailed_menu_)
-    detailed_menu_->OnAccessibilityStatusChanged();
-}
-
-void TrayAccessibility::OnSessionStateChanged(
-    session_manager::SessionState state) {
-  SetTrayIconVisible(GetInitialVisibility());
-}
-
 }  // namespace ash

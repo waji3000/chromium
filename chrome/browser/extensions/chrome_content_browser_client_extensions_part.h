@@ -17,6 +17,7 @@
 
 namespace content {
 struct Referrer;
+class RenderFrameHost;
 class RenderProcessHost;
 class ResourceContext;
 class VpnServiceProxy;
@@ -27,8 +28,6 @@ class Origin;
 }
 
 namespace extensions {
-
-class URLPatternSet;
 
 // Implements the extensions portion of ChromeContentBrowserClient.
 class ChromeContentBrowserClientExtensionsPart
@@ -61,6 +60,8 @@ class ChromeContentBrowserClientExtensionsPart
                              const GURL& site_url);
   static bool ShouldTryToUseExistingProcessHost(Profile* profile,
                                                 const GURL& url);
+  static bool ShouldSubframesTryToReuseExistingProcess(
+      content::RenderFrameHost* main_frame);
   static bool ShouldSwapBrowsingInstancesForNavigation(
       content::SiteInstance* site_instance,
       const GURL& current_url,
@@ -96,6 +97,7 @@ class ChromeContentBrowserClientExtensionsPart
   CreateURLLoaderFactoryForNetworkRequests(
       content::RenderProcessHost* process,
       network::mojom::NetworkContext* network_context,
+      network::mojom::TrustedURLLoaderHeaderClientPtrInfo* header_client,
       const url::Origin& request_initiator);
 
  private:
@@ -125,15 +127,6 @@ class ChromeContentBrowserClientExtensionsPart
   static void RecordShouldAllowOpenURLFailure(
       ShouldAllowOpenURLFailureReason reason,
       const GURL& site_url);
-
-  // Returns true if all URLs matched by |web_extent| have the same origin as
-  // |origin|, or have an origin which is a subdomain of |origin|.
-  //
-  // When |origin| requires a dedicated process, this helps determine whether
-  // all URLs in |web_extent| are ok to go into |origin|'s process.
-  static bool DoesOriginMatchAllURLsInWebExtent(
-      const url::Origin& origin,
-      const URLPatternSet& web_extent);
 
   // ChromeContentBrowserClientParts:
   void RenderProcessWillLaunch(content::RenderProcessHost* host) override;

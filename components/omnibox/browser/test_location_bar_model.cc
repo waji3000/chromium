@@ -43,12 +43,16 @@ security_state::SecurityLevel TestLocationBarModel::GetSecurityLevel(
   return security_level_;
 }
 
+bool TestLocationBarModel::IsSecurityInfoInitialized() const {
+  return true;
+}
+
 const gfx::VectorIcon& TestLocationBarModel::GetVectorIcon() const {
   return *icon_;
 }
 
-base::string16 TestLocationBarModel::GetSecureVerboseText() const {
-  return base::string16();
+base::string16 TestLocationBarModel::GetSecureDisplayText() const {
+  return secure_display_text_;
 }
 
 base::string16 TestLocationBarModel::GetSecureAccessibilityText() const {

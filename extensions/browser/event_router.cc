@@ -722,14 +722,32 @@ void EventRouter::DoDispatchEventToSenderBookkeepingOnUI(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   BrowserContext* browser_context =
       reinterpret_cast<BrowserContext*>(browser_context_id);
+  // TODO(https://crbug.com/870838): Remove after investigating the bug.
+  if (!ExtensionsBrowserClient::Get()) {
+    LOG(ERROR) << "ExtensionsBrowserClient does not exist.";
+    NOTREACHED();
+    return;
+  }
   if (!ExtensionsBrowserClient::Get()->IsValidContext(browser_context))
     return;
+  // TODO(https://crbug.com/870838): Remove after investigating the bug.
+  if (!ExtensionRegistry::Get(browser_context)) {
+    LOG(ERROR) << "ExtensionRegistry does not exist.";
+    NOTREACHED();
+    return;
+  }
   const Extension* extension =
       ExtensionRegistry::Get(browser_context)->enabled_extensions().GetByID(
           extension_id);
   if (!extension)
     return;
   EventRouter* event_router = EventRouter::Get(browser_context);
+  // TODO(https://crbug.com/870838): Remove after investigating the bug.
+  if (!event_router) {
+    LOG(ERROR) << "EventRouter does not exist.";
+    NOTREACHED();
+    return;
+  }
   event_router->IncrementInFlightEvents(browser_context, extension, event_id,
                                         event_name);
   event_router->ReportEvent(histogram_value, extension,

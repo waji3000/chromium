@@ -710,6 +710,15 @@ class SingleEntryPropertiesGetterForDriveFs {
           std::make_unique<std::string>(*properties_->thumbnail_url);
     }
 
+    if (metadata->folder_feature) {
+      properties_->is_machine_root =
+          std::make_unique<bool>(metadata->folder_feature->is_machine_root);
+      properties_->is_external_media =
+          std::make_unique<bool>(metadata->folder_feature->is_external_media);
+      properties_->is_arbitrary_sync_folder = std::make_unique<bool>(
+          metadata->folder_feature->is_arbitrary_sync_folder);
+    }
+
     CompleteGetEntryProperties(drive::FILE_ERROR_OK);
   }
 
@@ -745,16 +754,8 @@ std::string MakeThumbnailDataUrlOnSequence(
   return base::StrCat({"data:image/png;base64,", encoded});
 }
 
-drivefs::mojom::QueryParameters::QuerySource SearchDriveFs(
-    scoped_refptr<ChromeAsyncExtensionFunction> function,
-    drivefs::mojom::QueryParametersPtr query,
-    bool filter_dirs,
-    base::OnceCallback<void(std::unique_ptr<base::ListValue>)> callback);
-
 void OnSearchDriveFs(
     scoped_refptr<ChromeAsyncExtensionFunction> function,
-    drivefs::mojom::SearchQueryPtr search,
-    drivefs::mojom::QueryParametersPtr query,
     bool filter_dirs,
     base::OnceCallback<void(std::unique_ptr<base::ListValue>)> callback,
     drive::FileError error,
@@ -763,22 +764,6 @@ void OnSearchDriveFs(
       drive::util::GetIntegrationServiceByProfile(function->GetProfile());
   if (!integration_service) {
     std::move(callback).Run(nullptr);
-    return;
-  }
-
-  if (error == drive::FILE_ERROR_NO_CONNECTION &&
-      query->query_source !=
-          drivefs::mojom::QueryParameters::QuerySource::kLocalOnly) {
-    // Retry with offline query.
-    query->query_source =
-        drivefs::mojom::QueryParameters::QuerySource::kLocalOnly;
-    if (query->text_content) {
-      // Full-text searches not supported offline.
-      std::swap(query->text_content, query->title);
-      query->text_content.reset();
-    }
-    SearchDriveFs(std::move(function), std::move(query), filter_dirs,
-                  std::move(callback));
     return;
   }
 
@@ -824,24 +809,13 @@ drivefs::mojom::QueryParameters::QuerySource SearchDriveFs(
     base::OnceCallback<void(std::unique_ptr<base::ListValue>)> callback) {
   drive::DriveIntegrationService* const integration_service =
       drive::util::GetIntegrationServiceByProfile(function->GetProfile());
-  drivefs::mojom::SearchQueryPtr search;
-  integration_service->GetDriveFsInterface()->StartSearchQuery(
-      mojo::MakeRequest(&search), query.Clone());
-  drivefs::mojom::QueryParameters::QuerySource source = query->query_source;
-  if (net::NetworkChangeNotifier::IsOffline() &&
-      source != drivefs::mojom::QueryParameters::QuerySource::kLocalOnly) {
-    // No point trying cloud query if we know we are offline.
-    source = drivefs::mojom::QueryParameters::QuerySource::kLocalOnly;
-    OnSearchDriveFs(std::move(function), std::move(search), std::move(query),
-                    filter_dirs, std::move(callback),
-                    drive::FILE_ERROR_NO_CONNECTION, {});
-  } else {
-    auto* raw_search = search.get();
-    raw_search->GetNextPage(
-        base::BindOnce(&OnSearchDriveFs, std::move(function), std::move(search),
-                       std::move(query), filter_dirs, std::move(callback)));
-  }
-  return source;
+  auto on_response = base::BindOnce(&OnSearchDriveFs, std::move(function),
+                                    filter_dirs, std::move(callback));
+  return integration_service->GetDriveFsHost()->PerformSearch(
+      std::move(query),
+      mojo::WrapCallbackWithDefaultInvokeIfNotRun(
+          std::move(on_response), drive::FileError::FILE_ERROR_ABORT,
+          base::Optional<std::vector<drivefs::mojom::QueryItemPtr>>()));
 }
 
 void UmaEmitSearchOutcome(
@@ -1476,10 +1450,6 @@ FileManagerPrivateGetDriveConnectionStateFunction::Run() {
           ->network_state_handler()
           ->FirstNetworkByType(chromeos::NetworkTypePattern::Mobile());
 
-  drive::EventLogger* logger = file_manager::util::GetLogger(
-      Profile::FromBrowserContext(browser_context()));
-  if (logger)
-    logger->Log(logging::LOG_INFO, "%s succeeded.", name());
   return RespondNow(ArgumentList(
       api::file_manager_private::GetDriveConnectionState::Results::Create(
           result)));

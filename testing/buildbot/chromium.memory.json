@@ -663,49 +663,6 @@
             "--bucket",
             "chromium-result-details",
             "--test-name",
-            "chrome_sync_shell_test_apk"
-          ],
-          "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/luci/logdog/butler/${platform}",
-              "location": "bin",
-              "revision": "git_revision:ff387eadf445b24c935f1cf7d6ddd279f8a6b04c"
-            }
-          ],
-          "dimension_sets": [
-            {
-              "device_os": "MMB29Q",
-              "device_type": "bullhead",
-              "os": "Android"
-            }
-          ],
-          "output_links": [
-            {
-              "link": [
-                "https://luci-logdog.appspot.com/v/?s",
-                "=android%2Fswarming%2Flogcats%2F",
-                "${TASK_ID}%2F%2B%2Funified_logcats"
-              ],
-              "name": "shard #${SHARD_INDEX} logcats"
-            }
-          ]
-        },
-        "test": "chrome_sync_shell_test_apk"
-      },
-      {
-        "args": [
-          "--gs-results-bucket=chromium-result-details",
-          "--recover-devices"
-        ],
-        "merge": {
-          "args": [
-            "--bucket",
-            "chromium-result-details",
-            "--test-name",
             "components_browsertests"
           ],
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
@@ -2424,6 +2381,49 @@
           ]
         },
         "test": "viz_unittests"
+      },
+      {
+        "args": [
+          "--gs-results-bucket=chromium-result-details",
+          "--recover-devices"
+        ],
+        "merge": {
+          "args": [
+            "--bucket",
+            "chromium-result-details",
+            "--test-name",
+            "vr_android_unittests"
+          ],
+          "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
+        },
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "cipd_packages": [
+            {
+              "cipd_package": "infra/tools/luci/logdog/butler/${platform}",
+              "location": "bin",
+              "revision": "git_revision:ff387eadf445b24c935f1cf7d6ddd279f8a6b04c"
+            }
+          ],
+          "dimension_sets": [
+            {
+              "device_os": "MMB29Q",
+              "device_type": "bullhead",
+              "os": "Android"
+            }
+          ],
+          "output_links": [
+            {
+              "link": [
+                "https://luci-logdog.appspot.com/v/?s",
+                "=android%2Fswarming%2Flogcats%2F",
+                "${TASK_ID}%2F%2B%2Funified_logcats"
+              ],
+              "name": "shard #${SHARD_INDEX} logcats"
+            }
+          ]
+        },
+        "test": "vr_android_unittests"
       },
       {
         "args": [
@@ -4542,7 +4542,6 @@
       {
         "args": [
           "--enable-features=SingleProcessMash",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/chromeos.single_process_mash.exo_unittests.filter",
           "--test-launcher-print-test-stdio=always"
         ],
         "name": "single_process_mash_exo_unittests",
@@ -5789,7 +5788,6 @@
       {
         "args": [
           "--enable-features=SingleProcessMash",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/chromeos.single_process_mash.exo_unittests.filter",
           "--test-launcher-print-test-stdio=always"
         ],
         "name": "single_process_mash_exo_unittests",
@@ -9248,15 +9246,6 @@
         "swarming": {
           "can_use_on_swarming_builders": true
         },
-        "test": "mac_installer_unittests"
-      },
-      {
-        "args": [
-          "--test-launcher-print-test-stdio=always"
-        ],
-        "swarming": {
-          "can_use_on_swarming_builders": true
-        },
         "test": "media_blink_unittests"
       },
       {
@@ -9510,6 +9499,105 @@
           "can_use_on_swarming_builders": true
         },
         "test": "wtf_unittests"
+      }
+    ]
+  },
+  "WebKit Linux Trusty ASAN": {
+    "isolated_scripts": [
+      {
+        "args": [
+          "--num-retries=3",
+          "--additional-expectations",
+          "../../third_party/blink/web_tests/ASANExpectations",
+          "--time-out-ms",
+          "48000",
+          "--enable-sanitizer"
+        ],
+        "isolate_name": "webkit_layout_tests_exparchive",
+        "merge": {
+          "args": [
+            "--verbose"
+          ],
+          "script": "//third_party/blink/tools/merge_web_test_results.py"
+        },
+        "name": "webkit_layout_tests",
+        "results_handler": "layout tests",
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "os": "Ubuntu-14.04"
+            }
+          ],
+          "shards": 20
+        }
+      }
+    ]
+  },
+  "WebKit Linux Trusty Leak": {
+    "isolated_scripts": [
+      {
+        "args": [
+          "--num-retries=3",
+          "--additional-expectations",
+          "../../third_party/blink/web_tests/LeakExpectations",
+          "--time-out-ms",
+          "48000",
+          "--enable-leak-detection"
+        ],
+        "isolate_name": "webkit_layout_tests_exparchive",
+        "merge": {
+          "args": [
+            "--verbose"
+          ],
+          "script": "//third_party/blink/tools/merge_web_test_results.py"
+        },
+        "name": "webkit_layout_tests",
+        "results_handler": "layout tests",
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "os": "Ubuntu-14.04"
+            }
+          ],
+          "shards": 10
+        }
+      }
+    ]
+  },
+  "WebKit Linux Trusty MSAN": {
+    "isolated_scripts": [
+      {
+        "args": [
+          "--num-retries=3",
+          "--additional-expectations",
+          "../../third_party/blink/web_tests/MSANExpectations",
+          "--time-out-ms",
+          "66000",
+          "--enable-sanitizer"
+        ],
+        "isolate_name": "webkit_layout_tests_exparchive",
+        "merge": {
+          "args": [
+            "--verbose"
+          ],
+          "script": "//third_party/blink/tools/merge_web_test_results.py"
+        },
+        "name": "webkit_layout_tests",
+        "results_handler": "layout tests",
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "os": "Ubuntu-14.04"
+            }
+          ],
+          "expiration": 36000,
+          "hard_timeout": 10800,
+          "io_timeout": 3600,
+          "shards": 20
+        }
       }
     ]
   },

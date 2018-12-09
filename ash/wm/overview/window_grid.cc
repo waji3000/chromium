@@ -496,6 +496,9 @@ void WindowGrid::AddItem(aura::Window* window, bool reposition, bool animate) {
       window_list_.begin(),
       std::make_unique<WindowSelectorItem>(window, window_selector_, this));
   window_list_.front()->PrepareForOverview();
+  // The item is added after overview enter animation is complete, so
+  // just call OnStartingAnimationComplete.
+  window_list_.front()->OnStartingAnimationComplete();
 
   if (reposition)
     PositionWindows(animate);
@@ -509,6 +512,9 @@ void WindowGrid::RemoveItem(WindowSelectorItem* selector_item,
     window_observer_.Remove(selector_item->GetWindow());
     window_state_observer_.Remove(
         wm::GetWindowState(selector_item->GetWindow()));
+    // Erase from the list first because deleting WindowSelectorItem can
+    // lead to iterating through the |window_list_|.
+    std::unique_ptr<WindowSelectorItem> tmp = std::move(*iter);
     window_list_.erase(iter);
   }
 
@@ -734,7 +740,11 @@ void WindowGrid::OnWindowDestroying(aura::Window* window) {
   const bool needs_repositioning = !((*iter)->animating_to_close());
 
   size_t removed_index = iter - window_list_.begin();
+  // Erase from the list first because deleting WindowSelectorItem can
+  // lead to iterating through the |window_list_|.
+  std::unique_ptr<WindowSelectorItem> tmp = std::move(*iter);
   window_list_.erase(iter);
+  tmp.reset();
 
   if (empty()) {
     selection_widget_.reset();

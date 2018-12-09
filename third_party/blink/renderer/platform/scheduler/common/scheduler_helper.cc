@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/task/sequence_manager/sequence_manager_impl.h"
 #include "base/task/sequence_manager/task_queue.h"
 #include "base/time/default_tick_clock.h"
 #include "base/trace_event/trace_event.h"
@@ -70,15 +71,21 @@ bool SchedulerHelper::GetAndClearSystemIsQuiescentBit() {
 void SchedulerHelper::AddTaskObserver(
     base::MessageLoop::TaskObserver* task_observer) {
   CheckOnValidThread();
-  if (sequence_manager_)
-    sequence_manager_->AddTaskObserver(task_observer);
+  if (sequence_manager_) {
+    static_cast<base::sequence_manager::internal::SequenceManagerImpl*>(
+        sequence_manager_.get())
+        ->AddTaskObserver(task_observer);
+  }
 }
 
 void SchedulerHelper::RemoveTaskObserver(
     base::MessageLoop::TaskObserver* task_observer) {
   CheckOnValidThread();
-  if (sequence_manager_)
-    sequence_manager_->RemoveTaskObserver(task_observer);
+  if (sequence_manager_) {
+    static_cast<base::sequence_manager::internal::SequenceManagerImpl*>(
+        sequence_manager_.get())
+        ->RemoveTaskObserver(task_observer);
+  }
 }
 
 void SchedulerHelper::AddTaskTimeObserver(
@@ -148,7 +155,11 @@ base::TimeTicks SchedulerHelper::NowTicks() const {
 }
 
 void SchedulerHelper::SetTimerSlack(base::TimerSlack timer_slack) {
-  sequence_manager_->SetTimerSlack(timer_slack);
+  if (sequence_manager_) {
+    static_cast<base::sequence_manager::internal::SequenceManagerImpl*>(
+        sequence_manager_.get())
+        ->SetTimerSlack(timer_slack);
+  }
 }
 
 double SchedulerHelper::GetSamplingRateForRecordingCPUTime() const {
@@ -162,7 +173,7 @@ double SchedulerHelper::GetSamplingRateForRecordingCPUTime() const {
 bool SchedulerHelper::HasCPUTimingForEachTask() const {
   if (sequence_manager_) {
     return sequence_manager_->GetMetricRecordingSettings()
-        .records_cpu_time_for_each_task;
+        .records_cpu_time_for_all_tasks();
   }
   return false;
 }

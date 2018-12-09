@@ -6,6 +6,7 @@
 #define SERVICES_IDENTITY_PUBLIC_CPP_IDENTITY_TEST_ENVIRONMENT_H_
 
 #include "base/optional.h"
+#include "components/signin/core/browser/account_consistency_method.h"
 #include "components/signin/core/browser/account_tracker_service.h"
 #include "components/signin/core/browser/fake_gaia_cookie_manager_service.h"
 #include "components/signin/core/browser/fake_profile_oauth2_token_service.h"
@@ -16,7 +17,19 @@
 class IdentityTestEnvironmentChromeBrowserStateAdaptor;
 class IdentityTestEnvironmentProfileAdaptor;
 
+namespace sync_preferences {
+class TestingPrefServiceSyncable;
+}
+
 namespace identity {
+
+namespace {
+#if defined(OS_CHROMEOS)
+using SigninManagerForTest = FakeSigninManagerBase;
+#else
+using SigninManagerForTest = FakeSigninManager;
+#endif  // OS_CHROMEOS
+}
 
 // Internal class that creates and owns dependencies of IdentityManager
 // when those dependencies are not passed in externally.
@@ -26,13 +39,11 @@ class IdentityManagerDependenciesOwner;
 // provides facilities for driving that IdentityManager. The IdentityManager
 // instance is brought up in an environment where the primary account is
 // not available; call MakePrimaryAccountAvailable() as needed.
+// NOTE: IdentityTestEnvironment requires that tests have a properly set up
+// task environment. If your test doesn't already have one, use a
+// base::test::ScopedTaskEnvironment instance variable to fulfill this
+// requirement.
 class IdentityTestEnvironment : public IdentityManager::DiagnosticsObserver {
-#if defined(OS_CHROMEOS)
-  using SigninManagerForTest = FakeSigninManagerBase;
-#else
-  using SigninManagerForTest = FakeSigninManager;
-#endif  // OS_CHROMEOS
-
  public:
   // Preferred constructor: constructs an IdentityManager object and its
   // dependencies internally. Cannot be used if the client of this class
@@ -40,8 +51,20 @@ class IdentityTestEnvironment : public IdentityManager::DiagnosticsObserver {
   // IdentityTestEnvironment is being introduced to incrementally convert
   // a test). In that case, use the below constructor and switch to this
   // constructor once the conversion is complete.
+  //
+  // This constructor also takes an optional PrefService instance as parameter,
+  // which allows tests to move away from referencing IdentityManager's
+  // dependencies directly (namely AccountTrackerService, PO2TS, SigninManager
+  // and GaiaCookieManagerService), but still be able to tweak preferences on
+  // demand.
+  //
+  // Last, this constructor can take an optional parameter |account_consistency|
+  // as parameter, to specify the account consistency policy that will be used.
   IdentityTestEnvironment(
-      bool use_fake_url_loader_for_gaia_cookie_manager = false);
+      bool use_fake_url_loader_for_gaia_cookie_manager = false,
+      sync_preferences::TestingPrefServiceSyncable* pref_service = nullptr,
+      signin::AccountConsistencyMethod account_consistency =
+          signin::AccountConsistencyMethod::kDisabled);
 
   // Constructor that takes in instances of the dependencies of
   // IdentityManager and constructs an IdentityManager instance from those
@@ -128,37 +151,27 @@ class IdentityTestEnvironment : public IdentityManager::DiagnosticsObserver {
   // already occurred and has not been matched by a previous call to this or
   // other WaitFor... method, or (b) will occur in the future. In the latter
   // case, waits until the access token request occurs.
+  // |id_token| is an uncommonly-needed parameter that contains extra
+  // information regarding the user's currently-registered services; if this
+  // means nothing to you, you don't need to concern yourself with it.
   // NOTE: This method behaves this way to allow IdentityTestEnvironment to be
   // agnostic with respect to whether access token requests are handled
   // synchronously or asynchronously in the production code.
   // NOTE: This version is suitable for use in the common context where access
   // token requests are only being made for one account. If you need to
   // disambiguate requests coming for different accounts, see the version below.
-  void WaitForAccessTokenRequestIfNecessaryAndRespondWithToken(
-      const std::string& token,
-      const base::Time& expiration);
-
-  // Issues |token| in response to any access token request that either has (a)
-  // already occurred and has not been matched by a previous call to this or
-  // other WaitFor... method, or (b) will occur in the future. In the latter
-  // case, waits until the access token request occurs.
-  // NOTE: This method behaves this way to allow IdentityTestEnvironment to be
-  // agnostic with respect to whether access token requests are handled
-  // synchronously or asynchronously in the production code.
-  // NOTE: This version is suitable for use in the common context where access
-  // token requests are only being made for one account. If you need to
-  // disambiguate requests coming for different accounts, see the version below.
-  // NOTE: This version allows passing the uncommon id_token parameter which is
-  // needed to test some cases where checking for that extra info is required.
   void WaitForAccessTokenRequestIfNecessaryAndRespondWithToken(
       const std::string& token,
       const base::Time& expiration,
-      const std::string& id_token);
+      const std::string& id_token = std::string());
 
   // Issues |token| in response to an access token request for |account_id| that
   // either already occurred and has not been matched by a previous call to this
   // or other WaitFor... method , or (b) will occur in the future. In the latter
   // case, waits until the access token request occurs.
+  // |id_token| is an uncommonly-needed parameter that contains extra
+  // information regarding the user's currently-registered services; if this
+  // means nothing to you, you don't need to concern yourself with it.
   // NOTE: This method behaves this way to allow
   // IdentityTestEnvironment to be agnostic with respect to whether access token
   // requests are handled synchronously or asynchronously in the production
@@ -166,11 +179,21 @@ class IdentityTestEnvironment : public IdentityManager::DiagnosticsObserver {
   void WaitForAccessTokenRequestIfNecessaryAndRespondWithToken(
       const std::string& account_id,
       const std::string& token,
-      const base::Time& expiration);
+      const base::Time& expiration,
+      const std::string& id_token = std::string());
+
+  // Similar to WaitForAccessTokenRequestIfNecessaryAndRespondWithToken above
+  // apart from the fact that it issues tokens for a given set of scopes only,
+  // instead of issueing all tokens for all requests (the method variant above).
+  void WaitForAccessTokenRequestIfNecessaryAndRespondWithTokenForScopes(
+      const std::string& token,
+      const base::Time& expiration,
+      const std::string& id_token,
+      const identity::ScopeSet& scopes);
 
   // Issues |error| in response to any access token request that either has (a)
   // already occurred and has not been matched by a previous call to this or
-  // other WaitFor... method, or (b) will occur in the future via  In the latter
+  // other WaitFor... method, or (b) will occur in the future. In the latter
   // case, waits until the access token request occurs.
   // NOTE: This method behaves this way to allow IdentityTestEnvironment to be
   // agnostic with respect to whether access token requests are handled
@@ -199,6 +222,10 @@ class IdentityTestEnvironment : public IdentityManager::DiagnosticsObserver {
   // either wait for the callback to get called, or explicitly reset it by
   // passing in a null callback, before the Wait* methods can be used again.
   void SetCallbackForNextAccessTokenRequest(base::OnceClosure callback);
+
+  // Updates the info for |account_info.account_id|, which must be a known
+  // account.
+  void UpdateAccountInfoForAccount(AccountInfo account_info);
 
  private:
   friend class ::IdentityTestEnvironmentChromeBrowserStateAdaptor;

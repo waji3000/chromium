@@ -40,7 +40,11 @@ class CORE_EXPORT NGLayoutResult : public RefCounted<NGLayoutResult> {
     // enough to store.
   };
 
-  NGLayoutResult(const NGLayoutResult&);
+  // Create a copy of NGLayoutResult with |BfcBlockOffset| replaced by the given
+  // parameter. Note, when |bfc_block_offset| is |nullopt|, |BfcBlockOffset| is
+  // still replaced with |nullopt|.
+  NGLayoutResult(const NGLayoutResult&,
+                 base::Optional<LayoutUnit> bfc_block_offset);
   ~NGLayoutResult();
 
   const NGPhysicalFragment* PhysicalFragment() const {
@@ -113,6 +117,8 @@ class CORE_EXPORT NGLayoutResult : public RefCounted<NGLayoutResult> {
   // the block, and the block will fail to clear).
   NGFloatTypes AdjoiningFloatTypes() const { return adjoining_floats_; }
 
+  bool HasOrthogonalFlowRoots() const { return has_orthogonal_flow_roots_; }
+
  private:
   friend class NGBoxFragmentBuilder;
   friend class NGLineBoxFragmentBuilder;
@@ -124,6 +130,10 @@ class CORE_EXPORT NGLayoutResult : public RefCounted<NGLayoutResult> {
   NGLayoutResult(NGLayoutResultStatus, NGBoxFragmentBuilder*);
   NGLayoutResult(scoped_refptr<const NGPhysicalFragment> physical_fragment,
                  NGLineBoxFragmentBuilder*);
+
+  // We don't need copy constructor today. Delete this to clarify that the
+  // default copy constructor will not work because RefCounted can't be copied.
+  NGLayoutResult(const NGLayoutResult&) = delete;
 
   NGLink root_fragment_;
   Vector<NGOutOfFlowPositionedDescendant> oof_positioned_descendants_;
@@ -146,6 +156,8 @@ class CORE_EXPORT NGLayoutResult : public RefCounted<NGLayoutResult> {
 
   unsigned is_pushed_by_floats_ : 1;
   unsigned adjoining_floats_ : 2;  // NGFloatTypes
+
+  unsigned has_orthogonal_flow_roots_ : 1;
 
   unsigned status_ : 1;
 };

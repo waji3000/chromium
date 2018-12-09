@@ -47,12 +47,14 @@ class PrimaryAccountMutator {
   // whether the operation succeeded or not. To succeed, this requires that:
   //    - setting the primary account is allowed,
   //    - the account username is allowed by policy,
+  //    - there is not already a primary account set,
   //    - the account is known by the IdentityManager.
   virtual bool SetPrimaryAccount(const std::string& account_id) = 0;
 
-  // Clears the primary account. Depending on |action|, the other accounts
+  // Clears the primary account, and returns whether the operation
+  // succeeded or not. Depending on |action|, the other accounts
   // known to the IdentityManager may be deleted.
-  virtual void ClearPrimaryAccount(
+  virtual bool ClearPrimaryAccount(
       ClearAccountsAction action,
       signin_metrics::ProfileSignout source_metric,
       signin_metrics::SignoutDelete delete_metric) = 0;
@@ -84,7 +86,7 @@ class PrimaryAccountMutator {
       const std::string& gaia_id,
       const std::string& username,
       const std::string& password,
-      base::RepeatingCallback<void(const std::string&)> callback) = 0;
+      base::OnceCallback<void(const std::string&)> callback) = 0;
 
   // Complete the in-process sign-in (legacy, pre-DICE workflow).
   virtual void LegacyCompletePendingPrimaryAccountSignin() = 0;

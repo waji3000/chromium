@@ -411,6 +411,11 @@ HttpNetworkSession::Context SpdySessionDependencies::CreateSessionContext(
       session_deps->http_auth_handler_factory.get();
   context.http_server_properties = session_deps->http_server_properties.get();
   context.net_log = session_deps->net_log;
+#if BUILDFLAG(ENABLE_REPORTING)
+  context.reporting_service = session_deps->reporting_service.get();
+  context.network_error_logging_service =
+      session_deps->network_error_logging_service.get();
+#endif
   return context;
 }
 

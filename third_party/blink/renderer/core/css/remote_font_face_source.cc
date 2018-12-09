@@ -253,6 +253,8 @@ void RemoteFontFaceSource::BeginLoadIfNeeded() {
     return;
   DCHECK(GetResource());
 
+  SetDisplay(face_->GetFontFace()->GetFontDisplayWithFallback());
+
   FontResource* font = ToFontResource(GetResource());
   if (font->StillNeedsLoad()) {
     if (font->IsLowPriorityLoadingAllowedForRemoteFont()) {
@@ -330,11 +332,11 @@ void RemoteFontFaceSource::FontLoadHistograms::RecordRemoteFont(
     int duration = static_cast<int>(CurrentTimeMS() - load_start_time_);
     RecordLoadTimeHistogram(font, duration);
 
-    enum { kCORSFail, kCORSSuccess, kCORSEnumMax };
+    enum { kCorsFail, kCorsSuccess, kCorsEnumMax };
     int cors_value =
-        font->GetResponse().IsCORSSameOrigin() ? kCORSSuccess : kCORSFail;
+        font->GetResponse().IsCorsSameOrigin() ? kCorsSuccess : kCorsFail;
     DEFINE_THREAD_SAFE_STATIC_LOCAL(EnumerationHistogram, cors_histogram,
-                                    ("WebFont.CORSSuccess", kCORSEnumMax));
+                                    ("WebFont.CORSSuccess", kCorsEnumMax));
     cors_histogram.Count(cors_value);
   }
 }

@@ -35,7 +35,6 @@ namespace views {
 
 class MenuButton;
 class MenuItemView;
-class View;
 
 // MenuDelegate --------------------------------------------------------------
 
@@ -235,10 +234,10 @@ class VIEWS_EXPORT MenuDelegate {
   // submenu indicators at the end of the line.
   virtual bool ShouldReserveSpaceForSubmenuIndicator() const;
 
-  // Override this function to display a footnote view below the menu-items in a
-  // top-level menu. Overrides may construct the view; this will only be called
-  // once per menu.
-  virtual View* CreateFootnoteView();
+  // Returns true if menus should fall back to positioning beside the anchor,
+  // rather than directly above or below it, when the menu is too tall to fit
+  // within the screen.
+  virtual bool ShouldTryPositioningBesideAnchor() const;
 };
 
 }  // namespace views

@@ -6,6 +6,7 @@
 #define UI_AURA_CLIENT_AURA_CONSTANTS_H_
 
 #include <string>
+#include <vector>
 
 #include "base/strings/string16.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -61,6 +62,13 @@ AURA_EXPORT extern const WindowProperty<gfx::SizeF*>* const kAspectRatio;
 // frame to indicate the owner of the window when needed.
 AURA_EXPORT extern const WindowProperty<gfx::ImageSkia*>* const kAvatarIconKey;
 
+// A property key to indicate if a client window has content. The value is
+// based on whether the window has a drawn layer (i.e. layer type !=
+// LAYER_NOT_DRAWN) and is opaque. It is passed to the Window Service side for
+// the occlusion tracker to process since the info is only available at the
+// client side.
+AURA_EXPORT extern const WindowProperty<bool>* const kClientWindowHasContent;
+
 // A property key to store if a window is a constrained window or not.
 AURA_EXPORT extern const WindowProperty<bool>* const kConstrainedWindowKey;
 
@@ -81,9 +89,10 @@ AURA_EXPORT extern const WindowProperty<Window*>* const kHostWindowKey;
 // A property key to store the minimum size of the window.
 AURA_EXPORT extern const WindowProperty<gfx::Size*>* const kMinimumSize;
 
-// A property key to indicate that a window is being "mirrored" and its contents
-// should render regardless of its actual visibility state.
-AURA_EXPORT extern const WindowProperty<bool>* const kMirroringEnabledKey;
+// A property key to store a list of windows showing a mirror of the window this
+// property is set on.
+AURA_EXPORT extern const WindowProperty<std::vector<Window*>*>* const
+    kMirrorWindowList;
 
 // The modal parent of a child modal window.
 AURA_EXPORT extern const WindowProperty<Window*>* const kChildModalParentKey;

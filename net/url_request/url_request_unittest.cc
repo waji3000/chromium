@@ -150,8 +150,6 @@
 
 #if BUILDFLAG(ENABLE_REPORTING)
 #include "net/network_error_logging/network_error_logging_service.h"
-#include "net/reporting/reporting_policy.h"
-#include "net/reporting/reporting_service.h"
 #endif  // BUILDFLAG(ENABLE_REPORTING)
 
 #if defined(OS_ANDROID) || defined(USE_BUILTIN_CERT_VERIFIER)
@@ -378,9 +376,6 @@ std::unique_ptr<UploadDataStream> CreateSimpleUploadData(const char* data) {
 
 // Verify that the SSLInfo of a successful SSL connection has valid values.
 void CheckSSLInfo(const SSLInfo& ssl_info) {
-  // -1 means unknown.  0 means no encryption.
-  EXPECT_GT(ssl_info.security_bits, 0);
-
   // The cipher suite TLS_NULL_WITH_NULL_NULL (0) must not be negotiated.
   uint16_t cipher_suite =
       SSLConnectionStatusToCipherSuite(ssl_info.connection_status);
@@ -4364,14 +4359,14 @@ TEST_F(URLRequestTestHTTP, NetworkDelegateRedirectRequest) {
   BlockingNetworkDelegate network_delegate(
       BlockingNetworkDelegate::AUTO_CALLBACK);
   network_delegate.set_block_on(BlockingNetworkDelegate::ON_BEFORE_URL_REQUEST);
-  GURL redirect_url(http_test_server()->GetURL("/simple.html"));
+  GURL redirect_url("http://does.not.resolve.test/simple.html");
   network_delegate.set_redirect_url(redirect_url);
 
   TestURLRequestContextWithProxy context(
       http_test_server()->host_port_pair().ToString(), &network_delegate);
 
   {
-    GURL original_url(http_test_server()->GetURL("/defaultresponse"));
+    GURL original_url("http://does.not.resolve.test/defaultresponse");
     std::unique_ptr<URLRequest> r(context.CreateRequest(
         original_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
 
@@ -4418,14 +4413,14 @@ TEST_F(URLRequestTestHTTP, NetworkDelegateRedirectRequestSynchronously) {
   TestDelegate d;
   BlockingNetworkDelegate network_delegate(
       BlockingNetworkDelegate::SYNCHRONOUS);
-  GURL redirect_url(http_test_server()->GetURL("/simple.html"));
+  GURL redirect_url("http://does.not.resolve.test/simple.html");
   network_delegate.set_redirect_url(redirect_url);
 
   TestURLRequestContextWithProxy context(
       http_test_server()->host_port_pair().ToString(), &network_delegate);
 
   {
-    GURL original_url(http_test_server()->GetURL("/defaultresponse"));
+    GURL original_url("http://does.not.resolve.test/defaultresponse");
     std::unique_ptr<URLRequest> r(context.CreateRequest(
         original_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
 
@@ -4529,14 +4524,14 @@ TEST_F(URLRequestTestHTTP, NetworkDelegateRedirectRequestOnHeadersReceived) {
   BlockingNetworkDelegate network_delegate(
       BlockingNetworkDelegate::AUTO_CALLBACK);
   network_delegate.set_block_on(BlockingNetworkDelegate::ON_HEADERS_RECEIVED);
-  GURL redirect_url(http_test_server()->GetURL("/simple.html"));
+  GURL redirect_url("http://does.not.resolve.test/simple.html");
   network_delegate.set_redirect_on_headers_received_url(redirect_url);
 
   TestURLRequestContextWithProxy context(
       http_test_server()->host_port_pair().ToString(), &network_delegate);
 
   {
-    GURL original_url(http_test_server()->GetURL("/defaultresponse"));
+    GURL original_url("http://does.not.resolve.test/defaultresponse");
     std::unique_ptr<URLRequest> r(context.CreateRequest(
         original_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
 
@@ -7038,535 +7033,6 @@ TEST_F(URLRequestTestHTTP, MultipleExpectCTHeaders) {
 
 #endif  // !defined(OS_IOS)
 
-#if BUILDFLAG(ENABLE_REPORTING)
-namespace {
-
-class TestReportingService : public ReportingService {
- public:
-  struct Header {
-    GURL url;
-    std::string header_value;
-  };
-
-  const std::vector<Header>& headers() { return headers_; }
-
-  // ReportingService implementation:
-
-  ~TestReportingService() override = default;
-
-  void QueueReport(const GURL& url,
-                   const std::string& user_agent,
-                   const std::string& group,
-                   const std::string& type,
-                   std::unique_ptr<const base::Value> body,
-                   int depth) override {
-    NOTIMPLEMENTED();
-  }
-
-  void ProcessHeader(const GURL& url,
-                     const std::string& header_value) override {
-    headers_.push_back({url, header_value});
-  }
-
-  void RemoveBrowsingData(int data_type_mask,
-                          const base::RepeatingCallback<bool(const GURL&)>&
-                              origin_filter) override {
-    NOTIMPLEMENTED();
-  }
-
-  void RemoveAllBrowsingData(int data_type_mask) override { NOTIMPLEMENTED(); }
-
-  int GetUploadDepth(const URLRequest& request) override {
-    NOTIMPLEMENTED();
-    return 0;
-  }
-
-  const ReportingPolicy& GetPolicy() const override {
-    static ReportingPolicy dummy_policy_;
-    NOTIMPLEMENTED();
-    return dummy_policy_;
-  }
-
- private:
-  std::vector<Header> headers_;
-};
-
-std::unique_ptr<test_server::HttpResponse> SendReportToHeader(
-    const test_server::HttpRequest& request) {
-  std::unique_ptr<test_server::BasicHttpResponse> http_response(
-      new test_server::BasicHttpResponse);
-  http_response->set_code(HTTP_OK);
-  http_response->AddCustomHeader("Report-To", "foo");
-  http_response->AddCustomHeader("Report-To", "bar");
-  return std::move(http_response);
-}
-
-}  // namespace
-
-TEST_F(URLRequestTestHTTP, DontProcessReportToHeaderNoService) {
-  http_test_server()->RegisterRequestHandler(
-      base::BindRepeating(&SendReportToHeader));
-  ASSERT_TRUE(http_test_server()->Start());
-  GURL request_url = http_test_server()->GetURL("/");
-
-  TestNetworkDelegate network_delegate;
-  TestURLRequestContext context(true);
-  context.set_network_delegate(&network_delegate);
-  context.Init();
-
-  TestDelegate d;
-  std::unique_ptr<URLRequest> request(context.CreateRequest(
-      request_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
-  request->Start();
-  d.RunUntilComplete();
-}
-
-TEST_F(URLRequestTestHTTP, DontProcessReportToHeaderHTTP) {
-  http_test_server()->RegisterRequestHandler(
-      base::BindRepeating(&SendReportToHeader));
-  ASSERT_TRUE(http_test_server()->Start());
-  GURL request_url = http_test_server()->GetURL("/");
-
-  TestNetworkDelegate network_delegate;
-  TestReportingService reporting_service;
-  TestURLRequestContext context(true);
-  context.set_network_delegate(&network_delegate);
-  context.set_reporting_service(&reporting_service);
-  context.Init();
-
-  TestDelegate d;
-  std::unique_ptr<URLRequest> request(context.CreateRequest(
-      request_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
-  request->Start();
-  d.RunUntilComplete();
-
-  EXPECT_TRUE(reporting_service.headers().empty());
-}
-
-TEST_F(URLRequestTestHTTP, ProcessReportToHeaderHTTPS) {
-  EmbeddedTestServer https_test_server(net::EmbeddedTestServer::TYPE_HTTPS);
-  https_test_server.RegisterRequestHandler(
-      base::BindRepeating(&SendReportToHeader));
-  ASSERT_TRUE(https_test_server.Start());
-  GURL request_url = https_test_server.GetURL("/");
-
-  TestNetworkDelegate network_delegate;
-  TestReportingService reporting_service;
-  TestURLRequestContext context(true);
-  context.set_network_delegate(&network_delegate);
-  context.set_reporting_service(&reporting_service);
-  context.Init();
-
-  TestDelegate d;
-  std::unique_ptr<URLRequest> request(context.CreateRequest(
-      request_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
-  request->Start();
-  d.RunUntilComplete();
-
-  ASSERT_EQ(1u, reporting_service.headers().size());
-  EXPECT_EQ(request_url, reporting_service.headers()[0].url);
-  EXPECT_EQ("foo, bar", reporting_service.headers()[0].header_value);
-}
-
-TEST_F(URLRequestTestHTTP, DontProcessReportToHeaderInvalidHttps) {
-  EmbeddedTestServer https_test_server(net::EmbeddedTestServer::TYPE_HTTPS);
-  https_test_server.SetSSLConfig(net::EmbeddedTestServer::CERT_MISMATCHED_NAME);
-  https_test_server.RegisterRequestHandler(
-      base::BindRepeating(&SendReportToHeader));
-  ASSERT_TRUE(https_test_server.Start());
-  GURL request_url = https_test_server.GetURL("/");
-
-  TestNetworkDelegate network_delegate;
-  TestReportingService reporting_service;
-  TestURLRequestContext context(true);
-  context.set_network_delegate(&network_delegate);
-  context.set_reporting_service(&reporting_service);
-  context.Init();
-
-  TestDelegate d;
-  d.set_allow_certificate_errors(true);
-  std::unique_ptr<URLRequest> request(context.CreateRequest(
-      request_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
-  request->Start();
-  d.RunUntilComplete();
-
-  EXPECT_TRUE(d.have_certificate_errors());
-  EXPECT_TRUE(IsCertStatusError(request->ssl_info().cert_status));
-  EXPECT_TRUE(reporting_service.headers().empty());
-}
-
-// Network Error Logging is dependent on the Reporting API, so only run NEL
-// tests if Reporting is enabled in the build.
-
-namespace {
-
-class TestNetworkErrorLoggingService : public NetworkErrorLoggingService {
- public:
-  struct Header {
-    Header() = default;
-    ~Header() = default;
-
-    // Returns whether the |received_ip_address| field matches any of the
-    // addresses in |address_list|.
-    bool MatchesAddressList(const AddressList& address_list) const {
-      return std::any_of(address_list.begin(), address_list.end(),
-                         [this](const IPEndPoint& endpoint) {
-                           return endpoint.address() == received_ip_address;
-                         });
-    }
-
-    url::Origin origin;
-    IPAddress received_ip_address;
-    std::string value;
-  };
-
-  const std::vector<Header>& headers() { return headers_; }
-  const std::vector<RequestDetails>& errors() { return errors_; }
-
-  // NetworkErrorLoggingService implementation:
-
-  ~TestNetworkErrorLoggingService() override = default;
-
-  void OnHeader(const url::Origin& origin,
-                const IPAddress& received_ip_address,
-                const std::string& value) override {
-    Header header;
-    header.origin = origin;
-    header.received_ip_address = received_ip_address;
-    header.value = value;
-    headers_.push_back(header);
-  }
-
-  void OnRequest(RequestDetails details) override {
-    errors_.push_back(std::move(details));
-  }
-
-  void RemoveBrowsingData(const base::RepeatingCallback<bool(const GURL&)>&
-                              origin_filter) override {
-    NOTREACHED();
-  }
-
-  void RemoveAllBrowsingData() override { NOTREACHED(); }
-
- private:
-  std::vector<Header> headers_;
-  std::vector<RequestDetails> errors_;
-};
-
-std::unique_ptr<test_server::HttpResponse> SendNelHeader(
-    const test_server::HttpRequest& request) {
-  std::unique_ptr<test_server::BasicHttpResponse> http_response(
-      new test_server::BasicHttpResponse);
-  http_response->set_code(HTTP_OK);
-  http_response->AddCustomHeader(NetworkErrorLoggingService::kHeaderName,
-                                 "foo");
-  return std::move(http_response);
-}
-
-std::unique_ptr<test_server::HttpResponse> SendEmptyResponse(
-    const test_server::HttpRequest& request) {
-  return std::make_unique<test_server::RawHttpResponse>("", "");
-}
-
-// Distinct User-Agent header values that we use to ensure that URLRequest
-// passes along user agents into NEL reports correctly.
-constexpr char kHeaderUserAgent[] = "MozillaFromHeader/1.0";
-constexpr char kSettingsUserAgent[] = "MozillaFromSettings/1.0";
-
-}  // namespace
-
-TEST_F(URLRequestTestHTTP, DontProcessNelHeaderNoDelegate) {
-  http_test_server()->RegisterRequestHandler(
-      base::BindRepeating(&SendNelHeader));
-  ASSERT_TRUE(http_test_server()->Start());
-  GURL request_url = http_test_server()->GetURL("/");
-
-  TestNetworkDelegate network_delegate;
-  TestURLRequestContext context(true);
-  context.set_network_delegate(&network_delegate);
-  context.Init();
-
-  TestDelegate d;
-  std::unique_ptr<URLRequest> request(context.CreateRequest(
-      request_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
-  request->Start();
-  d.RunUntilComplete();
-}
-
-TEST_F(URLRequestTestHTTP, DontProcessNelHeaderHttp) {
-  http_test_server()->RegisterRequestHandler(
-      base::BindRepeating(&SendNelHeader));
-  ASSERT_TRUE(http_test_server()->Start());
-  GURL request_url = http_test_server()->GetURL("/");
-
-  TestNetworkDelegate network_delegate;
-  TestNetworkErrorLoggingService nel_service;
-  TestURLRequestContext context(true);
-  context.set_network_delegate(&network_delegate);
-  context.set_network_error_logging_service(&nel_service);
-  context.Init();
-
-  TestDelegate d;
-  std::unique_ptr<URLRequest> request(context.CreateRequest(
-      request_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
-  request->Start();
-  d.RunUntilComplete();
-
-  EXPECT_TRUE(nel_service.headers().empty());
-}
-
-TEST_F(URLRequestTestHTTP, ProcessNelHeaderHttps) {
-  EmbeddedTestServer https_test_server(net::EmbeddedTestServer::TYPE_HTTPS);
-  https_test_server.RegisterRequestHandler(base::BindRepeating(&SendNelHeader));
-  ASSERT_TRUE(https_test_server.Start());
-  GURL request_url = https_test_server.GetURL("/");
-
-  TestNetworkDelegate network_delegate;
-  TestNetworkErrorLoggingService nel_service;
-  TestURLRequestContext context(true);
-  context.set_network_delegate(&network_delegate);
-  context.set_network_error_logging_service(&nel_service);
-  context.Init();
-
-  TestDelegate d;
-  std::unique_ptr<URLRequest> request(context.CreateRequest(
-      request_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
-  request->Start();
-  d.RunUntilComplete();
-
-  ASSERT_EQ(1u, nel_service.headers().size());
-  EXPECT_EQ(url::Origin::Create(request_url), nel_service.headers()[0].origin);
-  AddressList address_list;
-  EXPECT_TRUE(https_test_server.GetAddressList(&address_list));
-  EXPECT_TRUE(nel_service.headers()[0].MatchesAddressList(address_list));
-  EXPECT_EQ("foo", nel_service.headers()[0].value);
-}
-
-TEST_F(URLRequestTestHTTP, DontProcessNelHeaderInvalidHttps) {
-  EmbeddedTestServer https_test_server(net::EmbeddedTestServer::TYPE_HTTPS);
-  https_test_server.SetSSLConfig(net::EmbeddedTestServer::CERT_MISMATCHED_NAME);
-  https_test_server.RegisterRequestHandler(base::BindRepeating(&SendNelHeader));
-  ASSERT_TRUE(https_test_server.Start());
-  GURL request_url = https_test_server.GetURL("/");
-
-  TestNetworkDelegate network_delegate;
-  TestNetworkErrorLoggingService nel_service;
-  TestURLRequestContext context(true);
-  context.set_network_delegate(&network_delegate);
-  context.set_network_error_logging_service(&nel_service);
-  context.Init();
-
-  TestDelegate d;
-  d.set_allow_certificate_errors(true);
-  std::unique_ptr<URLRequest> request(context.CreateRequest(
-      request_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
-  request->Start();
-  d.RunUntilComplete();
-
-  EXPECT_TRUE(d.have_certificate_errors());
-  EXPECT_TRUE(IsCertStatusError(request->ssl_info().cert_status));
-  EXPECT_TRUE(nel_service.headers().empty());
-}
-
-TEST_F(URLRequestTestHTTP, DontForwardErrorToNelNoDelegate) {
-  URLRequestFailedJob::AddUrlHandler();
-
-  GURL request_url =
-      URLRequestFailedJob::GetMockHttpsUrl(ERR_CONNECTION_REFUSED);
-
-  TestNetworkDelegate network_delegate;
-  TestURLRequestContext context(true);
-  context.set_network_delegate(&network_delegate);
-  context.Init();
-
-  TestDelegate d;
-  std::unique_ptr<URLRequest> request(context.CreateRequest(
-      request_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
-  request->Start();
-  d.RunUntilComplete();
-
-  URLRequestFilter::GetInstance()->ClearHandlers();
-}
-
-// TODO(juliatuttle): Figure out whether this restriction should be in place,
-// and either implement it or remove this test.
-TEST_F(URLRequestTestHTTP, DISABLED_DontForwardErrorToNelHttp) {
-  URLRequestFailedJob::AddUrlHandler();
-
-  GURL request_url =
-      URLRequestFailedJob::GetMockHttpUrl(ERR_CONNECTION_REFUSED);
-
-  TestNetworkDelegate network_delegate;
-  TestNetworkErrorLoggingService nel_service;
-  TestURLRequestContext context(true);
-  context.set_network_delegate(&network_delegate);
-  context.set_network_error_logging_service(&nel_service);
-  context.Init();
-
-  TestDelegate d;
-  std::unique_ptr<URLRequest> request(context.CreateRequest(
-      request_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
-  request->Start();
-  d.RunUntilComplete();
-
-  EXPECT_TRUE(nel_service.errors().empty());
-
-  URLRequestFilter::GetInstance()->ClearHandlers();
-}
-
-TEST_F(URLRequestTestHTTP, ForwardErrorToNelHttps_Mock) {
-  URLRequestFailedJob::AddUrlHandler();
-
-  GURL request_url =
-      URLRequestFailedJob::GetMockHttpsUrl(ERR_CONNECTION_REFUSED);
-
-  TestNetworkDelegate network_delegate;
-  TestNetworkErrorLoggingService nel_service;
-  TestURLRequestContext context(true);
-  context.set_network_delegate(&network_delegate);
-  context.set_network_error_logging_service(&nel_service);
-  context.Init();
-
-  TestDelegate d;
-  std::unique_ptr<URLRequest> request(context.CreateRequest(
-      request_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
-  request->Start();
-  d.RunUntilComplete();
-
-  ASSERT_EQ(1u, nel_service.errors().size());
-  EXPECT_EQ(request_url, nel_service.errors()[0].uri);
-  EXPECT_EQ(0, nel_service.errors()[0].status_code);
-  EXPECT_EQ(ERR_CONNECTION_REFUSED, nel_service.errors()[0].type);
-
-  URLRequestFilter::GetInstance()->ClearHandlers();
-}
-
-// Also test with a real server, to exercise interactions with
-// URLRequestHttpJob.
-TEST_F(URLRequestTestHTTP, ForwardErrorToNelHttps_Real) {
-  EmbeddedTestServer https_test_server(net::EmbeddedTestServer::TYPE_HTTPS);
-  https_test_server.RegisterRequestHandler(
-      base::BindRepeating(&SendEmptyResponse));
-  ASSERT_TRUE(https_test_server.Start());
-  GURL request_url = https_test_server.GetURL("/");
-
-  TestNetworkDelegate network_delegate;
-  TestNetworkErrorLoggingService nel_service;
-  TestURLRequestContext context(true);
-  context.set_network_delegate(&network_delegate);
-  context.set_network_error_logging_service(&nel_service);
-  context.Init();
-
-  TestDelegate d;
-  std::unique_ptr<URLRequest> request(context.CreateRequest(
-      request_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
-  request->Start();
-  d.RunUntilComplete();
-
-  ASSERT_EQ(1u, nel_service.errors().size());
-  EXPECT_EQ(request_url, nel_service.errors()[0].uri);
-  EXPECT_EQ(0, nel_service.errors()[0].status_code);
-  EXPECT_EQ(ERR_EMPTY_RESPONSE, nel_service.errors()[0].type);
-}
-
-TEST_F(URLRequestTestHTTP, NelReportUserAgentWithHeaderWithSettings) {
-  EmbeddedTestServer https_test_server(net::EmbeddedTestServer::TYPE_HTTPS);
-  ASSERT_TRUE(https_test_server.Start());
-  GURL request_url = https_test_server.base_url();
-
-  StaticHttpUserAgentSettings settings("en", kSettingsUserAgent);
-  TestNetworkDelegate network_delegate;
-  TestNetworkErrorLoggingService nel_service;
-  TestURLRequestContext context(true);
-  context.set_network_delegate(&network_delegate);
-  context.set_network_error_logging_service(&nel_service);
-  context.set_http_user_agent_settings(&settings);
-  context.Init();
-
-  TestDelegate d;
-  std::unique_ptr<URLRequest> request(context.CreateRequest(
-      request_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
-  request->SetExtraRequestHeaderByName("User-Agent", kHeaderUserAgent, true);
-  request->Start();
-  d.RunUntilComplete();
-
-  ASSERT_EQ(1u, nel_service.errors().size());
-  EXPECT_EQ(kHeaderUserAgent, nel_service.errors()[0].user_agent);
-}
-
-TEST_F(URLRequestTestHTTP, NelReportUserAgentWithHeaderWithoutSettings) {
-  EmbeddedTestServer https_test_server(net::EmbeddedTestServer::TYPE_HTTPS);
-  ASSERT_TRUE(https_test_server.Start());
-  GURL request_url = https_test_server.base_url();
-
-  TestNetworkDelegate network_delegate;
-  TestNetworkErrorLoggingService nel_service;
-  TestURLRequestContext context(true);
-  context.set_network_delegate(&network_delegate);
-  context.set_network_error_logging_service(&nel_service);
-  context.set_create_default_http_user_agent_settings(false);
-  context.Init();
-
-  TestDelegate d;
-  std::unique_ptr<URLRequest> request(context.CreateRequest(
-      request_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
-  request->SetExtraRequestHeaderByName("User-Agent", kHeaderUserAgent, true);
-  request->Start();
-  d.RunUntilComplete();
-
-  ASSERT_EQ(1u, nel_service.errors().size());
-  EXPECT_EQ(kHeaderUserAgent, nel_service.errors()[0].user_agent);
-}
-
-TEST_F(URLRequestTestHTTP, NelReportUserAgentWithoutHeaderWithSettings) {
-  EmbeddedTestServer https_test_server(net::EmbeddedTestServer::TYPE_HTTPS);
-  ASSERT_TRUE(https_test_server.Start());
-  GURL request_url = https_test_server.base_url();
-
-  StaticHttpUserAgentSettings settings("en", kSettingsUserAgent);
-  TestNetworkDelegate network_delegate;
-  TestNetworkErrorLoggingService nel_service;
-  TestURLRequestContext context(true);
-  context.set_network_delegate(&network_delegate);
-  context.set_network_error_logging_service(&nel_service);
-  context.set_http_user_agent_settings(&settings);
-  context.Init();
-
-  TestDelegate d;
-  std::unique_ptr<URLRequest> request(context.CreateRequest(
-      request_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
-  request->Start();
-  d.RunUntilComplete();
-
-  ASSERT_EQ(1u, nel_service.errors().size());
-  EXPECT_EQ(kSettingsUserAgent, nel_service.errors()[0].user_agent);
-}
-
-TEST_F(URLRequestTestHTTP, NelReportUserAgentWithoutHeaderWithoutSettings) {
-  EmbeddedTestServer https_test_server(net::EmbeddedTestServer::TYPE_HTTPS);
-  ASSERT_TRUE(https_test_server.Start());
-  GURL request_url = https_test_server.base_url();
-
-  TestNetworkDelegate network_delegate;
-  TestNetworkErrorLoggingService nel_service;
-  TestURLRequestContext context(true);
-  context.set_network_delegate(&network_delegate);
-  context.set_network_error_logging_service(&nel_service);
-  context.set_create_default_http_user_agent_settings(false);
-  context.Init();
-
-  TestDelegate d;
-  std::unique_ptr<URLRequest> request(context.CreateRequest(
-      request_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
-  request->Start();
-  d.RunUntilComplete();
-
-  ASSERT_EQ(1u, nel_service.errors().size());
-  EXPECT_EQ("", nel_service.errors()[0].user_agent);
-}
-
-#endif  // BUILDFLAG(ENABLE_REPORTING)
-
 TEST_F(URLRequestTestHTTP, ContentTypeNormalizationTest) {
   ASSERT_TRUE(http_test_server()->Start());
 
@@ -8537,18 +8003,16 @@ TEST_F(URLRequestTestHTTP, Redirect302PreserveReferenceFragment) {
   GURL expected_url(http_test_server()->GetURL("/echo#fragment"));
 
   TestDelegate d;
-  {
-    std::unique_ptr<URLRequest> r(default_context().CreateRequest(
-        original_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+  std::unique_ptr<URLRequest> r(default_context().CreateRequest(
+      original_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
 
-    r->Start();
-    d.RunUntilComplete();
+  r->Start();
+  d.RunUntilComplete();
 
-    EXPECT_EQ(2U, r->url_chain().size());
-    EXPECT_EQ(OK, d.request_status());
-    EXPECT_EQ(original_url, r->original_url());
-    EXPECT_EQ(expected_url, r->url());
-  }
+  EXPECT_EQ(2U, r->url_chain().size());
+  EXPECT_EQ(OK, d.request_status());
+  EXPECT_EQ(original_url, r->original_url());
+  EXPECT_EQ(expected_url, r->url());
 }
 
 TEST_F(URLRequestTestHTTP, RedirectPreserveFirstPartyURL) {
@@ -8558,18 +8022,54 @@ TEST_F(URLRequestTestHTTP, RedirectPreserveFirstPartyURL) {
   GURL first_party_url("http://example.com");
 
   TestDelegate d;
-  {
-    std::unique_ptr<URLRequest> r(default_context().CreateRequest(
-        url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
-    r->set_site_for_cookies(first_party_url);
+  std::unique_ptr<URLRequest> r(default_context().CreateRequest(
+      url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+  r->set_site_for_cookies(first_party_url);
 
-    r->Start();
-    d.RunUntilComplete();
+  r->Start();
+  d.RunUntilComplete();
 
-    EXPECT_EQ(2U, r->url_chain().size());
-    EXPECT_EQ(OK, d.request_status());
-    EXPECT_EQ(first_party_url, r->site_for_cookies());
-  }
+  EXPECT_EQ(2U, r->url_chain().size());
+  EXPECT_EQ(OK, d.request_status());
+  EXPECT_EQ(first_party_url, r->site_for_cookies());
+}
+
+TEST_F(URLRequestTestHTTP, RedirectPreserveTopFrameOrigin) {
+  ASSERT_TRUE(http_test_server()->Start());
+
+  GURL url(http_test_server()->GetURL("/redirect302-to-echo"));
+  url::Origin top_frame_origin =
+      url::Origin::Create(GURL("http://example.com"));
+  TestDelegate d;
+
+  std::unique_ptr<URLRequest> r(default_context().CreateRequest(
+      url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+  r->set_top_frame_origin(top_frame_origin);
+
+  r->Start();
+  d.RunUntilComplete();
+
+  EXPECT_EQ(2U, r->url_chain().size());
+  EXPECT_EQ(OK, d.request_status());
+  EXPECT_EQ(top_frame_origin, *r->top_frame_origin());
+}
+
+TEST_F(URLRequestTestHTTP, RedirectPreserveUnsetTopFrameOrigin) {
+  ASSERT_TRUE(http_test_server()->Start());
+
+  GURL url(http_test_server()->GetURL("/redirect302-to-echo"));
+  TestDelegate d;
+
+  std::unique_ptr<URLRequest> r(default_context().CreateRequest(
+      url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+  // Since we're not setting a top frame origin, we wouldn't expect one after
+  // the redirect.
+  r->Start();
+  d.RunUntilComplete();
+
+  EXPECT_EQ(2U, r->url_chain().size());
+  EXPECT_EQ(OK, d.request_status());
+  EXPECT_FALSE(r->top_frame_origin());
 }
 
 TEST_F(URLRequestTestHTTP, RedirectUpdateFirstPartyURL) {
@@ -8580,7 +8080,7 @@ TEST_F(URLRequestTestHTTP, RedirectUpdateFirstPartyURL) {
   GURL expected_first_party_url(http_test_server()->GetURL("/echo"));
 
   TestDelegate d;
-  {
+
     std::unique_ptr<URLRequest> r(default_context().CreateRequest(
         url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
     r->set_site_for_cookies(original_first_party_url);
@@ -8593,7 +8093,50 @@ TEST_F(URLRequestTestHTTP, RedirectUpdateFirstPartyURL) {
     EXPECT_EQ(2U, r->url_chain().size());
     EXPECT_EQ(OK, d.request_status());
     EXPECT_EQ(expected_first_party_url, r->site_for_cookies());
-  }
+}
+
+TEST_F(URLRequestTestHTTP, RedirectUpdateTopFrameOrigin) {
+  ASSERT_TRUE(http_test_server()->Start());
+
+  GURL url(http_test_server()->GetURL("/redirect302-to-echo"));
+  url::Origin original_top_frame_origin =
+      url::Origin::Create(GURL("http://example.com"));
+  url::Origin expected_top_frame_origin =
+      url::Origin::Create(GURL(http_test_server()->GetURL("/echo")));
+
+  TestDelegate d;
+
+  std::unique_ptr<URLRequest> r(default_context().CreateRequest(
+      url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+  r->set_top_frame_origin(original_top_frame_origin);
+  r->set_first_party_url_policy(URLRequest::UPDATE_FIRST_PARTY_URL_ON_REDIRECT);
+
+  r->Start();
+  d.RunUntilComplete();
+
+  EXPECT_EQ(2U, r->url_chain().size());
+  EXPECT_EQ(OK, d.request_status());
+  EXPECT_EQ(expected_top_frame_origin, *r->top_frame_origin());
+}
+
+TEST_F(URLRequestTestHTTP, RedirectIgnoreUnsetTopFrameOrigin) {
+  ASSERT_TRUE(http_test_server()->Start());
+
+  GURL url(http_test_server()->GetURL("/redirect302-to-echo"));
+  TestDelegate d;
+
+  std::unique_ptr<URLRequest> r(default_context().CreateRequest(
+      url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+  // Since we're not setting a top frame origin, we wouldn't expect one after
+  // the redirect.
+  r->set_first_party_url_policy(URLRequest::UPDATE_FIRST_PARTY_URL_ON_REDIRECT);
+
+  r->Start();
+  d.RunUntilComplete();
+
+  EXPECT_EQ(2U, r->url_chain().size());
+  EXPECT_EQ(OK, d.request_status());
+  EXPECT_FALSE(r->top_frame_origin());
 }
 
 TEST_F(URLRequestTestHTTP, InterceptPost302RedirectGet) {
@@ -9896,6 +9439,7 @@ class TestSSLPrivateKey : public SSLPrivateKey {
   void set_fail_signing(bool fail_signing) { fail_signing_ = fail_signing; }
   int sign_count() const { return sign_count_; }
 
+  std::string GetProviderName() override { return key_->GetProviderName(); }
   std::vector<uint16_t> GetAlgorithmPreferences() override {
     return key_->GetAlgorithmPreferences();
   }
@@ -10248,6 +9792,7 @@ TEST_F(HTTPSRequestTest, ResumeTest) {
     d.RunUntilComplete();
 
     // The response will look like;
+    //   lookup uvw (TLS 1.3's compatibility session ID)
     //   insert abc
     //   lookup abc
     //   insert xyz
@@ -10258,20 +9803,21 @@ TEST_F(HTTPSRequestTest, ResumeTest) {
     EXPECT_EQ(1, d.response_started_count());
     std::vector<std::string> lines = base::SplitString(
         d.data_received(), "\n", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
-    ASSERT_EQ(4u, lines.size()) << d.data_received();
+    ASSERT_EQ(5u, lines.size()) << d.data_received();
 
     std::string session_id;
 
-    for (size_t i = 0; i < 2; i++) {
+    for (size_t i = 0; i < 3; i++) {
       std::vector<std::string> parts = base::SplitString(
           lines[i], "\t", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
       ASSERT_EQ(2u, parts.size());
-      if (i == 0) {
+      if (i % 2 == 1) {
         EXPECT_EQ("insert", parts[0]);
         session_id = parts[1];
       } else {
         EXPECT_EQ("lookup", parts[0]);
-        EXPECT_EQ(session_id, parts[1]);
+        if (i != 0)
+          EXPECT_EQ(session_id, parts[1]);
       }
     }
   }
@@ -10279,24 +9825,32 @@ TEST_F(HTTPSRequestTest, ResumeTest) {
 
 // AssertTwoDistinctSessionsInserted checks that |session_info|, which must be
 // the result of fetching "ssl-session-cache" from the test server, indicates
-// that exactly two different sessions were inserted, with no lookups etc.
+// that exactly two different sessions were inserted, with no real lookups.
+// There will be a fake TLS 1.3 session ID lookup that can be ignored.
 static void AssertTwoDistinctSessionsInserted(const string& session_info) {
   std::vector<std::string> lines = base::SplitString(
       session_info, "\n", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
-  ASSERT_EQ(3u, lines.size()) << session_info;
 
+  size_t inserts = 0;
   std::string session_id;
-  for (size_t i = 0; i < 2; i++) {
+  for (size_t i = 0; i < lines.size() - 1; i++) {
     std::vector<std::string> parts = base::SplitString(
         lines[i], "\t", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
     ASSERT_EQ(2u, parts.size());
-    EXPECT_EQ("insert", parts[0]);
-    if (i == 0) {
-      session_id = parts[1];
-    } else {
+    if (parts[0] == "insert") {
+      inserts++;
+      if (i == 0) {
+        session_id = parts[1];
+      } else {
+        EXPECT_NE(session_id, parts[1]);
+      }
+    } else if (parts[0] == "lookup") {
+      // The fake TLS 1.3 session ID will produce fake lookups. Check that the
+      // inserted ID was not looked up.
       EXPECT_NE(session_id, parts[1]);
     }
   }
+  ASSERT_EQ(2u, inserts) << session_info;
 }
 
 TEST_F(HTTPSRequestTest, SSLSessionCacheShardTest) {
@@ -10362,6 +9916,7 @@ TEST_F(HTTPSRequestTest, SSLSessionCacheShardTest) {
     d.RunUntilComplete();
 
     // The response will look like;
+    //   lookup uvw (TLS 1.3's compatibility session ID)
     //   insert abc
     //   insert xyz
     //
@@ -10533,6 +10088,7 @@ TEST_F(HTTPSSessionTest, DontResumeSessionsForInvalidCertificates) {
     d.RunUntilComplete();
 
     // The response will look like;
+    //   lookup uvw (TLS 1.3's compatibility session ID)
     //   insert abc
     //   insert xyz
     //
@@ -10541,6 +10097,7 @@ TEST_F(HTTPSSessionTest, DontResumeSessionsForInvalidCertificates) {
     //
     // If a session was presented (eg: a bug), then the response would look
     // like;
+    //   lookup uvw (TLS 1.3's compatibility session ID)
     //   insert abc
     //   lookup abc
     //   insert xyz
@@ -11736,6 +11293,34 @@ TEST_F(URLRequestTestFTP, FTPGetTestAnonymous) {
               r->GetSocketAddress().host());
     EXPECT_EQ(ftp_test_server_.host_port_pair().port(),
               r->GetSocketAddress().port());
+  }
+}
+
+TEST_F(URLRequestTestFTP, FTPMimeType) {
+  ASSERT_TRUE(ftp_test_server_.Start());
+
+  struct {
+    const char* path;
+    const char* mime;
+  } test_cases[] = {
+      {"/", "text/vnd.chromium.ftp-dir"},
+      {kFtpTestFile, "application/octet-stream"},
+  };
+
+  for (const auto test : test_cases) {
+    TestDelegate d;
+
+    std::unique_ptr<URLRequest> r(default_context().CreateRequest(
+        ftp_test_server_.GetURL(test.path), DEFAULT_PRIORITY, &d,
+        TRAFFIC_ANNOTATION_FOR_TESTS));
+    r->Start();
+    EXPECT_TRUE(r->is_pending());
+
+    d.RunUntilComplete();
+
+    std::string mime;
+    r->GetMimeType(&mime);
+    EXPECT_EQ(test.mime, mime);
   }
 }
 

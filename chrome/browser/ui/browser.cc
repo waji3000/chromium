@@ -153,7 +153,6 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/custom_handlers/protocol_handler.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/profiling.h"
 #include "chrome/common/ssl_insecure_content.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/chromium_strings.h"
@@ -200,6 +199,7 @@
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/page_zoom.h"
+#include "content/public/common/profiling.h"
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/webplugininfo.h"
 #include "extensions/browser/extension_prefs.h"
@@ -219,16 +219,15 @@
 #include "ui/shell_dialogs/selected_file_info.h"
 
 #if defined(OS_WIN)
-#include <windows.h>
 #include <shellapi.h>
+#include <windows.h>
 #include "chrome/browser/ui/view_ids.h"
 #include "components/autofill/core/browser/autofill_ie_toolbar_import_win.h"
-#include "ui/base/touch/touch_device.h"
+#include "ui/base/pointer/pointer_device.h"
 #include "ui/base/win/shell.h"
 #endif  // OS_WIN
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/fileapi/external_file_url_util.h"
 #include "chrome/browser/ui/settings_window_manager_chromeos.h"
 #endif
 
@@ -325,6 +324,15 @@ Browser::CreateParams::CreateParams(Type type,
                                     Profile* profile,
                                     bool user_gesture)
     : type(type), profile(profile), user_gesture(user_gesture) {}
+
+Browser::CreateParams::CreateParams(Type type,
+                                    Profile* profile,
+                                    bool user_gesture,
+                                    bool in_tab_dragging)
+    : type(type),
+      profile(profile),
+      user_gesture(user_gesture),
+      in_tab_dragging(in_tab_dragging) {}
 
 Browser::CreateParams::CreateParams(const CreateParams& other) = default;
 
@@ -466,7 +474,7 @@ Browser::Browser(const CreateParams& params)
                                                 params.user_gesture);
 
   if (hosted_app_controller_)
-    hosted_app_controller_->UpdateLocationBarVisibility(false);
+    hosted_app_controller_->UpdateToolbarVisibility(false);
 
   // Create the extension window controller before sending notifications.
   extension_window_controller_.reset(
@@ -490,6 +498,11 @@ Browser::Browser(const CreateParams& params)
       new ExclusiveAccessManager(window_->GetExclusiveAccessContext()));
 
   BrowserList::AddBrowser(this);
+
+  // SetIsInTabDragging() will set the fast resize bit for the web contents.
+  // It will be reset after the drag ends.
+  if (params.in_tab_dragging)
+    SetIsInTabDragging(true);
 }
 
 Browser::~Browser() {
@@ -655,9 +668,9 @@ base::string16 Browser::GetWindowTitleFromWebContents(
   // |contents| can be NULL because GetWindowTitleForCurrentTab is called by the
   // window during the window's creation (before tabs have been added).
   if (contents) {
-    title = hosted_app_controller_ ? hosted_app_controller_->GetTitle()
-                                   : contents->GetTitle();
-    FormatTitleForDisplay(&title);
+    title = FormatTitleForDisplay(hosted_app_controller_
+                                      ? hosted_app_controller_->GetTitle()
+                                      : contents->GetTitle());
   }
 
   // If there is no title, leave it empty for apps.
@@ -686,14 +699,16 @@ base::string16 Browser::GetWindowTitleFromWebContents(
 }
 
 // static
-void Browser::FormatTitleForDisplay(base::string16* title) {
+base::string16 Browser::FormatTitleForDisplay(base::string16 title) {
   size_t current_index = 0;
   size_t match_index;
-  while ((match_index = title->find(L'\n', current_index)) !=
+  while ((match_index = title.find(L'\n', current_index)) !=
          base::string16::npos) {
-    title->replace(match_index, 1, base::string16());
+    title.replace(match_index, 1, base::string16());
     current_index = match_index;
   }
+
+  return title;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -750,6 +765,10 @@ bool Browser::RunUnloadListenerBeforeClosing(
   if (IsFastTabUnloadEnabled())
     return fast_unload_controller_->RunUnloadEventsHelper(web_contents);
   return unload_controller_->RunUnloadEventsHelper(web_contents);
+}
+
+void Browser::SetIsInTabDragging(bool is_in_tab_dragging) {
+  window_->TabDraggingStatusChanged(is_in_tab_dragging);
 }
 
 void Browser::OnWindowClosing() {
@@ -919,7 +938,8 @@ void Browser::OpenFile() {
   // TODO(beng): figure out how to juggle this.
   gfx::NativeWindow parent_window = window_->GetNativeWindow();
   ui::SelectFileDialog::FileTypeInfo file_types;
-  file_types.allowed_paths = ui::SelectFileDialog::FileTypeInfo::ANY_PATH;
+  file_types.allowed_paths =
+      ui::SelectFileDialog::FileTypeInfo::ANY_PATH_OR_URL;
   select_file_dialog_->SelectFile(ui::SelectFileDialog::SELECT_OPEN_FILE,
                                   base::string16(),
                                   directory,
@@ -1343,6 +1363,7 @@ WebContents* Browser::OpenURLFromTab(WebContents* source,
     nav_params.window_action = NavigateParams::SHOW_WINDOW;
   nav_params.user_gesture = params.user_gesture;
   nav_params.blob_url_loader_factory = params.blob_url_loader_factory;
+  nav_params.href_translate = params.href_translate;
   bool is_popup = source && ConsiderForPopupBlocking(params.disposition);
   if (is_popup && MaybeBlockPopup(source, base::Optional<GURL>(), &nav_params,
                                   &params, blink::mojom::WindowFeatures())) {
@@ -1351,9 +1372,12 @@ WebContents* Browser::OpenURLFromTab(WebContents* source,
 
   Navigate(&nav_params);
 
-  if (is_popup && nav_params.navigated_or_inserted_contents)
-    PopupTracker::CreateForWebContents(
+  if (is_popup && nav_params.navigated_or_inserted_contents) {
+    auto* tracker = PopupTracker::CreateForWebContents(
         nav_params.navigated_or_inserted_contents, source);
+    tracker->set_is_trusted(params.triggering_event_info !=
+                            blink::WebTriggeringEventInfo::kFromUntrustedEvent);
+  }
 
   return nav_params.navigated_or_inserted_contents;
 }
@@ -1374,7 +1398,7 @@ void Browser::NavigationStateChanged(WebContents* source,
     command_controller_->TabStateChanged();
 
   if (hosted_app_controller_)
-    hosted_app_controller_->UpdateLocationBarVisibility(true);
+    hosted_app_controller_->UpdateToolbarVisibility(true);
 }
 
 void Browser::VisibleSecurityStateChanged(WebContents* source) {
@@ -1385,7 +1409,7 @@ void Browser::VisibleSecurityStateChanged(WebContents* source) {
     UpdateToolbar(false);
 
     if (hosted_app_controller_)
-      hosted_app_controller_->UpdateLocationBarVisibility(true);
+      hosted_app_controller_->UpdateToolbarVisibility(true);
   }
 }
 
@@ -1424,10 +1448,6 @@ void Browser::LoadingStateChanged(WebContents* source,
                                   bool to_different_document) {
   ScheduleUIUpdate(source, content::INVALIDATE_TYPE_LOAD);
   UpdateWindowForLoadingStateChanged(source, to_different_document);
-}
-
-void Browser::LoadProgressChanged(WebContents* source, double progress) {
-  ScheduleUIUpdate(source, content::INVALIDATE_TYPE_LOAD);
 }
 
 void Browser::CloseContents(WebContents* source) {
@@ -1966,14 +1986,8 @@ void Browser::FileSelectedWithExtraInfo(const ui::SelectedFileInfo& file_info,
                                         void* params) {
   profile_->set_last_selected_directory(file_info.file_path.DirName());
 
-  GURL url = net::FilePathToFileURL(file_info.local_path);
-
-#if defined(OS_CHROMEOS)
-  const GURL external_url =
-      chromeos::CreateExternalFileURLFromPath(profile_, file_info.file_path);
-  if (!external_url.is_empty())
-    url = external_url;
-#endif
+  GURL url = std::move(file_info.url)
+                 .value_or(net::FilePathToFileURL(file_info.local_path));
 
   if (url.is_empty())
     return;

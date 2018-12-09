@@ -57,8 +57,7 @@ class ServiceWorkerContextWrapper;
 //
 // Storage schema is documented in storage/README.md
 class CONTENT_EXPORT BackgroundFetchDataManager
-    : public BackgroundFetchScheduler::RequestProvider,
-      public background_fetch::DatabaseTaskHost {
+    : public background_fetch::DatabaseTaskHost {
  public:
   using GetInitializationDataCallback = base::OnceCallback<void(
       blink::mojom::BackgroundFetchError,
@@ -103,8 +102,8 @@ class CONTENT_EXPORT BackgroundFetchDataManager
   // fail due to invalid input or storage errors.
   void CreateRegistration(
       const BackgroundFetchRegistrationId& registration_id,
-      const std::vector<ServiceWorkerFetchRequest>& requests,
-      const BackgroundFetchOptions& options,
+      std::vector<blink::mojom::FetchAPIRequestPtr> requests,
+      blink::mojom::BackgroundFetchOptionsPtr options,
       const SkBitmap& icon,
       bool start_paused,
       GetRegistrationCallback callback);
@@ -115,13 +114,6 @@ class CONTENT_EXPORT BackgroundFetchDataManager
                        const std::string& developer_id,
                        GetRegistrationCallback callback);
 
-  // Updates the UI values for a Background Fetch registration.
-  void UpdateRegistrationUI(
-      const BackgroundFetchRegistrationId& registration_id,
-      const base::Optional<std::string>& title,
-      const base::Optional<SkBitmap>& icon,
-      blink::mojom::BackgroundFetchService::UpdateUICallback callback);
-
   // Reads the settled fetches for the given |registration_id| based on
   // |match_params|. Both the Request and Response objects will be initialised
   // based on the stored data. Will invoke the |callback| when the list of
@@ -130,6 +122,17 @@ class CONTENT_EXPORT BackgroundFetchDataManager
       const BackgroundFetchRegistrationId& registration_id,
       std::unique_ptr<BackgroundFetchRequestMatchParams> match_params,
       SettledFetchesCallback callback);
+
+  // Retrieves the next pending request for |registration_id| and invoke
+  // |callback| with it.
+  void PopNextRequest(const BackgroundFetchRegistrationId& registration_id,
+                      NextRequestCallback callback);
+
+  // Marks |request_info| as complete and calls |callback| when done.
+  void MarkRequestAsComplete(
+      const BackgroundFetchRegistrationId& registration_id,
+      scoped_refptr<BackgroundFetchRequestInfo> request_info,
+      MarkRequestCompleteCallback callback);
 
   // Marks that the
   // backgroundfetchsuccess/backgroundfetchfail/backgroundfetchabort event is
@@ -168,14 +171,6 @@ class CONTENT_EXPORT BackgroundFetchDataManager
     return observers_;
   }
 
-  // BackgroundFetchScheduler::RequestProvider implementation:
-  void PopNextRequest(const BackgroundFetchRegistrationId& registration_id,
-                      NextRequestCallback callback) override;
-  void MarkRequestAsComplete(
-      const BackgroundFetchRegistrationId& registration_id,
-      scoped_refptr<BackgroundFetchRequestInfo> request_info,
-      MarkRequestCompleteCallback callback) override;
-
   void ShutdownOnIO();
 
  private:
@@ -209,6 +204,18 @@ class CONTENT_EXPORT BackgroundFetchDataManager
 
   void Cleanup();
 
+  // Get a CacheStorageHandle for the given |origin| and |unique_id|.  This will
+  // either come from an existing CacheStorageHandle or will cause the
+  // CacheStorage to be opened.
+  CacheStorageHandle GetOrOpenCacheStorage(const url::Origin& origin,
+                                           const std::string& unique_id);
+
+  // Release the CacheStorageHandle for the given |unique_id|, if
+  // it's open.  DoomCache should be called prior to releasing the handle.
+  // There must be an entry in |cache_storage_handle_map_| for the given
+  // |unique_id|.
+  void ReleaseCacheStorage(const std::string& unique_id);
+
   // Whether Shutdown was called on BackgroundFetchContext.
   bool shutting_down_ = false;
 
@@ -218,8 +225,8 @@ class CONTENT_EXPORT BackgroundFetchDataManager
 
   scoped_refptr<storage::QuotaManagerProxy> quota_manager_proxy_;
 
-  // The BackgroundFetch stores its own reference to CacheStorageManager
-  // in case StoragePartitionImpl is destoyed, which releases the reference.
+  // BackgroundFetch stores its own reference to CacheStorageManager
+  // in case StoragePartitionImpl is destroyed, which releases the reference.
   scoped_refptr<CacheStorageManager> cache_manager_;
 
   // The blob storage request with which response information will be stored.
@@ -236,6 +243,13 @@ class CONTENT_EXPORT BackgroundFetchDataManager
   // refcount of JavaScript objects that refers to them goes to zero, unless
   // the browser is shutdown first.
   std::set<std::string> ref_counted_unique_ids_;
+
+  // A map of open CacheStorageHandle objects keyed by the registration
+  // |unique_id|. These handles are created opportunistically in
+  // GetOrOpenCacheStorage(). They are cleared after the Cache has been
+  // deleted and ReleaseCacheStorage() is called.
+  // TODO(crbug.com/711354): Possibly update key when CORS support is added.
+  std::map<std::string, CacheStorageHandle> cache_storage_handle_map_;
 
   base::WeakPtrFactory<BackgroundFetchDataManager> weak_ptr_factory_;
 

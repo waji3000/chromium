@@ -16,6 +16,7 @@ import com.google.android.libraries.feed.host.network.NetworkClient;
 import com.google.android.libraries.feed.hostimpl.logging.LoggingApiImpl;
 
 import org.chromium.base.ContextUtils;
+import org.chromium.base.Log;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.chrome.browser.preferences.Pref;
 import org.chromium.chrome.browser.preferences.PrefChangeRegistrar;
@@ -26,9 +27,22 @@ import java.util.concurrent.Executors;
 
 /** Holds singleton {@link FeedProcessScope} and some of the scope's host implementations. */
 public class FeedProcessScopeFactory {
-    /** Flag that tracks whether we've ever been disabled via enterprise policy. Should only be
-     * accessed through isFeedProcessScopeEnabled(). */
-    private static boolean sEverDisabledForPolicy = false;
+    private static final String TAG = "FeedProcessScopeFtry";
+
+    /**
+     * Flag that tracks whether we've ever been disabled via enterprise policy. Should only be
+     * accessed through isFeedProcessScopeEnabled().
+     */
+    private static boolean sEverDisabledForPolicy;
+
+    /**
+     * Tracks whether the article suggestions should be visible to the user during the current
+     * session. If user opts in to the suggestions during the current session, the suggestions
+     * services will be immediately warmed up. If user opts out during the current session,
+     * the suggestions services will not shut down until the next session.
+     */
+    private static boolean sArticlesVisibleDuringSession;
+
     private static PrefChangeRegistrar sPrefChangeRegistrar;
     private static FeedAppLifecycle sFeedAppLifecycle;
     private static FeedProcessScope sFeedProcessScope;
@@ -106,6 +120,8 @@ public class FeedProcessScopeFactory {
                 && sFeedAppLifecycle == null && sFeedLoggingBridge == null;
         if (!isFeedProcessEnabled()) return;
 
+        sArticlesVisibleDuringSession =
+                PrefServiceBridge.getInstance().getBoolean(Pref.NTP_ARTICLES_LIST_VISIBLE);
         sPrefChangeRegistrar = new PrefChangeRegistrar();
         sPrefChangeRegistrar.addObserver(Pref.NTP_ARTICLES_SECTION_ENABLED,
                 FeedProcessScopeFactory::articlesEnabledPrefChange);
@@ -190,10 +206,29 @@ public class FeedProcessScopeFactory {
         destroy();
     }
 
+    /**
+     * @return Whether article suggestions are prepared to be shown based on user preference. If
+     *         article suggestions are set hidden within a session, this will still return true
+     *         until the next restart.
+     */
+    static boolean areArticlesVisibleDuringSession() {
+        // Skip the native call if sArticlesVisibleDuringSession is already true to reduce overhead.
+        if (!sArticlesVisibleDuringSession
+                && PrefServiceBridge.getInstance().getBoolean(Pref.NTP_ARTICLES_LIST_VISIBLE)) {
+            sArticlesVisibleDuringSession = true;
+        }
+
+        return sArticlesVisibleDuringSession;
+    }
+
     private static void articlesEnabledPrefChange() {
         // Should only be subscribed while it was enabled. A change should mean articles are now
         // disabled.
         assert !PrefServiceBridge.getInstance().getBoolean(Pref.NTP_ARTICLES_SECTION_ENABLED);
+        // There have been quite a few crashes/bugs that happen when code does not correctly handle
+        // the scenario where Feed suddenly becomes disabled and the above getters start returning
+        // nulls. Having this log a warning helps diagnose this pattern from the logcat.
+        Log.w(TAG, "Disabling Feed because of policy.");
         sEverDisabledForPolicy = true;
         destroy();
     }

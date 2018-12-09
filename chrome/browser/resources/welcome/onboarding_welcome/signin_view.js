@@ -7,9 +7,31 @@ Polymer({
 
   behaviors: [welcome.NavigationBehavior],
 
-  // TODO(scottchen): read this from a nux onboarding feature param via
-  //     loadTimeData.
-  shouldShowEmailInterstitial_: true,
+  /** @private {boolean} */
+  shouldShowEmailInterstitial_:
+      loadTimeData.getBoolean('showEmailInterstitial'),
+
+  /** @private {?welcome.WelcomeBrowserProxy} */
+  welcomeBrowserProxy_: null,
+
+  /** @override */
+  ready: function() {
+    this.welcomeBrowserProxy_ = welcome.WelcomeBrowserProxyImpl.getInstance();
+  },
+
+  /**
+   * @return {?string}
+   * @private
+   */
+  getTargetUrl_: function() {
+    const savedProvider =
+        nux.NuxEmailProxyImpl.getInstance().getSavedProvider();
+    if (savedProvider != undefined && this.shouldShowEmailInterstitial_) {
+      return `chrome://welcome/email-interstitial?provider=${savedProvider}`;
+    } else {
+      return null;
+    }
+  },
 
   /**
    * When the user clicks sign-in, check whether or not they previously
@@ -18,21 +40,13 @@ Polymer({
    * @private
    */
   onSignInClick_: function() {
-    let redirectUrl = null;
-
-    const savedProvider =
-        nux.NuxEmailProxyImpl.getInstance().getSavedProvider();
-    if (savedProvider != undefined && this.shouldShowEmailInterstitial_) {
-      redirectUrl =
-          `chrome://welcome/email-interstitial?provider=${savedProvider}`;
-    }
-
-    welcome.WelcomeBrowserProxyImpl.getInstance().handleActivateSignIn(
-        redirectUrl);
+    this.welcomeBrowserProxy_.handleActivateSignIn(this.getTargetUrl_());
   },
 
   /** @private */
   onNoThanksClick_: function() {
-    welcome.navigateToNextStep();
+    // It's safe to assume sign-view is always going to be the last step, so
+    // go to the target url directly. If there's no target, it lands on NTP.
+    this.welcomeBrowserProxy_.handleUserDecline(this.getTargetUrl_());
   }
 });

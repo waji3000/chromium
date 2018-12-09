@@ -11,6 +11,10 @@
 #include "ui/views/controls/button/button.h"
 #include "ui/views/widget/widget.h"
 
+#if defined(OS_CHROMEOS)
+#include "ash/public/cpp/rounded_corner_decorator.h"
+#endif
+
 namespace views {
 class ControlImageButton;
 class CloseImageButton;
@@ -65,9 +69,18 @@ class OverlayWindowViews : public content::OverlayWindow,
 
   // Gets the bounds of the controls.
   gfx::Rect GetCloseControlsBounds();
+  gfx::Rect GetResizeHandleControlsBounds();
   gfx::Rect GetPlayPauseControlsBounds();
   gfx::Rect GetFirstCustomControlsBounds();
   gfx::Rect GetSecondCustomControlsBounds();
+
+  // Gets the proper hit test component when the hit point is on the resize
+  // handle in order to force a drag-to-resize.
+  int GetResizeHTComponent() const;
+
+  // Returns true if the controls (e.g. close button, play/pause button) are
+  // visible.
+  bool AreControlsVisible() const;
 
   views::ToggleImageButton* play_pause_controls_view_for_testing() const;
   gfx::Point close_image_position_for_testing() const;
@@ -150,7 +163,7 @@ class OverlayWindowViews : public content::OverlayWindow,
 
   // Current playback state on the video in Picture-in-Picture window. It is
   // used to show/hide controls.
-  PlaybackState playback_state_ = kNoVideo;
+  PlaybackState playback_state_ = kEndOfVideo;
 
   // The upper and lower bounds of |current_size_|. These are determined by the
   // size of the primary display work area when Picture-in-Picture is initiated.
@@ -184,6 +197,9 @@ class OverlayWindowViews : public content::OverlayWindow,
   std::unique_ptr<views::ToggleImageButton> play_pause_controls_view_;
   std::unique_ptr<views::ControlImageButton> first_custom_controls_view_;
   std::unique_ptr<views::ControlImageButton> second_custom_controls_view_;
+#if defined(OS_CHROMEOS)
+  std::unique_ptr<ash::RoundedCornerDecorator> decorator_;
+#endif
 
   // Automatically hides the controls a few seconds after user tap gesture.
   base::RetainingOneShotTimer hide_controls_timer_;

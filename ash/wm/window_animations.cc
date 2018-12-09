@@ -54,6 +54,9 @@ const float kCrossFadeDurationMaxMs = 400.f;
 // Durations for the brightness/grayscale fade animation, in milliseconds.
 const int kBrightnessGrayscaleFadeDurationMs = 1000;
 
+// Duration for fade in animation, in milliseconds.
+const int kFadeInAnimationMs = 200;
+
 // Brightness/grayscale values for hide/show window animations.
 const float kWindowAnimation_HideBrightnessGrayscale = 1.f;
 const float kWindowAnimation_ShowBrightnessGrayscale = 0.f;
@@ -228,6 +231,16 @@ void AnimateShowWindow_BrightnessGrayscale(aura::Window* window) {
   AnimateShowHideWindowCommon_BrightnessGrayscale(window, true);
 }
 
+// TODO(edcourtney): Consolidate with AnimateShowWindow_Fade in ui/wm/core.
+void AnimateShowWindow_FadeIn(aura::Window* window) {
+  window->layer()->SetOpacity(kWindowAnimation_HideOpacity);
+  ui::ScopedLayerAnimationSettings settings(window->layer()->GetAnimator());
+  settings.SetTransitionDuration(
+      base::TimeDelta::FromMilliseconds(kFadeInAnimationMs));
+  window->layer()->SetVisible(true);
+  window->layer()->SetOpacity(kWindowAnimation_ShowOpacity);
+}
+
 void AnimateHideWindow_BrightnessGrayscale(aura::Window* window) {
   AnimateShowHideWindowCommon_BrightnessGrayscale(window, false);
 }
@@ -235,9 +248,11 @@ void AnimateHideWindow_BrightnessGrayscale(aura::Window* window) {
 bool AnimateShowWindow_SlideDown(aura::Window* window) {
   AppListControllerImpl* app_list_controller =
       Shell::Get()->app_list_controller();
+  const TabletModeController* tablet_mode_controller =
+      Shell::Get()->tablet_mode_controller();
 
-  if (app_list_controller &&
-      app_list_controller->IsHomeLauncherEnabledInTabletMode()) {
+  if (app_list_controller && tablet_mode_controller &&
+      tablet_mode_controller->IsTabletModeWindowManagerEnabled()) {
     // Slide down the window from above screen to show and, meanwhile, slide
     // down the home launcher off screen.
     HomeLauncherGestureHandler* handler =
@@ -279,12 +294,6 @@ void AnimateHideWindow_SlideOut(aura::Window* window) {
   gfx::Rect dismissed_bounds =
       PipPositioner::GetDismissedPosition(display, bounds);
   window->layer()->SetBounds(dismissed_bounds);
-
-  // For Android PIP windows, they become minimized app windows after
-  // dismissal, so make sure to reset their animation type back to
-  // default.
-  ::wm::SetWindowVisibilityAnimationType(
-      window, ::wm::WINDOW_VISIBILITY_ANIMATION_TYPE_DEFAULT);
 }
 
 bool AnimateShowWindow(aura::Window* window) {
@@ -303,9 +312,9 @@ bool AnimateShowWindow(aura::Window* window) {
     case wm::WINDOW_VISIBILITY_ANIMATION_TYPE_SLIDE_DOWN:
       return AnimateShowWindow_SlideDown(window);
       return true;
-    case wm::WINDOW_VISIBILITY_ANIMATION_TYPE_SLIDE_OUT:
-      // Slide out is exclusively a hide animation.
-      return false;
+    case wm::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE_IN_SLIDE_OUT:
+      AnimateShowWindow_FadeIn(window);
+      return true;
     default:
       NOTREACHED();
       return false;
@@ -327,7 +336,7 @@ bool AnimateHideWindow(aura::Window* window) {
       return true;
     case wm::WINDOW_VISIBILITY_ANIMATION_TYPE_SLIDE_DOWN:
       return AnimateHideWindow_SlideDown(window);
-    case wm::WINDOW_VISIBILITY_ANIMATION_TYPE_SLIDE_OUT:
+    case wm::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE_IN_SLIDE_OUT:
       AnimateHideWindow_SlideOut(window);
       return true;
     default:

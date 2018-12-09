@@ -48,7 +48,8 @@ class MainThreadTest : public testing::Test {
     clock_.Advance(base::TimeDelta::FromMicroseconds(5000));
     scheduler_.reset(new MainThreadSchedulerImpl(
         base::sequence_manager::SequenceManagerForTest::Create(
-            &message_loop_, message_loop_.task_runner(), &clock_),
+            message_loop_.GetMessageLoopBase(), message_loop_.task_runner(),
+            &clock_),
         base::nullopt));
     scheduler_overrider_ =
         std::make_unique<ScopedSchedulerOverrider>(scheduler_.get());
@@ -173,10 +174,9 @@ TEST_F(MainThreadTest, TestWorkBatchWithThreeTasks) {
 void EnterRunLoop(base::MessageLoop* message_loop, Thread* thread) {
   // Note: blink::Threads do not support nested run loops, which is why we use a
   // run loop directly.
-  base::RunLoop run_loop;
+  base::RunLoop run_loop(base::RunLoop::Type::kNestableTasksAllowed);
   message_loop->task_runner()->PostTask(
       FROM_HERE, WTF::Bind(&base::RunLoop::Quit, WTF::Unretained(&run_loop)));
-  message_loop->SetNestableTasksAllowed(true);
   run_loop.Run();
 }
 

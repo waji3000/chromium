@@ -24,18 +24,26 @@ struct Mailbox;
 
 // Implementation of SharedImageBackingFactory that produces AHardwareBuffer
 // backed SharedImages. This is meant to be used on Android only.
-class GPU_GLES2_EXPORT SharedImageBackingFactoryAHardwareBuffer
+class GPU_GLES2_EXPORT SharedImageBackingFactoryAHB
     : public SharedImageBackingFactory {
  public:
-  SharedImageBackingFactoryAHardwareBuffer(
-      const GpuDriverBugWorkarounds& workarounds,
-      const GpuFeatureInfo& gpu_feature_info);
-  ~SharedImageBackingFactoryAHardwareBuffer() override;
+  SharedImageBackingFactoryAHB(const GpuDriverBugWorkarounds& workarounds,
+                               const GpuFeatureInfo& gpu_feature_info);
+  ~SharedImageBackingFactoryAHB() override;
 
   // SharedImageBackingFactory implementation.
   std::unique_ptr<SharedImageBacking> CreateSharedImage(
       const Mailbox& mailbox,
       viz::ResourceFormat format,
+      const gfx::Size& size,
+      const gfx::ColorSpace& color_space,
+      uint32_t usage) override;
+  std::unique_ptr<SharedImageBacking> CreateSharedImage(
+      const Mailbox& mailbox,
+      int client_id,
+      gfx::GpuMemoryBufferHandle handle,
+      gfx::BufferFormat format,
+      SurfaceHandle surface_handle,
       const gfx::Size& size,
       const gfx::ColorSpace& color_space,
       uint32_t usage) override;
@@ -63,7 +71,7 @@ class GPU_GLES2_EXPORT SharedImageBackingFactoryAHardwareBuffer
   // Used to limit the max size of AHardwareBuffer.
   int32_t max_gl_texture_size_ = 0;
 
-  DISALLOW_COPY_AND_ASSIGN(SharedImageBackingFactoryAHardwareBuffer);
+  DISALLOW_COPY_AND_ASSIGN(SharedImageBackingFactoryAHB);
 };
 
 }  // namespace gpu

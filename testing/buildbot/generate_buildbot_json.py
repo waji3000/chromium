@@ -600,6 +600,13 @@ class BBJSONGenerator(object):
     # aren't idempotent yet. https://crbug.com/549140.
     result['swarming']['idempotent'] = False
 
+    # The GPU tests act much like integration tests for the entire browser, and
+    # tend to uncover flakiness bugs more readily than other test suites. In
+    # order to surface any flakiness more readily to the developer of the CL
+    # which is introducing it, we disable retries with patch on the commit
+    # queue.
+    result['should_retry_with_patch'] = False
+
     args = [
       test_to_run,
       '--show-stdout',
@@ -852,7 +859,8 @@ class BBJSONGenerator(object):
     for c in milo_configs:
       for l in self.read_file(c).splitlines():
         if (not 'name: "buildbucket/luci.chromium.' in l and
-            not 'name: "buildbot/chromium.' in l):
+            not 'name: "buildbot/chromium.' in l and
+            not 'name: "buildbot/tryserver.chromium.' in l):
           continue
         # l looks like
         # `name: "buildbucket/luci.chromium.try/win_chromium_dbg_ng"`
@@ -865,6 +873,15 @@ class BBJSONGenerator(object):
     # are defined only to be mirrored into trybots, and don't actually
     # exist on any of the waterfalls or consoles.
     return [
+      'ANGLE GPU Win10 Release (Intel HD 630)',
+      'ANGLE GPU Win10 Release (NVIDIA)',
+      'Dawn GPU Linux Release (Intel HD 630)',
+      'Dawn GPU Linux Release (NVIDIA)',
+      'Dawn GPU Mac Release (Intel)',
+      'Dawn GPU Mac Retina Release (AMD)',
+      'Dawn GPU Mac Retina Release (NVIDIA)',
+      'Dawn GPU Win10 Release (Intel HD 630)',
+      'Dawn GPU Win10 Release (NVIDIA)',
       'Optional Android Release (Nexus 5X)',
       'Optional Linux Release (Intel HD 630)',
       'Optional Linux Release (NVIDIA)',
@@ -884,9 +901,9 @@ class BBJSONGenerator(object):
       'win7-blink-rel-dummy',
       'win10-blink-rel-dummy',
       'Dummy WebKit Mac10.13',
+      'WebKit Linux composite_after_paint Dummy Builder',
       'WebKit Linux layout_ng Dummy Builder',
       'WebKit Linux root_layer_scrolls Dummy Builder',
-      'WebKit Linux slimming_paint_v2 Dummy Builder',
       # chromium, due to https://crbug.com/878915
       'win-dbg',
       'win32-dbg',

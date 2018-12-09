@@ -7,27 +7,24 @@
 
 #include <memory>
 
-#include "ash/shell_observer.h"
 #include "base/containers/flat_map.h"
 #include "cc/trees/layer_tree_frame_sink_client.h"
+#include "components/exo/wm_helper.h"
 #include "components/viz/common/quads/compositor_frame.h"
 #include "components/viz/common/resources/release_callback.h"
-
-namespace ash {
-class Shell;
-}
 
 namespace cc {
 class LayerTreeFrameSink;
 }
 
 namespace exo {
+
 class SurfaceTreeHost;
 
 // This class talks to CompositorFrameSink and keeps track of references to
 // the contents of Buffers.
 class LayerTreeFrameSinkHolder : public cc::LayerTreeFrameSinkClient,
-                                 public ash::ShellObserver {
+                                 public WMHelper::LifetimeManager::Observer {
  public:
   LayerTreeFrameSinkHolder(SurfaceTreeHost* surface_tree_host,
                            std::unique_ptr<cc::LayerTreeFrameSink> frame_sink);
@@ -60,6 +57,7 @@ class LayerTreeFrameSinkHolder : public cc::LayerTreeFrameSinkClient,
       uint32_t presentation_token,
       const gfx::PresentationFeedback& feedback) override;
   void DidLoseLayerTreeFrameSink() override;
+  void DidNotNeedBeginFrame() override {}
   void OnDraw(const gfx::Transform& transform,
               const gfx::Rect& viewport,
               bool resourceless_software_draw,
@@ -69,11 +67,11 @@ class LayerTreeFrameSinkHolder : public cc::LayerTreeFrameSinkClient,
       const gfx::Rect& viewport_rect,
       const gfx::Transform& transform) override {}
 
-  // Overridden from ash::ShellObserver:
-  void OnShellDestroyed() override;
-
  private:
   void ScheduleDelete();
+
+  // WMHelper::LifetimeManager::Observer:
+  void OnDestroyed() override;
 
   // A collection of callbacks used to release resources.
   using ResourceReleaseCallbackMap =
@@ -82,16 +80,18 @@ class LayerTreeFrameSinkHolder : public cc::LayerTreeFrameSinkClient,
 
   SurfaceTreeHost* surface_tree_host_;
   std::unique_ptr<cc::LayerTreeFrameSink> frame_sink_;
-  ash::Shell* shell_ = nullptr;
 
   // The next resource id the buffer is attached to.
   int next_resource_id_ = 1;
 
   gfx::Size last_frame_size_in_pixels_;
   float last_frame_device_scale_factor_ = 1.0f;
+  base::TimeTicks last_local_surface_id_allocation_time_;
   std::vector<viz::ResourceId> last_frame_resources_;
 
   bool delete_pending_ = false;
+
+  WMHelper::LifetimeManager* lifetime_manager_ = nullptr;
 
   base::WeakPtrFactory<LayerTreeFrameSinkHolder> weak_ptr_factory_;
 

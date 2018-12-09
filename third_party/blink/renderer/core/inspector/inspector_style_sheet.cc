@@ -31,6 +31,7 @@
 #include "third_party/blink/renderer/core/css/css_keyframe_rule.h"
 #include "third_party/blink/renderer/core/css/css_keyframes_rule.h"
 #include "third_party/blink/renderer/core/css/css_media_rule.h"
+#include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/css/css_property_value_set.h"
 #include "third_party/blink/renderer/core/css/css_rule_list.h"
 #include "third_party/blink/renderer/core/css/css_style_rule.h"
@@ -41,7 +42,6 @@
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/css/style_rule.h"
 #include "third_party/blink/renderer/core/css/style_sheet_contents.h"
-#include "third_party/blink/renderer/core/css_property_names.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/dom_node_ids.h"
 #include "third_party/blink/renderer/core/dom/element.h"
@@ -188,7 +188,7 @@ void StyleSheetHandler::StartRuleHeader(StyleRule::RuleType type,
   if (current_rule_data_)
     current_rule_data_stack_.pop_back();
 
-  CSSRuleSourceData* data = new CSSRuleSourceData(type);
+  CSSRuleSourceData* data = MakeGarbageCollected<CSSRuleSourceData>(type);
   data->rule_header_range.start = offset;
   current_rule_data_ = data;
   current_rule_data_stack_.push_back(data);
@@ -538,6 +538,7 @@ void CollectFlatRules(RuleList rule_list, CSSRuleVector* result) {
       case CSSRule::kFontFaceRule:
       case CSSRule::kViewportRule:
       case CSSRule::kKeyframeRule:
+      case CSSRule::kFontFeatureValuesRule:
         result->push_back(rule);
         break;
       case CSSRule::kMediaRule:
@@ -723,7 +724,8 @@ InspectorStyle* InspectorStyle::Create(
     CSSStyleDeclaration* style,
     CSSRuleSourceData* source_data,
     InspectorStyleSheetBase* parent_style_sheet) {
-  return new InspectorStyle(style, source_data, parent_style_sheet);
+  return MakeGarbageCollected<InspectorStyle>(style, source_data,
+                                              parent_style_sheet);
 }
 
 InspectorStyle::InspectorStyle(CSSStyleDeclaration* style,
@@ -960,8 +962,9 @@ InspectorStyleSheet* InspectorStyleSheet::Create(
     const String& document_url,
     InspectorStyleSheetBase::Listener* listener,
     InspectorResourceContainer* resource_container) {
-  return new InspectorStyleSheet(network_agent, page_style_sheet, origin,
-                                 document_url, listener, resource_container);
+  return MakeGarbageCollected<InspectorStyleSheet>(
+      network_agent, page_style_sheet, origin, document_url, listener,
+      resource_container);
 }
 
 InspectorStyleSheet::InspectorStyleSheet(
@@ -1897,7 +1900,8 @@ bool InspectorStyleSheet::InspectorStyleSheetText(String* result) {
 InspectorStyleSheetForInlineStyle* InspectorStyleSheetForInlineStyle::Create(
     Element* element,
     Listener* listener) {
-  return new InspectorStyleSheetForInlineStyle(element, listener);
+  return MakeGarbageCollected<InspectorStyleSheetForInlineStyle>(element,
+                                                                 listener);
 }
 
 InspectorStyleSheetForInlineStyle::InspectorStyleSheetForInlineStyle(
@@ -1949,7 +1953,8 @@ CSSRuleSourceData* InspectorStyleSheetForInlineStyle::RuleSourceData() {
   const String& text = ElementStyleText();
   CSSRuleSourceData* rule_source_data = nullptr;
   if (text.IsEmpty()) {
-    rule_source_data = new CSSRuleSourceData(StyleRule::kStyle);
+    rule_source_data =
+        MakeGarbageCollected<CSSRuleSourceData>(StyleRule::kStyle);
     rule_source_data->rule_body_range.start = 0;
     rule_source_data->rule_body_range.end = 0;
   } else {

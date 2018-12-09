@@ -268,15 +268,7 @@ bool IsLocaleAvailable(const std::string& locale) {
   if (!l10n_util::IsLocaleSupportedByOS(locale))
     return false;
 
-  // If the ResourceBundle is not yet initialized, return false to avoid the
-  // CHECK failure in ResourceBundle::GetSharedInstance().
-  if (!ui::ResourceBundle::HasSharedInstance())
-    return false;
-
-  // TODO(hshi): make ResourceBundle::LocaleDataPakExists() a static function
-  // so that this can be invoked without initializing the global instance.
-  // See crbug.com/230432: CHECK failure in GetUserDataDir().
-  return ui::ResourceBundle::GetSharedInstance().LocaleDataPakExists(locale);
+  return ui::ResourceBundle::LocaleDataPakExists(locale);
 }
 #endif
 
@@ -478,6 +470,10 @@ std::string GetApplicationLocaleInternal(const std::string& pref_locale) {
   }
 
 #elif defined(OS_ANDROID)
+
+  // Try pref_locale first.
+  if (!pref_locale.empty())
+    candidates.push_back(base::i18n::GetCanonicalLocale(pref_locale));
 
   // On Android, query java.util.Locale for the default locale.
   candidates.push_back(base::android::GetDefaultLocaleString());

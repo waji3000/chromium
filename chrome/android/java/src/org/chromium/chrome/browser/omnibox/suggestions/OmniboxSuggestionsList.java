@@ -8,9 +8,9 @@ import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
-import android.graphics.drawable.Drawable;
 import android.support.annotation.Nullable;
 import android.support.v4.view.ViewCompat;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
@@ -20,6 +20,7 @@ import android.widget.ListView;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.WindowDelegate;
+import org.chromium.chrome.browser.util.KeyNavigationUtil;
 import org.chromium.chrome.browser.util.ViewUtils;
 
 import java.util.ArrayList;
@@ -29,18 +30,17 @@ import java.util.ArrayList;
  */
 @VisibleForTesting
 public class OmniboxSuggestionsList extends ListView {
-    private static final int OMNIBOX_RESULTS_BG_COLOR = 0xFFFFFFFF;
-    private static final int OMNIBOX_INCOGNITO_RESULTS_BG_COLOR = 0xFF3C4043;
-
-    private final OmniboxSuggestionListEmbedder mEmbedder;
-    private final View mAnchorView;
-    private final View mAlignmentView;
+    private static final int LIGHT_BG_COLOR = 0xFFFFFFFF;
+    private static final int DARK_BG_COLOR = 0xFF3C4043;
 
     private final int[] mTempPosition = new int[2];
     private final Rect mTempRect = new Rect();
 
-    private final OnGlobalLayoutListener mAnchorViewLayoutListener;
-    private final OnLayoutChangeListener mAlignmentViewLayoutListener;
+    private OmniboxSuggestionListEmbedder mEmbedder;
+    private View mAnchorView;
+    private View mAlignmentView;
+    private OnGlobalLayoutListener mAnchorViewLayoutListener;
+    private OnLayoutChangeListener mAlignmentViewLayoutListener;
 
     /**
      * Provides the capabilities required to embed the omnibox suggestion list into the UI.
@@ -62,20 +62,14 @@ public class OmniboxSuggestionsList extends ListView {
 
         /** Return whether the suggestions are being rendered in the tablet UI. */
         boolean isTablet();
-
-        /** Return whether the current state is viewing incognito. */
-        boolean isIncognito();
     }
 
     /**
      * Constructs a new list designed for containing omnibox suggestions.
      * @param context Context used for contained views.
-     * @param embedder The embedder for the omnibox list providing access to external views and
-     *                 services.
      */
-    public OmniboxSuggestionsList(Context context, OmniboxSuggestionListEmbedder embedder) {
+    public OmniboxSuggestionsList(Context context) {
         super(context, null, android.R.attr.dropDownListViewStyle);
-        mEmbedder = embedder;
         setDivider(null);
         setFocusable(true);
         setFocusableInTouchMode(true);
@@ -83,9 +77,12 @@ public class OmniboxSuggestionsList extends ListView {
         int paddingBottom = context.getResources().getDimensionPixelOffset(
                 R.dimen.omnibox_suggestion_list_padding_bottom);
         ViewCompat.setPaddingRelative(this, 0, 0, 0, paddingBottom);
+    }
 
-        refreshPopupBackground();
-
+    /** Set the embedder for the list view. */
+    void setEmbedder(OmniboxSuggestionListEmbedder embedder) {
+        assert mEmbedder == null;
+        mEmbedder = embedder;
         mAnchorView = mEmbedder.getAnchorView();
         // Prior to Android M, the contextual actions associated with the omnibox were anchored to
         // the top of the screen and not a floating copy/paste menu like on newer versions.  As a
@@ -146,19 +143,8 @@ public class OmniboxSuggestionsList extends ListView {
     /**
      * Update the suggestion popup background to reflect the current state.
      */
-    void refreshPopupBackground() {
-        setBackground(getSuggestionPopupBackground());
-    }
-
-    /**
-     * @return The background for the omnibox suggestions popup.
-     */
-    private Drawable getSuggestionPopupBackground() {
-        int omniboxResultsColorForNonIncognito = OMNIBOX_RESULTS_BG_COLOR;
-        int omniboxResultsColorForIncognito = OMNIBOX_INCOGNITO_RESULTS_BG_COLOR;
-
-        int color = mEmbedder.isIncognito() ? omniboxResultsColorForIncognito
-                                            : omniboxResultsColorForNonIncognito;
+    void refreshPopupBackground(boolean useDarkBackground) {
+        int color = useDarkBackground ? DARK_BG_COLOR : LIGHT_BG_COLOR;
         if (!isHardwareAccelerated()) {
             // When HW acceleration is disabled, changing mSuggestionList' items somehow erases
             // mOmniboxResultsContainer' background from the area not covered by mSuggestionList.
@@ -169,7 +155,7 @@ public class OmniboxSuggestionsList extends ListView {
                 color = Color.argb(254, Color.red(color), Color.green(color), Color.blue(color));
             }
         }
-        return new ColorDrawable(color);
+        setBackground(new ColorDrawable(color));
     }
 
     @Override
@@ -192,6 +178,40 @@ public class OmniboxSuggestionsList extends ListView {
                 MeasureSpec.makeMeasureSpec(mAnchorView.getMeasuredWidth(), MeasureSpec.EXACTLY),
                 MeasureSpec.makeMeasureSpec(availableViewportHeight,
                         mEmbedder.isTablet() ? MeasureSpec.AT_MOST : MeasureSpec.EXACTLY));
+    }
+
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (!isShown()) return false;
+
+        int selectedPosition = getSelectedItemPosition();
+        int itemCount = getAdapter().getCount();
+        if (KeyNavigationUtil.isGoDown(event)) {
+            if (selectedPosition >= itemCount - 1) {
+                // Do not pass down events when the last item is already selected as it will
+                // dismiss the suggestion list.
+                return true;
+            }
+
+            if (selectedPosition == ListView.INVALID_POSITION) {
+                // When clearing the selection after a text change, state is not reset
+                // correctly so hitting down again will cause it to start from the previous
+                // selection point. We still have to send the key down event to let the list
+                // view items take focus, but then we select the first item explicitly.
+                boolean result = super.onKeyDown(keyCode, event);
+                setSelection(0);
+                return result;
+            }
+        } else if (KeyNavigationUtil.isGoRight(event)
+                && selectedPosition != ListView.INVALID_POSITION) {
+            View selectedView = getSelectedView();
+            if (selectedView != null) return selectedView.onKeyDown(keyCode, event);
+        } else if (KeyNavigationUtil.isEnter(event)
+                && selectedPosition != ListView.INVALID_POSITION) {
+            View selectedView = getSelectedView();
+            if (selectedView != null) return selectedView.performClick();
+        }
+        return super.onKeyDown(keyCode, event);
     }
 
     @Override

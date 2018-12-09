@@ -37,6 +37,7 @@ class PriorityQueue::SequenceAndSortKey {
   // call.
   scoped_refptr<Sequence> take_sequence() {
     DCHECK(sequence_);
+    sequence_->ClearHeapHandle();
     return std::move(sequence_);
   }
 
@@ -47,10 +48,21 @@ class PriorityQueue::SequenceAndSortKey {
   }
 
   // Required by IntrusiveHeap.
-  void SetHeapHandle(const HeapHandle& handle) {}
+  void SetHeapHandle(const HeapHandle& handle) {
+    DCHECK(sequence_);
+    sequence_->SetHeapHandle(handle);
+  }
 
   // Required by IntrusiveHeap.
-  void ClearHeapHandle() {}
+  void ClearHeapHandle() {
+    // Ensure |sequence_| is not nullptr, which may be the case if
+    // take_sequence() was called before this.
+    if (sequence_) {
+      sequence_->ClearHeapHandle();
+    }
+  }
+
+  const Sequence* sequence() const { return sequence_.get(); }
 
   const SequenceSortKey& sort_key() const { return sort_key_; }
 
@@ -92,6 +104,41 @@ scoped_refptr<Sequence> PriorityQueue::Transaction::PopSequence() {
   return sequence;
 }
 
+bool PriorityQueue::Transaction::RemoveSequence(
+    scoped_refptr<Sequence> sequence) {
+  DCHECK(sequence);
+
+  if (IsEmpty())
+    return false;
+
+  const HeapHandle heap_handle = sequence->heap_handle();
+  if (!heap_handle.IsValid())
+    return false;
+
+  DCHECK_EQ(outer_queue_->container_.at(heap_handle).sequence(),
+            sequence.get());
+  outer_queue_->container_.erase(heap_handle);
+  return true;
+}
+
+void PriorityQueue::Transaction::UpdateSortKey(
+    SequenceAndTransaction sequence_and_transaction) {
+  DCHECK(sequence_and_transaction.sequence);
+
+  if (IsEmpty())
+    return;
+
+  const HeapHandle heap_handle =
+      sequence_and_transaction.sequence->heap_handle();
+  if (!heap_handle.IsValid())
+    return;
+
+  auto sort_key = sequence_and_transaction.transaction.GetSortKey();
+  outer_queue_->container_.ChangeKey(
+      heap_handle, SequenceAndSortKey(
+                       std::move(sequence_and_transaction.sequence), sort_key));
+}
+
 bool PriorityQueue::Transaction::IsEmpty() const {
   return outer_queue_->container_.empty();
 }
@@ -102,10 +149,29 @@ size_t PriorityQueue::Transaction::Size() const {
 
 PriorityQueue::PriorityQueue() = default;
 
-PriorityQueue::~PriorityQueue() = default;
+PriorityQueue::~PriorityQueue() {
+  if (is_flush_sequences_on_destroy_enabled_) {
+    while (!container_.empty()) {
+      scoped_refptr<Sequence> sequence = BeginTransaction()->PopSequence();
+      {
+        Sequence::Transaction sequence_transaction(
+            sequence->BeginTransaction());
+        while (!sequence_transaction.IsEmpty()) {
+          sequence_transaction.TakeTask();
+          sequence_transaction.Pop();
+        }
+      }
+    }
+  }
+}
 
 std::unique_ptr<PriorityQueue::Transaction> PriorityQueue::BeginTransaction() {
   return WrapUnique(new Transaction(this));
+}
+
+void PriorityQueue::EnableFlushSequencesOnDestroyForTesting() {
+  DCHECK(!is_flush_sequences_on_destroy_enabled_);
+  is_flush_sequences_on_destroy_enabled_ = true;
 }
 
 }  // namespace internal

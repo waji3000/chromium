@@ -8,6 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -20,6 +21,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/single_thread_task_runner.h"
 #include "base/time/time_override.h"
+#include "base/trace_event/category_registry.h"
 #include "base/trace_event/memory_dump_provider.h"
 #include "base/trace_event/trace_config.h"
 #include "base/trace_event/trace_event_impl.h"
@@ -185,14 +187,20 @@ class BASE_EXPORT TraceLog : public MemoryDumpProvider {
   // Cancels tracing and discards collected data.
   void CancelTracing(const OutputCallback& cb);
 
-  typedef void (*AddTraceEventOverrideCallback)(TraceEvent*,
-                                                bool thread_will_flush);
-  typedef void (*OnFlushCallback)();
-  // The callback will be called up until the point where the flush is
+  using AddTraceEventOverrideCallback = void (*)(TraceEvent*,
+                                                 bool thread_will_flush,
+                                                 TraceEventHandle* handle);
+  using OnFlushCallback = void (*)();
+  using UpdateDurationCallback = void (*)(TraceEventHandle handle,
+                                          const TimeTicks& now,
+                                          const ThreadTicks& thread_now);
+  // The callbacks will be called up until the point where the flush is
   // finished, i.e. must be callable until OutputCallback is called with
   // has_more_events==false.
-  void SetAddTraceEventOverride(const AddTraceEventOverrideCallback& override,
-                                const OnFlushCallback& on_flush_callback);
+  void SetAddTraceEventOverrides(
+      const AddTraceEventOverrideCallback& add_event_override,
+      const OnFlushCallback& on_flush_callback,
+      const UpdateDurationCallback& update_duration_callback);
 
   // Called by TRACE_EVENT* macros, don't call this directly.
   // The name parameter is a category group for example:
@@ -200,10 +208,20 @@ class BASE_EXPORT TraceLog : public MemoryDumpProvider {
   static const unsigned char* GetCategoryGroupEnabled(const char* name);
   static const char* GetCategoryGroupName(
       const unsigned char* category_group_enabled);
+  static constexpr const unsigned char* GetBuiltinCategoryEnabled(
+      const char* name) {
+    TraceCategory* builtin_category =
+        CategoryRegistry::GetBuiltinCategoryByName(name);
+    if (builtin_category)
+      return builtin_category->state_ptr();
+    return nullptr;
+  }
 
   // Called by TRACE_EVENT* macros, don't call this directly.
   // If |copy| is set, |name|, |arg_name1| and |arg_name2| will be deep copied
   // into the event; see "Memory scoping note" and TRACE_EVENT_COPY_XXX above.
+
+  // TODO(898794): Remove methods below when all callers have been updated.
   TraceEventHandle AddTraceEvent(
       char phase,
       const unsigned char* category_group_enabled,
@@ -537,8 +555,9 @@ class BASE_EXPORT TraceLog : public MemoryDumpProvider {
   ArgumentFilterPredicate argument_filter_predicate_;
   subtle::AtomicWord generation_;
   bool use_worker_thread_;
-  subtle::AtomicWord trace_event_override_;
-  subtle::AtomicWord on_flush_callback_;
+  std::atomic<AddTraceEventOverrideCallback> add_trace_event_override_;
+  std::atomic<OnFlushCallback> on_flush_callback_;
+  std::atomic<UpdateDurationCallback> update_duration_callback_;
 
   FilterFactoryForTesting filter_factory_for_testing_;
 

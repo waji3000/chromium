@@ -123,7 +123,7 @@ class TestStream : public QuicSpdyStream {
 
   using QuicStream::CloseWriteSide;
 
-  void OnDataAvailable() override {}
+  void OnBodyAvailable() override {}
 
   MOCK_METHOD0(OnCanWrite, void());
   MOCK_METHOD3(RetransmitStreamData,
@@ -247,7 +247,6 @@ class TestSession : public QuicSpdySession {
 
   using QuicSession::closed_streams;
   using QuicSession::next_outgoing_stream_id;
-  using QuicSession::PostProcessAfterData;
   using QuicSession::zombie_streams;
 
  private:
@@ -257,6 +256,15 @@ class TestSession : public QuicSpdySession {
 };
 
 class QuicSpdySessionTestBase : public QuicTestWithParam<ParsedQuicVersion> {
+ public:
+  bool ClearMaxStreamIdControlFrame(const QuicFrame& frame) {
+    if (frame.type == MAX_STREAM_ID_FRAME) {
+      DeleteFrame(&const_cast<QuicFrame&>(frame));
+      return true;
+    }
+    return false;
+  }
+
  protected:
   explicit QuicSpdySessionTestBase(Perspective perspective)
       : connection_(
@@ -425,12 +433,30 @@ TEST_P(QuicSpdySessionTestServer, IsClosedStreamPeerCreated) {
 }
 
 TEST_P(QuicSpdySessionTestServer, MaximumAvailableOpenedStreams) {
-  QuicStreamId stream_id = GetNthClientInitiatedId(0);
-  session_.GetOrCreateDynamicStream(stream_id);
-  EXPECT_CALL(*connection_, CloseConnection(_, _, _)).Times(0);
-  EXPECT_NE(nullptr,
-            session_.GetOrCreateDynamicStream(
-                stream_id + 2 * (session_.max_open_incoming_streams() - 1)));
+  if (transport_version() == QUIC_VERSION_99) {
+    // For IETF QUIC, we should be able to obtain the max allowed
+    // stream ID, the next ID should fail. Since the actual limit
+    // is not the number of open streams, we allocate the max and the max+2.
+    // Get the max allowed stream ID, this should succeed.
+    EXPECT_NE(nullptr, session_.GetOrCreateDynamicStream(
+                           QuicSessionPeer::v99_streamid_manager(
+                               dynamic_cast<QuicSession*>(&session_))
+                               ->actual_max_allowed_incoming_stream_id()));
+    EXPECT_CALL(*connection_, CloseConnection(_, _, _)).Times(1);
+    // Get the (max allowed stream ID)++, this should fail.
+    EXPECT_EQ(nullptr, session_.GetOrCreateDynamicStream(
+                           QuicSessionPeer::v99_streamid_manager(
+                               dynamic_cast<QuicSession*>(&session_))
+                               ->actual_max_allowed_incoming_stream_id() +
+                           2));
+  } else {
+    QuicStreamId stream_id = GetNthClientInitiatedId(0);
+    session_.GetOrCreateDynamicStream(stream_id);
+    EXPECT_CALL(*connection_, CloseConnection(_, _, _)).Times(0);
+    EXPECT_NE(nullptr,
+              session_.GetOrCreateDynamicStream(
+                  stream_id + 2 * (session_.max_open_incoming_streams() - 1)));
+  }
 }
 
 TEST_P(QuicSpdySessionTestServer, TooManyAvailableStreams) {
@@ -439,8 +465,12 @@ TEST_P(QuicSpdySessionTestServer, TooManyAvailableStreams) {
   EXPECT_NE(nullptr, session_.GetOrCreateDynamicStream(stream_id1));
   // A stream ID which is too large to create.
   stream_id2 = GetNthClientInitiatedId(2 * session_.MaxAvailableStreams() + 4);
-  EXPECT_CALL(*connection_,
-              CloseConnection(QUIC_TOO_MANY_AVAILABLE_STREAMS, _, _));
+  if (transport_version() == QUIC_VERSION_99) {
+    EXPECT_CALL(*connection_, CloseConnection(QUIC_INVALID_STREAM_ID, _, _));
+  } else {
+    EXPECT_CALL(*connection_,
+                CloseConnection(QUIC_TOO_MANY_AVAILABLE_STREAMS, _, _));
+  }
   EXPECT_EQ(nullptr, session_.GetOrCreateDynamicStream(stream_id2));
 }
 
@@ -452,8 +482,10 @@ TEST_P(QuicSpdySessionTestServer, ManyAvailableStreams) {
   // Create one stream.
   session_.GetOrCreateDynamicStream(stream_id);
   EXPECT_CALL(*connection_, CloseConnection(_, _, _)).Times(0);
-  // Create the largest stream ID of a threatened total of 200 streams.
-  session_.GetOrCreateDynamicStream(stream_id + 2 * (200 - 1));
+  // Stream count is 200, GetNth... starts counting at 0, so the 200'th stream
+  // is 199.
+  EXPECT_NE(nullptr,
+            session_.GetOrCreateDynamicStream(GetNthClientInitiatedId(199)));
 }
 
 TEST_P(QuicSpdySessionTestServer,
@@ -571,6 +603,11 @@ TEST_P(QuicSpdySessionTestServer, TestBatchedWrites) {
 }
 
 TEST_P(QuicSpdySessionTestServer, OnCanWriteBundlesStreams) {
+  if (transport_version() == QUIC_VERSION_99) {
+    EXPECT_CALL(*connection_, SendControlFrame(_))
+        .WillRepeatedly(Invoke(
+            this, &QuicSpdySessionTestServer::ClearMaxStreamIdControlFrame));
+  }
   // Encryption needs to be established before data can be sent.
   CryptoHandshakeMessage msg;
   MockPacketWriter* writer = static_cast<MockPacketWriter*>(
@@ -828,6 +865,11 @@ TEST_P(QuicSpdySessionTestServer, SendGoAway) {
 }
 
 TEST_P(QuicSpdySessionTestServer, DoNotSendGoAwayTwice) {
+  if (connection_->transport_version() == QUIC_VERSION_99) {
+    // TODO(b/118808809): Enable this test for version 99 when GOAWAY is
+    // supported.
+    return;
+  }
   EXPECT_CALL(*connection_, SendControlFrame(_))
       .WillOnce(Invoke(&session_, &TestSession::ClearControlFrame));
   session_.SendGoAway(QUIC_PEER_GOING_AWAY, "Going Away.");
@@ -836,6 +878,11 @@ TEST_P(QuicSpdySessionTestServer, DoNotSendGoAwayTwice) {
 }
 
 TEST_P(QuicSpdySessionTestServer, InvalidGoAway) {
+  if (connection_->transport_version() == QUIC_VERSION_99) {
+    // TODO(b/118808809): Enable this test for version 99 when GOAWAY is
+    // supported.
+    return;
+  }
   QuicGoAwayFrame go_away(kInvalidControlFrameId, QUIC_PEER_GOING_AWAY,
                           session_.next_outgoing_stream_id(), "");
   session_.OnGoAway(go_away);
@@ -985,8 +1032,14 @@ TEST_P(QuicSpdySessionTestServer,
   EXPECT_FALSE(headers_stream->flow_controller()->IsBlocked());
   EXPECT_FALSE(session_.IsConnectionFlowControlBlocked());
   EXPECT_FALSE(session_.IsStreamFlowControlBlocked());
-  EXPECT_CALL(*connection_, SendControlFrame(_))
-      .WillOnce(Invoke(&session_, &TestSession::ClearControlFrame));
+  if (transport_version() == QUIC_VERSION_99) {
+    EXPECT_CALL(*connection_, SendControlFrame(_))
+        .Times(1)
+        .WillRepeatedly(Invoke(&session_, &TestSession::ClearControlFrame));
+  } else {
+    EXPECT_CALL(*connection_, SendControlFrame(_))
+        .WillOnce(Invoke(&session_, &TestSession::ClearControlFrame));
+  }
   for (QuicStreamId i = 0;
        !crypto_stream->flow_controller()->IsBlocked() && i < 1000u; i++) {
     EXPECT_FALSE(session_.IsConnectionFlowControlBlocked());
@@ -1099,9 +1152,6 @@ TEST_P(QuicSpdySessionTestServer,
   QuicRstStreamFrame rst_frame(kInvalidControlFrameId, stream->id(),
                                QUIC_STREAM_CANCELLED, kByteOffset);
   session_.OnRstStream(rst_frame);
-  if (!session_.deprecate_post_process_after_data()) {
-    session_.PostProcessAfterData();
-  }
   EXPECT_EQ(kByteOffset, session_.flow_controller()->bytes_consumed());
 }
 
@@ -1118,9 +1168,6 @@ TEST_P(QuicSpdySessionTestServer,
       kInitialSessionFlowControlWindowForTest / 2 - 1;
   QuicStreamFrame frame(stream->id(), true, kByteOffset, ".");
   session_.OnStreamFrame(frame);
-  if (!session_.deprecate_post_process_after_data()) {
-    session_.PostProcessAfterData();
-  }
   EXPECT_TRUE(connection_->connected());
 
   EXPECT_EQ(0u, stream->flow_controller()->bytes_consumed());
@@ -1292,7 +1339,8 @@ TEST_P(QuicSpdySessionTestServer, WindowUpdateUnblocksHeadersStream) {
 TEST_P(QuicSpdySessionTestServer,
        TooManyUnfinishedStreamsCauseServerRejectStream) {
   // If a buggy/malicious peer creates too many streams that are not ended
-  // with a FIN or RST then we send an RST to refuse streams.
+  // with a FIN or RST then we send an RST to refuse streams for versions other
+  // than version 99. In version 99 the connection gets closed.
   const QuicStreamId kMaxStreams = 5;
   QuicSessionPeer::SetMaxOpenIncomingStreams(&session_, kMaxStreams);
   const QuicStreamId kFirstStreamId = GetNthClientInitiatedId(0);
@@ -1306,37 +1354,51 @@ TEST_P(QuicSpdySessionTestServer,
     // EXPECT_EQ(1u, session_.GetNumOpenStreams());
     EXPECT_CALL(*connection_, SendControlFrame(_))
         .WillOnce(Invoke(&session_, &TestSession::ClearControlFrame));
+    // Close the stream only if not version 99. If we are version 99
+    // then closing the stream opens up the available stream id space,
+    // so we never bump into the limit.
     EXPECT_CALL(*connection_, OnStreamReset(i, _));
     session_.CloseStream(i);
   }
-
-  EXPECT_CALL(*connection_, SendControlFrame(_)).Times(1);
-  EXPECT_CALL(*connection_, OnStreamReset(kFinalStreamId, QUIC_REFUSED_STREAM))
-      .Times(1);
+  // Try and open a stream that exceeds the limit.
+  if (transport_version() != QUIC_VERSION_99) {
+    // On versions other than 99, opening such a stream results in a
+    // RST_STREAM.
+    EXPECT_CALL(*connection_, SendControlFrame(_)).Times(1);
+    EXPECT_CALL(*connection_,
+                OnStreamReset(kFinalStreamId, QUIC_REFUSED_STREAM))
+        .Times(1);
+  } else {
+    // On version 99 opening such a stream results in a connection close.
+    EXPECT_CALL(*connection_,
+                CloseConnection(QUIC_INVALID_STREAM_ID, "14 above 12", _));
+  }
   // Create one more data streams to exceed limit of open stream.
   QuicStreamFrame data1(kFinalStreamId, false, 0, QuicStringPiece("HT"));
   session_.OnStreamFrame(data1);
-
-  // Called after any new data is received by the session, and triggers the
-  // call to close the connection.
-  if (!session_.deprecate_post_process_after_data()) {
-    session_.PostProcessAfterData();
-  }
 }
 
 TEST_P(QuicSpdySessionTestServer, DrainingStreamsDoNotCountAsOpened) {
   // Verify that a draining stream (which has received a FIN but not consumed
   // it) does not count against the open quota (because it is closed from the
   // protocol point of view).
-  EXPECT_CALL(*connection_, SendControlFrame(_)).Times(0);
+  if (transport_version() == QUIC_VERSION_99) {
+    // Version 99 will result in a MAX_STREAM_ID frame as streams are consumed
+    // (via the OnStreamFrame call) and then released (via
+    // StreamDraining). Eventually this node will believe that the peer is
+    // running low on available stream ids and then send a MAX_STREAM_ID frame,
+    // caught by this EXPECT_CALL.
+    EXPECT_CALL(*connection_, SendControlFrame(_)).Times(1);
+  } else {
+    EXPECT_CALL(*connection_, SendControlFrame(_)).Times(0);
+  }
   EXPECT_CALL(*connection_, OnStreamReset(_, QUIC_REFUSED_STREAM)).Times(0);
   const QuicStreamId kMaxStreams = 5;
   QuicSessionPeer::SetMaxOpenIncomingStreams(&session_, kMaxStreams);
 
   // Create kMaxStreams + 1 data streams, and mark them draining.
   const QuicStreamId kFirstStreamId = GetNthClientInitiatedId(0);
-  const QuicStreamId kFinalStreamId =
-      GetNthClientInitiatedId(2 * kMaxStreams + 1);
+  const QuicStreamId kFinalStreamId = GetNthClientInitiatedId(kMaxStreams + 1);
   for (QuicStreamId i = kFirstStreamId; i < kFinalStreamId; i += NextId()) {
     QuicStreamFrame data1(i, true, 0, QuicStringPiece("HT"));
     session_.OnStreamFrame(data1);
@@ -1344,28 +1406,6 @@ TEST_P(QuicSpdySessionTestServer, DrainingStreamsDoNotCountAsOpened) {
     session_.StreamDraining(i);
     EXPECT_EQ(0u, session_.GetNumOpenIncomingStreams());
   }
-
-  // Called after any new data is received by the session, and triggers the call
-  // to close the connection.
-  if (!session_.deprecate_post_process_after_data()) {
-    session_.PostProcessAfterData();
-  }
-}
-
-TEST_P(QuicSpdySessionTestServer, TestMaxIncomingAndOutgoingStreamsAllowed) {
-  // Tests that on server side, the value of max_open_incoming/outgoing streams
-  // are setup correctly during negotiation.
-  // The value for outgoing stream is limited to negotiated value and for
-  // incoming stream it is set to be larger than that.
-  session_.OnConfigNegotiated();
-  // The max number of open outgoing streams is less than that of incoming
-  // streams, and it should be same as negotiated value.
-  EXPECT_LT(session_.max_open_outgoing_streams(),
-            session_.max_open_incoming_streams());
-  EXPECT_EQ(session_.max_open_outgoing_streams(),
-            kDefaultMaxStreamsPerConnection);
-  EXPECT_GT(session_.max_open_incoming_streams(),
-            kDefaultMaxStreamsPerConnection);
 }
 
 class QuicSpdySessionTestClient : public QuicSpdySessionTestBase {
@@ -1416,10 +1456,6 @@ TEST_P(QuicSpdySessionTestClient, RecordFinAfterReadSideClosed) {
   stream->Reset(QUIC_STREAM_CANCELLED);
   EXPECT_TRUE(QuicStreamPeer::read_side_closed(stream));
 
-  // Allow the session to delete the stream object.
-  if (!session_.deprecate_post_process_after_data()) {
-    session_.PostProcessAfterData();
-  }
   EXPECT_TRUE(connection_->connected());
   EXPECT_TRUE(QuicSessionPeer::IsStreamClosed(&session_, stream_id));
   EXPECT_FALSE(QuicSessionPeer::IsStreamCreated(&session_, stream_id));
@@ -1429,18 +1465,6 @@ TEST_P(QuicSpdySessionTestClient, RecordFinAfterReadSideClosed) {
   EXPECT_EQ(
       0u,
       QuicSessionPeer::GetLocallyClosedStreamsHighestOffset(&session_).size());
-}
-
-TEST_P(QuicSpdySessionTestClient, TestMaxIncomingAndOutgoingStreamsAllowed) {
-  // Tests that on client side, the value of max_open_incoming/outgoing streams
-  // are setup correctly during negotiation.
-  // When flag is true, the value for outgoing stream is limited to negotiated
-  // value and for incoming stream it is set to be larger than that.
-  session_.OnConfigNegotiated();
-  EXPECT_LT(session_.max_open_outgoing_streams(),
-            session_.max_open_incoming_streams());
-  EXPECT_EQ(session_.max_open_outgoing_streams(),
-            kDefaultMaxStreamsPerConnection);
 }
 
 TEST_P(QuicSpdySessionTestClient, WritePriority) {

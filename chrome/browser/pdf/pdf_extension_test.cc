@@ -30,6 +30,7 @@
 #include "chrome/browser/pdf/pdf_extension_test_util.h"
 #include "chrome/browser/pdf/pdf_extension_util.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
+#include "chrome/browser/plugins/plugin_test_utils.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_context_menu/render_view_context_menu_browsertest_util.h"
 #include "chrome/browser/ui/browser.h"
@@ -61,6 +62,7 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_features.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/context_menu_params.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
@@ -71,6 +73,7 @@
 #include "extensions/test/result_catcher.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
+#include "pdf/pdf_features.h"
 #include "services/network/public/cpp/features.h"
 #include "ui/accessibility/ax_enum_util.h"
 #include "ui/accessibility/ax_node.h"
@@ -383,6 +386,19 @@ class PDFExtensionHitTestTest : public PDFExtensionTest,
   base::test::ScopedFeatureList feature_list_;
 };
 
+class PDFAnnotationsTest : public PDFExtensionTest {
+ public:
+  PDFAnnotationsTest() {}
+
+ protected:
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    PDFExtensionTest::SetUpCommandLine(command_line);
+    feature_list_.InitAndEnableFeature(chrome_pdf::features::kPDFAnnotations);
+  }
+
+  base::test::ScopedFeatureList feature_list_;
+};
+
 // Disabled because it's flaky.
 // See the issue for details: https://crbug.com/826055.
 #if defined(MEMORY_SANITIZER) || defined(LEAK_SANITIZER) || \
@@ -430,6 +446,12 @@ class PDFPluginDisabledTest : public PDFExtensionTest {
   PDFPluginDisabledTest() {}
 
  protected:
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    PDFExtensionTest::SetUpCommandLine(command_line);
+
+    command_line->AppendSwitch(switches::kEnablePluginPlaceholderTesting);
+  }
+
   void SetUpOnMainThread() override {
     PDFExtensionTest::SetUpOnMainThread();
 
@@ -487,6 +509,29 @@ IN_PROC_BROWSER_TEST_F(PDFPluginDisabledTest, DirectNavigationToPDF) {
   ui_test_utils::NavigateToURL(browser(), pdf_url);
 
   // Validate that we downloaded a single PDF and didn't launch the PDF plugin.
+  EXPECT_EQ(pdf_url, AwaitAndGetLastDownloadedUrl());
+  EXPECT_EQ(1u, GetNumberOfDownloads());
+  EXPECT_EQ(0, CountPDFProcesses());
+}
+
+IN_PROC_BROWSER_TEST_F(PDFPluginDisabledTest, EmbedPdfPlaceholderWithCSP) {
+  // Navigate to a page with CSP that uses <embed> to embed a PDF as a plugin.
+  GURL embed_page_url =
+      embedded_test_server()->GetURL("/pdf/pdf_embed_csp.html");
+  ui_test_utils::NavigateToURL(browser(), embed_page_url);
+  PluginTestUtils::WaitForPlaceholderReady(GetActiveWebContents(), "pdf_embed");
+
+  // Fake a click on the <embed>, then press Enter to trigger the download.
+  gfx::Point point_in_pdf(100, 100);
+  content::SimulateRoutedMouseClickAt(
+      GetActiveWebContents(), kDefaultKeyModifier,
+      blink::WebMouseEvent::Button::kLeft, point_in_pdf);
+  content::SimulateKeyPress(GetActiveWebContents(), ui::DomKey::ENTER,
+                            ui::DomCode::ENTER, ui::VKEY_RETURN, false, false,
+                            false, false);
+
+  // Validate that we downloaded a single PDF and didn't launch the PDF plugin.
+  GURL pdf_url(embedded_test_server()->GetURL("/pdf/test.pdf"));
   EXPECT_EQ(pdf_url, AwaitAndGetLastDownloadedUrl());
   EXPECT_EQ(1u, GetNumberOfDownloads());
   EXPECT_EQ(0, CountPDFProcesses());
@@ -591,6 +636,13 @@ IN_PROC_BROWSER_TEST_F(PDFExtensionTest, WhitespaceTitle) {
 
 IN_PROC_BROWSER_TEST_F(PDFExtensionTest, Beep) {
   RunTestsInFile("beep_test.js", "test-beep.pdf");
+}
+
+IN_PROC_BROWSER_TEST_F(PDFAnnotationsTest, AnnotationsFeatureEnabled) {
+  RunTestsInFile("annotations_feature_enabled_test.js", "test.pdf");
+}
+IN_PROC_BROWSER_TEST_F(PDFExtensionTest, AnnotationsFeatureDisabled) {
+  RunTestsInFile("annotations_feature_disabled_test.js", "test.pdf");
 }
 
 // TODO(tsepez): See https://crbug.com/696650.
@@ -1071,17 +1123,6 @@ IN_PROC_BROWSER_TEST_F(PDFExtensionTest, NavigationOnCorrectTab) {
   EXPECT_FALSE(navigation_observer.last_navigation_url().is_empty());
   EXPECT_TRUE(active_navigation_observer.last_navigation_url().is_empty());
   EXPECT_FALSE(active_web_contents->GetController().GetPendingEntry());
-}
-
-IN_PROC_BROWSER_TEST_F(PDFExtensionTest, OpenFromFTP) {
-  net::SpawnedTestServer ftp_server(
-      net::SpawnedTestServer::TYPE_FTP,
-      base::FilePath(FILE_PATH_LITERAL("chrome/test/data/pdf")));
-  ASSERT_TRUE(ftp_server.Start());
-
-  GURL url(ftp_server.GetURL("/test.pdf"));
-  ASSERT_TRUE(LoadPdf(url));
-  EXPECT_EQ(base::ASCIIToUTF16("test.pdf"), GetActiveWebContents()->GetTitle());
 }
 
 // For both PDFExtensionTest and PDFIsolatedExtensionTest, MultipleDomains case
@@ -1818,14 +1859,8 @@ IN_PROC_BROWSER_TEST_F(PDFExtensionTest, CtrlWheelInvokesCustomZoom) {
 }
 #endif  // !defined(OS_MACOSX)
 
-#if (defined(OS_WIN) && defined(ADDRESS_SANITIZER)) || \
-    (defined(OS_CHROME) && defined(MEMORY_SANITIZER))
-// https://crbug.com/856169, https://crbug.com/892484
-#define MAYBE_MouseLeave DISABLED_MouseLeave
-#else
-#define MAYBE_MouseLeave MouseLeave
-#endif
-IN_PROC_BROWSER_TEST_P(PDFExtensionHitTestTest, MAYBE_MouseLeave) {
+// Flaky in nearly all configurations; see https://crbug.com/856169.
+IN_PROC_BROWSER_TEST_P(PDFExtensionHitTestTest, DISABLED_MouseLeave) {
   GURL url = embedded_test_server()->GetURL("/pdf/pdf_embed.html");
 
   // Load page with embedded PDF and make sure it succeeds.

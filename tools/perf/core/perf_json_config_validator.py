@@ -80,9 +80,11 @@ def _ValidateShardingData(builder_name, test_config):
 def _ValidateBrowserType(builder_name, test_config):
   browser_options = _ParseBrowserFlags(test_config['args'])
   if 'WebView' in builder_name or 'webview' in builder_name:
-    if browser_options.browser != 'android-webview':
-      raise ValueError("%s must use 'android-webview' browser type" %
-                       builder_name)
+    if browser_options.browser not in (
+        'android-webview', 'android-webview-google'):
+      raise ValueError(
+          "%s must use 'android-webview' or 'android-webview-google' browser" %
+          builder_name)
     if not browser_options.webview_embedder_apk:
       raise ValueError('%s must set --webview-embedder-apk flag' % builder_name)
   elif 'Android' in builder_name or 'android' in builder_name:
@@ -153,7 +155,7 @@ def ValidatePerfConfigFile(file_handle, is_main_perf_waterfall):
     else:
       raise ValueError('%s has unrecognizable type: %s' % key)
   if (is_main_perf_waterfall and
-      perf_testing_builder_names != bot_platforms.ALL_PLATFORM_NAMES):
+      perf_testing_builder_names != bot_platforms.ALL_PERF_PLATFORM_NAMES):
     raise ValueError(
         'Found mismatches between actual perf waterfall builders and platforms '
         'in core.bot_platforms. Please update the platforms in '

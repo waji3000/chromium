@@ -18,7 +18,7 @@
 #include "ash/wm/overview/window_selector.h"
 #include "ash/wm/overview/window_selector_controller.h"
 #include "ash/wm/overview/window_selector_item.h"
-#include "ash/wm/window_mirror_view.h"
+#include "ash/wm/window_preview_view.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_transient_descendant_iterator.h"
 #include "ash/wm/window_util.h"
@@ -26,6 +26,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "ui/aura/client/aura_constants.h"
+#include "ui/aura/null_window_targeter.h"
 #include "ui/aura/window.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_observer.h"
@@ -48,12 +49,6 @@ bool immediate_close_for_tests = false;
 
 // Delay closing window to allow it to shrink and fade out.
 constexpr int kCloseWindowDelayInMilliseconds = 150;
-
-aura::Window* GetTransientRoot(aura::Window* window) {
-  while (window && ::wm::GetTransientParent(window))
-    window = ::wm::GetTransientParent(window);
-  return window;
-}
 
 ScopedTransformOverviewWindow::GridWindowFillMode GetWindowDimensionsType(
     aura::Window* window) {
@@ -184,9 +179,15 @@ ScopedTransformOverviewWindow::ScopedTransformOverviewWindow(
       original_mask_layer_(window_->layer()->layer_mask_layer()),
       weak_ptr_factory_(this) {
   type_ = GetWindowDimensionsType(window);
+  original_targeter_ =
+      window_->SetEventTargeter(std::make_unique<aura::NullWindowTargeter>());
+  null_targeter_ = window_->targeter();
 }
 
 ScopedTransformOverviewWindow::~ScopedTransformOverviewWindow() {
+  if (null_targeter_ == window_->targeter())
+    window_->SetEventTargeter(std::move(original_targeter_));
+
   StopObservingImplicitAnimations();
 }
 
@@ -439,7 +440,7 @@ void ScopedTransformOverviewWindow::PrepareForOverview() {
 }
 
 void ScopedTransformOverviewWindow::CloseWidget() {
-  aura::Window* parent_window = GetTransientRoot(window_);
+  aura::Window* parent_window = ::wm::GetTransientRoot(window_);
   if (parent_window)
     wm::CloseWidgetForWindow(parent_window);
 }
@@ -530,8 +531,8 @@ void ScopedTransformOverviewWindow::CreateMirrorWindowForMinimizedState() {
 
   // Trilinear filtering will be applied on the |minimized_widget_| in
   // PrepareForOverview() and RestoreWindow().
-  views::View* mirror_view =
-      new wm::WindowMirrorView(window_, /*trilinear_filtering_on_init=*/false);
+  wm::WindowPreviewView* mirror_view =
+      new wm::WindowPreviewView(window_, /*trilinear_filtering_on_init=*/false);
   mirror_view->SetVisible(true);
   minimized_widget_->SetContentsView(mirror_view);
   gfx::Rect bounds(window_->GetBoundsInScreen());

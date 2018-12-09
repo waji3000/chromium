@@ -4,7 +4,7 @@
 
 #include "third_party/blink/renderer/core/events/animation_playback_event.h"
 
-#include "third_party/blink/renderer/core/event_names.h"
+#include "third_party/blink/renderer/core/event_interface_names.h"
 
 namespace blink {
 
@@ -38,7 +38,7 @@ double AnimationPlaybackEvent::timelineTime(bool& is_null) const {
 }
 
 const AtomicString& AnimationPlaybackEvent::InterfaceName() const {
-  return EventNames::AnimationPlaybackEvent;
+  return event_interface_names::kAnimationPlaybackEvent;
 }
 
 void AnimationPlaybackEvent::Trace(blink::Visitor* visitor) {

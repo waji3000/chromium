@@ -377,8 +377,8 @@ bool URLRequestJob::CanSetCookie(const net::CanonicalCookie& cookie,
   return request_->CanSetCookie(cookie, options);
 }
 
-bool URLRequestJob::CanEnablePrivacyMode() const {
-  return request_->CanEnablePrivacyMode();
+PrivacyMode URLRequestJob::privacy_mode() const {
+  return request_->privacy_mode();
 }
 
 void URLRequestJob::NotifyHeadersComplete() {
@@ -427,10 +427,10 @@ void URLRequestJob::NotifyHeadersComplete() {
 
     RedirectInfo redirect_info = RedirectInfo::ComputeRedirectInfo(
         request_->method(), request_->url(), request_->site_for_cookies(),
-        request_->first_party_url_policy(), request_->referrer_policy(),
-        request_->referrer(), request_->response_headers(), http_status_code,
-        new_location, insecure_scheme_was_upgraded,
-        CopyFragmentOnRedirect(new_location));
+        request_->top_frame_origin(), request_->first_party_url_policy(),
+        request_->referrer_policy(), request_->referrer(),
+        request_->response_headers(), http_status_code, new_location,
+        insecure_scheme_was_upgraded, CopyFragmentOnRedirect(new_location));
     bool defer_redirect = false;
     request_->NotifyReceivedRedirect(redirect_info, &defer_redirect);
 

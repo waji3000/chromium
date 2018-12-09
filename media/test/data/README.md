@@ -46,6 +46,9 @@ bear-vp8-webvtt.webm as a 'subt' handler type.
 Just the first initialization segment of bear-1280x720_av_frag.mp4, modified to
 have the mvhd version 0 32-bit duration field set to all 1's.
 
+#### media/test/data/negative-audio-timestamps.avi
+A truncated audio/video file with audio packet timestamps of -1. We need to ensure that these packets arent dropped.
+
 ### FLAC
 
 #### bear-flac.mp4
@@ -213,6 +216,22 @@ A 960x540 H.264 mp4 video with 4 color blocks (Y,R,G,B) in every frame. The
 video playback looks like a still image. An image of 4 color blocks (.png file)
 is first created by Windows Paint.exe. This image is then used as a basic video
 frame in making this 2-second video from Mac iStopMotion.
+
+#### four-colors-aspect-4x3.mp4
+Actual video frames are the same as four-colors.mp4, except it specifies
+an aspect of 4x3 in mp4 meta data.
+
+#### four-colors-aspect-rot-90.mp4
+Actual video frames are the same as four-colors.mp4, except it specifies
+a rotation of 90 degrees in mp4 meta data.
+
+#### four-colors-aspect-rot-180.mp4
+Actual video frames are the same as four-colors.mp4, except it specifies
+a rotation of 180 degrees in mp4 meta data.
+
+#### four-colors-aspect-rot-270.mp4
+Actual video frames are the same as four-colors.mp4, except it specifies
+a rotation of 270 degrees in mp4 meta data.
 
 #### bear-320x180-hi10p.mp4
 #### bear-320x240-vp9_profile2.webm

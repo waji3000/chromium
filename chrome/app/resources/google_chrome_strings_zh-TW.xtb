@@ -138,7 +138,6 @@
 <translation id="4600710005438004015">Chrome 無法更新至最新版本，因此你並未取得最新功能和安全性問題修正。</translation>
 <translation id="4631713731678262610">在 Chrome 選單中隱藏</translation>
 <translation id="4633000520311261472">為了讓 Chrome 的安全性更有保障，我們已將部分未列在 <ph name="IDS_EXTENSION_WEB_STORE_TITLE" /> 中的擴充功能停用，它們可能在你不知情的情況下加入瀏覽器。</translation>
-<translation id="4664415150087723341">Google Chrome 剛套用了特殊的安全性更新。建議您立即重新啟動，讓更新生效 (系統會還原您的分頁)。</translation>
 <translation id="4700157086864140907">Google Chrome 可將你在瀏覽器中輸入的字詞傳送給 Google 伺服器，並透過 Google 搜尋所使用的拼字檢查技術，為你提供更好用的拼字檢查功能。</translation>
 <translation id="4728575227883772061">安裝因不明錯誤而失敗。如果 Google Chrome 目前正在執行中，請將其關閉然後再試一次。</translation>
 <translation id="4750550185319565338">重新啟動 Chrome 即可啟用 <ph name="PLUGIN_NAME" /></translation>
@@ -216,7 +215,6 @@ Google Chrome 無法復原你的設定。</translation>
 <translation id="7242029209006116544">你已登入管理化環境下的帳戶，並將管理控制權授予你的 Chrome 設定檔。你的 Chrome 資料 (例如應用程式、書籤、記錄、密碼和其他設定) 均將永久與 <ph name="USER_NAME" /> 建立關聯。你可以透過 Google 帳戶資訊主頁刪除這些資料，但你無法將這些資料與其他帳戶建立關聯。如要另行保留現有的 Chromium 資料，你可以選擇建立新的設定檔。<ph name="LEARN_MORE" /></translation>
 <translation id="7296210096911315575">重要的使用與安全資訊</translation>
 <translation id="7308322188646931570">Chrome 需要儲存空間存取權，才能下載檔案</translation>
-<translation id="7330164299247909639">驗證憑證無效，請以<ph name="USER_NAME" />身分重新登入 Google Chrome 或向你的管理員洽詢詳情。<ph name="ADDITIONAL_EXPLANATION" /></translation>
 <translation id="7339898014177206373">新視窗</translation>
 <translation id="7398801000654795464">你使用了 <ph name="USER_EMAIL_ADDRESS" /> 的身分登入 Chrome，請使用相同帳戶重新登入。</translation>
 <translation id="7408085963519505752">Chrome 作業系統條款</translation>
@@ -261,8 +259,10 @@ Google Chrome 無法復原你的設定。</translation>
 <translation id="8380166467911888159">為修正拼字錯誤，Chrome 會將你在文字欄位輸入的文字傳送給 Google</translation>
 <translation id="840084489713044809">Google Chrome 要求匯出你的密碼。</translation>
 <translation id="8406086379114794905">協助改善 Chrome 的服務品質</translation>
+<translation id="8432724323949790809">建議你立即重新啟動 Google Chrome</translation>
 <translation id="8455999171311319804">選擇性：自動將診斷資料和使用情況資料傳送給 Google，協助我們讓 Chrome 作業系統更臻完善。</translation>
 <translation id="8478823064122749032">在手機上安裝 Chrome。我們會傳送簡訊到你的帳戶備援電話號碼：<ph name="PHONE_NUMBER" /></translation>
+<translation id="8498858610309223613">Google Chrome 剛才套用了特殊的安全性更新。請立即重新啟動，系統會恢復你原先開啟的分頁。</translation>
 <translation id="8521348052903287641">允許 mDNS 流量的 Google Chrome 開發人員版輸入規則。</translation>
 <translation id="8540666473246803645">Google Chrome</translation>
 <translation id="8547799825197623713">Chrome 應用程式啟動器 Canary 頻道</translation>
@@ -277,14 +277,12 @@ Google Chrome 無法復原你的設定。</translation>
 <translation id="873133009373065397">Google Chrome 無法偵測或設定預設瀏覽器</translation>
 <translation id="8736674169840206667">你的管理員要求你重新啟動 Chrome，以套用更新</translation>
 <translation id="8791470158600044404">{0,plural, =1{Chrome 作業系統將於 1 分鐘後重新啟動}other{Chrome 作業系統將於 # 分鐘後重新啟動}}</translation>
-<translation id="8796108026289707191">建議您立即重新啟動 Google Chrome。</translation>
 <translation id="8823341990149967727">Chrome 版本過舊</translation>
 <translation id="884296878221830158">這個擴充功能也會控管 Chrome 啟動時或你點選 [首頁] 按鈕時所顯示的網頁。</translation>
 <translation id="8862326446509486874">你沒有在系統層級進行安裝的權限，請以管理員的身分執行安裝檔。</translation>
 <translation id="8914504000324227558">重新啟動 Chrome</translation>
 <translation id="9026991721384951619">你的帳戶登入詳細資料尚未更新，因此 Chrome 作業系統無法同步處理你的資料。</translation>
 <translation id="9067395829937117663">Google Chrome 僅支援 Windows 7 以上版本的作業系統。</translation>
-<translation id="9084668267983921457">驗證憑證無效，請重新登入 Google Chrome 或向你的管理員洽詢詳情。<ph name="ADDITIONAL_EXPLANATION" /></translation>
 <translation id="909149346112452267">{0,plural, =1{Chrome 作業系統將於 1 小時後重新啟動}other{Chrome 作業系統將於 # 小時後重新啟動}}</translation>
 <translation id="911206726377975832">你要一併刪除瀏覽資料嗎？</translation>
 <translation id="9138603949443464873">如要套用變更，請重新啟動 Chrome</translation>

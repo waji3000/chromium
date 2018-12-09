@@ -37,8 +37,6 @@
 #include "ui/gl/gl_surface.h"
 #include "url/gurl.h"
 
-class GrContext;
-
 namespace gl {
 class GLShareGroup;
 }
@@ -68,18 +66,19 @@ class ProgramCache;
 class GPU_IPC_SERVICE_EXPORT GpuChannelManager
     : public raster::GrShaderCache::Client {
  public:
-  GpuChannelManager(const GpuPreferences& gpu_preferences,
-                    GpuChannelManagerDelegate* delegate,
-                    GpuWatchdogThread* watchdog,
-                    scoped_refptr<base::SingleThreadTaskRunner> task_runner,
-                    scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
-                    Scheduler* scheduler,
-                    SyncPointManager* sync_point_manager,
-                    GpuMemoryBufferFactory* gpu_memory_buffer_factory,
-                    const GpuFeatureInfo& gpu_feature_info,
-                    GpuProcessActivityFlags activity_flags,
-                    scoped_refptr<gl::GLSurface> default_offscreen_surface,
-                    GrContext* vulkan_gr_context = nullptr);
+  GpuChannelManager(
+      const GpuPreferences& gpu_preferences,
+      GpuChannelManagerDelegate* delegate,
+      GpuWatchdogThread* watchdog,
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+      scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
+      Scheduler* scheduler,
+      SyncPointManager* sync_point_manager,
+      GpuMemoryBufferFactory* gpu_memory_buffer_factory,
+      const GpuFeatureInfo& gpu_feature_info,
+      GpuProcessActivityFlags activity_flags,
+      scoped_refptr<gl::GLSurface> default_offscreen_surface,
+      viz::VulkanContextProvider* vulkan_context_provider = nullptr);
   ~GpuChannelManager() override;
 
   GpuChannelManagerDelegate* delegate() const { return delegate_; }
@@ -104,8 +103,7 @@ class GPU_IPC_SERVICE_EXPORT GpuChannelManager
   // Remove the channel for a particular renderer.
   void RemoveChannel(int client_id);
 
-  void LoseAllContexts();
-  void MaybeExitOnContextLost();
+  void OnContextLost(bool synthetic_loss);
 
   const GpuPreferences& gpu_preferences() const { return gpu_preferences_; }
   const GpuDriverBugWorkarounds& gpu_driver_bug_workarounds() const {
@@ -168,6 +166,7 @@ class GPU_IPC_SERVICE_EXPORT GpuChannelManager
   // raster::GrShaderCache::Client implementation.
   void StoreShader(const std::string& key, const std::string& shader) override;
 
+ private:
   void InternalDestroyGpuMemoryBuffer(gfx::GpuMemoryBufferId id, int client_id);
   void InternalDestroyGpuMemoryBufferOnIO(gfx::GpuMemoryBufferId id,
                                           int client_id);
@@ -178,6 +177,9 @@ class GPU_IPC_SERVICE_EXPORT GpuChannelManager
 
   void HandleMemoryPressure(
       base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level);
+
+  void LoseAllContexts();
+  void MaybeExitOnContextLost();
 
   // These objects manage channels to individual renderer processes. There is
   // one channel for each renderer process that has connected to this GPU
@@ -241,9 +243,9 @@ class GPU_IPC_SERVICE_EXPORT GpuChannelManager
   scoped_refptr<raster::RasterDecoderContextState>
       raster_decoder_context_state_;
 
-  // With --enable-vulkan, the vulkan_gr_context_ will be set from
+  // With --enable-vulkan, the vulkan_context_provider_ will be set from
   // viz::GpuServiceImpl. The raster decoders will use it for rasterization.
-  GrContext* vulkan_gr_context_;
+  viz::VulkanContextProvider* vulkan_context_provider_ = nullptr;
 
   // Member variables should appear before the WeakPtrFactory, to ensure
   // that any WeakPtrs to Controller are invalidated before its members

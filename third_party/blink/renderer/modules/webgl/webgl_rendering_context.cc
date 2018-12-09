@@ -65,6 +65,8 @@
 #include "third_party/blink/renderer/modules/webgl/webgl_depth_texture.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_draw_buffers.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_lose_context.h"
+#include "third_party/blink/renderer/modules/webgl/webgl_multi_draw.h"
+#include "third_party/blink/renderer/modules/webgl/webgl_multi_draw_instanced.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/drawing_buffer.h"
 
 namespace blink {
@@ -98,8 +100,9 @@ CanvasRenderingContext* WebGLRenderingContext::Factory::Create(
   if (!ShouldCreateContext(context_provider.get()))
     return nullptr;
 
-  WebGLRenderingContext* rendering_context = new WebGLRenderingContext(
-      host, std::move(context_provider), using_gpu_compositing, attrs);
+  WebGLRenderingContext* rendering_context =
+      MakeGarbageCollected<WebGLRenderingContext>(
+          host, std::move(context_provider), using_gpu_compositing, attrs);
   if (!rendering_context->GetDrawingBuffer()) {
     host->HostDispatchEvent(
         WebGLContextEvent::Create(event_type_names::kWebglcontextcreationerror,
@@ -186,6 +189,9 @@ void WebGLRenderingContext::RegisterContextExtensions() {
   RegisterExtension<WebGLDrawBuffers>(webgl_draw_buffers_);
   RegisterExtension<WebGLLoseContext>(webgl_lose_context_, kApprovedExtension,
                                       kBothPrefixes);
+  RegisterExtension<WebGLMultiDraw>(webgl_multi_draw_, kDraftExtension);
+  RegisterExtension<WebGLMultiDrawInstanced>(webgl_multi_draw_instanced_,
+                                             kDraftExtension);
 }
 
 void WebGLRenderingContext::Trace(blink::Visitor* visitor) {
@@ -217,6 +223,8 @@ void WebGLRenderingContext::Trace(blink::Visitor* visitor) {
   visitor->Trace(webgl_depth_texture_);
   visitor->Trace(webgl_draw_buffers_);
   visitor->Trace(webgl_lose_context_);
+  visitor->Trace(webgl_multi_draw_);
+  visitor->Trace(webgl_multi_draw_instanced_);
   WebGLRenderingContextBase::Trace(visitor);
 }
 

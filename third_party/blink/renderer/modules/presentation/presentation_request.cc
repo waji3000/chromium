@@ -95,7 +95,8 @@ PresentationRequest* PresentationRequest::Create(
     return nullptr;
   }
 
-  return new PresentationRequest(execution_context, parsed_urls);
+  return MakeGarbageCollected<PresentationRequest>(execution_context,
+                                                   parsed_urls);
 }
 
 const AtomicString& PresentationRequest::InterfaceName() const {
@@ -209,9 +210,10 @@ ScriptPromise PresentationRequest::getAvailability(ScriptState* script_state) {
             "The PresentationRequest is no longer associated to a frame."));
 
   if (!availability_property_) {
-    availability_property_ = new PresentationAvailabilityProperty(
-        ExecutionContext::From(script_state), this,
-        PresentationAvailabilityProperty::kReady);
+    availability_property_ =
+        MakeGarbageCollected<PresentationAvailabilityProperty>(
+            ExecutionContext::From(script_state), this,
+            PresentationAvailabilityProperty::kReady);
 
     controller->GetAvailabilityState()->RequestAvailability(
         urls_, std::make_unique<PresentationAvailabilityCallbacks>(

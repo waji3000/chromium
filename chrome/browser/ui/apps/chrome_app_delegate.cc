@@ -11,6 +11,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/task/post_task.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
+#include "chrome/browser/apps/platform_apps/audio_focus_web_contents_observer.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/data_use_measurement/data_use_web_contents_observer.h"
 #include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
@@ -43,6 +44,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension_messages.h"
 #include "extensions/common/mojo/app_window.mojom.h"
 #include "printing/buildflags/buildflags.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
@@ -211,6 +213,8 @@ void ChromeAppDelegate::InitWebContents(content::WebContents* web_contents) {
 #endif
   extensions::ChromeExtensionWebContentsObserver::CreateForWebContents(
       web_contents);
+
+  apps::AudioFocusWebContentsObserver::CreateForWebContents(web_contents);
 
   zoom::ZoomController::CreateForWebContents(web_contents);
 }

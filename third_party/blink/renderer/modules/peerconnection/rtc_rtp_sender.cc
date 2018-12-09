@@ -13,6 +13,7 @@
 #include "third_party/blink/renderer/modules/peerconnection/rtc_error_util.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_rtp_capabilities.h"
+#include "third_party/blink/renderer/modules/peerconnection/rtc_stats_report.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_void_request_script_promise_resolver_impl.h"
 #include "third_party/blink/renderer/modules/peerconnection/web_rtc_stats_report_callback_resolver.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
@@ -247,6 +248,8 @@ webrtc::RtpEncodingParameters ToRtpEncodingParameters(
   webrtc::RtpEncodingParameters webrtc_encoding;
   webrtc_encoding.active = encoding->active();
   webrtc_encoding.bitrate_priority = PriorityToDouble(encoding->priority());
+  webrtc_encoding.network_priority =
+      PriorityToDouble(encoding->networkPriority());
   if (encoding->hasMaxBitrate())
     webrtc_encoding.max_bitrate_bps = clampTo<int>(encoding->maxBitrate());
   return webrtc_encoding;
@@ -286,7 +289,7 @@ ScriptPromise RTCRtpSender::replaceTrack(ScriptState* script_state,
     web_track = with_track->Component();
   }
   ReplaceTrackRequest* request =
-      new ReplaceTrackRequest(this, with_track, resolver);
+      MakeGarbageCollected<ReplaceTrackRequest>(this, with_track, resolver);
   sender_->ReplaceTrack(web_track, request);
   return promise;
 }
@@ -317,6 +320,8 @@ RTCRtpSendParameters* RTCRtpSender::getParameters() {
       encoding->setMaxBitrate(web_encoding.max_bitrate_bps.value());
     encoding->setPriority(
         PriorityFromDouble(web_encoding.bitrate_priority).c_str());
+    encoding->setNetworkPriority(
+        PriorityFromDouble(web_encoding.network_priority).c_str());
     encodings.push_back(encoding);
   }
   parameters->setEncodings(encodings);
@@ -394,7 +399,7 @@ ScriptPromise RTCRtpSender::setParameters(
   webrtc::DegradationPreference degradation_preference;
   std::tie(encodings, degradation_preference) = ToRtpParameters(parameters);
 
-  auto* request = new SetParametersRequest(resolver, this);
+  auto* request = MakeGarbageCollected<SetParametersRequest>(resolver, this);
   sender_->SetParameters(std::move(encodings), degradation_preference, request);
   return promise;
 }
@@ -406,7 +411,8 @@ void RTCRtpSender::ClearLastReturnedParameters() {
 ScriptPromise RTCRtpSender::getStats(ScriptState* script_state) {
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
   ScriptPromise promise = resolver->Promise();
-  sender_->GetStats(WebRTCStatsReportCallbackResolver::Create(resolver));
+  sender_->GetStats(WebRTCStatsReportCallbackResolver::Create(resolver),
+                    GetRTCStatsFilter(script_state));
   return promise;
 }
 

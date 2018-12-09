@@ -18,7 +18,7 @@
 #include "base/logging.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
-#include "base/sys_info.h"
+#include "base/system/sys_info.h"
 #include "base/task/post_task.h"
 #include "base/threading/scoped_blocking_call.h"
 #include "chrome/browser/chromeos/arc/arc_session_manager.h"
@@ -50,9 +50,6 @@
 namespace arc {
 
 namespace {
-
-constexpr char kLsbReleaseArcVersionKey[] = "CHROMEOS_ARC_ANDROID_SDK_VERSION";
-constexpr char kAndroidMSdkVersion[] = "23";
 
 // Contains map of profile to check result of ARC allowed. Contains true if ARC
 // allowed check was performed and ARC is allowed. If map does not contain
@@ -279,6 +276,11 @@ bool IsArcAllowedForProfile(const Profile* profile) {
   return it->second;
 }
 
+bool IsArcProvisioned(const Profile* profile) {
+  return profile && profile->GetPrefs()->HasPrefPath(prefs::kArcSignedIn) &&
+         profile->GetPrefs()->GetBoolean(prefs::kArcSignedIn);
+}
+
 void ResetArcAllowedCheckForTesting(const Profile* profile) {
   g_profile_status_check.Get().erase(profile);
 }
@@ -338,18 +340,12 @@ bool IsArcCompatibleFileSystemUsedForUser(const user_manager::User* user) {
   const bool is_filesystem_compatible =
       filesystem_compatibility != kFileSystemIncompatible ||
       g_known_compatible_users.Get().count(user->GetAccountId()) != 0;
-  std::string arc_sdk_version;
-  const bool is_M = base::SysInfo::GetLsbReleaseValue(kLsbReleaseArcVersionKey,
-                                                      &arc_sdk_version) &&
-                    arc_sdk_version == kAndroidMSdkVersion;
 
-  // To run ARC we want to make sure either
-  // - Underlying file system is compatible with ARC, or
-  // - SDK version is M.
-  if (!is_filesystem_compatible && !is_M) {
+  // To run ARC we want to make sure the underlying file system is compatible
+  // with ARC.
+  if (!is_filesystem_compatible) {
     VLOG(1)
-        << "Users with SDK version (" << arc_sdk_version
-        << ") are not supported when they postponed to migrate to dircrypto.";
+        << "ARC is not supported since the user hasn't migrated to dircrypto.";
     return false;
   }
 
@@ -630,9 +626,6 @@ ash::mojom::AssistantAllowedState IsAssistantAllowedForProfile(
 
   if (profile->IsLegacySupervised())
     return ash::mojom::AssistantAllowedState::DISALLOWED_BY_SUPERVISED_USER;
-
-  if (profile->IsChild())
-    return ash::mojom::AssistantAllowedState::DISALLOWED_BY_CHILD_USER;
 
   if (chromeos::switches::IsVoiceInteractionFlagsEnabled()) {
     if (!chromeos::switches::IsVoiceInteractionLocalesSupported())

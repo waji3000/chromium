@@ -19,6 +19,7 @@
 #include "chrome/browser/policy/browsing_history_policy_handler.h"
 #include "chrome/browser/policy/developer_tools_policy_handler.h"
 #include "chrome/browser/policy/file_selection_dialogs_policy_handler.h"
+#include "chrome/browser/policy/homepage_location_policy_handler.h"
 #include "chrome/browser/policy/javascript_policy_handler.h"
 #include "chrome/browser/policy/managed_bookmarks_policy_handler.h"
 #include "chrome/browser/policy/network_prediction_policy_handler.h"
@@ -79,6 +80,7 @@
 #include "chrome/browser/chromeos/accessibility/magnifier_type.h"
 #include "chrome/browser/chromeos/crostini/crostini_pref_names.h"
 #include "chrome/browser/chromeos/platform_keys/key_permissions_policy_handler.h"
+#include "chrome/browser/chromeos/plugin_vm/plugin_vm_pref_names.h"
 #include "chrome/browser/chromeos/policy/configuration_policy_handler_chromeos.h"
 #include "chrome/browser/chromeos/policy/secondary_google_account_signin_policy_handler.h"
 #include "chrome/browser/policy/default_geolocation_policy_handler.h"
@@ -137,9 +139,6 @@ namespace {
 // that directly map to a single preference.
 // clang-format off
 const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
-  { key::kHomepageLocation,
-    prefs::kHomePage,
-    base::Value::Type::STRING },
   { key::kHomepageIsNewTabPage,
     prefs::kHomePageIsNewTabPage,
     base::Value::Type::BOOLEAN },
@@ -281,11 +280,11 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kMachineLevelUserCloudPolicyEnrollmentToken,
     policy_prefs::kMachineLevelUserCloudPolicyEnrollmentToken,
     base::Value::Type::STRING },
+  { key::kCloudManagementEnrollmentMandatory,
+    policy_prefs::kCloudManagementEnrollmentMandatory,
+    base::Value::Type::BOOLEAN },
   { key::kRequireOnlineRevocationChecksForLocalAnchors,
     prefs::kCertRevocationCheckingRequiredLocalAnchors,
-    base::Value::Type::BOOLEAN },
-  { key::kEnableSha1ForLocalAnchors,
-    prefs::kCertEnableSha1LocalAnchors,
     base::Value::Type::BOOLEAN },
   { key::kEnableSymantecLegacyInfrastructure,
     prefs::kCertEnableSymantecLegacyInfrastructure,
@@ -698,6 +697,12 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kNTLMShareAuthenticationEnabled,
     prefs::kNTLMShareAuthenticationEnabled,
     base::Value::Type::BOOLEAN },
+  { key::kPrintingSendUsernameAndFilenameEnabled,
+    prefs::kPrintingSendUsernameAndFilenameEnabled,
+    base::Value::Type::BOOLEAN },
+  { key::kPluginVmImage,
+    plugin_vm::prefs::kPluginVmImage,
+    base::Value::Type::DICTIONARY },
 #endif  // defined(OS_CHROMEOS)
 
 // Metrics reporting is controlled by a platform specific policy for ChromeOS
@@ -723,6 +728,12 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
     base::Value::Type::BOOLEAN },
   { key::kReportUserIDData,
     extensions::enterprise_reporting::kReportUserIDData,
+    base::Value::Type::BOOLEAN },
+  { key::kReportExtensionsAndPluginsData,
+    extensions::enterprise_reporting::kReportExtensionsAndPluginsData,
+    base::Value::Type::BOOLEAN },
+  { key::kReportSafeBrowsingData,
+    extensions::enterprise_reporting::kReportSafeBrowsingData,
     base::Value::Type::BOOLEAN },
 #endif  // !defined(OS_CHROMEOS) && BUILDFLAG(ENABLE_EXTENSIONS)
 
@@ -796,6 +807,10 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
     base::Value::Type::BOOLEAN },
 
 #if defined(OS_CHROMEOS)
+  { key::kDeviceWiFiFastTransitionEnabled,
+    chromeos::prefs::kDeviceWiFiFastTransitionEnabled,
+    base::Value::Type::BOOLEAN },
+
   { key::kNetworkThrottlingEnabled,
     prefs::kNetworkThrottlingEnabled,
     base::Value::Type::DICTIONARY },
@@ -1002,6 +1017,7 @@ std::unique_ptr<ConfigurationPolicyHandlerList> BuildHandlerList(
   handlers->AddHandler(std::make_unique<GuestModePolicyHandler>());
   handlers->AddHandler(
       std::make_unique<ManagedBookmarksPolicyHandler>(chrome_schema));
+  handlers->AddHandler(std::make_unique<HomepageLocationPolicyHandler>());
   handlers->AddHandler(std::make_unique<ProxyPolicyHandler>());
   handlers->AddHandler(std::make_unique<URLBlacklistPolicyHandler>());
 
@@ -1329,6 +1345,11 @@ std::unique_ptr<ConfigurationPolicyHandlerList> BuildHandlerList(
       key::kNetworkFileSharesPreconfiguredShares,
       prefs::kNetworkFileSharesPreconfiguredShares, chrome_schema,
       SCHEMA_STRICT,
+      SimpleSchemaValidatingPolicyHandler::RECOMMENDED_PROHIBITED,
+      SimpleSchemaValidatingPolicyHandler::MANDATORY_ALLOWED));
+  handlers->AddHandler(std::make_unique<SimpleSchemaValidatingPolicyHandler>(
+      key::kParentAccessCodeConfig, prefs::kParentAccessCodeConfig,
+      chrome_schema, SCHEMA_STRICT,
       SimpleSchemaValidatingPolicyHandler::RECOMMENDED_PROHIBITED,
       SimpleSchemaValidatingPolicyHandler::MANDATORY_ALLOWED));
 #endif  // defined(OS_CHROMEOS)

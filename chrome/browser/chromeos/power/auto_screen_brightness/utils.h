@@ -15,6 +15,17 @@ namespace chromeos {
 namespace power {
 namespace auto_screen_brightness {
 
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+enum class DataError {
+  kAlsValue = 0,
+  kBrightnessPercent = 1,
+  kMaxValue = kBrightnessPercent
+};
+
+// Logs data errors to UMA.
+void LogDataError(DataError error);
+
 // Returns natural log of 1+|value|.
 double ConvertToLog(double value);
 
@@ -22,6 +33,19 @@ struct AmbientLightSample {
   int lux;
   base::TimeTicks sample_time;
 };
+
+// Represents whether any trainer or adapter parameter has been set incorrectly.
+// This does *not* include the status of the user's personal curve.
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+enum class ParameterError {
+  kModelError = 0,
+  kAdapterError = 1,
+  kMaxValue = kAdapterError
+};
+
+// Logs to UMA that a parameter is invalid.
+void LogParameterError(ParameterError error);
 
 // Calculates average ambient light over the most recent |num_recent| samples.
 // |num_recent| has to be no larger than the capacity of the buffer, but it can

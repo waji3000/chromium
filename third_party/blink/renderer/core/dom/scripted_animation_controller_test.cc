@@ -121,7 +121,7 @@ class RunTaskEventListener final : public EventListener {
  public:
   RunTaskEventListener(base::RepeatingClosure task)
       : EventListener(kCPPEventListenerType), task_(std::move(task)) {}
-  void handleEvent(ExecutionContext*, Event*) override { task_.Run(); }
+  void Invoke(ExecutionContext*, Event*) override { task_.Run(); }
   bool operator==(const EventListener& other) const override {
     return this == &other;
   }
@@ -139,7 +139,8 @@ TEST_F(ScriptedAnimationControllerTest, EnqueueTaskAndEvent) {
 
   Controller().EnqueueTask(observer.CreateTask(1));
   GetDocument().addEventListener(
-      "test", new RunTaskEventListener(observer.CreateTask(2)));
+      "test",
+      MakeGarbageCollected<RunTaskEventListener>(observer.CreateTask(2)));
   Event* event = Event::Create("test");
   event->SetTarget(&GetDocument());
   Controller().EnqueueEvent(event);
@@ -173,7 +174,8 @@ TEST_F(ScriptedAnimationControllerTest, RegisterCallbackAndEnqueueTask) {
   Event* event = Event::Create("test");
   event->SetTarget(&GetDocument());
 
-  Controller().RegisterCallback(new RunTaskCallback(observer.CreateTask(1)));
+  Controller().RegisterCallback(
+      MakeGarbageCollected<RunTaskCallback>(observer.CreateTask(1)));
   Controller().EnqueueTask(observer.CreateTask(2));
   EXPECT_EQ(0u, observer.Order().size());
 
@@ -186,14 +188,17 @@ TEST_F(ScriptedAnimationControllerTest, RegisterCallbackAndEnqueueTask) {
 TEST_F(ScriptedAnimationControllerTest, TestHasCallback) {
   TaskOrderObserver observer;
 
-  Controller().RegisterCallback(new RunTaskCallback(observer.CreateTask(1)));
+  Controller().RegisterCallback(
+      MakeGarbageCollected<RunTaskCallback>(observer.CreateTask(1)));
   EXPECT_TRUE(Controller().HasCallback());
 
   Controller().CancelCallback(1);
   EXPECT_FALSE(Controller().HasCallback());
 
-  Controller().RegisterCallback(new RunTaskCallback(observer.CreateTask(1)));
-  Controller().RegisterCallback(new RunTaskCallback(observer.CreateTask(2)));
+  Controller().RegisterCallback(
+      MakeGarbageCollected<RunTaskCallback>(observer.CreateTask(1)));
+  Controller().RegisterCallback(
+      MakeGarbageCollected<RunTaskCallback>(observer.CreateTask(2)));
   EXPECT_TRUE(Controller().HasCallback());
 
   Controller().CancelCallback(1);

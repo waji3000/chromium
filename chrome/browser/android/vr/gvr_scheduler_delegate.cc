@@ -612,7 +612,7 @@ void GvrSchedulerDelegate::DrawFrameSubmitNow(FrameType frame_type,
       // that was inserted after Submit may not be complete yet when the next
       // Submit finishes.
       browser_gpu_trace =
-          std::make_unique<ScopedGpuTrace>("gpu", "Vr.PostSubmitDrawOnGpu");
+          std::make_unique<ScopedGpuTrace>("Vr.PostSubmitDrawOnGpu");
     }
     graphics_->SubmitToGvr(head_pose);
 
@@ -1259,6 +1259,14 @@ void GvrSchedulerDelegate::ProcessWebVrFrameFromGMB(
   // Unblock the next animating frame in case it was waiting for this
   // one to start processing.
   WebXrTryStartAnimatingFrame(false);
+}
+
+void GvrSchedulerDelegate::GetEnvironmentIntegrationProvider(
+    device::mojom::XREnvironmentIntegrationProviderAssociatedRequest
+        environment_provider) {
+  // Environment integration is not supported. This call should not
+  // be made on this device.
+  mojo::ReportBadMessage("Environment integration is not supported.");
 }
 
 }  // namespace vr

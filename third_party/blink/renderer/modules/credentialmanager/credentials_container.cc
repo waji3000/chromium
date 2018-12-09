@@ -54,6 +54,8 @@ using MojoPublicKeyCredentialRequestOptions =
     mojom::blink::PublicKeyCredentialRequestOptions;
 using mojom::blink::GetAssertionAuthenticatorResponsePtr;
 
+constexpr char kCryptotokenOrigin[] =
+    "chrome-extension://kmendfapggjehodndflmmgagdbamhnfd";
 enum class RequiredOriginType { kSecure, kSecureAndSameWithAncestors };
 
 bool IsSameOriginWithAncestors(const Frame* frame) {
@@ -133,6 +135,13 @@ bool CheckPublicKeySecurityRequirements(ScriptPromiseResolver* resolver,
     return false;
   }
 
+  auto cryptotoken_origin = SecurityOrigin::Create(KURL(kCryptotokenOrigin));
+  if (cryptotoken_origin->IsSameSchemeHostPort(origin)) {
+    // Allow CryptoToken U2F extension to assert any origin, as cryptotoken
+    // handles origin checking separately.
+    return true;
+  }
+
   if (origin->Protocol() != url::kHttpScheme &&
       origin->Protocol() != url::kHttpsScheme) {
     resolver->Reject(DOMException::Create(
@@ -156,7 +165,7 @@ bool CheckPublicKeySecurityRequirements(ScriptPromiseResolver* resolver,
   // for the IP address check.
   OriginAccessEntry access_entry(
       origin->Protocol(), effective_domain,
-      network::cors::OriginAccessEntry::MatchMode::kAllowSubdomains);
+      network::mojom::CorsOriginAccessMatchMode::kAllowSubdomains);
   if (effective_domain.IsEmpty() || access_entry.HostIsIPAddress()) {
     resolver->Reject(
         DOMException::Create(DOMExceptionCode::kSecurityError,
@@ -170,7 +179,7 @@ bool CheckPublicKeySecurityRequirements(ScriptPromiseResolver* resolver,
   if (!relying_party_id.IsNull()) {
     OriginAccessEntry access_entry(
         origin->Protocol(), relying_party_id,
-        network::cors::OriginAccessEntry::kAllowSubdomains);
+        network::mojom::CorsOriginAccessMatchMode::kAllowSubdomains);
     if (relying_party_id.IsEmpty() ||
         access_entry.MatchesDomain(*origin) !=
             network::cors::OriginAccessEntry::kMatchesOrigin) {
@@ -408,7 +417,7 @@ void OnGetAssertionComplete(
 }  // namespace
 
 CredentialsContainer* CredentialsContainer::Create() {
-  return new CredentialsContainer();
+  return MakeGarbageCollected<CredentialsContainer>();
 }
 
 CredentialsContainer::CredentialsContainer() = default;

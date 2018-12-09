@@ -31,11 +31,8 @@
 #include <memory>
 #include <utility>
 
-#include "third_party/blink/public/platform/modules/indexeddb/web_idb_callbacks.h"
-#include "third_party/blink/public/platform/modules/indexeddb/web_idb_database_callbacks.h"
-#include "third_party/blink/public/platform/modules/indexeddb/web_idb_factory.h"
-#include "third_party/blink/public/platform/modules/indexeddb/web_idb_name_and_version.h"
-#include "third_party/blink/public/platform/modules/indexeddb/web_idb_value.h"
+#include "third_party/blink/public/mojom/indexeddb/indexeddb.mojom-blink.h"
+#include "third_party/blink/public/platform/interface_provider.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_security_origin.h"
@@ -53,6 +50,12 @@
 #include "third_party/blink/renderer/modules/indexeddb/idb_key.h"
 #include "third_party/blink/renderer/modules/indexeddb/idb_tracing.h"
 #include "third_party/blink/renderer/modules/indexeddb/indexed_db_client.h"
+#include "third_party/blink/renderer/modules/indexeddb/web_idb_callbacks.h"
+#include "third_party/blink/renderer/modules/indexeddb/web_idb_database_callbacks.h"
+#include "third_party/blink/renderer/modules/indexeddb/web_idb_factory.h"
+#include "third_party/blink/renderer/modules/indexeddb/web_idb_factory_impl.h"
+#include "third_party/blink/renderer/modules/indexeddb/web_idb_name_and_version.h"
+#include "third_party/blink/renderer/modules/indexeddb/web_idb_value.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
 #include "third_party/blink/renderer/platform/histogram.h"
@@ -76,7 +79,7 @@ class WebIDBGetDBNamesCallbacksImpl : public WebIDBCallbacks {
       : promise_resolver_(promise_resolver) {
     probe::AsyncTaskScheduled(
         ExecutionContext::From(promise_resolver_->GetScriptState()),
-        IndexedDBNames::IndexedDB, this);
+        indexed_db_names::kIndexedDB, this);
   }
 
   ~WebIDBGetDBNamesCallbacksImpl() override {
@@ -125,18 +128,18 @@ class WebIDBGetDBNamesCallbacksImpl : public WebIDBCallbacks {
   void OnSuccess(const WebVector<WebString>&) override { NOTREACHED(); }
 
   void OnSuccess(WebIDBCursor* cursor,
-                 WebIDBKey key,
-                 WebIDBKey primary_key,
+                 std::unique_ptr<IDBKey> key,
+                 std::unique_ptr<IDBKey> primary_key,
                  WebIDBValue value) override {
     NOTREACHED();
   }
 
   void OnSuccess(WebIDBDatabase* backend,
-                 const WebIDBMetadata& metadata) override {
+                 const IDBDatabaseMetadata& metadata) override {
     NOTREACHED();
   }
 
-  void OnSuccess(WebIDBKey key) override { NOTREACHED(); }
+  void OnSuccess(std::unique_ptr<IDBKey> key) override { NOTREACHED(); }
 
   void OnSuccess(WebIDBValue value) override { NOTREACHED(); }
 
@@ -146,8 +149,8 @@ class WebIDBGetDBNamesCallbacksImpl : public WebIDBCallbacks {
 
   void OnSuccess() override { NOTREACHED(); }
 
-  void OnSuccess(WebIDBKey key,
-                 WebIDBKey primary_key,
+  void OnSuccess(std::unique_ptr<IDBKey> key,
+                 std::unique_ptr<IDBKey> primary_key,
                  WebIDBValue value) override {
     NOTREACHED();
   }
@@ -156,8 +159,8 @@ class WebIDBGetDBNamesCallbacksImpl : public WebIDBCallbacks {
 
   void OnUpgradeNeeded(long long old_version,
                        WebIDBDatabase* database,
-                       const WebIDBMetadata& metadata,
-                       unsigned short data_loss,
+                       const IDBDatabaseMetadata& metadata,
+                       mojom::IDBDataLoss data_loss,
                        WebString data_loss_message) override {
     NOTREACHED();
   }
@@ -186,14 +189,29 @@ static bool IsContextValid(ExecutionContext* context) {
 }
 
 WebIDBFactory* IDBFactory::GetFactory() {
-  if (!web_idb_factory_)
-    web_idb_factory_ = Platform::Current()->CreateIdbFactory();
+  if (!web_idb_factory_) {
+    mojom::blink::IDBFactoryPtrInfo web_idb_factory_host_info;
+    Platform::Current()->GetInterfaceProvider()->GetInterface(
+        mojo::MakeRequest(&web_idb_factory_host_info));
+    web_idb_factory_ = std::make_unique<WebIDBFactoryImpl>(
+        std::move(web_idb_factory_host_info));
+  }
   return web_idb_factory_.get();
 }
 
 ScriptPromise IDBFactory::GetDatabaseInfo(ScriptState* script_state,
                                           ExceptionState& exception_state) {
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
+
+  if (!ExecutionContext::From(script_state)
+           ->GetSecurityOrigin()
+           ->CanAccessDatabase()) {
+    exception_state.ThrowSecurityError(
+        "Access to the IndexedDB API is denied in this context.");
+    resolver->Reject();
+    return resolver->Promise();
+  }
+
   GetFactory()->GetDatabaseInfo(
       WebIDBGetDBNamesCallbacksImpl::Create(resolver).release(),
       WebSecurityOrigin(

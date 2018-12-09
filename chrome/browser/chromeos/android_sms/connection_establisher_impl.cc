@@ -4,6 +4,7 @@
 
 #include "chrome/browser/chromeos/android_sms/connection_establisher_impl.h"
 
+#include "base/metrics/histogram_macros.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/post_task.h"
 #include "chrome/browser/chromeos/android_sms/android_sms_urls.h"
@@ -22,7 +23,8 @@ const char ConnectionEstablisherImpl::kStartStreamingMessage[] =
 const char ConnectionEstablisherImpl::kResumeStreamingMessage[] =
     "resume_streaming_connection";
 
-ConnectionEstablisherImpl::ConnectionEstablisherImpl() = default;
+ConnectionEstablisherImpl::ConnectionEstablisherImpl(base::Clock* clock)
+    : clock_(clock) {}
 ConnectionEstablisherImpl::~ConnectionEstablisherImpl() = default;
 
 void ConnectionEstablisherImpl::EstablishConnection(
@@ -40,8 +42,8 @@ void ConnectionEstablisherImpl::SendStartStreamingMessageIfNotConnected(
     ConnectionMode connection_mode) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
   if (is_connected_) {
-    PA_LOG(INFO) << "Connection already exists. Skipped sending start "
-                    "streaming message to service worker.";
+    PA_LOG(VERBOSE) << "Connection already exists. Skipped sending start "
+                       "streaming message to service worker.";
     return;
   }
 
@@ -58,8 +60,9 @@ void ConnectionEstablisherImpl::SendStartStreamingMessageIfNotConnected(
   }
   msg.encoded_message = msg.owned_encoded_message;
 
-  PA_LOG(INFO) << "Dispatching start streaming message to service worker.";
+  PA_LOG(VERBOSE) << "Dispatching start streaming message to service worker.";
   is_connected_ = true;
+  start_connection_message_time_ = clock_->Now();
   service_worker_context->StartServiceWorkerAndDispatchLongRunningMessage(
       GetAndroidMessagesURL(), std::move(msg),
       base::BindOnce(&ConnectionEstablisherImpl::OnMessageDispatchResult,
@@ -70,9 +73,26 @@ void ConnectionEstablisherImpl::OnMessageDispatchResult(bool status) {
   // When message dispatch result callback is called, it means that the service
   // worker resolved it's message handler promise and is not holding a
   // background connection.
-  PA_LOG(INFO) << "Service worker streaming message dispatch returned status: "
-               << status;
+  PA_LOG(VERBOSE)
+      << "Service worker streaming message dispatch returned status: "
+      << status;
   is_connected_ = false;
+
+  // |status| indicates the success/failure for the dispatch of the message. If
+  // |status| is false then the message was never successfully dispatched.
+  // If |status| is true, then the message was dispatched and resolved by the
+  // service worker successfully.
+  UMA_HISTOGRAM_BOOLEAN("AndroidSms.ServiceWorkerMessageDispatchStatus",
+                        status);
+  if (status) {
+    // The service worker could have received the message but failed and
+    // resolved early. Track these failures by measuring service worker
+    // lifetime.
+    UMA_HISTOGRAM_CUSTOM_TIMES("AndroidSms.ServiceWorkerLifetime",
+                               clock_->Now() - start_connection_message_time_,
+                               base::TimeDelta::FromMilliseconds(1),
+                               base::TimeDelta::FromHours(1), 50);
+  }
 }
 
 }  // namespace android_sms

@@ -64,8 +64,8 @@
 #include "third_party/blink/renderer/platform/memory_coordinator.h"
 #include "third_party/blink/renderer/platform/partition_alloc_memory_dump_provider.h"
 #include "third_party/blink/renderer/platform/scheduler/common/simple_thread_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
-#include "third_party/blink/renderer/platform/web_task_runner.h"
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
 #include "third_party/webrtc/api/rtpparameters.h"
 #include "third_party/webrtc/p2p/base/portallocator.h"
@@ -108,7 +108,7 @@ static void MaxObservedSizeFunction(size_t size_in_mb) {
 static void CallOnMainThreadFunction(WTF::MainThreadFunction function,
                                      void* context) {
   PostCrossThreadTask(
-      *Platform::Current()->MainThread()->GetTaskRunner(), FROM_HERE,
+      *Thread::MainThread()->GetTaskRunner(), FROM_HERE,
       CrossThreadBind(function, CrossThreadUnretained(context)));
 }
 
@@ -195,10 +195,10 @@ void Platform::InitializeCommon(Platform* platform,
 
   ThreadState::AttachMainThread();
 
-  // FontFamilyNames are used by platform/fonts and are initialized by core.
+  // font_family_names are used by platform/fonts and are initialized by core.
   // In case core is not available (like on PPAPI plugins), we need to init
   // them here.
-  font_family_names::init();
+  font_family_names::Init();
   InitializePlatformLanguage();
 
   DCHECK(!g_gc_task_runner);

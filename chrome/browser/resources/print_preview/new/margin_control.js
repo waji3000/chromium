@@ -14,7 +14,7 @@ const RADIUS_PX = 9;
 Polymer({
   is: 'print-preview-margin-control',
 
-  behaviors: [print_preview_new.InputBehavior],
+  behaviors: [print_preview_new.InputBehavior, I18nBehavior],
 
   properties: {
     side: {
@@ -149,8 +149,12 @@ Polymer({
   /** @private */
   onBlur_: function() {
     this.resetAndUpdate();
-    if (this.invalid)
-      this.fire('text-blur');
+    this.fire('text-blur', this.invalid);
+  },
+
+  /** @private */
+  onFocus_: function() {
+    this.fire('text-focus');
   },
 
   /** @private */

@@ -20,6 +20,12 @@ const SmbMountResult = {
   UNSUPPORTED_DEVICE: 4,
   MOUNT_EXISTS: 5,
   INVALID_URL: 6,
+  INVALID_OPERATION: 7,
+  DBUS_PARSE_FAILED: 8,
+  OUT_OF_MEMORY: 9,
+  ABORTED: 10,
+  IO_ERROR: 11,
+  TOO_MANY_OPENED: 12,
 };
 
 /** @enum {string} */
@@ -38,8 +44,12 @@ cr.define('smb_shares', function() {
      * @param {string} username
      * @param {string} password
      * @param {string} authMethod
+     * @param {boolean} shouldOpenFileManagerAfterMount
+     * @return {!Promise<SmbMountResult>}
      */
-    smbMount(smbUrl, smbName, username, password, authMethod) {}
+    smbMount(
+        smbUrl, smbName, username, password, authMethod,
+        shouldOpenFileManagerAfterMount) {}
 
     /**
      * Starts the file share discovery process.
@@ -50,11 +60,13 @@ cr.define('smb_shares', function() {
   /** @implements {smb_shares.SmbBrowserProxy} */
   class SmbBrowserProxyImpl {
     /** @override */
-    smbMount(smbUrl, smbName, username, password, authMethod) {
-      chrome.send('smbMount', [
-        smbUrl, smbName, username, password,
-        authMethod == SmbAuthMethod.KERBEROS
-      ]);
+    smbMount(
+        smbUrl, smbName, username, password, authMethod,
+        shouldOpenFileManagerAfterMount) {
+      return cr.sendWithPromise(
+          'smbMount', smbUrl, smbName, username, password,
+          authMethod == SmbAuthMethod.KERBEROS,
+          shouldOpenFileManagerAfterMount);
     }
 
     /** @override */

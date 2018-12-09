@@ -72,13 +72,12 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
     return CreateFetcher(nullptr, document);
   }
 
-  static void ProvideDocumentToContext(FetchContext&, Document*);
+  void ProvideDocumentToContext(Document*);
 
+  FrameFetchContext(DocumentLoader*, Document*);
   ~FrameFetchContext() override;
 
   bool IsFrameFetchContext() override { return true; }
-
-  void RecordDataUriWithOctothorpe() override;
 
   void AddAdditionalRequestHeaders(ResourceRequest&,
                                    FetchResourceType) override;
@@ -114,9 +113,9 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
                                   ResourceResponseType) override;
   void DispatchDidReceiveData(unsigned long identifier,
                               const char* data,
-                              int data_length) override;
+                              size_t data_length) override;
   void DispatchDidReceiveEncodedData(unsigned long identifier,
-                                     int encoded_data_length) override;
+                                     size_t encoded_data_length) override;
   void DispatchDidDownloadToBlob(unsigned long identifier,
                                  BlobDataHandle*) override;
   void DispatchDidFinishLoading(unsigned long identifier,
@@ -135,6 +134,7 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
                              ResourceType,
                              const AtomicString& fetch_initiator_name) override;
   void DidLoadResource(Resource*) override;
+  void DidObserveLoadingBehavior(WebLoadingBehaviorFlag) override;
 
   void AddResourceTiming(const ResourceTimingInfo&) override;
   bool AllowImage(bool images_enabled, const KURL&) const override;
@@ -147,8 +147,6 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
   bool DefersLoading() const override;
   bool IsLoadComplete() const override;
   bool UpdateTimingInfoForIFrameNavigation(ResourceTimingInfo*) override;
-
-  const SecurityOrigin* GetSecurityOrigin() const override;
 
   void PopulateResourceRequest(ResourceType,
                                const ClientHintsPreferences&,
@@ -191,8 +189,6 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
 
   static ResourceFetcher* CreateFetcher(DocumentLoader*, Document*);
 
-  FrameFetchContext(DocumentLoader*, Document*);
-
   // Convenient accessors below can be used to transparently access the
   // relevant document loader or frame in either cases without null-checks.
   //
@@ -209,8 +205,6 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
   CreateResourceLoadingTaskRunnerHandle() override;
 
   // BaseFetchContext overrides:
-  const FetchClientSettingsObject* GetFetchClientSettingsObject()
-      const override;
   KURL GetSiteForCookies() const override;
   SubresourceFilter* GetSubresourceFilter() const override;
   PreviewsResourceLoadingHints* GetPreviewsResourceLoadingHints()
@@ -269,6 +263,9 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
   // frame's main resource.
   bool IsFirstPartyOrigin(const KURL& url) const;
 
+  // Returns the origin of the top frame in the document.
+  scoped_refptr<const SecurityOrigin> GetTopFrameOrigin() const;
+
   Member<DocumentLoader> document_loader_;
   Member<Document> document_;
 
@@ -279,8 +276,6 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
 
   // Non-null only when detached.
   Member<const FrozenState> frozen_state_;
-
-  Member<FetchClientSettingsObject> fetch_client_settings_object_;
 };
 
 }  // namespace blink

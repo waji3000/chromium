@@ -30,13 +30,13 @@
 namespace blink {
 
 RTCDTMFToneChangeEvent* RTCDTMFToneChangeEvent::Create(const String& tone) {
-  return new RTCDTMFToneChangeEvent(tone);
+  return MakeGarbageCollected<RTCDTMFToneChangeEvent>(tone);
 }
 
 RTCDTMFToneChangeEvent* RTCDTMFToneChangeEvent::Create(
     const AtomicString& type,
     const RTCDTMFToneChangeEventInit* initializer) {
-  return new RTCDTMFToneChangeEvent(initializer);
+  return MakeGarbageCollected<RTCDTMFToneChangeEvent>(initializer);
 }
 
 RTCDTMFToneChangeEvent::RTCDTMFToneChangeEvent(const String& tone)
@@ -57,7 +57,7 @@ const String& RTCDTMFToneChangeEvent::tone() const {
 }
 
 const AtomicString& RTCDTMFToneChangeEvent::InterfaceName() const {
-  return EventNames::RTCDTMFToneChangeEvent;
+  return event_interface_names::kRTCDTMFToneChangeEvent;
 }
 
 void RTCDTMFToneChangeEvent::Trace(blink::Visitor* visitor) {

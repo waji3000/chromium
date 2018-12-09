@@ -7,9 +7,11 @@
 
 #import <Foundation/Foundation.h>
 
+#import "cwv_export.h"
 #import "cwv_navigation_type.h"
 
 @protocol CRIWVTranslateDelegate;
+@class CWVDownloadTask;
 @class CWVSSLStatus;
 @class CWVWebView;
 
@@ -21,6 +23,10 @@ typedef NS_ENUM(NSInteger, CWVSSLErrorDecision) {
   // Ignore the error and reload the page.
   CWVSSLErrorDecisionOverrideErrorAndReload,
 };
+
+// A key of NSError.userInfo. The corresponding value is CWVCertStatus which
+// indicates the type of the SSL error.
+FOUNDATION_EXPORT CWV_EXPORT NSErrorUserInfoKey CWVCertStatusKey;
 
 // Navigation delegate protocol for CWVWebViews.  Allows embedders to hook
 // page loading and receive events for navigation.
@@ -62,6 +68,10 @@ typedef NS_ENUM(NSInteger, CWVSSLErrorDecision) {
 // method can leave the failure as is by calling |decisionHandler| with
 // CWVSSLErrorDecisionDoNothing.
 //
+// error.localizedDescription contains localized description of the SSL error.
+// error.userInfo[CWVCertStatusKey] contains CWVCertStatus which indicates the
+// type of the SSL error.
+//
 // Note: When |decisionHandler| is called with
 // CWVSSLErrorDecisionOverrideErrorAndReload, it must not be called
 // synchronously in the method. It breaks status management and causes an
@@ -71,6 +81,20 @@ typedef NS_ENUM(NSInteger, CWVSSLErrorDecision) {
                       overridable:(BOOL)overridable
                   decisionHandler:
                       (void (^)(CWVSSLErrorDecision))decisionHandler;
+
+// Called when the web view requests to start downloading a file.
+//
+// The delegate can either:
+//   - call [task startDownloadToLocalFileWithPath:] to start download
+//   immediately. - call [task startDownloadToLocalFileWithPath:] later. - do
+//   nothing in the method, to ignore the request.
+// It does nothing when the method is not implemented.
+//
+// The delegate must retain a strong reference to |task| until it completes
+// downloading or is cancelled. Otherwise it is deallocated immediately after
+// exiting this method.
+- (void)webView:(CWVWebView*)webView
+    didRequestDownloadWithTask:(CWVDownloadTask*)task;
 
 // Notifies the delegate that web view process was terminated
 // (usually by crashing, though possibly by other means).

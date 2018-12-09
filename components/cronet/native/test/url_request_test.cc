@@ -17,7 +17,7 @@
 #include "components/cronet/native/test/test_util.h"
 #include "components/cronet/test/test_server.h"
 #include "cronet_c.h"
-#include "net/cert/mock_cert_verifier.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
@@ -386,6 +386,27 @@ TEST_P(UrlRequestTest, UploadSync) {
   EXPECT_EQ("Test", callback->response_as_string_);
 }
 
+TEST_P(UrlRequestTest, SSLCertificateError) {
+  net::EmbeddedTestServer ssl_server(net::EmbeddedTestServer::TYPE_HTTPS);
+  ssl_server.SetSSLConfig(net::EmbeddedTestServer::CERT_EXPIRED);
+  ASSERT_TRUE(ssl_server.Start());
+
+  const std::string url = ssl_server.GetURL("/").spec();
+  TestUploadDataProvider data_provider(TestUploadDataProvider::SYNC,
+                                       /* executor = */ nullptr);
+  data_provider.AddRead("Test");
+  auto callback = std::make_unique<TestUrlRequestCallback>(GetParam());
+  callback = StartAndWaitForComplete(url, std::move(callback), std::string(),
+                                     &data_provider);
+  data_provider.AssertClosed();
+  EXPECT_EQ(4, data_provider.GetUploadedLength());
+  EXPECT_EQ(0, data_provider.num_read_calls());
+  EXPECT_EQ(0, data_provider.num_rewind_calls());
+  EXPECT_EQ(nullptr, callback->response_info_);
+  EXPECT_EQ("", callback->response_as_string_);
+  EXPECT_EQ("net::ERR_CERT_INVALID", callback->last_error_message_);
+}
+
 TEST_P(UrlRequestTest, UploadMultiplePiecesSync) {
   const std::string url = cronet::TestServer::GetEchoRequestBodyURL();
   auto callback = std::make_unique<TestUrlRequestCallback>(GetParam());
@@ -450,6 +471,22 @@ TEST_P(UrlRequestTest, UploadWithSetMethod) {
   EXPECT_EQ(200, callback->response_info_->http_status_code);
   // Setting upload provider should change method to 'POST'.
   EXPECT_EQ("PUT", callback->response_as_string_);
+}
+
+TEST_P(UrlRequestTest, UploadWithBigRead) {
+  const std::string url = cronet::TestServer::GetEchoRequestBodyURL();
+  TestUploadDataProvider upload_data_provider(TestUploadDataProvider::SYNC,
+                                              /* executor = */ nullptr);
+  // Use reads that match exact size of read buffer, which is 16384 bytes.
+  upload_data_provider.AddRead(std::string(16384, 'a'));
+  upload_data_provider.AddRead(std::string(32768 - 16384, 'a'));
+  auto callback = std::make_unique<TestUrlRequestCallback>(GetParam());
+
+  callback = StartAndWaitForComplete(url, std::move(callback),
+                                     std::string("PUT"), &upload_data_provider);
+  EXPECT_EQ(200, callback->response_info_->http_status_code);
+  // Confirm that body is uploaded correctly.
+  EXPECT_EQ(std::string(32768, 'a'), callback->response_as_string_);
 }
 
 TEST_F(UrlRequestTest, UploadWithDirectExecutor) {

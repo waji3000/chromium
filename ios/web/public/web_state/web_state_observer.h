@@ -33,6 +33,12 @@ class WebStateObserver {
   virtual void WasHidden(WebState* web_state) {}
 
   // This method is invoked when committed navigation items have been pruned.
+  // DEPRECATED. DidChangeBackForwardState is a superset of this callback and
+  // should be used instead of NavigationItemsPruned in the future.
+  // NavigationItemsPruned is not called when slim-navigation-manager is enabled
+  // and DidChangeBackForwardState is not called when slim-navigation-manager is
+  // disabled. So for now the clients should implement both callbacks.
+  // TODO(crbug.com/910894): Remove this method.
   virtual void NavigationItemsPruned(WebState* web_state,
                                      size_t pruned_item_count) {}
 
@@ -49,7 +55,7 @@ class WebStateObserver {
   // navigations).
   // DEPRECATED. Use |DidFinishNavigation| to listen for
   // "navigation item committed" signals.
-  // TODO(crbug.com/720786): Remove this method.
+  // TODO(crbug.com/781534): Remove this method.
   virtual void NavigationItemCommitted(
       WebState* web_state,
       const LoadCommittedDetails& load_details) {}
@@ -132,11 +138,6 @@ class WebStateObserver {
 
   // Called when the visible security state of the page changes.
   virtual void DidChangeVisibleSecurityState(WebState* web_state) {}
-
-  // Called when a JavaScript dialog or window open request was suppressed.
-  // NOTE: Called only if WebState::SetShouldSuppressDialogs() was called with
-  // false.
-  virtual void DidSuppressDialog(WebState* web_state) {}
 
   // Invoked when new favicon URL candidates are received.
   virtual void FaviconUrlUpdated(WebState* web_state,

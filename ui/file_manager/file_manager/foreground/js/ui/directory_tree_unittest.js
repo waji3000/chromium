@@ -7,24 +7,9 @@ var mockCommandLinePrivate;
 var metrics;
 var onDirectoryChangedListeners;
 
-/**
- * Set string data.
- * @type {Object}
- */
-loadTimeData.data = {
-  DOWNLOADS_DIRECTORY_LABEL: 'Downloads',
-  DRIVE_DIRECTORY_LABEL: 'Google Drive',
-  DRIVE_MY_DRIVE_LABEL: 'My Drive',
-  DRIVE_TEAM_DRIVES_LABEL: 'Team Drives',
-  DRIVE_COMPUTERS_LABEL: 'Computers',
-  DRIVE_OFFLINE_COLLECTION_LABEL: 'Offline',
-  DRIVE_SHARED_WITH_ME_COLLECTION_LABEL: 'Shared with me',
-  REMOVABLE_DIRECTORY_LABEL: 'External Storage',
-  ARCHIVE_DIRECTORY_LABEL: 'Archives',
-  MY_FILES_ROOT_LABEL: 'My files',
-};
-
 function setUp() {
+  window.loadTimeData.getString = id => id;
+  window.loadTimeData.data = {};
   chrome = {
     fileManagerPrivate: {
       onDirectoryChanged: {
@@ -488,12 +473,8 @@ function testUpdateSubElementsFromListSections() {
   };
 
   const treeModel = new NavigationListModel(
-      volumeManager,
-      new MockFolderShortcutDataModel([]),
-      null, /* recentItem */
-      null, /* addNewServicesItem */
-      false /* opt_disableMyFilesNavigation */
-  );
+      volumeManager, new MockFolderShortcutDataModel([]), null /* recentItem */,
+      new MockDirectoryModel());
 
   const myFilesItem = treeModel.item(0);
   const driveItem = treeModel.item(1);

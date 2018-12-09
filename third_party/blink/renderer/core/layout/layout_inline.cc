@@ -35,6 +35,7 @@
 #include "third_party/blink/renderer/core/layout/line/inline_text_box.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_fragment_traversal.h"
 #include "third_party/blink/renderer/core/layout/ng/layout_ng_block_flow.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_outline_utils.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_physical_box_fragment.h"
 #include "third_party/blink/renderer/core/paint/box_painter.h"
 #include "third_party/blink/renderer/core/paint/inline_painter.h"
@@ -57,6 +58,19 @@ const NGPhysicalBoxFragment* ContainingBlockFlowFragmentOf(
   if (!RuntimeEnabledFeatures::LayoutNGEnabled())
     return nullptr;
   return node.ContainingBlockFlowFragment();
+}
+
+// TODO(xiaochengh): Deduplicate with a similar function in ng_paint_fragment.cc
+// ::before, ::after and ::first-letter can be hit test targets.
+bool CanBeHitTestTargetPseudoNodeStyle(const ComputedStyle& style) {
+  switch (style.StyleType()) {
+    case kPseudoIdBefore:
+    case kPseudoIdAfter:
+    case kPseudoIdFirstLetter:
+      return true;
+    default:
+      return false;
+  }
 }
 
 }  // anonymous namespace
@@ -231,25 +245,50 @@ void LayoutInline::StyleDidChange(StyleDifference diff,
   // to pass its style on to anyone else.
   const ComputedStyle& new_style = StyleRef();
   if (LayoutInline* continuation = InlineElementContinuation()) {
+    bool position_type_changed =
+        old_style && (new_style.GetPosition() != old_style->GetPosition()) &&
+        (new_style.HasInFlowPosition() || old_style->HasInFlowPosition());
+
+    // An inline that establishes a continuation is normally wrapped inside an
+    // anonymous block, of course, but if the continuation chain has been
+    // partially torn down (read comment further below), this is not the
+    // case. Here we want to find the nearest containing block that's an
+    // ancestor of all the continuations.
+    const LayoutBlock* boundary = ContainingBlock();
+    if (boundary->IsAnonymousBlock())
+      boundary = boundary->ContainingBlock();
     LayoutInline* previous_part = this;
     LayoutInline* end_of_continuation = nullptr;
-    bool is_real_continuation = false;
+    bool needs_anon_block_position_update = false;
     for (LayoutInline* curr_cont = continuation; curr_cont;
          curr_cont = curr_cont->InlineElementContinuation()) {
-      if (!is_real_continuation && curr_cont != previous_part->NextSibling()) {
+      if (position_type_changed && !needs_anon_block_position_update) {
         // When we have a continuation chain, and the block child that was the
         // reason for creating that in the first place is removed, we don't
         // clean up the continuation chain. Previously split inlines should
         // ideally be joined when this happens, but we don't do that, but rather
-        // leave the mess around. We'll end up with direct LayoutInline siblings
-        // for the same Node (that form a bogus continuation chain). Here we
-        // check that we're NOT in such a situation, and that the Node actually
-        // forms a real continuation chain. This matters when it comes to
-        // marking the anonymous container(s) of block children as relatively
-        // positioned. We should only do that if the Node is an ancestor of the
+        // leave the mess around. We'll end up with LayoutInline siblings or
+        // cousins for the same Node (that form a bogus continuation chain),
+        // without any blocks in-between. Here we check that we're NOT in such a
+        // situation, and that the Node actually forms a real continuation
+        // chain. This matters when it comes to marking the anonymous
+        // container(s) of block children as relatively positioned (further
+        // below). We should only do that if the Node is an ancestor of the
         // blocks. Otherwise out-of-flow positioned descendants will use the
         // wrong containing block.
-        is_real_continuation = true;
+        for (LayoutObject* walker = previous_part->NextInPreOrder(boundary);
+             walker;) {
+          if (walker == curr_cont)
+            break;
+          if (walker->IsAnonymousBlock()) {
+            needs_anon_block_position_update = true;
+            break;
+          }
+          if (walker->IsLayoutInline())
+            walker = walker->NextInPreOrder(boundary);
+          else
+            walker = walker->NextInPreOrderAfterChildren(boundary);
+        }
       }
       previous_part = curr_cont;
 
@@ -260,14 +299,13 @@ void LayoutInline::StyleDidChange(StyleDifference diff,
       end_of_continuation = curr_cont;
     }
 
-    if (is_real_continuation && old_style) {
+    if (needs_anon_block_position_update) {
+      DCHECK(old_style);
       DCHECK(end_of_continuation);
       LayoutObject* block = ContainingBlock()->NextSibling();
       // If an inline's in-flow positioning has changed then any descendant
       // blocks will need to change their styles accordingly.
-      if (block && block->IsAnonymousBlock() &&
-          new_style.GetPosition() != old_style->GetPosition() &&
-          (new_style.HasInFlowPosition() || old_style->HasInFlowPosition())) {
+      if (block && block->IsAnonymousBlock()) {
         UpdateInFlowPositionOfAnonymousBlockContinuations(
             block, new_style, *old_style,
             end_of_continuation->ContainingBlock());
@@ -275,17 +313,23 @@ void LayoutInline::StyleDidChange(StyleDifference diff,
     }
   }
 
-  if (!AlwaysCreateLineBoxes()) {
-    bool always_create_line_boxes_new =
-        HasSelfPaintingLayer() || HasBoxDecorationBackground() ||
-        new_style.HasPadding() || new_style.HasMargin() ||
-        new_style.HasOutline();
-    if (old_style && always_create_line_boxes_new) {
-      DirtyLineBoxes(false);
-      SetNeedsLayoutAndFullPaintInvalidation(
-          LayoutInvalidationReason::kStyleChange);
+  if (!IsInLayoutNGInlineFormattingContext()) {
+    if (!AlwaysCreateLineBoxes()) {
+      bool always_create_line_boxes_new =
+          HasSelfPaintingLayer() || HasBoxDecorationBackground() ||
+          new_style.HasPadding() || new_style.HasMargin() ||
+          new_style.HasOutline();
+      if (old_style && always_create_line_boxes_new) {
+        DirtyLineBoxes(false);
+        SetNeedsLayoutAndFullPaintInvalidation(
+            layout_invalidation_reason::kStyleChange);
+      }
+      SetAlwaysCreateLineBoxes(always_create_line_boxes_new);
     }
-    SetAlwaysCreateLineBoxes(always_create_line_boxes_new);
+  } else {
+    if (!ShouldCreateBoxFragment()) {
+      UpdateShouldCreateBoxFragment();
+    }
   }
 
   // If we are changing to/from static, we need to reposition
@@ -312,6 +356,8 @@ void LayoutInline::StyleDidChange(StyleDifference diff,
 }
 
 void LayoutInline::UpdateAlwaysCreateLineBoxes(bool full_layout) {
+  DCHECK(!IsInLayoutNGInlineFormattingContext());
+
   // Once we have been tainted once, just assume it will happen again. This way
   // effects like hover highlighting that change the background color will only
   // cause a layout on the first rollover.
@@ -348,6 +394,49 @@ void LayoutInline::UpdateAlwaysCreateLineBoxes(bool full_layout) {
     if (!full_layout)
       DirtyLineBoxes(false);
     SetAlwaysCreateLineBoxes();
+  }
+}
+
+bool LayoutInline::ComputeInitialShouldCreateBoxFragment(
+    const ComputedStyle& style) const {
+  if (style.HasBoxDecorationBackground() || style.HasPadding() ||
+      style.HasMargin())
+    return true;
+
+  return style.CanContainAbsolutePositionObjects() ||
+         style.CanContainFixedPositionObjects(false) ||
+         NGOutlineUtils::HasPaintedOutline(style, GetNode()) ||
+         CanBeHitTestTargetPseudoNodeStyle(style);
+}
+
+bool LayoutInline::ComputeInitialShouldCreateBoxFragment() const {
+  const ComputedStyle& style = StyleRef();
+  if (HasSelfPaintingLayer() || ComputeInitialShouldCreateBoxFragment(style) ||
+      ShouldApplyPaintContainment() || ShouldApplyLayoutContainment())
+    return true;
+
+  const ComputedStyle& first_line_style = FirstLineStyleRef();
+  if (UNLIKELY(&style != &first_line_style &&
+               ComputeInitialShouldCreateBoxFragment(first_line_style)))
+    return true;
+
+  return false;
+}
+
+void LayoutInline::UpdateShouldCreateBoxFragment() {
+  // Once we have been tainted once, just assume it will happen again. This way
+  // effects like hover highlighting that change the background color will only
+  // cause a layout on the first rollover.
+  if (IsInLayoutNGInlineFormattingContext()) {
+    if (ShouldCreateBoxFragment())
+      return;
+  } else {
+    SetIsInLayoutNGInlineFormattingContext(true);
+    SetShouldCreateBoxFragment(false);
+  }
+
+  if (ComputeInitialShouldCreateBoxFragment()) {
+    SetShouldCreateBoxFragment();
   }
 }
 
@@ -471,12 +560,17 @@ void LayoutInline::AddChildIgnoringContinuation(LayoutObject* new_child,
   LayoutBoxModelObject::AddChild(new_child, before_child);
 
   new_child->SetNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(
-      LayoutInvalidationReason::kChildChanged);
+      layout_invalidation_reason::kChildChanged);
 }
 
 LayoutInline* LayoutInline::Clone() const {
-  LayoutInline* clone_inline = new LayoutInline(GetNode());
-  DCHECK(!IsAnonymous());
+  LayoutInline* clone_inline = nullptr;
+  if (UNLIKELY(IsFirstLineAnonymous())) {
+    clone_inline = CreateAnonymousForFirstLine(&GetDocument());
+  } else {
+    DCHECK(!IsAnonymous());
+    clone_inline = new LayoutInline(GetNode());
+  }
   clone_inline->SetStyle(MutableStyle());
   clone_inline->SetIsInsideFlowThread(IsInsideFlowThread());
   return clone_inline;
@@ -485,8 +579,8 @@ LayoutInline* LayoutInline::Clone() const {
 void LayoutInline::MoveChildrenToIgnoringContinuation(
     LayoutInline* to,
     LayoutObject* start_child) {
-  DCHECK(!IsAnonymous());
-  DCHECK(!to->IsAnonymous());
+  DCHECK(!IsAnonymous() || IsFirstLineAnonymous());
+  DCHECK(!to->IsAnonymous() || to->IsFirstLineAnonymous());
   LayoutObject* child = start_child;
   while (child) {
     LayoutObject* current_child = child;
@@ -502,7 +596,7 @@ void LayoutInline::SplitInlines(LayoutBlockFlow* from_block,
                                 LayoutObject* before_child,
                                 LayoutBoxModelObject* old_cont) {
   DCHECK(IsDescendantOf(from_block));
-  DCHECK(!IsAnonymous());
+  DCHECK(!IsAnonymous() || IsFirstLineAnonymous());
 
   // FIXME: Because splitting is O(n^2) as tags nest pathologically, we cap the
   // depth at which we're willing to clone.
@@ -624,7 +718,7 @@ void LayoutInline::SplitFlow(LayoutObject* before_child,
       pre->Children()->AppendChildNode(
           pre, block->Children()->RemoveChildNode(block, no));
       no->SetNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(
-          LayoutInvalidationReason::kAnonymousBlockChange);
+          layout_invalidation_reason::kAnonymousBlockChange);
     }
   }
 
@@ -642,11 +736,11 @@ void LayoutInline::SplitFlow(LayoutObject* before_child,
   // pre block into the post block, we want to make new line boxes instead of
   // leaving the old line boxes around.
   pre->SetNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(
-      LayoutInvalidationReason::kAnonymousBlockChange);
+      layout_invalidation_reason::kAnonymousBlockChange);
   block->SetNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(
-      LayoutInvalidationReason::kAnonymousBlockChange);
+      layout_invalidation_reason::kAnonymousBlockChange);
   post->SetNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(
-      LayoutInvalidationReason::kAnonymousBlockChange);
+      layout_invalidation_reason::kAnonymousBlockChange);
 }
 
 void LayoutInline::AddChildToContinuation(LayoutObject* new_child,
@@ -700,8 +794,11 @@ void LayoutInline::Paint(const PaintInfo& paint_info) const {
 
 template <typename GeneratorContext>
 void LayoutInline::GenerateLineBoxRects(GeneratorContext& yield) const {
-  if (const NGPhysicalBoxFragment* box_fragment =
-          ContainingBlockFlowFragmentOf(*this)) {
+  if (IsInLayoutNGInlineFormattingContext()) {
+    const NGPhysicalBoxFragment* box_fragment =
+        ContainingBlockFlowFragmentOf(*this);
+    if (!box_fragment)
+      return;
     const auto& descendants =
         NGInlineFragmentTraversal::SelfFragmentsOf(*box_fragment, this);
     const LayoutBlock* block_for_flipping = nullptr;
@@ -905,8 +1002,11 @@ LayoutPoint LayoutInline::FirstLineBoxTopLeft() const {
   // hand, sets the block-axis coordinate relatively to the block-start border
   // edge, which means that offsetLeft will be wrong when writing-mode is
   // vertical-rl.
-  if (const NGPhysicalBoxFragment* box_fragment =
-          ContainingBlockFlowFragmentOf(*this)) {
+  if (IsInLayoutNGInlineFormattingContext()) {
+    const NGPhysicalBoxFragment* box_fragment =
+        ContainingBlockFlowFragmentOf(*this);
+    if (!box_fragment)
+      return LayoutPoint();
     const auto& fragments =
         NGInlineFragmentTraversal::SelfFragmentsOf(*box_fragment, this);
     if (fragments.IsEmpty())
@@ -1100,8 +1200,11 @@ class LinesBoundingBoxGeneratorContext {
 }  // unnamed namespace
 
 LayoutRect LayoutInline::LinesBoundingBox() const {
-  if (const NGPhysicalBoxFragment* box_fragment =
-          ContainingBlockFlowFragmentOf(*this)) {
+  if (IsInLayoutNGInlineFormattingContext()) {
+    const NGPhysicalBoxFragment* box_fragment =
+        ContainingBlockFlowFragmentOf(*this);
+    if (!box_fragment)
+      return LayoutRect();
     NGPhysicalOffsetRect bounding_box;
     auto children =
         NGInlineFragmentTraversal::SelfFragmentsOf(*box_fragment, this);
@@ -1245,8 +1348,11 @@ LayoutRect LayoutInline::CulledInlineVisualOverflowBoundingBox() const {
 }
 
 LayoutRect LayoutInline::LinesVisualOverflowBoundingBox() const {
-  if (const NGPhysicalBoxFragment* box_fragment =
-          ContainingBlockFlowFragmentOf(*this)) {
+  if (IsInLayoutNGInlineFormattingContext()) {
+    const NGPhysicalBoxFragment* box_fragment =
+        ContainingBlockFlowFragmentOf(*this);
+    if (!box_fragment)
+      return LayoutRect();
     NGPhysicalOffsetRect result;
     auto children =
         NGInlineFragmentTraversal::SelfFragmentsOf(*box_fragment, this);

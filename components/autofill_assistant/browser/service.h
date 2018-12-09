@@ -33,7 +33,9 @@ class Service {
   Service(const std::string& api_key,
           const GURL& server_url,
           content::BrowserContext* context,
-          AccessTokenFetcher* token_fetcher);
+          AccessTokenFetcher* token_fetcher,
+          const std::string& locale,
+          const std::string& country_code);
   virtual ~Service();
 
   using ResponseCallback =
@@ -48,13 +50,15 @@ class Service {
   virtual void GetActions(const std::string& script_path,
                           const GURL& url,
                           const std::map<std::string, std::string>& parameters,
-                          const std::string& server_payload,
+                          const std::string& global_payload,
+                          const std::string& script_payload,
                           ResponseCallback callback);
 
-  // Get next sequence of actions according to server payload in previous
+  // Get next sequence of actions according to server payloads in previous
   // response.
   virtual void GetNextActions(
-      const std::string& previous_server_payload,
+      const std::string& previous_global_payload,
+      const std::string& previous_script_payload,
       const std::vector<ProcessedActionProto>& processed_actions,
       ResponseCallback callback);
 
@@ -89,6 +93,11 @@ class Service {
   void FetchAccessToken();
   void OnFetchAccessToken(bool success, const std::string& access_token);
 
+  // Creates and fills a client context protobuf message.
+  static ClientContextProto CreateClientContext(
+      const std::string& locale,
+      const std::string& country_code);
+
   content::BrowserContext* context_;
   GURL script_server_url_;
   GURL script_action_server_url_;
@@ -111,6 +120,10 @@ class Service {
   // An OAuth 2 token. Empty if not fetched yet or if the token has been
   // invalidated.
   std::string access_token_;
+
+  // The client context is cached here to avoid having to recreate it for
+  // every message.
+  const ClientContextProto client_context_;
 
   base::WeakPtrFactory<Service> weak_ptr_factory_;
 

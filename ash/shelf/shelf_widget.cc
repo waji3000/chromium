@@ -25,7 +25,6 @@
 #include "ash/shell.h"
 #include "ash/system/status_area_layout_manager.h"
 #include "ash/system/status_area_widget.h"
-#include "ash/system/tray/system_tray.h"
 #include "ash/wm/window_util.h"
 #include "base/command_line.h"
 #include "chromeos/chromeos_switches.h"
@@ -45,7 +44,7 @@ namespace {
 
 constexpr int kShelfRoundedCornerRadius = 28;
 constexpr int kShelfBlurRadius = 10;
-constexpr float kShelfBlurQuality = 0.25f;
+constexpr float kShelfBlurQuality = 0.33f;
 
 // Return the first or last focusable child of |root|.
 views::View* FindFirstOrLastFocusableChild(views::View* root,
@@ -147,12 +146,12 @@ bool ShelfWidget::IsUsingViewsShelf() {
       return true;
     // See https://crbug.com/798869.
     case session_manager::SessionState::OOBE:
-      return false;
+    case session_manager::SessionState::LOGIN_PRIMARY:
+      return true;
     case session_manager::SessionState::LOCKED:
     case session_manager::SessionState::LOGIN_SECONDARY:
       return switches::IsUsingViewsLock();
     case session_manager::SessionState::UNKNOWN:
-    case session_manager::SessionState::LOGIN_PRIMARY:
     case session_manager::SessionState::LOGGED_IN_NOT_ACTIVE:
       return features::IsViewsLoginEnabled();
   }
@@ -221,9 +220,8 @@ void ShelfWidget::DelegateView::UpdateOpaqueBackground() {
     return;
   }
 
-  if (!opaque_background_.visible()) {
+  if (!opaque_background_.visible())
     opaque_background_.SetVisible(true);
-  }
 
   // Show rounded corners except in maximized and split modes.
   if (background_type == SHELF_BACKGROUND_MAXIMIZED ||
@@ -409,7 +407,7 @@ bool ShelfWidget::IsShowingAppList() const {
   return GetAppListButton() && GetAppListButton()->is_showing_app_list();
 }
 
-bool ShelfWidget::IsShowingContextMenu() const {
+bool ShelfWidget::IsShowingMenu() const {
   return shelf_view_->IsShowingMenu();
 }
 

@@ -16,6 +16,7 @@
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
+#include "chrome/browser/extensions/extension_ui_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "content/public/browser/invalidate_type.h"
@@ -41,8 +42,8 @@ const char kInvalidInstanceTypeError[] =
     "An action has an invalid instanceType: %s";
 const char kMissingInstanceTypeError[] = "Action is missing instanceType";
 const char kMissingParameter[] = "Missing parameter is required: %s";
-const char kNoPageAction[] =
-    "Can't use declarativeContent.ShowPageAction without a page action";
+const char kNoAction[] =
+    "Can't use declarativeContent.ShowAction without an action";
 const char kNoPageOrBrowserAction[] =
     "Can't use declarativeContent.SetIcon without a page or browser action";
 const char kIconNotSufficientlyVisible[] =
@@ -55,28 +56,31 @@ bool g_allow_invisible_icons_content_action = true;
 //
 
 // Action that instructs to show an extension's page action.
-class ShowPageAction : public ContentAction {
+class ShowExtensionAction : public ContentAction {
  public:
-  ShowPageAction() {}
-  ~ShowPageAction() override {}
+  ShowExtensionAction() {}
+  ~ShowExtensionAction() override {}
 
   static std::unique_ptr<ContentAction> Create(
       content::BrowserContext* browser_context,
       const Extension* extension,
       const base::DictionaryValue* dict,
       std::string* error) {
-    // We can't show a page action if the extension doesn't have one.
-    if (ActionInfo::GetPageActionInfo(extension) == NULL) {
-      *error = kNoPageAction;
-      return std::unique_ptr<ContentAction>();
+    // TODO(devlin): We should probably throw an error if the extension has no
+    // action specified in the manifest. Currently, this is allowed since
+    // extensions will have a synthesized page action.
+    if (!ActionInfo::GetPageActionInfo(extension) &&
+        !ActionInfo::GetBrowserActionInfo(extension)) {
+      *error = kNoAction;
+      return nullptr;
     }
-    return base::WrapUnique(new ShowPageAction);
+    return std::make_unique<ShowExtensionAction>();
   }
 
   // Implementation of ContentAction:
   void Apply(const ApplyInfo& apply_info) const override {
     ExtensionAction* action =
-        GetPageAction(apply_info.browser_context, apply_info.extension);
+        GetAction(apply_info.browser_context, apply_info.extension);
     action->DeclarativeShow(ExtensionTabUtil::GetTabId(apply_info.tab));
     ExtensionActionAPI::Get(apply_info.browser_context)->NotifyChange(
         action, apply_info.tab, apply_info.browser_context);
@@ -85,7 +89,7 @@ class ShowPageAction : public ContentAction {
   void Reapply(const ApplyInfo& apply_info) const override {}
   void Revert(const ApplyInfo& apply_info) const override {
     if (ExtensionAction* action =
-            GetPageAction(apply_info.browser_context, apply_info.extension)) {
+            GetAction(apply_info.browser_context, apply_info.extension)) {
       action->UndoDeclarativeShow(ExtensionTabUtil::GetTabId(apply_info.tab));
       ExtensionActionAPI::Get(apply_info.browser_context)->NotifyChange(
           action, apply_info.tab, apply_info.browser_context);
@@ -93,14 +97,13 @@ class ShowPageAction : public ContentAction {
   }
 
  private:
-  static ExtensionAction* GetPageAction(
-      content::BrowserContext* browser_context,
-      const Extension* extension) {
+  static ExtensionAction* GetAction(content::BrowserContext* browser_context,
+                                    const Extension* extension) {
     return ExtensionActionManager::Get(browser_context)
-        ->GetPageAction(*extension);
+        ->GetExtensionAction(*extension);
   }
 
-  DISALLOW_COPY_AND_ASSIGN(ShowPageAction);
+  DISALLOW_COPY_AND_ASSIGN(ShowExtensionAction);
 };
 
 // Action that sets an extension's action icon.
@@ -196,8 +199,8 @@ struct ContentActionFactory {
   std::map<std::string, FactoryMethod> factory_methods;
 
   ContentActionFactory() {
-    factory_methods[declarative_content_constants::kShowPageAction] =
-        &ShowPageAction::Create;
+    factory_methods[declarative_content_constants::kShowAction] =
+        &ShowExtensionAction::Create;
     factory_methods[declarative_content_constants::kRequestContentScript] =
         &RequestContentScript::Create;
     factory_methods[declarative_content_constants::kSetIcon] = &SetIcon::Create;
@@ -419,6 +422,11 @@ std::unique_ptr<ContentAction> SetIcon::Create(
       extensions::image_util::IsIconSufficientlyVisible(bitmap);
   UMA_HISTOGRAM_BOOLEAN("Extensions.DeclarativeSetIconWasVisible",
                         is_sufficiently_visible);
+  const bool is_sufficiently_visible_rendered =
+      extensions::ui_util::IsRenderedIconSufficientlyVisibleForBrowserContext(
+          bitmap, browser_context);
+  UMA_HISTOGRAM_BOOLEAN("Extensions.DeclarativeSetIconWasVisibleRendered",
+                        is_sufficiently_visible_rendered);
   if (!is_sufficiently_visible && !g_allow_invisible_icons_content_action) {
     *error = kIconNotSufficientlyVisible;
     return nullptr;

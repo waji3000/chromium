@@ -53,6 +53,9 @@ class CORE_EXPORT DedicatedWorker final
                                  const WorkerOptions*,
                                  ExceptionState&);
 
+  DedicatedWorker(ExecutionContext*,
+                  const KURL& script_request_url,
+                  const WorkerOptions*);
   ~DedicatedWorker() override;
 
   void postMessage(ScriptState*,
@@ -81,15 +84,12 @@ class CORE_EXPORT DedicatedWorker final
   void Trace(blink::Visitor*) override;
 
  private:
-  DedicatedWorker(ExecutionContext*,
-                  const KURL& script_request_url,
-                  const WorkerOptions*);
-
   // Starts the worker.
   void Start();
 
   std::unique_ptr<GlobalScopeCreationParams> CreateGlobalScopeCreationParams(
-      const KURL& script_url);
+      const KURL& script_url,
+      network::mojom::ReferrerPolicy);
 
   WorkerClients* CreateWorkerClients();
 

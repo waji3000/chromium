@@ -87,9 +87,11 @@ class SynchronousLayerTreeFrameSink : public viz::TestLayerTreeFrameSink {
     frame_request_pending_ = true;
     InvalidateIfPossible();
   }
-  void SubmitCompositorFrame(viz::CompositorFrame frame) override {
+  void SubmitCompositorFrame(viz::CompositorFrame frame,
+                             bool show_hit_test_borders) override {
     frame_ack_pending_ = true;
-    viz::TestLayerTreeFrameSink::SubmitCompositorFrame(std::move(frame));
+    viz::TestLayerTreeFrameSink::SubmitCompositorFrame(std::move(frame),
+                                                       show_hit_test_borders);
   }
   void DidReceiveCompositorFrameAck(
       const std::vector<viz::ReturnedResource>& resources) override {
@@ -231,6 +233,11 @@ class LayerTreeHostImplForTesting : public LayerTreeHostImpl {
   void DidFinishImplFrame() override {
     LayerTreeHostImpl::DidFinishImplFrame();
     test_hooks_->DidFinishImplFrameOnThread(this);
+  }
+
+  void WillSendBeginMainFrame() override {
+    LayerTreeHostImpl::WillSendBeginMainFrame();
+    test_hooks_->WillSendBeginMainFrameOnThread(this);
   }
 
   void DidSendBeginMainFrame() override {
@@ -432,7 +439,9 @@ class LayerTreeHostClientForTesting : public LayerTreeHostClient,
 
   void RecordEndOfFrameMetrics(base::TimeTicks) override {}
 
-  void UpdateLayerTreeHost() override { test_hooks_->UpdateLayerTreeHost(); }
+  void UpdateLayerTreeHost(bool record_main_frame_metrics) override {
+    test_hooks_->UpdateLayerTreeHost();
+  }
 
   void ApplyViewportChanges(const ApplyViewportChangesArgs& args) override {
     test_hooks_->ApplyViewportChanges(args);
@@ -587,10 +596,9 @@ class LayerTreeTestLayerTreeFrameSinkClient
       const viz::CompositorFrame& frame) override {
     hooks_->DisplayReceivedCompositorFrameOnThread(frame);
   }
-  void DisplayWillDrawAndSwap(
-      bool will_draw_and_swap,
-      const viz::RenderPassList& render_passes) override {
-    hooks_->DisplayWillDrawAndSwapOnThread(will_draw_and_swap, render_passes);
+  void DisplayWillDrawAndSwap(bool will_draw_and_swap,
+                              viz::RenderPassList* render_passes) override {
+    hooks_->DisplayWillDrawAndSwapOnThread(will_draw_and_swap, *render_passes);
   }
   void DisplayDidDrawAndSwap() override {
     hooks_->DisplayDidDrawAndSwapOnThread();
@@ -712,11 +720,12 @@ void LayerTreeTest::PostAddOpacityAnimationToMainThreadDelayed(
                      base::Unretained(animation_to_receive_animation), 1.0));
 }
 
-void LayerTreeTest::PostSetLocalSurfaceIdToMainThread(
-    const viz::LocalSurfaceId& local_surface_id) {
+void LayerTreeTest::PostSetLocalSurfaceIdAllocationToMainThread(
+    const viz::LocalSurfaceIdAllocation& local_surface_id_allocation) {
   main_task_runner_->PostTask(
-      FROM_HERE, base::BindOnce(&LayerTreeTest::DispatchSetLocalSurfaceId,
-                                main_thread_weak_ptr_, local_surface_id));
+      FROM_HERE,
+      base::BindOnce(&LayerTreeTest::DispatchSetLocalSurfaceIdAllocation,
+                     main_thread_weak_ptr_, local_surface_id_allocation));
 }
 
 void LayerTreeTest::PostRequestNewLocalSurfaceIdToMainThread() {
@@ -726,20 +735,24 @@ void LayerTreeTest::PostRequestNewLocalSurfaceIdToMainThread() {
                      main_thread_weak_ptr_));
 }
 
-void LayerTreeTest::PostGetDeferCommitsToMainThread(
-    std::unique_ptr<ScopedDeferCommits>* scoped_defer_commits) {
-  main_task_runner_->PostTask(
-      FROM_HERE, base::BindOnce(&LayerTreeTest::DispatchGetDeferCommits,
-                                main_thread_weak_ptr_,
-                                base::Unretained(scoped_defer_commits)));
-}
-
-void LayerTreeTest::PostReturnDeferCommitsToMainThread(
-    std::unique_ptr<ScopedDeferCommits> scoped_defer_commits) {
+void LayerTreeTest::PostGetDeferMainFrameUpdateToMainThread(
+    std::unique_ptr<ScopedDeferMainFrameUpdate>*
+        scoped_defer_main_frame_update) {
   main_task_runner_->PostTask(
       FROM_HERE,
-      base::BindOnce(&LayerTreeTest::DispatchReturnDeferCommits,
-                     main_thread_weak_ptr_, std::move(scoped_defer_commits)));
+      base::BindOnce(&LayerTreeTest::DispatchGetDeferMainFrameUpdate,
+                     main_thread_weak_ptr_,
+                     base::Unretained(scoped_defer_main_frame_update)));
+}
+
+void LayerTreeTest::PostReturnDeferMainFrameUpdateToMainThread(
+    std::unique_ptr<ScopedDeferMainFrameUpdate>
+        scoped_defer_main_frame_update) {
+  main_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&LayerTreeTest::DispatchReturnDeferMainFrameUpdate,
+                     main_thread_weak_ptr_,
+                     std::move(scoped_defer_main_frame_update)));
 }
 
 void LayerTreeTest::PostSetNeedsCommitToMainThread() {
@@ -868,9 +881,9 @@ void LayerTreeTest::SetupTree() {
   gfx::Size root_bounds = layer_tree_host()->root_layer()->bounds();
   gfx::Size device_root_bounds =
       gfx::ScaleToCeiledSize(root_bounds, initial_device_scale_factor_);
-  layer_tree_host()->SetViewportSizeAndScale(
-      device_root_bounds, initial_device_scale_factor_, viz::LocalSurfaceId(),
-      base::TimeTicks());
+  layer_tree_host()->SetViewportSizeAndScale(device_root_bounds,
+                                             initial_device_scale_factor_,
+                                             viz::LocalSurfaceIdAllocation());
   layer_tree_host()->root_layer()->SetIsDrawable(true);
   layer_tree_host()->SetElementIdsForTesting();
 }
@@ -919,12 +932,13 @@ void LayerTreeTest::DispatchAddOpacityAnimation(
   }
 }
 
-void LayerTreeTest::DispatchSetLocalSurfaceId(
-    const viz::LocalSurfaceId& local_surface_id) {
+void LayerTreeTest::DispatchSetLocalSurfaceIdAllocation(
+    const viz::LocalSurfaceIdAllocation& local_surface_id_allocation) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
-  if (layer_tree_host_)
-    layer_tree_host_->SetLocalSurfaceIdFromParent(local_surface_id,
-                                                  base::TimeTicks());
+  if (layer_tree_host_) {
+    layer_tree_host_->SetLocalSurfaceIdAllocationFromParent(
+        local_surface_id_allocation);
+  }
 }
 
 void LayerTreeTest::DispatchRequestNewLocalSurfaceId() {
@@ -933,17 +947,19 @@ void LayerTreeTest::DispatchRequestNewLocalSurfaceId() {
     layer_tree_host_->RequestNewLocalSurfaceId();
 }
 
-void LayerTreeTest::DispatchGetDeferCommits(
-    std::unique_ptr<ScopedDeferCommits>* scoped_defer_commits) {
+void LayerTreeTest::DispatchGetDeferMainFrameUpdate(
+    std::unique_ptr<ScopedDeferMainFrameUpdate>*
+        scoped_defer_main_frame_update) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
   if (layer_tree_host_)
-    *scoped_defer_commits = layer_tree_host_->DeferCommits();
+    *scoped_defer_main_frame_update = layer_tree_host_->DeferMainFrameUpdate();
 }
 
-void LayerTreeTest::DispatchReturnDeferCommits(
-    std::unique_ptr<ScopedDeferCommits> scoped_defer_commits) {
+void LayerTreeTest::DispatchReturnDeferMainFrameUpdate(
+    std::unique_ptr<ScopedDeferMainFrameUpdate>
+        scoped_defer_main_frame_update) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
-  // Just let |scoped_defer_commits| go out of scope.
+  // Just let |scoped_defer_main_frame_update| go out of scope.
 }
 
 void LayerTreeTest::DispatchSetNeedsCommit() {

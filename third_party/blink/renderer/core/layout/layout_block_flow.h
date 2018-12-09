@@ -454,11 +454,12 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
   virtual NGInlineNodeData* TakeNGInlineNodeData() { return nullptr; }
   virtual NGInlineNodeData* GetNGInlineNodeData() const { return nullptr; }
   virtual void ResetNGInlineNodeData() {}
+  virtual void ClearNGInlineNodeData() {}
   virtual bool HasNGInlineNodeData() const { return false; }
   virtual NGPaintFragment* PaintFragment() const { return nullptr; }
   virtual scoped_refptr<NGLayoutResult> CachedLayoutResult(
       const NGConstraintSpace&,
-      const NGBreakToken*) const;
+      const NGBreakToken*);
   virtual scoped_refptr<const NGLayoutResult> CachedLayoutResultForTesting();
   virtual void SetCachedLayoutResult(const NGConstraintSpace&,
                                      const NGBreakToken*,
@@ -821,6 +822,9 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
 
   int GetLayoutPassCountForTesting();
 
+  // This is public only for use by LayoutNG, so that NGBlockNode can call it.
+  void IncrementLayoutPassCount();
+
  protected:
   LayoutUnit MaxPositiveMarginBefore() const {
     return rare_data_
@@ -1054,7 +1058,6 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
   // Positions new floats and also adjust all floats encountered on the line if
   // any of them have to move to the next page/column.
   void PositionDialog();
-  void IncrementLayoutPassCount();
 
   // END METHODS DEFINED IN LayoutBlockFlowLine
 };

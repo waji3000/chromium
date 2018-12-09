@@ -36,6 +36,7 @@
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/trustedtypes/trusted_url.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 
 #define SOURCE_LOG_LEVEL 3
 
@@ -62,7 +63,8 @@ class HTMLSourceElement::Listener final : public MediaQueryListListener {
 };
 
 inline HTMLSourceElement::HTMLSourceElement(Document& document)
-    : HTMLElement(kSourceTag, document), listener_(new Listener(this)) {
+    : HTMLElement(kSourceTag, document),
+      listener_(MakeGarbageCollected<Listener>(this)) {
   DVLOG(SOURCE_LOG_LEVEL) << "HTMLSourceElement - " << (void*)this;
 }
 

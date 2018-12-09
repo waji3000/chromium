@@ -34,8 +34,8 @@
 #include "chrome/browser/ui/app_list/crostini/crostini_app_icon_loader.h"
 #include "chrome/browser/ui/app_list/internal_app/internal_app_icon_loader.h"
 #include "chrome/browser/ui/app_list/md_icon_normalizer.h"
-#include "chrome/browser/ui/ash/chrome_keyboard_controller_client.h"
 #include "chrome/browser/ui/ash/chrome_launcher_prefs.h"
+#include "chrome/browser/ui/ash/keyboard/chrome_keyboard_controller_client.h"
 #include "chrome/browser/ui/ash/launcher/app_shortcut_launcher_item_controller.h"
 #include "chrome/browser/ui/ash/launcher/app_window_launcher_controller.h"
 #include "chrome/browser/ui/ash/launcher/app_window_launcher_item_controller.h"
@@ -53,8 +53,9 @@
 #include "chrome/browser/ui/ash/launcher/multi_profile_browser_status_monitor.h"
 #include "chrome/browser/ui/ash/launcher/shelf_spinner_controller.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_util.h"
-#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
+#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager_client.h"
 #include "chrome/browser/ui/ash/session_controller_client.h"
+#include "chrome/browser/ui/ash/tablet_mode_client.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
@@ -171,7 +172,7 @@ void ChromeLauncherControllerUserSwitchObserver::OnUserProfileReadyToSwitch(
 }
 
 void ChromeLauncherControllerUserSwitchObserver::AddUser(Profile* profile) {
-  MultiUserWindowManager::GetInstance()->AddUser(profile);
+  MultiUserWindowManagerClient::GetInstance()->AddUser(profile);
   controller_->AdditionalUserAddedToSession(profile->GetOriginalProfile());
 }
 
@@ -220,7 +221,7 @@ ChromeLauncherController::ChromeLauncherController(Profile* profile,
   shelf_spinner_controller_.reset(new ShelfSpinnerController(this));
 
   // Create either the real window manager or a stub.
-  MultiUserWindowManager::CreateInstance();
+  MultiUserWindowManagerClient::CreateInstance();
 
   // On Chrome OS using multi profile we want to switch the content of the shelf
   // with a user change. Note that for unit tests the instance can be NULL.
@@ -279,7 +280,7 @@ ChromeLauncherController::~ChromeLauncherController() {
   ReleaseProfile();
 
   // Get rid of the multi user window manager instance.
-  MultiUserWindowManager::DeleteInstance();
+  MultiUserWindowManagerClient::DeleteInstance();
 
   if (instance_ == this)
     instance_ = nullptr;
@@ -288,7 +289,6 @@ ChromeLauncherController::~ChromeLauncherController() {
 void ChromeLauncherController::Init() {
   CreateBrowserShortcutLauncherItem();
   UpdateAppLaunchersFromPref();
-  SetVirtualKeyboardBehaviorFromPrefs();
 }
 
 ash::ShelfID ChromeLauncherController::CreateAppLauncherItem(
@@ -510,9 +510,10 @@ ash::ShelfAction ChromeLauncherController::ActivateWindowOrMinimizeIfActive(
   aura::Window* native_window = window->GetNativeWindow();
   const AccountId& current_account_id =
       multi_user_util::GetAccountIdFromProfile(profile());
-  MultiUserWindowManager* manager = MultiUserWindowManager::GetInstance();
-  if (!manager->IsWindowOnDesktopOfUser(native_window, current_account_id)) {
-    manager->ShowWindowForUser(native_window, current_account_id);
+  MultiUserWindowManagerClient* client =
+      MultiUserWindowManagerClient::GetInstance();
+  if (!client->IsWindowOnDesktopOfUser(native_window, current_account_id)) {
+    client->ShowWindowForUser(native_window, current_account_id);
     window->Activate();
     return ash::SHELF_ACTION_WINDOW_ACTIVATED;
   }
@@ -524,7 +525,8 @@ ash::ShelfAction ChromeLauncherController::ActivateWindowOrMinimizeIfActive(
     return ash::SHELF_ACTION_WINDOW_MINIMIZED;
   }
 
-  if (app_list_client && app_list_client->IsHomeLauncherEnabledInTabletMode()) {
+  if (TabletModeClient::Get() &&
+      TabletModeClient::Get()->tablet_mode_enabled()) {
     // Run slide down animation to show the window.
     wm::SetWindowVisibilityAnimationType(
         native_window, ash::wm::WINDOW_VISIBILITY_ANIMATION_TYPE_SLIDE_DOWN);
@@ -553,7 +555,6 @@ void ChromeLauncherController::ActiveUserChanged(
   // Update the user specific shell properties from the new user profile.
   // Shelf preferences are loaded in ChromeLauncherController::AttachProfile.
   UpdateAppLaunchersFromPref();
-  SetVirtualKeyboardBehaviorFromPrefs();
 
   // Restore the order of running, but unpinned applications for the activated
   // user.
@@ -991,24 +992,6 @@ void ChromeLauncherController::UpdatePolicyPinnedAppsFromPrefs() {
   }
 }
 
-void ChromeLauncherController::SetVirtualKeyboardBehaviorFromPrefs() {
-  using keyboard::mojom::KeyboardEnableFlag;
-  if (!ChromeKeyboardControllerClient::HasInstance())  // May be null in tests
-    return;
-  auto* client = ChromeKeyboardControllerClient::Get();
-  const PrefService* service = profile()->GetPrefs();
-  if (service->HasPrefPath(prefs::kTouchVirtualKeyboardEnabled)) {
-    // Since these flags are mutually exclusive, setting one clears the other.
-    client->SetEnableFlag(
-        service->GetBoolean(prefs::kTouchVirtualKeyboardEnabled)
-            ? KeyboardEnableFlag::kPolicyEnabled
-            : KeyboardEnableFlag::kPolicyDisabled);
-  } else {
-    client->ClearEnableFlag(KeyboardEnableFlag::kPolicyDisabled);
-    client->ClearEnableFlag(KeyboardEnableFlag::kPolicyEnabled);
-  }
-}
-
 ash::ShelfItemStatus ChromeLauncherController::GetAppState(
     const std::string& app_id) {
   for (auto& it : web_contents_to_app_id_) {
@@ -1068,7 +1051,7 @@ void ChromeLauncherController::CreateBrowserShortcutLauncherItem() {
 }
 
 bool ChromeLauncherController::IsIncognito(
-    const content::WebContents* web_contents) const {
+    content::WebContents* web_contents) const {
   const Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
   return profile->IsOffTheRecord() && !profile->IsGuestSession() &&
@@ -1161,10 +1144,6 @@ void ChromeLauncherController::AttachProfile(Profile* profile_to_attach) {
   pref_change_registrar_.Add(
       arc::prefs::kArcEnabled,
       base::Bind(&ChromeLauncherController::ScheduleUpdateAppLaunchersFromPref,
-                 base::Unretained(this)));
-  pref_change_registrar_.Add(
-      prefs::kTouchVirtualKeyboardEnabled,
-      base::Bind(&ChromeLauncherController::SetVirtualKeyboardBehaviorFromPrefs,
                  base::Unretained(this)));
 
   std::unique_ptr<LauncherAppUpdater> extension_app_updater(

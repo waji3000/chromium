@@ -805,7 +805,7 @@ bool AlsoUseShowMenuActionForDefaultAction(const ui::AXNodeData& data) {
 }
 
 - (id)AXWindow {
-  return node_->GetDelegate()->GetTopLevelWidget().GetNativeNSWindow();
+  return node_->GetDelegate()->GetNSWindow();
 }
 
 - (id)AXTopLevelUIElement {

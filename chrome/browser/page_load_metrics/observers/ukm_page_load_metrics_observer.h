@@ -78,6 +78,8 @@ class UkmPageLoadMetricsObserver
   // Adds main resource timing metrics to |builder|.
   void ReportMainResourceTimingMetrics(ukm::builders::PageLoad* builder);
 
+  void ReportLayoutStability(const page_load_metrics::PageLoadExtraInfo& info);
+
   // Guaranteed to be non-null during the lifetime of |this|.
   network::NetworkQualityTracker* network_quality_tracker_;
 
@@ -99,6 +101,12 @@ class UkmPageLoadMetricsObserver
 
   // PAGE_TRANSITION_LINK is the default PageTransition value.
   ui::PageTransition page_transition_ = ui::PAGE_TRANSITION_LINK;
+
+  // True if the page started hidden, or ever became hidden.
+  bool was_hidden_ = false;
+
+  // True if the page main resource was served from disk cache.
+  bool was_cached_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(UkmPageLoadMetricsObserver);
 };

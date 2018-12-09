@@ -55,6 +55,7 @@
 #include "third_party/blink/renderer/core/layout/layout_theme.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/line/inline_text_box.h"
+#include "third_party/blink/renderer/core/layout/logical_values.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_constraint_space.h"
 #include "third_party/blink/renderer/core/layout/text_autosizer.h"
 #include "third_party/blink/renderer/core/page/page.h"
@@ -433,6 +434,22 @@ void LayoutBlock::UpdateLayout() {
 
   LayoutAnalyzer::Scope analyzer(*this);
 
+  base::Optional<DisplayLockContext::ScopedPendingFrameRect>
+      scoped_pending_frame_rect;
+  if (auto* context = GetDisplayLockContext()) {
+    // In a display locked element, we might be prevented from doing layout in
+    // which case we should abort.
+    if (LayoutBlockedByDisplayLock())
+      return;
+    // If we're display locked, then our layout should go into a pending frame
+    // rect without updating the frame rect visible to the ancestors. The
+    // following scoped object provides this functionality: it puts in place the
+    // (previously updated) pending frame rect. When the object is destroyed, it
+    // saves the pending frame rect in the DisplayLockContext and restores the
+    // frame rect that was in place at the time the lock was acquired.
+    scoped_pending_frame_rect.emplace(context->GetScopedPendingFrameRect());
+  }
+
   bool needs_scroll_anchoring =
       HasOverflowClip() && GetScrollableArea()->ShouldPerformScrollAnchoring();
   if (needs_scroll_anchoring)
@@ -446,11 +463,12 @@ void LayoutBlock::UpdateLayout() {
   // It's safe to check for control clip here, since controls can never be table
   // cells. If we have a lightweight clip, there can never be any overflow from
   // children.
-  if (HasControlClip() && overflow_)
+  if (HasControlClip() && HasLayoutOverflow())
     ClearLayoutOverflow();
 
   height_available_to_children_changed_ = false;
   cached_constraint_space_.reset();
+  NotifyDisplayLockDidLayout();
 }
 
 bool LayoutBlock::WidthAvailableToChildrenHasChanged() {
@@ -503,7 +521,7 @@ void LayoutBlock::AddLayoutOverflowFromChildren() {
 void LayoutBlock::ComputeOverflow(LayoutUnit old_client_after_edge,
                                   bool recompute_floats) {
   LayoutRect previous_visual_overflow_rect = VisualOverflowRect();
-  overflow_.reset();
+  ClearAllOverflows();
   ComputeLayoutOverflow(old_client_after_edge, recompute_floats);
   ComputeVisualOverflow(previous_visual_overflow_rect, recompute_floats);
 }
@@ -546,8 +564,7 @@ void LayoutBlock::ComputeLayoutOverflow(LayoutUnit old_client_after_edge,
           (old_client_after_edge - client_rect.X()).ClampNegativeToZero(),
           LayoutUnit(1));
     AddLayoutOverflow(rect_to_apply);
-    if (HasOverflowModel())
-      overflow_->SetLayoutClientAfterEdge(old_client_after_edge);
+    SetLayoutClientAfterEdge(old_client_after_edge);
   }
 }
 
@@ -725,9 +742,7 @@ bool LayoutBlock::SimplifiedLayout() {
     // every relayout so it's not a regression. computeOverflow expects the
     // bottom edge before we clamp our height. Since this information isn't
     // available during simplifiedLayout, we cache the value in m_overflow.
-    LayoutUnit old_client_after_edge = HasOverflowModel()
-                                           ? overflow_->LayoutClientAfterEdge()
-                                           : ClientLogicalBottom();
+    LayoutUnit old_client_after_edge = LayoutClientAfterEdge();
     ComputeOverflow(old_client_after_edge, true);
   }
 
@@ -892,8 +907,8 @@ void LayoutBlock::LayoutPositionedObject(LayoutBox* positioned_object,
   // here instead of a full layout. Need to investigate why it does not
   // trigger the correct invalidations in that case. crbug.com/350756
   if (info == kForcedLayoutAfterContainingBlockMoved) {
-    positioned_object->SetNeedsLayout(LayoutInvalidationReason::kAncestorMoved,
-                                      kMarkOnlyThis);
+    positioned_object->SetNeedsLayout(
+        layout_invalidation_reason::kAncestorMoved, kMarkOnlyThis);
   }
 
   positioned_object->LayoutIfNeeded();
@@ -1041,7 +1056,7 @@ void LayoutBlock::RemovePositionedObjects(
         // invalidation container.
         // Invalidate it (including non-compositing descendants) on its original
         // paint invalidation container.
-        if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+        if (!RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
           // This valid because we need to invalidate based on the current
           // status.
           DisableCompositingQueryAsserts compositing_disabler;
@@ -1326,7 +1341,7 @@ PositionWithAffinity LayoutBlock::PositionForPointIfOutsideAtomicInlineLevel(
 static inline bool IsChildHitTestCandidate(LayoutBox* box) {
   return box->Size().Height() &&
          box->StyleRef().Visibility() == EVisibility::kVisible &&
-         !box->IsOutOfFlowPositioned() && !box->IsLayoutFlowThread();
+         !box->IsFloatingOrOutOfFlowPositioned() && !box->IsLayoutFlowThread();
 }
 
 PositionWithAffinity LayoutBlock::PositionForPoint(
@@ -1368,9 +1383,6 @@ PositionWithAffinity LayoutBlock::PositionForPoint(
         continue;
       LayoutUnit child_logical_bottom =
           LogicalTopForChild(*child_box) + LogicalHeightForChild(*child_box);
-      if (child_box->IsLayoutBlockFlow())
-          child_logical_bottom += ToLayoutBlockFlow(child_box)->LowestFloatLogicalBottom();
-
       // We hit child if our click is above the bottom of its padding box (like
       // IE6/7 and FF3).
       if (point_in_logical_contents.Y() < child_logical_bottom ||
@@ -1532,13 +1544,12 @@ void LayoutBlock::ComputeBlockPreferredLogicalWidths(
     if (child->IsFloating() ||
         (child->IsBox() && ToLayoutBox(child)->AvoidsFloats())) {
       LayoutUnit float_total_width = float_left_width + float_right_width;
-      if (child_style->Clear() == EClear::kBoth ||
-          child_style->Clear() == EClear::kLeft) {
+      EClear c = ResolvedClear(*child_style, style_to_use);
+      if (c == EClear::kBoth || c == EClear::kLeft) {
         max_logical_width = std::max(float_total_width, max_logical_width);
         float_left_width = LayoutUnit();
       }
-      if (child_style->Clear() == EClear::kBoth ||
-          child_style->Clear() == EClear::kRight) {
+      if (c == EClear::kBoth || c == EClear::kRight) {
         max_logical_width = std::max(float_total_width, max_logical_width);
         float_right_width = LayoutUnit();
       }
@@ -1603,7 +1614,7 @@ void LayoutBlock::ComputeBlockPreferredLogicalWidths(
     }
 
     if (child->IsFloating()) {
-      if (child_style->Floating() == EFloat::kLeft)
+      if (ResolvedFloating(*child_style, style_to_use) == EFloat::kLeft)
         float_left_width += w;
       else
         float_right_width += w;
@@ -2134,9 +2145,7 @@ bool LayoutBlock::RecalcSelfOverflow() {
   if (NeedsLayout())
     return false;
 
-  LayoutUnit old_client_after_edge = HasOverflowModel()
-                                         ? overflow_->LayoutClientAfterEdge()
-                                         : ClientLogicalBottom();
+  LayoutUnit old_client_after_edge = LayoutClientAfterEdge();
   ComputeOverflow(old_client_after_edge, true);
 
   if (HasOverflowClip())

@@ -28,7 +28,6 @@ class ImageResourceObserver;
 class ResourceError;
 class ResourceFetcher;
 class ResourceResponse;
-class SecurityOrigin;
 
 // ImageResourceContent is a container that holds fetch result of
 // an ImageResource in a decoded form.
@@ -49,13 +48,15 @@ class CORE_EXPORT ImageResourceContent final
   // Used for loading.
   // Returned content will be associated immediately later with ImageResource.
   static ImageResourceContent* CreateNotStarted() {
-    return new ImageResourceContent(nullptr);
+    return MakeGarbageCollected<ImageResourceContent>(nullptr);
   }
 
   // Creates ImageResourceContent from an already loaded image.
   static ImageResourceContent* CreateLoaded(scoped_refptr<blink::Image>);
 
   static ImageResourceContent* Fetch(FetchParameters&, ResourceFetcher*);
+
+  explicit ImageResourceContent(scoped_refptr<blink::Image> = nullptr);
 
   // Returns the NullImage() if the image is not available yet.
   blink::Image* GetImage() const;
@@ -106,7 +107,7 @@ class CORE_EXPORT ImageResourceContent final
 
   // Redirecting methods to Resource.
   const KURL& Url() const;
-  bool IsAccessAllowed(const SecurityOrigin*);
+  bool IsAccessAllowed();
   const ResourceResponse& GetResponse() const;
   base::Optional<ResourceError> GetResourceError() const;
   // DEPRECATED: ImageResourceContents consumers shouldn't need to worry about
@@ -182,8 +183,6 @@ class CORE_EXPORT ImageResourceContent final
 
  private:
   using CanDeferInvalidation = ImageResourceObserver::CanDeferInvalidation;
-
-  explicit ImageResourceContent(scoped_refptr<blink::Image> = nullptr);
 
   // ImageObserver
   void DecodedSizeChangedTo(const blink::Image*, size_t new_size) override;

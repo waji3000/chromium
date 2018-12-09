@@ -32,7 +32,7 @@
 #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
 #include "chrome/browser/media/webrtc/media_stream_devices_controller.h"
 #include "chrome/browser/metrics/chrome_metrics_service_client.h"
-#include "chrome/browser/net/nqe/ui_network_quality_estimator_service.h"
+#include "chrome/browser/net/net_error_tab_helper.h"
 #include "chrome/browser/net/prediction_options.h"
 #include "chrome/browser/net/profile_network_context_service.h"
 #include "chrome/browser/net/system_network_context_manager.h"
@@ -250,6 +250,7 @@
 #include "chrome/browser/chromeos/login/users/multi_profile_user_controller.h"
 #include "chrome/browser/chromeos/net/network_throttling_observer.h"
 #include "chrome/browser/chromeos/platform_keys/key_permissions.h"
+#include "chrome/browser/chromeos/plugin_vm/plugin_vm_pref_names.h"
 #include "chrome/browser/chromeos/policy/app_install_event_log_manager_wrapper.h"
 #include "chrome/browser/chromeos/policy/app_install_event_logger.h"
 #include "chrome/browser/chromeos/policy/auto_enrollment_client_impl.h"
@@ -258,6 +259,7 @@
 #include "chrome/browser/chromeos/policy/device_status_collector.h"
 #include "chrome/browser/chromeos/policy/dm_token_storage.h"
 #include "chrome/browser/chromeos/policy/policy_cert_service_factory.h"
+#include "chrome/browser/chromeos/power/auto_screen_brightness/metrics_reporter.h"
 #include "chrome/browser/chromeos/power/power_metrics_reporter.h"
 #include "chrome/browser/chromeos/preferences.h"
 #include "chrome/browser/chromeos/printing/cups_printers_manager.h"
@@ -278,6 +280,7 @@
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
 #include "chromeos/audio/audio_devices_pref_handler_impl.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/network/fast_transition_observer.h"
 #include "chromeos/network/proxy/proxy_config_handler.h"
 #include "chromeos/services/multidevice_setup/multidevice_setup_service.h"
 #include "chromeos/timezone/timezone_resolver.h"
@@ -291,6 +294,7 @@
 #endif
 
 #if defined(OS_CHROMEOS) && BUILDFLAG(ENABLE_APP_LIST)
+#include "chrome/browser/chromeos/apps/apk_web_app_service.h"
 #include "chrome/browser/ui/app_list/arc/arc_app_list_prefs.h"
 #endif
 
@@ -309,7 +313,6 @@
 #endif  // defined(GOOGLE_CHROME_BUILD)
 #include "chrome/browser/safe_browsing/chrome_cleaner/settings_resetter_win.h"
 #include "chrome/browser/safe_browsing/settings_reset_prompt/settings_reset_prompt_prefs_manager.h"
-#include "chrome/browser/ui/desktop_ios_promotion/desktop_ios_promotion_util.h"
 #endif
 
 #if defined(OS_WIN) || defined(OS_MACOSX) || \
@@ -379,6 +382,15 @@ const char kSupervisedUserCreationAllowed[] =
 // Deprecated 10/2018
 const char kReverseAutologinEnabled[] = "reverse_autologin.enabled";
 
+// Deprecated 11/2018.
+const char kNetworkQualities[] = "net.network_qualities";
+const char kForceSessionSync[] = "settings.history_recorded";
+const char kOnboardDuringNUX[] = "browser.onboard_during_nux";
+const char kNuxOnboardGroup[] = "browser.onboard_group";
+// This pref is particularly large, taking up 15+% of the prefs file, so should
+// perhaps be kept around longer than the others.
+const char kHttpServerProperties[] = "net.http_server_properties";
+
 // Register prefs used only for migration (clearing or moving to a new key).
 void RegisterProfilePrefsForMigration(
     user_prefs::PrefRegistrySyncable* registry) {
@@ -404,6 +416,13 @@ void RegisterProfilePrefsForMigration(
   registry->RegisterBooleanPref(kSupervisedUserCreationAllowed, true);
 
   registry->RegisterBooleanPref(kReverseAutologinEnabled, true);
+
+  registry->RegisterDictionaryPref(kNetworkQualities, PrefRegistry::LOSSY_PREF);
+  registry->RegisterBooleanPref(kForceSessionSync, false);
+  registry->RegisterBooleanPref(kOnboardDuringNUX, false);
+  registry->RegisterIntegerPref(kNuxOnboardGroup, 0);
+  registry->RegisterDictionaryPref(kHttpServerProperties,
+                                   PrefRegistry::LOSSY_PREF);
 }
 
 }  // namespace
@@ -489,12 +508,15 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
   chromeos::device_settings_cache::RegisterPrefs(registry);
   chromeos::echo_offer::RegisterPrefs(registry);
   chromeos::EnableDebuggingScreenHandler::RegisterPrefs(registry);
+  chromeos::FastTransitionObserver::RegisterPrefs(registry);
   chromeos::HIDDetectionScreenHandler::RegisterPrefs(registry);
   chromeos::KioskAppManager::RegisterPrefs(registry);
   chromeos::language_prefs::RegisterPrefs(registry);
   chromeos::MultiProfileUserController::RegisterPrefs(registry);
   chromeos::NetworkThrottlingObserver::RegisterPrefs(registry);
   chromeos::PowerMetricsReporter::RegisterLocalStatePrefs(registry);
+  chromeos::power::auto_screen_brightness::MetricsReporter::
+      RegisterLocalStatePrefs(registry);
   chromeos::Preferences::RegisterPrefs(registry);
   chromeos::ResetScreen::RegisterPrefs(registry);
   chromeos::ResourceReporter::RegisterPrefs(registry);
@@ -529,7 +551,6 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
 
 #if defined(OS_WIN)
   component_updater::RegisterPrefsForSwReporter(registry);
-  desktop_ios_promotion::RegisterLocalPrefs(registry);
 #if defined(GOOGLE_CHROME_BUILD)
   IncompatibleApplicationsUpdater::RegisterLocalStatePrefs(registry);
   ModuleDatabase::RegisterLocalStatePrefs(registry);
@@ -539,6 +560,9 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
   registry->RegisterBooleanPref(kResetHasSeenWin10PromoPage, false);
   registry->RegisterStringPref(kLastWelcomedOSVersion, std::string());
 #endif
+
+  // Obsolete. See MigrateObsoleteBrowserPrefs().
+  registry->RegisterIntegerPref(metrics::prefs::kStabilityExecutionPhase, 0);
 
 #if defined(TOOLKIT_VIEWS)
   RegisterBrowserViewLocalPrefs(registry);
@@ -558,6 +582,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   ChromeContentBrowserClient::RegisterProfilePrefs(registry);
   ChromeSSLHostStateDelegate::RegisterProfilePrefs(registry);
   ChromeVersionService::RegisterProfilePrefs(registry);
+  chrome_browser_net::NetErrorTabHelper::RegisterProfilePrefs(registry);
   chrome_browser_net::RegisterPredictionOptionsProfilePrefs(registry);
   chrome_prefs::RegisterProfilePrefs(registry);
   dom_distiller::DistilledPagePrefs::RegisterProfilePrefs(registry);
@@ -605,7 +630,6 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   syncer::InvalidatorRegistrarWithMemory::RegisterProfilePrefs(registry);
   TemplateURLPrepopulateData::RegisterProfilePrefs(registry);
   translate::TranslatePrefs::RegisterProfilePrefs(registry);
-  UINetworkQualityEstimatorService::RegisterProfilePrefs(registry);
   ZeroSuggestProvider::RegisterProfilePrefs(registry);
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
@@ -723,6 +747,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   extensions::EPKPChallengeUserKey::RegisterProfilePrefs(registry);
   flags_ui::PrefServiceFlagsStorage::RegisterProfilePrefs(registry);
   lock_screen_apps::StateController::RegisterProfilePrefs(registry);
+  plugin_vm::prefs::RegisterProfilePrefs(registry);
   policy::AppInstallEventLogger::RegisterProfilePrefs(registry);
   policy::AppInstallEventLogManagerWrapper::RegisterProfilePrefs(registry);
   policy::DeviceStatusCollector::RegisterProfilePrefs(registry);
@@ -731,6 +756,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
 
 #if defined(OS_CHROMEOS) && BUILDFLAG(ENABLE_APP_LIST)
   ArcAppListPrefs::RegisterProfilePrefs(registry);
+  chromeos::ApkWebAppService::RegisterProfilePrefs(registry);
 #endif
 
 #if BUILDFLAG(ENABLE_RLZ)
@@ -739,7 +765,6 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
 
 #if defined(OS_WIN)
   component_updater::RegisterProfilePrefsForSwReporter(registry);
-  desktop_ios_promotion::RegisterProfilePrefs(registry);
   NetworkProfileBubble::RegisterProfilePrefs(registry);
   safe_browsing::SettingsResetPromptPrefsManager::RegisterProfilePrefs(
       registry);
@@ -805,6 +830,9 @@ void RegisterLoginProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
 
 // This method should be periodically pruned of year+ old migrations.
 void MigrateObsoleteBrowserPrefs(Profile* profile, PrefService* local_state) {
+  // Added 12/2018.
+  local_state->ClearPref(metrics::prefs::kStabilityExecutionPhase);
+
 #if defined(OS_ANDROID)
   // Added 9/2018
   local_state->ClearPref(
@@ -865,4 +893,11 @@ void MigrateObsoleteProfilePrefs(Profile* profile) {
 
   // Added 10/2018
   profile_prefs->ClearPref(kReverseAutologinEnabled);
+
+  // Added 11/2018.
+  profile_prefs->ClearPref(kNetworkQualities);
+  profile_prefs->ClearPref(kForceSessionSync);
+  profile_prefs->ClearPref(kOnboardDuringNUX);
+  profile_prefs->ClearPref(kNuxOnboardGroup);
+  profile_prefs->ClearPref(kHttpServerProperties);
 }

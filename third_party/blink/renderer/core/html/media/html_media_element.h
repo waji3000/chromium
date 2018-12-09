@@ -42,9 +42,9 @@
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_member.h"
 #include "third_party/blink/renderer/platform/network/mime/mime_type_registry.h"
+#include "third_party/blink/renderer/platform/scheduler/public/post_cancellable_task.h"
 #include "third_party/blink/renderer/platform/supplementable.h"
 #include "third_party/blink/renderer/platform/timer.h"
-#include "third_party/blink/renderer/platform/web_task_runner.h"
 
 namespace cc {
 class Layer;
@@ -123,6 +123,8 @@ class CORE_EXPORT HTMLMediaElement
   bool HasAudio() const;
 
   bool SupportsSave() const;
+
+  bool SupportsLoop() const;
 
   cc::Layer* CcLayer() const;
 
@@ -299,7 +301,7 @@ class CORE_EXPORT HTMLMediaElement
   bool IsSafeToLoadURL(const KURL&, InvalidURLAction);
 
   // Checks to see if current media data is CORS-same-origin.
-  bool IsMediaDataCORSSameOrigin() const;
+  bool IsMediaDataCorsSameOrigin() const;
 
   // Returns this media element is in a cross-origin frame.
   bool IsInCrossOriginFrame() const;
@@ -359,6 +361,7 @@ class CORE_EXPORT HTMLMediaElement
 
  private:
   // Friend class for testing.
+  friend class ContextMenuControllerTest;
   friend class MediaElementFillingViewportTest;
 
   void ResetMediaPlayerAndMediaSource();
@@ -522,7 +525,7 @@ class CORE_EXPORT HTMLMediaElement
 
   void ChangeNetworkStateFromLoadingToIdle();
 
-  WebMediaPlayer::CORSMode CorsMode() const;
+  WebMediaPlayer::CorsMode CorsMode() const;
 
   // Returns the "direction of playback" value as specified in the HTML5 spec.
   enum DirectionOfPlayback { kBackward, kForward };
@@ -689,7 +692,7 @@ class CORE_EXPORT HTMLMediaElement
     ~AudioClientImpl() override = default;
 
     // WebAudioSourceProviderClient
-    void SetFormat(size_t number_of_channels, float sample_rate) override;
+    void SetFormat(uint32_t number_of_channels, float sample_rate) override;
 
     void Trace(blink::Visitor*);
 
@@ -712,7 +715,7 @@ class CORE_EXPORT HTMLMediaElement
 
     // AudioSourceProvider
     void SetClient(AudioSourceProviderClient*) override;
-    void ProvideInput(AudioBus*, size_t frames_to_process) override;
+    void ProvideInput(AudioBus*, uint32_t frames_to_process) override;
 
     void Trace(blink::Visitor*);
 

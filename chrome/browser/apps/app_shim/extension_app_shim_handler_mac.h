@@ -37,10 +37,6 @@ class AppWindow;
 class Extension;
 }  // namespace extensions
 
-namespace views {
-class BridgeFactoryHost;
-}  // namespace views
-
 namespace apps {
 
 // This app shim handler that handles events for app shims that correspond to an
@@ -69,8 +65,8 @@ class ExtensionAppShimHandler : public AppShimHandler,
     virtual const extensions::Extension* MaybeGetAppExtension(
         content::BrowserContext* context,
         const std::string& extension_id);
-    virtual Host* CreateHost(const std::string& app_id,
-                             const base::FilePath& profile_path);
+    virtual AppShimHost* CreateHost(const std::string& app_id,
+                                    const base::FilePath& profile_path);
     virtual void EnableExtension(Profile* profile,
                                  const std::string& extension_id,
                                  const base::Callback<void()>& callback);
@@ -93,18 +89,17 @@ class ExtensionAppShimHandler : public AppShimHandler,
 
   // Get the host corresponding to a profile and app id, or null if there is
   // none. Virtual for tests.
-  virtual AppShimHandler::Host* FindHost(Profile* profile,
-                                         const std::string& app_id);
+  virtual AppShimHost* FindHost(Profile* profile, const std::string& app_id);
 
   // Return the host corresponding to |profile| and |app_id|, or create one if
   // needed.
-  AppShimHandler::Host* FindOrCreateHost(Profile* profile,
-                                         const std::string& app_id);
+  AppShimHost* FindOrCreateHost(Profile* profile, const std::string& app_id);
 
-  // Get the ViewBridgeFactoryHost, which may be used to create remote
-  // NSWindows, corresponding to a browser instance (or nullptr if none exists).
-  views::BridgeFactoryHost* GetViewsBridgeFactoryHostForBrowser(
-      Browser* browser);
+  // Get the AppShimHost corresponding to a browser instance, returning nullptr
+  // if none should exist. If no AppShimHost exists, but one should exist
+  // (e.g, because the app process is still launching), create one, which will
+  // bind to the app process when it finishes launching.
+  AppShimHost* GetHostForBrowser(Browser* browser);
 
   void SetHostedAppHidden(Profile* profile,
                           const std::string& app_id,
@@ -135,12 +130,12 @@ class ExtensionAppShimHandler : public AppShimHandler,
 
   // AppShimHandler overrides:
   void OnShimLaunch(std::unique_ptr<AppShimHostBootstrap> bootstrap) override;
-  void OnShimClose(Host* host) override;
-  void OnShimFocus(Host* host,
+  void OnShimClose(AppShimHost* host) override;
+  void OnShimFocus(AppShimHost* host,
                    AppShimFocusType focus_type,
                    const std::vector<base::FilePath>& files) override;
-  void OnShimSetHidden(Host* host, bool hidden) override;
-  void OnShimQuit(Host* host) override;
+  void OnShimSetHidden(AppShimHost* host, bool hidden) override;
+  void OnShimQuit(AppShimHost* host) override;
 
   // AppLifetimeMonitor::Observer overrides:
   void OnAppStart(content::BrowserContext* context,
@@ -162,8 +157,7 @@ class ExtensionAppShimHandler : public AppShimHandler,
   void OnBrowserRemoved(Browser* browser) override;
 
  protected:
-  typedef std::map<std::pair<Profile*, std::string>, AppShimHandler::Host*>
-      HostMap;
+  typedef std::map<std::pair<Profile*, std::string>, AppShimHost*> HostMap;
   typedef std::set<Browser*> BrowserSet;
   typedef std::map<std::string, BrowserSet> AppBrowserMap;
 
@@ -178,7 +172,7 @@ class ExtensionAppShimHandler : public AppShimHandler,
   // and receiving the quit confirmation). If the extension has been uninstalled
   // or disabled, the host is immediately closed. If non-nil, the Extension's
   // Profile will be set in |profile|.
-  const extensions::Extension* MaybeGetExtensionOrCloseHost(Host* host,
+  const extensions::Extension* MaybeGetExtensionOrCloseHost(AppShimHost* host,
                                                             Profile** profile);
 
   // Closes all browsers associated with an app.

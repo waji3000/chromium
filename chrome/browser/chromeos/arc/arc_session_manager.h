@@ -317,7 +317,7 @@ class ArcSessionManager : public ArcSessionRunner::Observer,
   // ACTIVE.
   void StartArc();
 
-  // Requests to stop ARC instnace. This resets two persistent flags:
+  // Requests to stop ARC instance. This resets two persistent flags:
   // kArcSignedIn and kArcTermsAccepted, so that, in next enabling,
   // it is started from Terms of Service negotiation.
   // TODO(hidehiko): Introduce STOPPING state, and this function should
@@ -365,13 +365,6 @@ class ArcSessionManager : public ArcSessionRunner::Observer,
   std::unique_ptr<ArcAppLauncher> playstore_launcher_;
   bool reenable_arc_ = false;
   bool provisioning_reported_ = false;
-  // In case ARC is started from OOBE |oobe_start_|, set to true. This flag is
-  // used to remember |IsArcOobeOptInActive| or
-  // |IsArcOptInWizardForAssistantActive| state when ARC start request was made.
-  // |IsArcOobeOptInActive| or |IsArcOptInWizardForAssistantActive| will be
-  // changed by the time when |oobe_or_opa_start_| is checked to prevent the
-  // Play Store auto-launch.
-  bool oobe_or_assistant_wizard_start_ = false;
   bool directly_started_ = false;
   base::OneShotTimer arc_sign_in_timer_;
 

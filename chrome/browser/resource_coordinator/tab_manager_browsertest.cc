@@ -196,10 +196,10 @@ class TabManagerTest : public InProcessBrowserTest {
     // The page has 2 iframes, we will use the first one.
     content::RenderFrameHost* child_frame = content->GetAllFrames()[1];
     // Verify that the main frame and subframe are cross-site.
-    EXPECT_FALSE(content::SiteInstance::IsSameWebSite(
-        browser()->profile(), main_frame->GetLastCommittedURL(),
-        child_frame->GetLastCommittedURL()));
+    EXPECT_NE(main_frame->GetLastCommittedURL().GetOrigin(),
+              child_frame->GetLastCommittedURL().GetOrigin());
     if (content::AreAllSitesIsolatedForTesting()) {
+      EXPECT_NE(main_frame->GetSiteInstance(), child_frame->GetSiteInstance());
       EXPECT_NE(main_frame->GetProcess()->GetID(),
                 child_frame->GetProcess()->GetID());
     }
@@ -276,7 +276,7 @@ class TabManagerTest : public InProcessBrowserTest {
   // indicates that the page is frozen. In production, this is sent by the
   // renderer process. This is done to finish a proactive tab discard.
   void SimulateFreezeSignal(content::WebContents* contents) {
-    TabLifecycleUnitSource::GetInstance()
+    GetTabLifecycleUnitSource()
         ->GetTabLifecycleUnit(contents)
         ->UpdateLifecycleState(mojom::LifecycleState::kFrozen);
   }
@@ -289,7 +289,7 @@ class TabManagerTest : public InProcessBrowserTest {
   }
 
   LifecycleUnit* GetLifecycleUnitAt(int index) {
-    return TabLifecycleUnitSource::GetInstance()->GetTabLifecycleUnit(
+    return GetTabLifecycleUnitSource()->GetTabLifecycleUnit(
         GetWebContentsAt(index));
   }
 
@@ -307,8 +307,7 @@ class TabManagerTestWithTwoTabs : public TabManagerTest {
     TabManagerTest::SetUpOnMainThread();
 
     // Open 2 tabs with default URLs in a focused tab strip.
-    TabLifecycleUnitSource::GetInstance()->SetFocusedTabStripModelForTesting(
-        tsm());
+    GetTabLifecycleUnitSource()->SetFocusedTabStripModelForTesting(tsm());
     OpenTwoTabs(GURL(chrome::kChromeUIAboutURL),
                 GURL(chrome::kChromeUICreditsURL));
   }
@@ -1380,10 +1379,10 @@ IN_PROC_BROWSER_TEST_F(TabManagerTest,
 
   // Sanity check that in this test page the main frame and the
   // subframe are cross-site.
-  EXPECT_FALSE(content::SiteInstance::IsSameWebSite(
-      browser()->profile(), main_frame->GetLastCommittedURL(),
-      child_frame->GetLastCommittedURL()));
+  EXPECT_NE(main_frame->GetLastCommittedURL().GetOrigin(),
+            child_frame->GetLastCommittedURL().GetOrigin());
   if (content::AreAllSitesIsolatedForTesting()) {
+    EXPECT_NE(main_frame->GetSiteInstance(), child_frame->GetSiteInstance());
     EXPECT_NE(main_frame->GetProcess()->GetID(),
               child_frame->GetProcess()->GetID());
   }

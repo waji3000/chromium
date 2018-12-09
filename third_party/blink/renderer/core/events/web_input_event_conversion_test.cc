@@ -61,7 +61,7 @@ KeyboardEvent* CreateKeyboardEventWithLocation(
   key_event_init->setBubbles(true);
   key_event_init->setCancelable(true);
   key_event_init->setLocation(location);
-  return new KeyboardEvent("keydown", key_event_init);
+  return MakeGarbageCollected<KeyboardEvent>("keydown", key_event_init);
 }
 
 int GetModifiersForKeyLocationCode(KeyboardEvent::KeyLocationCode location) {
@@ -123,8 +123,9 @@ TEST(WebInputEventConversionTest, InputEventsScaling) {
   web_view->GetSettings()->SetViewportEnabled(true);
   int page_width = 640;
   int page_height = 480;
-  web_view->Resize(WebSize(page_width, page_height));
-  web_view->UpdateAllLifecyclePhases();
+  web_view->MainFrameWidget()->Resize(WebSize(page_width, page_height));
+  web_view->MainFrameWidget()->UpdateAllLifecyclePhases(
+      WebWidget::LifecycleUpdateReason::kTest);
 
   web_view->SetPageScaleFactor(3);
 
@@ -148,10 +149,8 @@ TEST(WebInputEventConversionTest, InputEventsScaling) {
     EXPECT_EQ(15, transformed_event.PositionInScreen().x);
     EXPECT_EQ(15, transformed_event.PositionInScreen().y);
 
-    IntPoint movement =
-        FlooredIntPoint(transformed_event.MovementInRootFrame());
-    EXPECT_EQ(5, movement.X());
-    EXPECT_EQ(5, movement.Y());
+    EXPECT_EQ(15, transformed_event.movement_x);
+    EXPECT_EQ(15, transformed_event.movement_y);
   }
 
   {
@@ -322,8 +321,8 @@ TEST(WebInputEventConversionTest, InputEventsScaling) {
     EXPECT_FLOAT_EQ(3.5f, transformed_event.PositionInWidget().y);
     EXPECT_FLOAT_EQ(2.2f, transformed_event.width);
     EXPECT_FLOAT_EQ(3.3f, transformed_event.height);
-    EXPECT_EQ(10, transformed_event.movement_x);
-    EXPECT_EQ(10, transformed_event.movement_y);
+    EXPECT_EQ(30, transformed_event.movement_x);
+    EXPECT_EQ(30, transformed_event.movement_y);
   }
 }
 
@@ -338,8 +337,9 @@ TEST(WebInputEventConversionTest, InputEventsTransform) {
   web_view->GetSettings()->SetViewportEnabled(true);
   int page_width = 640;
   int page_height = 480;
-  web_view->Resize(WebSize(page_width, page_height));
-  web_view->UpdateAllLifecyclePhases();
+  web_view->MainFrameWidget()->Resize(WebSize(page_width, page_height));
+  web_view->MainFrameWidget()->UpdateAllLifecyclePhases(
+      WebWidget::LifecycleUpdateReason::kTest);
 
   web_view->SetPageScaleFactor(2);
   web_view->MainFrameImpl()->SetInputEventsScaleForEmulation(1.5);
@@ -363,11 +363,8 @@ TEST(WebInputEventConversionTest, InputEventsTransform) {
     EXPECT_FLOAT_EQ(30, position.Y());
     EXPECT_EQ(90, transformed_event.PositionInScreen().x);
     EXPECT_EQ(90, transformed_event.PositionInScreen().y);
-
-    IntPoint movement =
-        FlooredIntPoint(transformed_event.MovementInRootFrame());
-    EXPECT_EQ(20, movement.X());
-    EXPECT_EQ(20, movement.Y());
+    EXPECT_EQ(60, transformed_event.movement_x);
+    EXPECT_EQ(60, transformed_event.movement_y);
   }
 
   {
@@ -400,10 +397,8 @@ TEST(WebInputEventConversionTest, InputEventsTransform) {
     EXPECT_EQ(90, coalescedevents[0].PositionInScreen().x);
     EXPECT_EQ(90, coalescedevents[0].PositionInScreen().y);
 
-    IntPoint movement =
-        FlooredIntPoint(coalescedevents[0].MovementInRootFrame());
-    EXPECT_EQ(20, movement.X());
-    EXPECT_EQ(20, movement.Y());
+    EXPECT_EQ(60, coalescedevents[0].movement_x);
+    EXPECT_EQ(60, coalescedevents[0].movement_y);
 
     position = coalescedevents[1].PositionInRootFrame();
     EXPECT_FLOAT_EQ(30, position.X());
@@ -411,9 +406,8 @@ TEST(WebInputEventConversionTest, InputEventsTransform) {
     EXPECT_EQ(90, coalescedevents[1].PositionInScreen().x);
     EXPECT_EQ(120, coalescedevents[1].PositionInScreen().y);
 
-    movement = FlooredIntPoint(coalescedevents[1].MovementInRootFrame());
-    EXPECT_EQ(20, movement.X());
-    EXPECT_EQ(10, movement.Y());
+    EXPECT_EQ(60, coalescedevents[1].movement_x);
+    EXPECT_EQ(30, coalescedevents[1].movement_y);
   }
 
   {
@@ -600,8 +594,9 @@ TEST(WebInputEventConversionTest, InputEventsConversions) {
       web_view_helper.InitializeAndLoad(base_url + file_name);
   int page_width = 640;
   int page_height = 480;
-  web_view->Resize(WebSize(page_width, page_height));
-  web_view->UpdateAllLifecyclePhases();
+  web_view->MainFrameWidget()->Resize(WebSize(page_width, page_height));
+  web_view->MainFrameWidget()->UpdateAllLifecyclePhases(
+      WebWidget::LifecycleUpdateReason::kTest);
 
   LocalFrameView* view = ToLocalFrame(web_view->GetPage()->MainFrame())->View();
   {
@@ -637,8 +632,9 @@ TEST(WebInputEventConversionTest, VisualViewportOffset) {
       web_view_helper.InitializeAndLoad(base_url + file_name);
   int page_width = 640;
   int page_height = 480;
-  web_view->Resize(WebSize(page_width, page_height));
-  web_view->UpdateAllLifecyclePhases();
+  web_view->MainFrameWidget()->Resize(WebSize(page_width, page_height));
+  web_view->MainFrameWidget()->UpdateAllLifecyclePhases(
+      WebWidget::LifecycleUpdateReason::kTest);
 
   web_view->SetPageScaleFactor(2);
 
@@ -735,13 +731,14 @@ TEST(WebInputEventConversionTest, ElasticOverscroll) {
       web_view_helper.InitializeAndLoad(base_url + file_name);
   int page_width = 640;
   int page_height = 480;
-  web_view->Resize(WebSize(page_width, page_height));
-  web_view->UpdateAllLifecyclePhases();
+  web_view->MainFrameWidget()->Resize(WebSize(page_width, page_height));
+  web_view->MainFrameWidget()->UpdateAllLifecyclePhases(
+      WebWidget::LifecycleUpdateReason::kTest);
 
   LocalFrameView* view = ToLocalFrame(web_view->GetPage()->MainFrame())->View();
 
   gfx::Vector2dF elastic_overscroll(10, -20);
-  web_view->ApplyViewportChanges(
+  web_view->MainFrameWidget()->ApplyViewportChanges(
       {gfx::ScrollOffset(), elastic_overscroll, 1.0f, 0.0f});
 
   // Just elastic overscroll.
@@ -810,11 +807,12 @@ TEST(WebInputEventConversionTest, ElasticOverscrollWithPageReload) {
       web_view_helper.InitializeAndLoad(base_url + file_name);
   int page_width = 640;
   int page_height = 480;
-  web_view->Resize(WebSize(page_width, page_height));
-  web_view->UpdateAllLifecyclePhases();
+  web_view->MainFrameWidget()->Resize(WebSize(page_width, page_height));
+  web_view->MainFrameWidget()->UpdateAllLifecyclePhases(
+      WebWidget::LifecycleUpdateReason::kTest);
 
   gfx::Vector2dF elastic_overscroll(10, -20);
-  web_view->ApplyViewportChanges(
+  web_view->MainFrameWidget()->ApplyViewportChanges(
       {gfx::ScrollOffset(), elastic_overscroll, 1.0f, 0.0f});
   frame_test_helpers::ReloadFrame(
       web_view_helper.GetWebView()->MainFrameImpl());

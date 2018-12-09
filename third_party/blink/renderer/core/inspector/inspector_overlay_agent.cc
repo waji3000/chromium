@@ -37,6 +37,7 @@
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_data.h"
+#include "third_party/blink/renderer/bindings/core/v8/sanitize_script_errors.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_source_code.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
@@ -46,6 +47,7 @@
 #include "third_party/blink/renderer/core/dom/static_node_list.h"
 #include "third_party/blink/renderer/core/events/web_input_event_conversion.h"
 #include "third_party/blink/renderer/core/exported/web_view_impl.h"
+#include "third_party/blink/renderer/core/frame/frame_overlay.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
@@ -63,12 +65,10 @@
 #include "third_party/blink/renderer/core/loader/frame_load_request.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
-#include "third_party/blink/renderer/core/page/page_overlay.h"
 #include "third_party/blink/renderer/platform/bindings/script_forbidden_scope.h"
 #include "third_party/blink/renderer/platform/graphics/color.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/graphics/paint/cull_rect.h"
-#include "third_party/blink/renderer/platform/loader/fetch/access_control_status.h"
 #include "v8/include/v8.h"
 
 namespace blink {
@@ -142,14 +142,14 @@ const int kCtrlOrMeta = WebInputEvent::kControlKey;
 }  // namespace
 
 class InspectorOverlayAgent::InspectorPageOverlayDelegate final
-    : public PageOverlay::Delegate {
+    : public FrameOverlay::Delegate {
  public:
   explicit InspectorPageOverlayDelegate(InspectorOverlayAgent& overlay)
       : overlay_(&overlay) {}
 
-  void PaintPageOverlay(const PageOverlay&,
-                        GraphicsContext& graphics_context,
-                        const IntSize& web_view_size) const override {
+  void PaintFrameOverlay(const FrameOverlay&,
+                         GraphicsContext& graphics_context,
+                         const IntSize& web_view_size) const override {
     if (overlay_->IsEmpty())
       return;
 
@@ -169,8 +169,12 @@ class InspectorOverlayAgent::InspectorOverlayChromeClient final
  public:
   static InspectorOverlayChromeClient* Create(ChromeClient& client,
                                               InspectorOverlayAgent& overlay) {
-    return new InspectorOverlayChromeClient(client, overlay);
+    return MakeGarbageCollected<InspectorOverlayChromeClient>(client, overlay);
   }
+
+  InspectorOverlayChromeClient(ChromeClient& client,
+                               InspectorOverlayAgent& overlay)
+      : client_(&client), overlay_(&overlay) {}
 
   void Trace(blink::Visitor* visitor) override {
     visitor->Trace(client_);
@@ -194,10 +198,6 @@ class InspectorOverlayAgent::InspectorOverlayChromeClient final
   void InvalidateRect(const IntRect&) override { overlay_->Invalidate(); }
 
  private:
-  InspectorOverlayChromeClient(ChromeClient& client,
-                               InspectorOverlayAgent& overlay)
-      : client_(&client), overlay_(&overlay) {}
-
   Member<ChromeClient> client_;
   Member<InspectorOverlayAgent> overlay_;
 };
@@ -229,6 +229,7 @@ InspectorOverlayAgent::InspectorOverlayAgent(
       show_fps_counter_(&agent_state_, /*default_value=*/false),
       show_paint_rects_(&agent_state_, /*default_value=*/false),
       show_scroll_bottleneck_rects_(&agent_state_, /*default_value=*/false),
+      show_hit_test_borders_(&agent_state_, /*default_value=*/false),
       show_size_on_resize_(&agent_state_, /*default_value=*/false),
       paused_in_debugger_message_(&agent_state_, /*default_value=*/String()) {}
 
@@ -254,6 +255,7 @@ void InspectorOverlayAgent::Restore() {
   setShowFPSCounter(show_fps_counter_.Get());
   setShowPaintRects(show_paint_rects_.Get());
   setShowScrollBottleneckRects(show_scroll_bottleneck_rects_.Get());
+  setShowHitTestBorders(show_hit_test_borders_.Get());
   setShowViewportSizeOnResize(show_size_on_resize_.Get());
   if (paused_in_debugger_message_.Get().IsNull())
     setPausedInDebuggerMessage(paused_in_debugger_message_.Get());
@@ -284,6 +286,7 @@ Response InspectorOverlayAgent::disable() {
   setShowFPSCounter(false);
   setShowPaintRects(false);
   setShowScrollBottleneckRects(false);
+  setShowHitTestBorders(false);
   setShowViewportSizeOnResize(false);
   setPausedInDebuggerMessage(String());
   setSuspended(false);
@@ -335,6 +338,17 @@ Response InspectorOverlayAgent::setShowScrollBottleneckRects(bool show) {
       return response;
   }
   frame_impl_->ViewImpl()->SetShowScrollBottleneckRects(show);
+  return Response::OK();
+}
+
+Response InspectorOverlayAgent::setShowHitTestBorders(bool show) {
+  show_hit_test_borders_.Set(show);
+  if (show) {
+    Response response = CompositingEnabled();
+    if (!response.isSuccess())
+      return response;
+  }
+  frame_impl_->ViewImpl()->SetShowHitTestBorders(show);
   return Response::OK();
 }
 
@@ -471,18 +485,18 @@ void InspectorOverlayAgent::Invalidate() {
   if (IsEmpty())
     return;
 
-  if (!page_overlay_) {
-    page_overlay_ = PageOverlay::Create(
+  if (!frame_overlay_) {
+    frame_overlay_ = FrameOverlay::Create(
         frame_impl_->GetFrame(),
         std::make_unique<InspectorPageOverlayDelegate>(*this));
   }
 
-  page_overlay_->Update();
+  frame_overlay_->Update();
 }
 
 void InspectorOverlayAgent::UpdateAllOverlayLifecyclePhases() {
-  if (page_overlay_)
-    page_overlay_->Update();
+  if (frame_overlay_)
+    frame_overlay_->Update();
 
   if (!IsEmpty()) {
     base::AutoReset<bool> scoped(&in_layout_, true);
@@ -490,15 +504,16 @@ void InspectorOverlayAgent::UpdateAllOverlayLifecyclePhases() {
       needs_update_ = false;
       RebuildOverlayPage();
     }
-    OverlayMainFrame()->View()->UpdateAllLifecyclePhases();
+    OverlayMainFrame()->View()->UpdateAllLifecyclePhases(
+        DocumentLifecycle::LifecycleUpdateReason::kOther);
   }
 
-  if (page_overlay_ && page_overlay_->GetGraphicsLayer())
-    page_overlay_->GetGraphicsLayer()->Paint(nullptr);
+  if (frame_overlay_ && frame_overlay_->GetGraphicsLayer())
+    frame_overlay_->GetGraphicsLayer()->Paint(nullptr);
 }
 
 bool InspectorOverlayAgent::IsInspectorLayer(GraphicsLayer* layer) {
-  return page_overlay_ && page_overlay_->GetGraphicsLayer() == layer;
+  return frame_overlay_ && frame_overlay_->GetGraphicsLayer() == layer;
 }
 
 void InspectorOverlayAgent::DispatchBufferedTouchEvents() {
@@ -632,8 +647,8 @@ bool InspectorOverlayAgent::IsEmpty() {
 
 void InspectorOverlayAgent::ScheduleUpdate() {
   if (IsEmpty()) {
-    if (page_overlay_)
-      page_overlay_.reset();
+    if (frame_overlay_)
+      frame_overlay_.reset();
     return;
   }
   needs_update_ = true;
@@ -697,8 +712,9 @@ void InspectorOverlayAgent::DrawNodeHighlight() {
   }
 
   bool append_element_info =
-      highlight_node_->IsElementNode() && !omit_tooltip_ &&
-      node_highlight_config_.show_info && highlight_node_->GetLayoutObject() &&
+      (highlight_node_->IsElementNode() || highlight_node_->IsTextNode()) &&
+      !omit_tooltip_ && node_highlight_config_.show_info &&
+      highlight_node_->GetLayoutObject() &&
       highlight_node_->GetDocument().GetFrame();
   InspectorHighlight highlight(highlight_node_.Get(), node_highlight_config_,
                                append_element_info);
@@ -773,7 +789,7 @@ Page* InspectorOverlayAgent::OverlayPage() {
       frame_impl_->GetFrame()->GetPage()->GetChromeClient(), *this);
   page_clients.chrome_client = overlay_chrome_client_.Get();
   overlay_page_ = Page::Create(page_clients);
-  overlay_host_ = new InspectorOverlayHost(this);
+  overlay_host_ = MakeGarbageCollected<InspectorOverlayHost>(this);
 
   Settings& settings = frame_impl_->GetFrame()->GetPage()->GetSettings();
   Settings& overlay_settings = overlay_page_->GetSettings();
@@ -904,7 +920,7 @@ String InspectorOverlayAgent::EvaluateInOverlayForTest(const String& script) {
           ->GetScriptController()
           .ExecuteScriptInMainWorldAndReturnValue(
               ScriptSourceCode(script, ScriptSourceLocationType::kInspector),
-              KURL(), kOpaqueResource, ScriptFetchOptions(),
+              KURL(), SanitizeScriptErrors::kSanitize, ScriptFetchOptions(),
               ScriptController::kExecuteScriptWhenScriptsDisabled);
   return ToCoreStringWithUndefinedOrNullCheck(string);
 }
@@ -927,7 +943,7 @@ void InspectorOverlayAgent::ClearInternal() {
   inspect_mode_ = kNotSearching;
   screenshot_mode_ = false;
   timer_.Stop();
-  page_overlay_.reset();
+  frame_overlay_.reset();
   InnerHideHighlight();
 }
 

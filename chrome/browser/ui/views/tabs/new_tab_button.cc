@@ -72,7 +72,7 @@ NewTabButton::NewTabButton(TabStrip* tab_strip, views::ButtonListener* listener)
   ink_drop_container_ = new views::InkDropContainerView();
   AddChildView(ink_drop_container_);
   ink_drop_container_->SetVisible(false);
-  SetInkDropMode(InkDropMode::ON_NO_GESTURE_HANDLER);
+  SetInkDropMode(InkDropMode::ON);
   set_ink_drop_visible_opacity(0.08f);
 
   SetFocusPainter(nullptr);
@@ -225,7 +225,6 @@ gfx::Size NewTabButton::CalculatePreferredSize() const {
 void NewTabButton::OnBoundsChanged(const gfx::Rect& previous_bounds) {
   const gfx::Size ink_drop_size = GetContentsBounds().size();
   GetInkDrop()->HostSizeChanged(ink_drop_size);
-  UpdateInkDropMaskLayerSize(ink_drop_size);
 }
 
 bool NewTabButton::GetHitTestMask(gfx::Path* mask) const {
@@ -291,9 +290,13 @@ void NewTabButton::PaintFill(gfx::Canvas* canvas) const {
 }
 
 void NewTabButton::PaintPlusIcon(gfx::Canvas* canvas) const {
+  const SkColor background_color =
+      tab_strip_->GetTabBackgroundColor(TAB_INACTIVE);
+
   cc::PaintFlags flags;
   flags.setAntiAlias(true);
-  flags.setColor(tab_strip_->GetTabForegroundColor(TAB_INACTIVE));
+  flags.setColor(
+      tab_strip_->GetTabForegroundColor(TAB_INACTIVE, background_color));
   flags.setStrokeCap(cc::PaintFlags::kRound_Cap);
   constexpr int kStrokeWidth = 2;
   flags.setStrokeWidth(kStrokeWidth);

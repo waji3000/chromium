@@ -88,7 +88,6 @@ Polymer({
     /** @type {settings.SyncStatus} */
     syncStatus: {
       type: Object,
-      observer: 'onSyncStatusChanged_',
     },
 
     /**
@@ -143,6 +142,7 @@ Polymer({
       computed: 'computeSyncSectionDisabled_(' +
           'unifiedConsentEnabled, syncStatus.signedIn, syncStatus.disabled, ' +
           'syncStatus.hasError, syncStatus.statusAction)',
+      observer: 'onSyncSectionDisabledChanged_',
     },
 
     /** @private */
@@ -165,23 +165,12 @@ Polymer({
       }
     },
 
-    // The toggle for user events is not reflected directly on
-    // syncPrefs.userEventsSynced, because this sync preference must only be
-    // updated if there is no passphrase and typedUrls are synced as well.
-    userEventsToggleValue: Boolean,
-
     // <if expr="not chromeos">
     diceEnabled: Boolean,
     // </if>
 
     unifiedConsentEnabled: Boolean,
   },
-
-  observers: [
-    // Depends on signedIn_ so that the sync section is updated on signin
-    // changes, even though the actual value of signedIn_ is not used.
-    'onSyncSectionOpenedShouldChange_(signedIn_, syncSectionDisabled_)',
-  ],
 
   /** @private {?settings.SyncBrowserProxy} */
   browserProxy_: null,
@@ -317,20 +306,6 @@ Polymer({
   },
 
   /**
-   * Handles the change event for the unfied consent toggle.
-   * @private
-   */
-  onUnifiedConsentToggleChange_: function() {
-    const checked = this.$$('#unifiedConsentToggle').checked;
-    this.browserProxy_.unifiedConsentToggleChanged(checked);
-
-    if (!checked) {
-      this.syncSectionOpened_ = !this.syncSectionDisabled_;
-      this.personalizeSectionOpened_ = true;
-    }
-  },
-
-  /**
    * Handler for when the sync preferences are updated.
    * @private
    */
@@ -341,11 +316,6 @@ Polymer({
     // If autofill is not registered or synced, force Payments integration off.
     if (!this.syncPrefs.autofillRegistered || !this.syncPrefs.autofillSynced)
       this.set('syncPrefs.paymentsIntegrationEnabled', false);
-
-    this.set(
-        'userEventsToggleValue',
-        this.syncPrefs.userEventsSynced && this.syncPrefs.typedUrlsSynced &&
-            !this.syncPrefs.encryptAllData);
 
     // Hide the new passphrase box if the sync data has been encrypted.
     if (this.syncPrefs.encryptAllData)
@@ -421,25 +391,6 @@ Polymer({
    * @private
    */
   onTypedUrlsDataTypeChanged_: function() {
-    // Enabling typed URLs also resets the user events to ON. |encryptAllData|
-    // is not expected to change on the fly, and if it changed the user sync
-    // settings would be reset anyway.
-    if (!this.syncPrefs.encryptAllData && this.syncPrefs.typedUrlsSynced)
-      this.set('syncPrefs.userEventsSynced', true);
-
-    this.onSingleSyncDataTypeChanged_();
-  },
-
-  /**
-   * Handler for when the user events data type checkbox is changed.
-   * @private
-   */
-  onUserEventsSyncDataTypeChanged_: function() {
-    // Only update the sync preference when there is no passphrase and typed
-    // URLs are synced.
-    assert(!this.syncPrefs.encryptAllData && this.syncPrefs.typedUrlsSynced);
-    this.set('syncPrefs.userEventsSynced', this.userEventsToggleValue);
-
     this.onSingleSyncDataTypeChanged_();
   },
 
@@ -578,19 +529,6 @@ Polymer({
   },
 
   /**
-   * @param {boolean} syncAllDataTypes
-   * @param {boolean} typedUrlsSynced
-   * @param {boolean} userEventsEnforced
-   * @param {boolean} encryptAllData
-   * @return {boolean} Whether the sync checkbox should be disabled.
-   */
-  shouldUserEventsCheckboxBeDisabled_: function(
-      syncAllDataTypes, typedUrlsSynced, userEventsEnforced, encryptAllData) {
-    return syncAllDataTypes || !typedUrlsSynced || userEventsEnforced ||
-        encryptAllData;
-  },
-
-  /**
    * Checks the supplied passphrases to ensure that they are not empty and that
    * they match each other. Additionally, displays error UI if they are invalid.
    * @return {boolean} Whether the check was successful (i.e., that the
@@ -626,27 +564,9 @@ Polymer({
     settings.navigateTo(settings.routes.BASIC);
   },
 
-  // Computes the initial layout for the sync section and the personalize
-  // section. This function only does something on its first call.
-  onSyncStatusChanged_: function() {
-    if (!!this.syncStatus && !this.collapsibleSectionsInitialized_) {
-      this.collapsibleSectionsInitialized_ = true;
-      this.personalizeSectionOpened_ =
-          !this.$$('#unifiedConsentToggle').checked ||
-          !!this.syncStatus.setupInProgress;
-      this.syncSectionOpened_ =
-          this.personalizeSectionOpened_ && !this.syncSectionDisabled_;
-    }
-  },
-
-  /**
-   * Collapses the sync section if it becomes disabled, and expands it when it's
-   * re-enabled.
-   * @private
-   */
-  onSyncSectionOpenedShouldChange_: function() {
-    this.syncSectionOpened_ =
-        !this.syncSectionDisabled_ && !this.$$('#unifiedConsentToggle').checked;
+  /** @private */
+  onSyncSectionDisabledChanged_: function() {
+    this.syncSectionOpened_ = !this.syncSectionDisabled_;
   },
 
   /**
@@ -737,15 +657,6 @@ Polymer({
   shouldShowSyncControls_: function() {
     return !!this.unifiedConsentEnabled && this.syncStatus !== undefined &&
         !this.syncStatus.disabled;
-  },
-
-  /**
-   * @return {boolean}
-   * @private
-   */
-  shouldShowUnifiedConsentToggle_: function() {
-    return !!this.unifiedConsentEnabled && this.syncStatus !== undefined &&
-        !this.syncStatus.disabled && !!this.syncStatus.signedIn;
   },
 });
 

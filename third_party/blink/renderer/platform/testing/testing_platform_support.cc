@@ -110,10 +110,6 @@ WebBlobRegistry* TestingPlatformSupport::GetBlobRegistry() {
   return old_platform_ ? old_platform_->GetBlobRegistry() : nullptr;
 }
 
-std::unique_ptr<WebIDBFactory> TestingPlatformSupport::CreateIdbFactory() {
-  return old_platform_ ? old_platform_->CreateIdbFactory() : nullptr;
-}
-
 WebURLLoaderMockFactory* TestingPlatformSupport::GetURLLoaderMockFactory() {
   return old_platform_ ? old_platform_->GetURLLoaderMockFactory() : nullptr;
 }
@@ -186,11 +182,11 @@ ScopedUnittestsEnvironmentSetup::ScopedUnittestsEnvironmentSetup(int argc,
   ThreadState::AttachMainThread();
   ThreadState::Current()->RegisterTraceDOMWrappers(nullptr, nullptr, nullptr,
                                                    nullptr);
-  http_names::init();
-  fetch_initiator_type_names::init();
+  http_names::Init();
+  fetch_initiator_type_names::Init();
 
   InitializePlatformLanguage();
-  font_family_names::init();
+  font_family_names::Init();
   WebRuntimeFeatures::EnableExperimentalFeatures(true);
   WebRuntimeFeatures::EnableTestOnlyFeatures(true);
 }

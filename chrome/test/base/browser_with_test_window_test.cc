@@ -32,8 +32,12 @@
 #include "components/constrained_window/constrained_window_views.h"
 
 #if defined(OS_CHROMEOS)
+#include "ash/public/cpp/mus_property_mirror_ash.h"
 #include "ash/test/ash_test_views_delegate.h"
-#include "chrome/test/base/ash_test_environment_chrome.h"
+#include "content/public/browser/context_factory.h"
+#include "ui/aura/mus/window_tree_client.h"
+#include "ui/aura/test/env_test_helper.h"
+#include "ui/views/mus/mus_client.h"
 #else
 #include "ui/views/test/test_views_delegate.h"
 #endif
@@ -66,13 +70,11 @@ BrowserWithTestWindowTest::BrowserWithTestWindowTest(
     bool hosted_app,
     content::TestBrowserThreadBundle::Options thread_bundle_options)
     : thread_bundle_(thread_bundle_options),
+#if defined(OS_CHROMEOS)
+      ash_test_helper_(&ash_test_environment_),
+#endif
       browser_type_(browser_type),
       hosted_app_(hosted_app) {
-#if defined(OS_CHROMEOS)
-  ash_test_environment_ = std::make_unique<AshTestEnvironmentChrome>();
-  ash_test_helper_ =
-      std::make_unique<ash::AshTestHelper>(ash_test_environment_.get());
-#endif
 }
 
 BrowserWithTestWindowTest::~BrowserWithTestWindowTest() {}
@@ -80,11 +82,16 @@ BrowserWithTestWindowTest::~BrowserWithTestWindowTest() {}
 void BrowserWithTestWindowTest::SetUp() {
   testing::Test::SetUp();
 #if defined(OS_CHROMEOS)
-  ash_test_helper_->SetUp(true);
-  ash_test_helper_->SetRunningOutsideAsh();
+  ash_test_helper_.SetUp(true);
+  ash_test_helper_.SetRunningOutsideAsh();
 #elif defined(TOOLKIT_VIEWS)
   views_test_helper_.reset(new views::ScopedViewsTestHelper());
 #endif
+
+  // This must be created after ash_test_helper_ is set up so that it doesn't
+  // create an InputDeviceManager.
+  rvh_test_enabler_ = std::make_unique<content::RenderViewHostTestEnabler>();
+
 #if defined(TOOLKIT_VIEWS)
   SetConstrainedWindowViewsClient(CreateChromeConstrainedWindowViewsClient());
 
@@ -104,6 +111,23 @@ void BrowserWithTestWindowTest::SetUp() {
   // then Browser will create the a production BrowserWindow and the subclass
   // is responsible for cleaning it up (usually by NativeWidget destruction).
   window_.reset(CreateBrowserWindow());
+
+#if defined(OS_CHROMEOS)
+  if (aura::Env::GetInstance()->mode() == aura::Env::Mode::MUS) {
+    views::MusClient::InitParams mus_client_init_params;
+    mus_client_init_params.connector =
+        ash_test_helper()->GetWindowServiceConnector();
+    mus_client_init_params.create_wm_state = false;
+    mus_client_init_params.running_in_ws_process = true;
+    mus_client_init_params.window_tree_client =
+        aura::test::EnvTestHelper().GetWindowTreeClient();
+    mus_client_ = std::make_unique<views::MusClient>(mus_client_init_params);
+    mus_client_->SetMusPropertyMirror(
+        std::make_unique<ash::MusPropertyMirrorAsh>());
+
+    aura::Env::GetInstance()->set_context_factory(content::GetContextFactory());
+  }
+#endif
 
   browser_.reset(
       CreateBrowser(profile(), browser_type_, hosted_app_, window_.get()));
@@ -131,7 +155,7 @@ void BrowserWithTestWindowTest::TearDown() {
   profile_manager_.reset();
 
 #if defined(OS_CHROMEOS)
-  ash_test_helper_->TearDown();
+  ash_test_helper_.TearDown();
 #elif defined(TOOLKIT_VIEWS)
   views_test_helper_.reset();
 #endif
@@ -146,7 +170,7 @@ void BrowserWithTestWindowTest::TearDown() {
 
 gfx::NativeWindow BrowserWithTestWindowTest::GetContext() {
 #if defined(OS_CHROMEOS)
-  return ash_test_helper_->CurrentContext();
+  return ash_test_helper_.CurrentContext();
 #elif defined(TOOLKIT_VIEWS)
   return views_test_helper_->GetContext();
 #else

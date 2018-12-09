@@ -105,7 +105,7 @@
 <translation id="345171907106878721">સ્વયંને Chrome માં ઉમેરો</translation>
 <translation id="3479552764303398839">હમણાં નહીં</translation>
 <translation id="3503306920980160878">Chromeને આ સાઇટ સાથે તમારું સ્થાન શેર કરવા માટે તમારા સ્થાનના ઍક્સેસની જરૂર પડે છે</translation>
-<translation id="3582972582564653026">તમારા બધા ઉપકરણો પર Chromeને સિંક અને વ્યક્તિગત કરો</translation>
+<translation id="3582972582564653026">તમારા બધા ડિવાઇસ પર Chromeને સિંક કરો અને મનગમતું બનાવો</translation>
 <translation id="3622797965165704966">હવે તમારા Google એકાઉન્ટ સાથે અને શેર કરેલા કમ્પ્યુટર પર Chromeનો ઉપયોગ કરવો વધુ સરળ છે.</translation>
 <translation id="3637702109597584617">Google Chrome OS <ph name="TERMS_OF_SERVICE_LINK" />સેવાની શરતો<ph name="END_TERMS_OF_SERVICE_LINK" /></translation>
 <translation id="3716182511346448902">આ પેજ ઘણી વધુ મેમરીનો ઉપયોગ કરે છે, તેથી Chromeએ તેને થોભાવ્યું છે.</translation>
@@ -128,7 +128,7 @@
 <translation id="424864128008805179">Chromeમાંથી સાઇન આઉટ કરીએ?</translation>
 <translation id="4251615635259297716">તમારા Chrome ડેટાને આ એકાઉન્ટ સાથે લિંક કરીએ?</translation>
 <translation id="4251625577313994583">તમારા iPhone પર Chrome મેળવો</translation>
-<translation id="4293420128516039005">તમારા બધા ઉપકરણો પર Chromeને સિંક અને વ્યક્તિગત કરવા માટે સાઇન ઇન કરો</translation>
+<translation id="4293420128516039005">તમારા બધા ડિવાઇસ પર Chromeને સિંક અને વ્યક્તિગત કરવા માટે સાઇન ઇન કરો</translation>
 <translation id="4328355335528187361">Google Chrome Dev (mDNS-In)</translation>
 <translation id="4331809312908958774">Chrome OS</translation>
 <translation id="4343195214584226067"><ph name="EXTENSION_NAME" />ને Chromeમાં ઉમેરવામાં આવ્યું છે</translation>
@@ -142,10 +142,9 @@
 <translation id="4600710005438004015">Chromeનું નવું વર્ઝન અપડેટ ન થવાથી, તમે નવી સુવિધાઓ અને સુરક્ષાના સુધારા ચૂકી રહ્યા છો.</translation>
 <translation id="4631713731678262610">Chrome મેનૂમાં છુપાવો</translation>
 <translation id="4633000520311261472">Chrome ને સુરક્ષિત બનાવવા માટે, અમે <ph name="IDS_EXTENSION_WEB_STORE_TITLE" /> માં સૂચિબદ્ધ નથી અને તમારી જાણ વિના ઉમેરવામાં આવ્યાં હોઈ શકે છે તેવા કેટલાક એક્સ્ટેન્શન્સને અક્ષમ કર્યા છે.</translation>
-<translation id="4664415150087723341">Google Chrome માટેનું વિશિષ્ટ સુરક્ષા અપડેટ હમણાં જ લાગુ થયું; તેને પ્રભાવિત કરવા માટે તમારે અત્યારે પુનઃપ્રારંભ કરવું જોઈએ (અમે તમારા ટૅબ્સ પુનઃસ્થાપિત કરીશું).</translation>
 <translation id="4700157086864140907">તમે બ્રાઉઝરમાં જે કંઈ પણ લખો છો તે Google સર્વર્સ પર મોકલીને, Google શોધ દ્વારા ઉપયોગમાં લેવાતી સમાન જોડણી-પરીક્ષક તકનીકીનો ઉપયોગ કરવાની પરવાનગી આપતું, Google Chrome સ્માર્ટ જોડણી-પરીક્ષક પ્રાદન કરી શકે છે.</translation>
 <translation id="4728575227883772061">અનુલ્લેખિત ભૂલને કારણે ઇન્સ્ટોલેશન નિષ્ફળ રહ્યું. જો Google Chrome હાલમાં ચાલુ હોય, તો કૃપા કરીને તેને બંધ કરો અને તેનો ફરીથી પ્રયાસ કરો.</translation>
-<translation id="4750550185319565338"><ph name="PLUGIN_NAME" /> ને સક્ષમ કરવા માટે Chrome પુનઃપ્રારંભ કરો</translation>
+<translation id="4750550185319565338"><ph name="PLUGIN_NAME" />ને ચાલુ કરવા માટે Chrome ફરીથી ચાલુ કરો</translation>
 <translation id="4754614261631455953">Google Chrome કૅનેરી (mDNS-In)</translation>
 <translation id="4771048833395599659">આ ફાઇલ જોખમી હોઈ શકે છે, તેથી Chrome એ તેને અવરોધિત કરેલ છે.</translation>
 <translation id="4794050651896644714">Chromeમાં વિગતો સાચવો</translation>
@@ -222,7 +221,6 @@ Google Chrome તમારી સેટિંગ્સને પુનઃપ્�
 <translation id="7242029209006116544">તમે મેનેજ કરેલા એકાઉન્ટ સાથે સાઇન ઇન કરી રહ્યાં છો અને તમારી Google Chrome પ્રોફાઇલ પર એડમિનને એનું નિયંત્રણ આપી રહ્યાં છો. તમારો Chrome ડેટા, જેમ કે તમારી ઍપ, બુકમાર્ક, ઇતિહાસ, પાસવર્ડ અને બીજા સેટિંગ, કાયમ માટે <ph name="USER_NAME" /> પર બંધાયેલ રહેશે. તમે Google એકાઉન્ટ ડૅશબોર્ડ દ્વારા આ ડેટાને કાઢી શકશો, પરંતુ તમે આ ડેટાને બીજા એકાઉન્ટ સાથે સાંકળી શકશો નહિ. તમારા અસ્તિત્વમાં છે તે Chrome ડેટાને અલગ રાખવા માટે, તમે વૈકલ્પિક રૂપે એક નવી પ્રોફાઇલ બનાવી શકો છો. <ph name="LEARN_MORE" /></translation>
 <translation id="7296210096911315575">મહત્વપૂર્ણ ઉપયોગ અને સુરક્ષા માહિતી</translation>
 <translation id="7308322188646931570">ફાઇલો ડાઉનલોડ કરવા માટે Chromeને સ્ટોરેજના ઍક્સેસની જરૂર પડે છે</translation>
-<translation id="7330164299247909639">પ્રમાણીકરણ પ્રમાણપત્ર નિષ્ફળ થયું. કૃપા કરીને Google Chrome માં ફરીથી <ph name="USER_NAME" /> તરીકે સાઇન ઇન કરો અથવા વધુ માહિતી માટે તમારા વ્યવસ્થાપકનો સંપર્ક કરો. <ph name="ADDITIONAL_EXPLANATION" /></translation>
 <translation id="7339898014177206373">નવી વિંડો</translation>
 <translation id="7398801000654795464">તમે Chromeમાં <ph name="USER_EMAIL_ADDRESS" /> તરીકે સાઇન ઇન કર્યું હતું. ફરીથી સાઇન ઇન કરવા માટે કૃપા કરીને એ જ એકાઉન્ટનો ઉપયોગ કરો.</translation>
 <translation id="7408085963519505752">Chrome OS શરતો</translation>
@@ -267,8 +265,10 @@ Google Chrome તમારી સેટિંગ્સને પુનઃપ્�
 <translation id="8380166467911888159">જોડણીની ભૂલો સુધારવા માટે, Chrome તમે ટેક્સ્ટ ફીલ્ડમાં ટાઇપ કરો તે ટેક્સ્ટ Googleને મોકલે છે</translation>
 <translation id="840084489713044809">Google Chrome તમારા પાસવર્ડની નિકાસ કરવા માગે છે.</translation>
 <translation id="8406086379114794905">Chrome ને બહેતર બનાવવામાં સહાય કરો</translation>
+<translation id="8432724323949790809">તમારે હવે Google Chrome ફરી શરૂ કરવું જોઈએ</translation>
 <translation id="8455999171311319804">વૈકલ્પિક: Googleને નિદાન અને વપરાશ ડેટા ઑટોમૅટિક રીતે મોકલીને Chrome OSને વધુ સારી બનાવવામાં સહાય કરો.</translation>
 <translation id="8478823064122749032">તમારા ફોન પર Chrome ઇન્સ્ટૉલ કરો. અમે તમારા એકાઉન્ટને પાછું મેળવવા ફોન નંબર પર એક SMS મોકલીશું: <ph name="PHONE_NUMBER" /></translation>
+<translation id="8498858610309223613">Google Chrome માટેનું વિશેષ સુરક્ષા અપડેટ હમણાં જ લાગુ કરવામાં આવ્યું. ફરી શરૂ કરો અને અમે તમારાં ટૅબની પુનઃસ્થાપના કરીશું.</translation>
 <translation id="8521348052903287641">mDNS ટ્રાફિકને મંજૂરી આપવા માટે Google Chrome Dev માટે ઇનબાઉન્ડ નિયમ.</translation>
 <translation id="8540666473246803645">Google Chrome</translation>
 <translation id="8547799825197623713">Chrome ઍપ્લિકેશન લૉંચર કેનેરી</translation>
@@ -283,14 +283,12 @@ Google Chrome તમારી સેટિંગ્સને પુનઃપ્�
 <translation id="873133009373065397">Google Chrome ડિફૉલ્ટ બ્રાઉઝરને નિર્ધારિત અથવા સેટ કરી શકતું નથી</translation>
 <translation id="8736674169840206667">અપડેટ લાગુ કરવા માટે તમે Chromeને ફરીથી લૉન્ચ કરો તે તમારા વ્યવસ્થાપક માટે જરૂરી છે</translation>
 <translation id="8791470158600044404">{0,plural, =1{Chrome OS 1 મિનિટમાં ફરી શરૂ થશે}one{Chrome OS # મિનિટમાં ફરી શરૂ થશે}other{Chrome OS # મિનિટમાં ફરી શરૂ થશે}}</translation>
-<translation id="8796108026289707191">તમારે હવે Google Chrome ને પુનઃપ્રારંભ કરવું જોઈએ.</translation>
 <translation id="8823341990149967727">Chrome જૂનું થઈ ગયું છે</translation>
 <translation id="884296878221830158">જ્યારે તમે Chrome શરૂ કરો અથવા હોમ બટન ક્લિક કરો ત્યારે કયું પૃષ્ઠ બતાવવામાં આવે તે તેનું પણ નિયંત્રણ કરે છે.</translation>
 <translation id="8862326446509486874">તમારી પાસે સિસ્ટમ-સ્તરનાં ઇન્સ્ટોલ માટે ઉચિત અધિકારો નથી. એડમિન તરીકે ઇન્સ્ટૉલરને ફરીથી ચલાવવનો પ્રયાસ કરો.</translation>
 <translation id="8914504000324227558">Chrome ફરીથી લોંચ કરો</translation>
 <translation id="9026991721384951619">સાઇન ઇન વિગતો જૂની હોવાને કારણે Chrome OS તમારા ડેટાને સિંક કરી શક્યું નથી.</translation>
 <translation id="9067395829937117663">Google Chrome માટે Windows 7 અથવા તે પછીનું સંસ્કરણ આવશ્યક છે.</translation>
-<translation id="9084668267983921457">પ્રમાણીકરણ પ્રમાણપત્ર નિષ્ફળ થયું. કૃપા કરીને ફરીથી Google Chromeમાં સાઇન ઇન કરો અથવા વધુ માહિતી માટે તમારા વ્યવસ્થાપકનો સંપર્ક કરો. <ph name="ADDITIONAL_EXPLANATION" /></translation>
 <translation id="909149346112452267">{0,plural, =1{Chrome OS એક કલાકમાં ફરી શરૂ થશે}one{Chrome OS # કલાકમાં ફરી શરૂ થશે}other{Chrome OS # કલાકમાં ફરી શરૂ થશે}}</translation>
 <translation id="911206726377975832">તમારો બ્રાઉઝિંગ ડેટા પણ ડિલીટ કરી દઈએ?</translation>
 <translation id="9138603949443464873">તમારા ફેરફારો લાગુ કરવા માટે, Chromeને ફરી લૉન્ચ કરો</translation>

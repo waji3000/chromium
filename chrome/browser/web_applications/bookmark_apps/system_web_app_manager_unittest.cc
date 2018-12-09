@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/web_applications/bookmark_apps/system_web_app_manager.h"
+#include "chrome/browser/web_applications/system_web_app_manager.h"
 
 #include <memory>
 #include <utility>
@@ -12,11 +12,11 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/values.h"
 #include "chrome/browser/prefs/browser_prefs.h"
-#include "chrome/browser/web_applications/bookmark_apps/test_system_web_app_manager.h"
 #include "chrome/browser/web_applications/components/pending_app_manager.h"
 #include "chrome/browser/web_applications/components/test_pending_app_manager.h"
 #include "chrome/browser/web_applications/components/web_app_constants.h"
 #include "chrome/browser/web_applications/extensions/web_app_extension_ids_map.h"
+#include "chrome/browser/web_applications/test/test_system_web_app_manager.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/pref_names.h"
@@ -38,11 +38,12 @@ const char kAppUrl2[] = "chrome://system-app2";
 const char kAppUrl3[] = "chrome://system-app3";
 
 PendingAppManager::AppInfo GetWindowedAppInfo() {
-  return PendingAppManager::AppInfo(
-      GURL(kAppUrl1), LaunchContainer::kWindow, InstallSource::kSystemInstalled,
-      false /* create_shortcuts */,
-      PendingAppManager::AppInfo::kDefaultOverridePreviousUserUninstall,
-      true /* bypass_service_worker_check */);
+  PendingAppManager::AppInfo info(GURL(kAppUrl1), LaunchContainer::kWindow,
+                                  InstallSource::kSystemInstalled);
+  info.create_shortcuts = false;
+  info.bypass_service_worker_check = true;
+  info.always_update = true;
+  return info;
 }
 
 }  // namespace

@@ -22,7 +22,7 @@ void SharedWorkerRepository::Connect(
     const blink::WebString& name,
     DocumentID document_id,
     const blink::WebString& content_security_policy,
-    blink::WebContentSecurityPolicyType content_security_policy_type,
+    blink::mojom::ContentSecurityPolicyType content_security_policy_type,
     blink::mojom::IPAddressSpace creation_address_space,
     blink::mojom::SharedWorkerCreationContextType creation_context_type,
     blink::MessagePortChannel channel,
@@ -32,11 +32,11 @@ void SharedWorkerRepository::Connect(
   if (!connector_)
     interface_provider_->GetInterface(mojo::MakeRequest(&connector_));
 
-  mojom::SharedWorkerInfoPtr info(mojom::SharedWorkerInfo::New(
+  blink::mojom::SharedWorkerInfoPtr info(blink::mojom::SharedWorkerInfo::New(
       url, name.Utf8(), content_security_policy.Utf8(),
       content_security_policy_type, creation_address_space));
 
-  mojom::SharedWorkerClientPtr client;
+  blink::mojom::SharedWorkerClientPtr client;
   AddWorker(document_id,
             std::make_unique<SharedWorkerClientImpl>(std::move(listener)),
             mojo::MakeRequest(&client));
@@ -56,8 +56,8 @@ void SharedWorkerRepository::DocumentDetached(DocumentID document_id) {
 
 void SharedWorkerRepository::AddWorker(
     DocumentID document_id,
-    std::unique_ptr<mojom::SharedWorkerClient> impl,
-    mojom::SharedWorkerClientRequest request) {
+    std::unique_ptr<blink::mojom::SharedWorkerClient> impl,
+    blink::mojom::SharedWorkerClientRequest request) {
   std::pair<ClientMap::iterator, bool> result =
       client_map_.emplace(document_id, nullptr);
   std::unique_ptr<ClientSet>& clients = result.first->second;

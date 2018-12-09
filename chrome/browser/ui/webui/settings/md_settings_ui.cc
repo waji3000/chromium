@@ -16,6 +16,8 @@
 #include "base/metrics/histogram_macros.h"
 #include "build/build_config.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/passwords/manage_passwords_view_utils.h"
+#include "chrome/browser/ui/webui/dark_mode_handler.h"
 #include "chrome/browser/ui/webui/metrics_handler.h"
 #include "chrome/browser/ui/webui/settings/about_handler.h"
 #include "chrome/browser/ui/webui/settings/appearance_handler.h"
@@ -93,18 +95,18 @@
 #include "chrome/browser/ui/webui/settings/chromeos/device_power_handler.h"
 #include "chrome/browser/ui/webui/settings/chromeos/device_storage_handler.h"
 #include "chrome/browser/ui/webui/settings/chromeos/device_stylus_handler.h"
-#include "chrome/browser/ui/webui/settings/chromeos/easy_unlock_settings_handler.h"
 #include "chrome/browser/ui/webui/settings/chromeos/fingerprint_handler.h"
 #include "chrome/browser/ui/webui/settings/chromeos/google_assistant_handler.h"
 #include "chrome/browser/ui/webui/settings/chromeos/internet_handler.h"
 #include "chrome/browser/ui/webui/settings/chromeos/multidevice_handler.h"
-#include "chrome/browser/web_applications/bookmark_apps/system_web_app_manager.h"
+#include "chrome/browser/web_applications/system_web_app_manager.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/grit/browser_resources.h"
 #include "chromeos/account_manager/account_manager.h"
 #include "chromeos/account_manager/account_manager_factory.h"
 #include "chromeos/chromeos_features.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/services/multidevice_setup/public/cpp/prefs.h"
 #include "components/arc/arc_util.h"
 #include "ui/base/ui_base_features.h"
 #else  // !defined(OS_CHROMEOS)
@@ -204,7 +206,8 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
   }
   AddSettingsPageUIHandler(
       std::make_unique<chromeos::settings::ChangePictureHandler>());
-  if (crostini::IsCrostiniUIAllowedForProfile(profile)) {
+  if (crostini::IsCrostiniUIAllowedForProfile(profile,
+                                              false /* check_policy */)) {
     AddSettingsPageUIHandler(
         std::make_unique<chromeos::settings::CrostiniHandler>(profile));
   }
@@ -219,21 +222,6 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
   }
   AddSettingsPageUIHandler(
       std::make_unique<chromeos::settings::KeyboardHandler>());
-  if (!profile->IsGuestSession() &&
-      base::FeatureList::IsEnabled(
-          chromeos::features::kEnableUnifiedMultiDeviceSetup) &&
-      base::FeatureList::IsEnabled(
-          chromeos::features::kEnableUnifiedMultiDeviceSettings) &&
-      base::FeatureList::IsEnabled(chromeos::features::kMultiDeviceApi)) {
-    AddSettingsPageUIHandler(
-        std::make_unique<chromeos::settings::MultideviceHandler>(
-            profile->GetPrefs(),
-            chromeos::multidevice_setup::MultiDeviceSetupClientFactory::
-                GetForProfile(profile),
-            std::make_unique<
-                chromeos::multidevice_setup::AndroidSmsAppHelperDelegateImpl>(
-                profile)));
-  }
   AddSettingsPageUIHandler(
       std::make_unique<chromeos::settings::PointerHandler>());
   AddSettingsPageUIHandler(
@@ -263,6 +251,12 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
 
 #if defined(GOOGLE_CHROME_BUILD)
   html_source->AddResourcePath("partner-logo.svg", IDR_CHROME_CLEANUP_PARTNER);
+
+  // partner-logo.svg is loaded with <embed>, which needs to relax several
+  // security policies.
+  html_source->OverrideContentSecurityPolicyObjectSrc("object-src chrome:;");
+  html_source->OverrideContentSecurityPolicyChildSrc("child-src chrome:;");
+  html_source->DisableDenyXFrameOptions();
 #if BUILDFLAG(OPTIMIZE_WEBUI)
   exclude_from_gzip.push_back("partner-logo.svg");
 #endif
@@ -297,11 +291,29 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
                           password_protection_available);
 
 #if defined(OS_CHROMEOS)
-  chromeos::settings::EasyUnlockSettingsHandler* easy_unlock_handler =
-      chromeos::settings::EasyUnlockSettingsHandler::Create(html_source,
-                                                            profile);
-  if (easy_unlock_handler)
-    AddSettingsPageUIHandler(base::WrapUnique(easy_unlock_handler));
+  if (!profile->IsGuestSession() &&
+      base::FeatureList::IsEnabled(
+          chromeos::features::kEnableUnifiedMultiDeviceSetup) &&
+      base::FeatureList::IsEnabled(
+          chromeos::features::kEnableUnifiedMultiDeviceSettings) &&
+      base::FeatureList::IsEnabled(chromeos::features::kMultiDeviceApi)) {
+    AddSettingsPageUIHandler(
+        std::make_unique<chromeos::settings::MultideviceHandler>(
+            profile->GetPrefs(),
+            chromeos::multidevice_setup::MultiDeviceSetupClientFactory::
+                GetForProfile(profile),
+            std::make_unique<
+                chromeos::multidevice_setup::AndroidSmsAppHelperDelegateImpl>(
+                profile)));
+  }
+  html_source->AddBoolean(
+      "enableMultideviceSettings",
+      base::FeatureList::IsEnabled(
+          chromeos::features::kEnableUnifiedMultiDeviceSettings));
+  html_source->AddBoolean(
+      "multideviceAllowedByPolicy",
+      chromeos::multidevice_setup::AreAnyMultiDeviceFeaturesAllowed(
+          profile->GetPrefs()));
 
   AddSettingsPageUIHandler(base::WrapUnique(
       chromeos::settings::DateTimeHandler::Create(html_source)));
@@ -326,6 +338,10 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
                           ash::stylus_utils::HasInternalStylus());
 
   html_source->AddBoolean("showCrostini",
+                          crostini::IsCrostiniUIAllowedForProfile(
+                              profile, false /* check_policy */));
+
+  html_source->AddBoolean("allowCrostini",
                           crostini::IsCrostiniUIAllowedForProfile(profile));
 
   html_source->AddBoolean("isDemoSession",
@@ -359,11 +375,9 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
   html_source->AddBoolean("unifiedConsentEnabled",
                           unified_consent::IsUnifiedConsentFeatureEnabled());
 
-  // TODO(jdoerrie): https://crbug.com/854562.
-  // Remove once Autofill Home is launched.
   html_source->AddBoolean(
-      "autofillHomeEnabled",
-      base::FeatureList::IsEnabled(password_manager::features::kAutofillHome));
+      "navigateToGooglePasswordManager",
+      ShouldManagePasswordsinGooglePasswordManager(profile));
 
   html_source->AddBoolean("showImportPasswords",
                           base::FeatureList::IsEnabled(
@@ -416,6 +430,8 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
 #endif
 
   AddLocalizedStrings(html_source, profile);
+
+  DarkModeHandler::Initialize(web_ui, html_source);
 
   content::WebUIDataSource::Add(web_ui->GetWebContents()->GetBrowserContext(),
                                 html_source);

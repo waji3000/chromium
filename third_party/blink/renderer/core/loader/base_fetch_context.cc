@@ -118,12 +118,13 @@ void BaseFetchContext::AddAdditionalRequestHeaders(ResourceRequest& request,
     // no matter what now.
     if (!request.DidSetHTTPReferrer()) {
       String referrer_to_use = request.ReferrerString();
-      ReferrerPolicy referrer_policy_to_use = request.GetReferrerPolicy();
+      network::mojom::ReferrerPolicy referrer_policy_to_use =
+          request.GetReferrerPolicy();
 
       if (referrer_to_use == Referrer::ClientReferrerString())
         referrer_to_use = GetFetchClientSettingsObject()->GetOutgoingReferrer();
 
-      if (referrer_policy_to_use == kReferrerPolicyDefault) {
+      if (referrer_policy_to_use == network::mojom::ReferrerPolicy::kDefault) {
         referrer_policy_to_use =
             GetFetchClientSettingsObject()->GetReferrerPolicy();
       }
@@ -166,7 +167,8 @@ void BaseFetchContext::AddAdditionalRequestHeaders(ResourceRequest& request,
       } else {
         OriginAccessEntry access_entry(
             request.Url().Protocol(), request.Url().Host(),
-            network::cors::OriginAccessEntry::kAllowRegisterableDomains);
+            network::mojom::CorsOriginAccessMatchMode::
+                kAllowRegisterableDomains);
         if (access_entry.MatchesOrigin(*GetSecurityOrigin()) ==
             network::cors::OriginAccessEntry::kMatchesOrigin) {
           site_value = "same-site";
@@ -324,7 +326,7 @@ BaseFetchContext::CanRequestInternal(
   }
 
   if (request_mode == network::mojom::FetchRequestMode::kSameOrigin &&
-      CORS::CalculateCORSFlag(url, origin.get(), request_mode)) {
+      cors::CalculateCorsFlag(url, origin.get(), request_mode)) {
     PrintAccessDeniedMessage(url);
     return ResourceRequestBlockedReason::kOrigin;
   }

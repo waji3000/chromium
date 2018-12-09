@@ -372,11 +372,14 @@ class MockQuicConnectionVisitor : public QuicConnectionVisitorInterface {
                void(const QuicSocketAddress& self_address,
                     const QuicSocketAddress& peer_address));
   MOCK_METHOD0(OnConfigNegotiated, void());
-  MOCK_METHOD0(PostProcessAfterData, void());
   MOCK_METHOD0(OnAckNeedsRetransmittableFrame, void());
   MOCK_METHOD0(SendPing, void());
   MOCK_CONST_METHOD0(AllowSelfAddressChange, bool());
   MOCK_METHOD0(OnForwardProgressConfirmed, void());
+  MOCK_METHOD1(OnMaxStreamIdFrame, bool(const QuicMaxStreamIdFrame& frame));
+  MOCK_METHOD1(OnStreamIdBlockedFrame,
+               bool(const QuicStreamIdBlockedFrame& frame));
+  MOCK_METHOD1(OnStopSendingFrame, bool(const QuicStopSendingFrame& frame));
 };
 
 class MockQuicConnectionHelper : public QuicConnectionHelperInterface {
@@ -500,6 +503,10 @@ class MockQuicConnection : public QuicConnection {
   MOCK_METHOD2(OnStreamReset, void(QuicStreamId, QuicRstStreamErrorCode));
   MOCK_METHOD1(SendControlFrame, bool(const QuicFrame& frame));
   MOCK_METHOD2(SendMessage, MessageStatus(QuicMessageId, QuicStringPiece));
+  MOCK_METHOD3(OnConnectionClosed,
+               void(QuicErrorCode error,
+                    const QuicString& error_details,
+                    ConnectionCloseSource source));
 
   MOCK_METHOD1(OnError, void(QuicFramer* framer));
   void QuicConnection_OnError(QuicFramer* framer) {
@@ -594,6 +601,7 @@ class MockQuicSession : public QuicSession {
   MOCK_METHOD3(OnStreamHeadersComplete,
                void(QuicStreamId stream_id, bool fin, size_t frame_len));
   MOCK_CONST_METHOD0(IsCryptoHandshakeConfirmed, bool());
+  MOCK_METHOD2(SendStopSending, void(uint16_t code, QuicStreamId stream_id));
 
   using QuicSession::ActivateStream;
 

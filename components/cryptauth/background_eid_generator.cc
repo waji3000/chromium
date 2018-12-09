@@ -10,11 +10,12 @@
 #include "base/strings/string_util.h"
 #include "base/time/default_clock.h"
 #include "base/time/time.h"
+#include "chromeos/components/multidevice/beacon_seed.h"
+#include "chromeos/components/multidevice/remote_device_ref.h"
 #include "chromeos/components/proximity_auth/logging/logging.h"
 #include "components/cryptauth/proto/cryptauth_api.pb.h"
 #include "components/cryptauth/raw_eid_generator.h"
 #include "components/cryptauth/raw_eid_generator_impl.h"
-#include "components/cryptauth/remote_device_ref.h"
 
 namespace cryptauth {
 
@@ -94,7 +95,7 @@ std::unique_ptr<DataWithTimestamp> BackgroundEidGenerator::GenerateEid(
 
 std::string BackgroundEidGenerator::IdentifyRemoteDeviceByAdvertisement(
     const std::string& advertisement_service_data,
-    const RemoteDeviceRefList& remote_devices) const {
+    const chromeos::multidevice::RemoteDeviceRefList& remote_devices) const {
   // Resize the service data to analyze only the first |kNumBytesInEidValue|
   // bytes. If there are any bytes after those first |kNumBytesInEidValue|
   // bytes, they are flags, so they are not needed to identify the device which
@@ -106,7 +107,8 @@ std::string BackgroundEidGenerator::IdentifyRemoteDeviceByAdvertisement(
       remote_devices.begin(), remote_devices.end(),
       [this, &service_data_without_flags](const auto& remote_device) {
         std::vector<DataWithTimestamp> eids =
-            GenerateNearestEids(remote_device.beacon_seeds());
+            GenerateNearestEids(chromeos::multidevice::ToCryptAuthSeedList(
+                remote_device.beacon_seeds()));
         const auto eid_it = std::find_if(
             eids.begin(), eids.end(), [&service_data_without_flags](auto eid) {
               return eid.data == service_data_without_flags;

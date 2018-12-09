@@ -44,16 +44,17 @@ ProcessKeyResult Engine::ProcessKey(const std::string& code,
   ProcessKeyResult res;
   // The fallback result should commit the existing composition text.
   res.commit_text = context_;
-  if (!current_data_)
+  if (!current_data_ || modifier_state > 7) {
+    Reset();
     return res;
-  if (modifier_state > 7)
-    return res;
+  }
 
   const KeyMap* key_map = current_data_->GetKeyMapByModifiers(modifier_state);
   auto it = key_map->find(code);
   if (it == key_map->end()) {
     if (code == "Backspace" && !context_.empty())
       return ProcessBackspace();
+    Reset();
     return res;
   }
 
@@ -63,12 +64,6 @@ ProcessKeyResult Engine::ProcessKey(const std::string& code,
 
   if (!current_data_->HasTransform()) {
     res.commit_text = key_char;
-    return res;
-  }
-
-  if (code == "Space") {
-    res.commit_text = context_ + key_char;
-    Reset();
     return res;
   }
 
@@ -108,6 +103,15 @@ ProcessKeyResult Engine::ProcessKey(const std::string& code,
     transat_ = composition.size();
   } else {
     context_ += key_char;
+  }
+
+  if (!current_data_->PredictTransform(context_, transat_) ||
+      (!history_ambi_.empty() &&
+       !current_data_->PredictTransform(history_context_ + history_ambi_,
+                                        history_transat_))) {
+    res.commit_text = context_;
+    Reset();
+    return res;
   }
 
   // Returns the result according to the current state.

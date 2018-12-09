@@ -22,6 +22,7 @@
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/common/service_worker/service_worker_types.h"
+#include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/browser/browser_thread.h"
 #include "third_party/blink/public/common/service_worker/service_worker_status_code.h"
 #include "url/gurl.h"
@@ -155,7 +156,7 @@ void BackgroundFetchTestBase::UnregisterServiceWorker(
   run_loop.Run();
 }
 
-ServiceWorkerFetchRequest
+blink::mojom::FetchAPIRequestPtr
 BackgroundFetchTestBase::CreateRequestWithProvidedResponse(
     const std::string& method,
     const GURL& url,
@@ -163,9 +164,15 @@ BackgroundFetchTestBase::CreateRequestWithProvidedResponse(
   // Register the |response| with the faked delegate.
   delegate_->RegisterResponse(url, std::move(response));
 
-  // Create a ServiceWorkerFetchRequest request with the same information.
-  return ServiceWorkerFetchRequest(url, method, ServiceWorkerHeaderMap(),
-                                   Referrer(), false /* is_reload */);
+  // Create a blink::mojom::FetchAPIRequestPtr request with the same
+  // information.
+  auto request = blink::mojom::FetchAPIRequest::New();
+  request->url = url;
+  request->method = method;
+  request->is_reload = false;
+  request->referrer = blink::mojom::Referrer::New();
+  request->headers = {};
+  return request;
 }
 
 std::unique_ptr<BackgroundFetchRegistration>

@@ -11,6 +11,7 @@
 #include "base/callback.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/policy/cloud/user_policy_signin_service_internal.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/signin_util.h"
@@ -25,6 +26,9 @@
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 
 namespace policy {
+namespace internal {
+bool g_force_prohibit_signout_for_tests = false;
+}
 
 UserPolicySigninService::UserPolicySigninService(
     Profile* profile,
@@ -135,8 +139,7 @@ void UserPolicySigninService::OnPrimaryAccountSet(
 }
 
 void UserPolicySigninService::OnRefreshTokenUpdatedForAccount(
-    const AccountInfo& account_info,
-    bool is_valid) {
+    const AccountInfo& account_info) {
   // Ignore OAuth tokens or those for any account but the primary one.
   if (account_info.account_id != identity_manager()->GetPrimaryAccountId())
     return;
@@ -179,11 +182,9 @@ void UserPolicySigninService::ShutdownUserCloudPolicyManager() {
   UserPolicySigninServiceBase::ShutdownUserCloudPolicyManager();
 }
 
-void UserPolicySigninService::OnInitializationCompleted(
-    CloudPolicyService* service) {
+void UserPolicySigninService::OnCloudPolicyServiceInitializationCompleted() {
   UserCloudPolicyManager* manager = policy_manager();
-  DCHECK_EQ(service, manager->core()->service());
-  DCHECK(service->IsInitializationComplete());
+  DCHECK(manager->core()->service()->IsInitializationComplete());
   // The service is now initialized - if the client is not yet registered, then
   // it means that there is no cached policy and so we need to initiate a new
   // client registration.
@@ -226,7 +227,8 @@ void UserPolicySigninService::OnRegistrationComplete() {
 }
 
 void UserPolicySigninService::ProhibitSignoutIfNeeded() {
-  if (policy_manager()->IsClientRegistered()) {
+  if (policy_manager()->IsClientRegistered() ||
+      internal::g_force_prohibit_signout_for_tests) {
     DVLOG(1) << "User is registered for policy - prohibiting signout";
     signin_util::SetUserSignoutAllowedForProfile(profile_, false);
   }

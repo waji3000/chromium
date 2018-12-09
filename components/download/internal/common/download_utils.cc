@@ -4,14 +4,15 @@
 
 #include "components/download/public/common/download_utils.h"
 
+#include "base/files/file_util.h"
 #include "base/format_macros.h"
 #include "base/rand_util.h"
 #include "base/strings/stringprintf.h"
 #include "components/download/public/common/download_create_info.h"
 #include "components/download/public/common/download_interrupt_reasons_utils.h"
-#include "components/download/public/common/download_item.h"
 #include "components/download/public/common/download_save_info.h"
 #include "components/download/public/common/download_stats.h"
+#include "components/download/public/common/download_task_runner.h"
 #include "components/download/public/common/download_url_parameters.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_request_headers.h"
@@ -348,22 +349,7 @@ std::unique_ptr<net::HttpRequestHeaders> GetAdditionalRequestHeaders(
   return headers;
 }
 
-DownloadEntry CreateDownloadEntryFromItem(
-    const DownloadItem& item,
-    const std::string& request_origin,
-    DownloadSource download_source,
-    bool fetch_error_body,
-    const DownloadUrlParameters::RequestHeadersType& request_headers) {
-  return DownloadEntry(item.GetGuid(), request_origin, download_source,
-                       fetch_error_body, request_headers,
-                       GetUniqueDownloadId());
-}
-
-DownloadDBEntry CreateDownloadDBEntryFromItem(
-    const DownloadItem& item,
-    const UkmInfo& ukm_info,
-    bool fetch_error_body,
-    const DownloadUrlParameters::RequestHeadersType& request_headers) {
+DownloadDBEntry CreateDownloadDBEntryFromItem(const DownloadItemImpl& item) {
   DownloadDBEntry entry;
   DownloadInfo download_info;
   download_info.guid = item.GetGuid();
@@ -374,8 +360,8 @@ DownloadDBEntry CreateDownloadDBEntryFromItem(
   in_progress_info.site_url = item.GetSiteUrl();
   in_progress_info.tab_url = item.GetTabUrl();
   in_progress_info.tab_referrer_url = item.GetTabReferrerUrl();
-  in_progress_info.fetch_error_body = fetch_error_body;
-  in_progress_info.request_headers = request_headers;
+  in_progress_info.fetch_error_body = item.fetch_error_body();
+  in_progress_info.request_headers = item.request_headers();
   in_progress_info.etag = item.GetETag();
   in_progress_info.last_modified = item.GetLastModifiedTime();
   in_progress_info.mime_type = item.GetMimeType();
@@ -393,11 +379,14 @@ DownloadDBEntry CreateDownloadDBEntryFromItem(
   in_progress_info.danger_type = item.GetDangerType();
   in_progress_info.interrupt_reason = item.GetLastReason();
   in_progress_info.paused = item.IsPaused();
+  in_progress_info.metered = item.AllowMetered();
   in_progress_info.bytes_wasted = item.GetBytesWasted();
+  in_progress_info.auto_resume_count = item.GetAutoResumeCount();
 
   download_info.in_progress_info = in_progress_info;
 
-  download_info.ukm_info = ukm_info;
+  download_info.ukm_info =
+      UkmInfo(item.download_source(), item.ukm_download_id());
   entry.download_info = download_info;
   return entry;
 }
@@ -428,12 +417,24 @@ uint64_t GetUniqueDownloadId() {
   return download_id;
 }
 
-ResumeMode GetDownloadResumeMode(DownloadInterruptReason reason,
+ResumeMode GetDownloadResumeMode(const GURL& url,
+                                 DownloadInterruptReason reason,
                                  bool restart_required,
                                  bool user_action_required) {
+  // Only support resumption for HTTP(S).
+  if (!url.SchemeIsHTTPOrHTTPS())
+    return ResumeMode::INVALID;
+
   switch (reason) {
-    case DOWNLOAD_INTERRUPT_REASON_FILE_TRANSIENT_ERROR:
     case DOWNLOAD_INTERRUPT_REASON_NETWORK_TIMEOUT:
+#if defined(OS_ANDROID)
+      // If resume mode is USER_CONTINUE, android can still resume
+      // the download automatically if we didn't reach the auto resumption
+      // limit and the interruption was due to network related reasons.
+      user_action_required = true;
+      break;
+#endif
+    case DOWNLOAD_INTERRUPT_REASON_FILE_TRANSIENT_ERROR:
     case DOWNLOAD_INTERRUPT_REASON_SERVER_CONTENT_LENGTH_MISMATCH:
       break;
 
@@ -457,7 +458,6 @@ ResumeMode GetDownloadResumeMode(DownloadInterruptReason reason,
     case DOWNLOAD_INTERRUPT_REASON_NETWORK_SERVER_DOWN:
     case DOWNLOAD_INTERRUPT_REASON_SERVER_FAILED:
     case DOWNLOAD_INTERRUPT_REASON_SERVER_UNREACHABLE:
-    case DOWNLOAD_INTERRUPT_REASON_USER_SHUTDOWN:
     case DOWNLOAD_INTERRUPT_REASON_CRASH:
       // It is not clear whether attempting a resumption is acceptable at this
       // time or whether it would work at all. Hence allow the user to retry the
@@ -487,6 +487,7 @@ ResumeMode GetDownloadResumeMode(DownloadInterruptReason reason,
     case DOWNLOAD_INTERRUPT_REASON_NETWORK_INVALID_REQUEST:
     case DOWNLOAD_INTERRUPT_REASON_FILE_VIRUS_INFECTED:
     case DOWNLOAD_INTERRUPT_REASON_SERVER_BAD_CONTENT:
+    case DOWNLOAD_INTERRUPT_REASON_USER_SHUTDOWN:
     case DOWNLOAD_INTERRUPT_REASON_USER_CANCELED:
     case DOWNLOAD_INTERRUPT_REASON_FILE_BLOCKED:
     case DOWNLOAD_INTERRUPT_REASON_FILE_SECURITY_CHECK_FAILED:
@@ -507,6 +508,34 @@ ResumeMode GetDownloadResumeMode(DownloadInterruptReason reason,
     return ResumeMode::USER_CONTINUE;
 
   return ResumeMode::IMMEDIATE_CONTINUE;
+}
+
+bool IsDownloadDone(const GURL& url,
+                    DownloadItem::DownloadState state,
+                    DownloadInterruptReason reason) {
+  switch (state) {
+    case DownloadItem::IN_PROGRESS:
+      return false;
+    case DownloadItem::COMPLETE:
+      FALLTHROUGH;
+    case DownloadItem::CANCELLED:
+      return true;
+    case DownloadItem::INTERRUPTED:
+      return GetDownloadResumeMode(url, reason, false /* restart_required */,
+                                   false /* user_action_required */) ==
+             download::ResumeMode::INVALID;
+    default:
+      return false;
+  }
+}
+
+bool DeleteDownloadedFile(const base::FilePath& path) {
+  DCHECK(GetDownloadTaskRunner()->RunsTasksInCurrentSequence());
+
+  // Make sure we only delete files.
+  if (base::DirectoryExists(path))
+    return true;
+  return base::DeleteFile(path, false);
 }
 
 }  // namespace download

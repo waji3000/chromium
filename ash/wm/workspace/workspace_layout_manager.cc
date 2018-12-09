@@ -251,14 +251,6 @@ void WorkspaceLayoutManager::OnKeyboardWorkspaceDisplacingBoundsChanged(
   }
 }
 
-void WorkspaceLayoutManager::OnStateChanged(
-    keyboard::KeyboardControllerState state) {
-  auto* keyboard_window =
-      keyboard::KeyboardController::Get()->GetKeyboardWindow();
-  if (keyboard_window && keyboard_window->GetRootWindow() == root_window_)
-    NotifySystemUiAreaChanged();
-}
-
 //////////////////////////////////////////////////////////////////////////////
 // WorkspaceLayoutManager, aura::WindowObserver implementation:
 
@@ -350,6 +342,9 @@ void WorkspaceLayoutManager::OnWindowActivating(ActivationReason reason,
 void WorkspaceLayoutManager::OnWindowActivated(ActivationReason reason,
                                                aura::Window* gained_active,
                                                aura::Window* lost_active) {
+  if (lost_active)
+    wm::GetWindowState(lost_active)->OnActivationLost();
+
   UpdateFullscreenState();
   UpdateShelfVisibility();
 }

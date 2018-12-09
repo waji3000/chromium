@@ -75,12 +75,13 @@ class PLATFORM_EXPORT DisplayItem {
     kLinkHighlight,
     kImageAreaFocusRing,
     kOverflowControls,
-    kPageOverlay,
+    kFrameOverlay,
     kPopupContainerBorder,
     kPopupListBoxBackground,
     kPopupListBoxRow,
     kPrintedContentDestinationLocations,
     kPrintedContentPDFURLRect,
+    kReflectionMask,
     kResizer,
     kSVGClip,
     kSVGFilter,
@@ -100,15 +101,9 @@ class PLATFORM_EXPORT DisplayItem {
     kSelectionTint,
     kTableCollapsedBorders,
     kVideoBitmap,
-    kWebPlugin,
     kWebFont,
-    kReflectionMask,
-    // Compositor hit testing requires that layers are created and sized to
-    // include content that does not paint. Hit test display items ensure
-    // a layer exists and is sized properly even if no content would otherwise
-    // be painted.
-    kHitTest,
-    kDrawingLast = kHitTest,
+    kWebPlugin,
+    kDrawingLast = kWebPlugin,
 
     kForeignLayerFirst,
     kForeignLayerCanvas = kForeignLayerFirst,
@@ -131,6 +126,12 @@ class PLATFORM_EXPORT DisplayItem {
     kSVGEffectPaintPhaseFirst,
     kSVGEffectPaintPhaseLast = kSVGEffectPaintPhaseFirst + kPaintPhaseMax,
 
+    // Compositor hit testing requires that layers are created and sized to
+    // include content that does not paint. Hit test display items ensure
+    // a layer exists and is sized properly even if no content would otherwise
+    // be painted.
+    kHitTest,
+
     kScrollHitTest,
 
     kLayerChunkBackground,
@@ -151,15 +152,14 @@ class PLATFORM_EXPORT DisplayItem {
         visual_rect_(client.VisualRect()),
         outset_for_raster_effects_(client.VisualRectOutsetForRasterEffects()),
         type_(type),
-        derived_size_(derived_size),
         fragment_(0),
-        // TODO(pdr): Should this return true for IsScrollHitTestType too?
-        is_cacheable_(client.IsCacheable() && IsDrawingType(type)),
+        is_cacheable_(client.IsCacheable()),
         is_tombstone_(false) {
     // |derived_size| must fit in |derived_size_|.
     // If it doesn't, enlarge |derived_size_| and fix this assert.
     SECURITY_DCHECK(derived_size < (1 << 8));
     SECURITY_DCHECK(derived_size >= sizeof(*this));
+    derived_size_ = static_cast<unsigned>(derived_size);
   }
 
   virtual ~DisplayItem() = default;
@@ -196,7 +196,7 @@ class PLATFORM_EXPORT DisplayItem {
 
   // Visual rect can change without needing invalidation of the client, e.g.
   // when ancestor clip changes. This is called from PaintController::
-  // UseCachedDrawingIfPossible() to update the visual rect of a cached display
+  // UseCachedItemIfPossible() to update the visual rect of a cached display
   // item.
   void UpdateVisualRect() { visual_rect_ = FloatRect(client_->VisualRect()); }
 
@@ -219,7 +219,7 @@ class PLATFORM_EXPORT DisplayItem {
   // Appends this display item to the cc::DisplayItemList, if applicable.
   // |visual_rect_offset| is the offset between the space of the GraphicsLayer
   // which owns the display item and the coordinate space of VisualRect().
-  // TODO(wangxianzhu): Remove the parameter for slimming paint v2.
+  // TODO(wangxianzhu): Remove the parameter for CompositeAfterPaint.
   virtual void AppendToDisplayItemList(const FloatSize& visual_rect_offset,
                                        cc::DisplayItemList&) const {}
 
@@ -251,9 +251,11 @@ class PLATFORM_EXPORT DisplayItem {
   DEFINE_PAINT_PHASE_CONVERSION_METHOD(SVGTransform)
   DEFINE_PAINT_PHASE_CONVERSION_METHOD(SVGEffect)
 
+  bool IsHitTest() const { return type_ == kHitTest; }
   bool IsScrollHitTest() const { return type_ == kScrollHitTest; }
 
   bool IsCacheable() const { return is_cacheable_; }
+  void SetUncacheable() { is_cacheable_ = false; }
 
   virtual bool Equals(const DisplayItem& other) const {
     // Failure of this DCHECK would cause bad casts in subclasses.

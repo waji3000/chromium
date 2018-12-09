@@ -10,13 +10,13 @@ import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.drawable.Drawable;
 import android.support.annotation.CallSuper;
+import android.support.annotation.Nullable;
 import android.support.annotation.StringRes;
 import android.support.v4.view.GravityCompat;
 import android.support.v4.view.ViewCompat;
 import android.support.v4.widget.DrawerLayout;
 import android.support.v7.app.ActionBarDrawerToggle;
 import android.support.v7.content.res.AppCompatResources;
-import android.support.v7.widget.AppCompatImageButton;
 import android.support.v7.widget.Toolbar;
 import android.text.Editable;
 import android.text.TextUtils;
@@ -31,6 +31,7 @@ import android.view.Window;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.TextView.OnEditorActionListener;
@@ -38,8 +39,8 @@ import android.widget.TextView.OnEditorActionListener;
 import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.chrome.R;
-import org.chromium.chrome.browser.toolbar.ActionModeController;
-import org.chromium.chrome.browser.toolbar.ToolbarActionModeCallback;
+import org.chromium.chrome.browser.toolbar.top.ActionModeController;
+import org.chromium.chrome.browser.toolbar.top.ToolbarActionModeCallback;
 import org.chromium.chrome.browser.util.ColorUtils;
 import org.chromium.chrome.browser.vr.VrModeObserver;
 import org.chromium.chrome.browser.vr.VrModuleProvider;
@@ -52,8 +53,6 @@ import org.chromium.chrome.browser.widget.selection.SelectionDelegate.SelectionO
 import org.chromium.ui.KeyboardVisibilityDelegate;
 
 import java.util.List;
-
-import javax.annotation.Nullable;
 
 /**
  * A toolbar that changes its view depending on whether a selection is established. The toolbar
@@ -98,7 +97,7 @@ public class SelectableListToolbar<E>
     private LinearLayout mSearchView;
     private EditText mSearchText;
     private EditText mSearchEditText;
-    private AppCompatImageButton mClearTextButton;
+    private ImageButton mClearTextButton;
     private SearchDelegate mSearchDelegate;
     private boolean mSearchEnabled;
     private boolean mIsVrEnabled;
@@ -296,7 +295,7 @@ public class SelectableListToolbar<E>
             public void afterTextChanged(Editable s) {}
         });
 
-        mClearTextButton = (AppCompatImageButton) findViewById(R.id.clear_text_button);
+        mClearTextButton = findViewById(R.id.clear_text_button);
         mClearTextButton.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {

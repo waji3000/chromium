@@ -53,6 +53,42 @@ const char kEnableAutofillSaveCreditCardUsesStrikeSystemDescription[] =
     "If enabled, prevents popping up the credit card offer-to-save prompt if "
     "it has repeatedly been ignored, declined, or failed.";
 
+const char kEnableSyncUSSBookmarksName[] = "Enable USS for bookmarks sync";
+const char kEnableSyncUSSBookmarksDescription[] =
+    "Enables the new, experimental implementation of bookmark sync";
+
+const char kSyncPseudoUSSFaviconsName[] = "Enable pseudo-USS for favicon sync.";
+const char kSyncPseudoUSSFaviconsDescription[] =
+    "Enable new USS-based codepath for sync datatypes FAVICON_IMAGES and "
+    "FAVICON_TRACKING.";
+
+const char kSyncPseudoUSSHistoryDeleteDirectivesName[] =
+    "Enable pseudo-USS for HISTORY_DELETE_DIRECTIVES sync.";
+const char kSyncPseudoUSSHistoryDeleteDirectivesDescription[] =
+    "Enable new USS-based codepath for sync datatype "
+    "HISTORY_DELETE_DIRECTIVES.";
+
+const char kSyncPseudoUSSPasswordsName[] =
+    "Enable pseudo-USS for PASSWORDS sync.";
+const char kSyncPseudoUSSPasswordsDescription[] =
+    "Enable new USS-based codepath for sync datatype PASSWORDS (pseudo-USS).";
+
+const char kSyncPseudoUSSPreferencesName[] =
+    "Enable pseudo-USS for PREFERENCES sync.";
+const char kSyncPseudoUSSPreferencesDescription[] =
+    "Enable new USS-based codepath for sync datatype PREFERENCES.";
+
+const char kSyncPseudoUSSPriorityPreferencesName[] =
+    "Enable pseudo-USS for PRIORITY_PREFERENCES sync.";
+const char kSyncPseudoUSSPriorityPreferencesDescription[] =
+    "Enable new USS-based codepath for sync datatype PRIORITY_PREFERENCES.";
+
+const char kSyncPseudoUSSSupervisedUsersName[] =
+    "Enable pseudo-USS for supervised users sync.";
+const char kSyncPseudoUSSSupervisedUsersDescription[] =
+    "Enable new USS-based codepath for sync datatypes SUPERVISED_USER_SETTINGS "
+    "and SUPERVISED_USER_WHITELISTS.";
+
 const char kSyncSandboxName[] = "Use Chrome Sync sandbox";
 const char kSyncSandboxDescription[] =
     "Connects to the testing server for Chrome Sync.";
@@ -132,6 +168,12 @@ const char kAutofillRestrictUnownedFieldsToFormlessCheckoutName[] =
 const char kAutofillRestrictUnownedFieldsToFormlessCheckoutDescription[] =
     "Restrict extraction of formless forms to checkout flows";
 
+const char kAutofillRichMetadataQueriesName[] =
+    "Autofill - Rich metadata queries (Canary/Dev only)";
+const char kAutofillRichMetadataQueriesDescription[] =
+    "Transmit rich form/field metadata when querying the autofill server. "
+    "This feature only works on the Canary and Dev channels.";
+
 const char kAutofillUpstreamUseGooglePayBrandingOnMobileName[] =
     "Enable Google Pay branding when offering credit card upload";
 const char kAutofillUpstreamUseGooglePayBrandingOnMobileDescription[] =
@@ -171,15 +213,17 @@ const char kCopyImageName[] = "Copy Image";
 const char kCopyImageDescription[] =
     "Enable copying image to system pasteboard via context menu.";
 
+const char kDetectMainThreadFreezeName[] = "Detect freeze in the main thread.";
+const char kDetectMainThreadFreezeDescription[] =
+    "A crash report will be uploaded if the main thread is frozen more than "
+    "the time specified by this flag.";
+
 const char kDragAndDropName[] = "Drag and Drop";
 const char kDragAndDropDescription[] = "Enable support for drag and drop.";
 
 const char kNewClearBrowsingDataUIName[] = "Clear Browsing Data UI";
 const char kNewClearBrowsingDataUIDescription[] =
     "Enable new Clear Browsing Data UI.";
-
-const char kExternalSearchName[] = "External Search";
-const char kExternalSearchDescription[] = "Enable support for External Search.";
 
 const char kFCMInvalidationsName[] =
     "Enable invalidations delivery via new FCM based protocol";
@@ -197,6 +241,10 @@ const char kHistoryBatchUpdatesFilterDescription[] =
     "When enabled History inserts and deletes history items in the same "
     "BatchUpdates block.";
 
+const char kInfobarUIRebootName[] = "Infobar UI Reboot";
+const char kInfobarUIRebootDescription[] =
+    "When enabled, Infobar will use the new UI.";
+
 const char kInProductHelpDemoModeName[] = "In-Product Help Demo Mode";
 const char kInProductHelpDemoModeDescription[] =
     "When enabled, in-product help promotions occur exactly once per cold "
@@ -209,13 +257,6 @@ const char kITunesUrlsStoreKitHandlingName[] =
 const char kITunesUrlsStoreKitHandlingDescription[] =
     "When enabled, opening itunes product URLs will be handled using the store "
     "kit.";
-
-const char kMailtoHandlingWithGoogleUIName[] = "Mailto Handling with Google UI";
-const char kMailtoHandlingWithGoogleUIDescription[] =
-    "When enabled, tapping mailto: links will open a contextual menu to allow "
-    "users to select how they would like to handle the current and future "
-    "mailto link interactions. This UI matches the same user experience as in "
-    "other Google iOS apps.";
 
 const char kMarkHttpAsName[] = "Mark non-secure origins as non-secure";
 const char kMarkHttpAsDescription[] = "Change the UI treatment for HTTP pages";
@@ -231,6 +272,11 @@ const char kNewPasswordFormParsingDescription[] =
     "Replaces existing form parsing in password manager with a new version, "
     "currently under development. WARNING: when enabled Password Manager might "
     "stop working";
+
+const char kNonModalDialogsName[] = "Use non-modal JavaScript dialogs";
+const char kNonModalDialogsDescription[] =
+    "Presents JavaScript dialogs non-modally so that the user can change tabs "
+    "while a dialog is displayed.";
 
 const char kOmniboxPopupShortcutIconsInZeroStateName[] =
     "Show zero-state omnibox shortcuts";
@@ -286,6 +332,12 @@ const char kToolbarContainerDescription[] =
     "When enabled, the toolbars and their fullscreen animations will be "
     "managed by the toolbar container coordinator rather than BVC.";
 
+const char kPresentSadTabInViewControllerName[] =
+    "Present SadTab in UIViewController";
+const char kPresentSadTabInViewControllerDescription[] =
+    "When enabled, SadTab UI will be presented with UIViewController instead "
+    "of using WebState::ShowTransientView";
+
 const char kUnifiedConsentName[] = "Unified Consent";
 const char kUnifiedConsentDescription[] =
     "Enables a unified management of user consent for privacy-related "
@@ -296,10 +348,9 @@ const char kUseMultiloginEndpointName[] = "Use Multilogin endpoint.";
 const char kUseMultiloginEndpointDescription[] =
     "Use Gaia OAuth multilogin for identity consistency.";
 
-const char kForceUnifiedConsentBumpName[] = "Force Unified Consent Bump";
-const char kForceUnifiedConsentBumpDescription[] =
-    "Force the unified consent bump UI to be shown on every start-up. This "
-    "flag is for debug purpose, to test the UI.";
+const char kUsdzPreviewName[] = "Preview USDZ format 3D models";
+const char kUsdzPreviewDescription[] =
+    "Enables previewing USDZ format 3D models in AR Quick Look.";
 
 const char kUseDdljsonApiName[] = "Use new ddljson API for Doodles";
 const char kUseDdljsonApiDescription[] =
@@ -327,6 +378,10 @@ const char kWKWebViewSnapshotsDescription[] =
 const char kCustomSearchEnginesName[] = "Custom Search Engines";
 const char kCustomSearchEnginesDescription[] =
     "When enabled, user can add custom search engines in settings.";
+
+const char kFindInPageiFrameName[] = "Find in Page in iFrames.";
+const char kFindInPageiFrameDescription[] =
+    "When enabled, Find In Page will search in iFrames.";
 
 // Please insert your name/description above in alphabetical order.
 

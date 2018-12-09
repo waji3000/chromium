@@ -40,6 +40,7 @@ class CONTENT_EXPORT NetworkServiceClient
                       network::mojom::AuthChallengeResponderPtr
                           auth_challenge_responder) override;
   void OnCertificateRequested(
+      const base::Optional<base::UnguessableToken>& window_id,
       uint32_t process_id,
       uint32_t routing_id,
       uint32_t request_id,
@@ -55,7 +56,7 @@ class CONTENT_EXPORT NetworkServiceClient
                              bool fatal,
                              OnSSLCertificateErrorCallback response) override;
 #if defined(OS_CHROMEOS)
-  void OnUsedTrustAnchor(const std::string& username_hash) override;
+  void OnTrustAnchorUsed(const std::string& username_hash) override;
 #endif
   void OnFileUploadRequested(uint32_t process_id,
                              bool async,

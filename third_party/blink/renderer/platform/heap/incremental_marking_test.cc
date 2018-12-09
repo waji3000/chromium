@@ -11,8 +11,6 @@
 #include "third_party/blink/renderer/platform/heap/heap_allocator.h"
 #include "third_party/blink/renderer/platform/heap/heap_buildflags.h"
 #include "third_party/blink/renderer/platform/heap/heap_compact.h"
-#include "third_party/blink/renderer/platform/heap/heap_terminated_array.h"
-#include "third_party/blink/renderer/platform/heap/heap_terminated_array_builder.h"
 #include "third_party/blink/renderer/platform/heap/heap_test_utilities.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
@@ -225,8 +223,13 @@ class ExpectNoWriteBarrierFires : public IncrementalMarkingScope {
 
 class Object : public GarbageCollected<Object> {
  public:
-  static Object* Create() { return new Object(); }
-  static Object* Create(Object* next) { return new Object(next); }
+  static Object* Create() { return MakeGarbageCollected<Object>(); }
+  static Object* Create(Object* next) {
+    return MakeGarbageCollected<Object>(next);
+  }
+
+  Object() : next_(nullptr) {}
+  explicit Object(Object* next) : next_(next) {}
 
   void set_next(Object* next) { next_ = next; }
 
@@ -237,9 +240,6 @@ class Object : public GarbageCollected<Object> {
   virtual void Trace(blink::Visitor* visitor) { visitor->Trace(next_); }
 
  private:
-  Object() : next_(nullptr) {}
-  explicit Object(Object* next) : next_(next) {}
-
   Member<Object> next_;
 };
 
@@ -389,31 +389,30 @@ class Child : public GarbageCollected<Child>,
   USING_GARBAGE_COLLECTED_MIXIN(Child);
 
  public:
-  static Child* Create() { return new Child(); }
+  static Child* Create() { return MakeGarbageCollected<Child>(); }
+
+  Child() : ClassWithVirtual(), Mixin() {}
   ~Child() override {}
 
   void Trace(blink::Visitor* visitor) override { Mixin::Trace(visitor); }
 
   void Foo() override {}
   void Bar() override {}
-
- protected:
-  Child() : ClassWithVirtual(), Mixin() {}
 };
 
 class ParentWithMixinPointer : public GarbageCollected<ParentWithMixinPointer> {
  public:
   static ParentWithMixinPointer* Create() {
-    return new ParentWithMixinPointer();
+    return MakeGarbageCollected<ParentWithMixinPointer>();
   }
+
+  ParentWithMixinPointer() : mixin_(nullptr) {}
 
   void set_mixin(Mixin* mixin) { mixin_ = mixin; }
 
   virtual void Trace(blink::Visitor* visitor) { visitor->Trace(mixin_); }
 
  protected:
-  ParentWithMixinPointer() : mixin_(nullptr) {}
-
   Member<Mixin> mixin_;
 };
 
@@ -700,7 +699,7 @@ class ObjectNode : public GarbageCollected<ObjectNode>,
 
 TEST(IncrementalMarkingTest, HeapDoublyLinkedListPush) {
   Object* obj = Object::Create();
-  ObjectNode* obj_node = new ObjectNode(obj);
+  ObjectNode* obj_node = MakeGarbageCollected<ObjectNode>(obj);
   HeapDoublyLinkedList<ObjectNode> list;
   {
     ExpectWriteBarrierFires scope(ThreadState::Current(), {obj_node});
@@ -712,7 +711,7 @@ TEST(IncrementalMarkingTest, HeapDoublyLinkedListPush) {
 
 TEST(IncrementalMarkingTest, HeapDoublyLinkedListAppend) {
   Object* obj = Object::Create();
-  ObjectNode* obj_node = new ObjectNode(obj);
+  ObjectNode* obj_node = MakeGarbageCollected<ObjectNode>(obj);
   HeapDoublyLinkedList<ObjectNode> list;
   {
     ExpectWriteBarrierFires scope(ThreadState::Current(), {obj_node});
@@ -1112,52 +1111,6 @@ TEST(IncrementalMarkingTest, HeapHashCountedSetSwap) {
 }
 
 // =============================================================================
-// HeapTerminatedArray support. ================================================
-// =============================================================================
-
-class TerminatedArrayNode {
-  DISALLOW_NEW();
-
- public:
-  TerminatedArrayNode(Object* obj) : obj_(obj), is_last_in_array_(false) {}
-
-  // TerminatedArray support.
-  bool IsLastInArray() const { return is_last_in_array_; }
-  void SetLastInArray(bool flag) { is_last_in_array_ = flag; }
-
-  void Trace(blink::Visitor* visitor) { visitor->Trace(obj_); }
-
- private:
-  Member<Object> obj_;
-  bool is_last_in_array_;
-};
-
-}  // namespace incremental_marking_test
-}  // namespace blink
-
-WTF_ALLOW_MOVE_INIT_AND_COMPARE_WITH_MEM_FUNCTIONS(
-    blink::incremental_marking_test::TerminatedArrayNode);
-
-namespace blink {
-namespace incremental_marking_test {
-
-TEST(IncrementalMarkingTest, HeapTerminatedArrayBuilder) {
-  Object* obj = Object::Create();
-  HeapTerminatedArray<TerminatedArrayNode>* array = nullptr;
-  {
-    // The builder allocates the backing store on Oilpans heap, effectively
-    // triggering a write barrier.
-    HeapTerminatedArrayBuilder<TerminatedArrayNode> builder(array);
-    builder.Grow(1);
-    {
-      ExpectWriteBarrierFires scope(ThreadState::Current(), {obj});
-      builder.Append(TerminatedArrayNode(obj));
-    }
-    array = builder.Release();
-  }
-}
-
-// =============================================================================
 // HeapHashMap support. ========================================================
 // =============================================================================
 
@@ -1552,7 +1505,8 @@ class RegisteringObject : public GarbageCollected<RegisteringObject>,
 TEST(IncrementalMarkingTest, WriteBarrierDuringMixinConstruction) {
   IncrementalMarkingScope scope(ThreadState::Current());
   ObjectRegistry registry;
-  RegisteringObject* object = new RegisteringObject(&registry);
+  RegisteringObject* object =
+      MakeGarbageCollected<RegisteringObject>(&registry);
 
   // Clear any objects that have been added to the regular marking worklist in
   // the process of calling the constructor.
@@ -1586,7 +1540,7 @@ TEST(IncrementalMarkingTest, WriteBarrierDuringMixinConstruction) {
 
 TEST(IncrementalMarkingTest, OverrideAfterMixinConstruction) {
   ObjectRegistry registry;
-  RegisteringMixin* mixin = new RegisteringObject(&registry);
+  RegisteringMixin* mixin = MakeGarbageCollected<RegisteringObject>(&registry);
   HeapObjectHeader* header = mixin->GetHeapObjectHeader();
   const void* uninitialized_value = BlinkGC::kNotFullyConstructedObject;
   EXPECT_NE(uninitialized_value, header);

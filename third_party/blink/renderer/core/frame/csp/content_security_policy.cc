@@ -32,7 +32,9 @@
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_url_request.h"
+#include "third_party/blink/renderer/bindings/core/v8/isolated_world_csp.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/dom_string_list.h"
 #include "third_party/blink/renderer/core/dom/element.h"
@@ -56,6 +58,7 @@
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
 #include "third_party/blink/renderer/core/workers/worklet_global_scope.h"
+#include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
 #include "third_party/blink/renderer/platform/json/json_values.h"
 #include "third_party/blink/renderer/platform/loader/fetch/integrity_metadata.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_request.h"
@@ -73,6 +76,7 @@
 #include "third_party/blink/renderer/platform/wtf/text/parsing_utilities.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_utf8_adaptor.h"
+#include "v8/include/v8.h"
 
 namespace blink {
 
@@ -108,11 +112,12 @@ bool ContentSecurityPolicy::IsNonceableElement(const Element* element) {
   // element: if their names or values contain "<script" or "<style", we won't
   // apply the nonce when loading script.
   //
-  // TODO(mkwst): We'll should also skip elements for which the HTML parser
-  // dropped attributes: https://crbug.com/740615 and https://crbug.com/790955.
-  //
   // See http://blog.innerht.ml/csp-2015/#danglingmarkupinjection for an example
   // of the kind of attack this is aimed at mitigating.
+
+  if (element->HasDuplicateAttribute())
+    nonceable = false;
+
   if (nonceable) {
     static const char kScriptString[] = "<SCRIPT";
     static const char kStyleString[] = "<STYLE";
@@ -167,9 +172,17 @@ void ContentSecurityPolicy::BindToExecutionContext(
 void ContentSecurityPolicy::SetupSelf(const SecurityOrigin& security_origin) {
   // Ensure that 'self' processes correctly.
   self_protocol_ = security_origin.Protocol();
-  self_source_ = new CSPSource(this, self_protocol_, security_origin.Host(),
-                               security_origin.Port(), String(),
-                               CSPSource::kNoWildcard, CSPSource::kNoWildcard);
+  self_source_ = MakeGarbageCollected<CSPSource>(
+      this, self_protocol_, security_origin.Host(), security_origin.Port(),
+      String(), CSPSource::kNoWildcard, CSPSource::kNoWildcard);
+}
+
+void ContentSecurityPolicy::SetupSelf(const ContentSecurityPolicy& other) {
+  self_protocol_ = other.self_protocol_;
+  if (other.self_source_) {
+    self_source_ =
+        MakeGarbageCollected<CSPSource>(this, *(other.self_source_.Get()));
+  }
 }
 
 void ContentSecurityPolicy::ApplyPolicySideEffectsToExecutionContext() {
@@ -260,6 +273,7 @@ void ContentSecurityPolicy::CopyStateFrom(const ContentSecurityPolicy* other) {
   for (const auto& policy : other->policies_)
     AddAndReportPolicyFromHeaderValue(policy->Header(), policy->HeaderType(),
                                       policy->HeaderSource());
+  SetupSelf(*other);
 }
 
 void ContentSecurityPolicy::CopyPluginTypesFrom(
@@ -303,13 +317,16 @@ void ContentSecurityPolicy::DidReceiveHeader(
 bool ContentSecurityPolicy::ShouldEnforceEmbeddersPolicy(
     const ResourceResponse& response,
     const SecurityOrigin* parent_origin) {
-  if (response.Url().IsEmpty() || response.Url().ProtocolIsAbout() ||
-      response.Url().ProtocolIsData() || response.Url().ProtocolIs("blob") ||
-      response.Url().ProtocolIs("filesystem")) {
+  if (response.CurrentRequestUrl().IsEmpty() ||
+      response.CurrentRequestUrl().ProtocolIsAbout() ||
+      response.CurrentRequestUrl().ProtocolIsData() ||
+      response.CurrentRequestUrl().ProtocolIs("blob") ||
+      response.CurrentRequestUrl().ProtocolIs("filesystem")) {
     return true;
   }
 
-  if (parent_origin->CanAccess(SecurityOrigin::Create(response.Url()).get()))
+  if (parent_origin->CanAccess(
+          SecurityOrigin::Create(response.CurrentRequestUrl()).get()))
     return true;
 
   String header = response.HttpHeaderField(http_names::kAllowCSPFrom);
@@ -422,9 +439,9 @@ void ContentSecurityPolicy::SetOverrideURLForSelf(const KURL& url) {
   // to an execution context.
   scoped_refptr<const SecurityOrigin> origin = SecurityOrigin::Create(url);
   self_protocol_ = origin->Protocol();
-  self_source_ =
-      new CSPSource(this, self_protocol_, origin->Host(), origin->Port(),
-                    String(), CSPSource::kNoWildcard, CSPSource::kNoWildcard);
+  self_source_ = MakeGarbageCollected<CSPSource>(
+      this, self_protocol_, origin->Host(), origin->Port(), String(),
+      CSPSource::kNoWildcard, CSPSource::kNoWildcard);
 }
 
 Vector<CSPHeaderAndType> ContentSecurityPolicy::Headers() const {
@@ -659,22 +676,6 @@ bool ContentSecurityPolicy::AllowPluginTypeForDocument(
       !document.GetContentSecurityPolicy()->AllowPluginType(
           type, type_attribute, url, reporting_policy))
     return false;
-
-  // CSP says that a plugin document in a nested browsing context should
-  // inherit the plugin-types of its parent.
-  //
-  // FIXME: The plugin-types directive should be pushed down into the
-  // current document instead of reaching up to the parent for it here.
-  LocalFrame* frame = document.GetFrame();
-  if (frame && frame->Tree().Parent() && document.IsPluginDocument()) {
-    ContentSecurityPolicy* parent_csp = frame->Tree()
-                                            .Parent()
-                                            ->GetSecurityContext()
-                                            ->GetContentSecurityPolicy();
-    if (parent_csp && !parent_csp->AllowPluginType(type, type_attribute, url,
-                                                   reporting_policy))
-      return false;
-  }
 
   return true;
 }
@@ -1037,41 +1038,6 @@ bool ContentSecurityPolicy::AllowWorkerContextFromSource(
     RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy,
     CheckHeaderType check_header_type) const {
-  // CSP 1.1 moves workers from 'script-src' to the new 'child-src'. Measure the
-  // impact of this backwards-incompatible change.
-  // TODO(mkwst): We reverted this.
-  if (Document* document = this->GetDocument()) {
-    UseCounter::Count(*document, WebFeature::kWorkerSubjectToCSP);
-    bool is_allowed_worker = true;
-    if (!ShouldBypassContentSecurityPolicy(url, execution_context_)) {
-      for (const auto& policy : policies_) {
-        if (!CheckHeaderTypeMatches(check_header_type, policy->HeaderType()))
-          continue;
-        is_allowed_worker &= policy->AllowWorkerFromSource(
-            url, redirect_status,
-            SecurityViolationReportingPolicy::kSuppressReporting);
-      }
-    }
-
-    bool is_allowed_script = true;
-
-    if (!ShouldBypassContentSecurityPolicy(url, execution_context_)) {
-      for (const auto& policy : policies_) {
-        if (!CheckHeaderTypeMatches(check_header_type, policy->HeaderType()))
-          continue;
-        is_allowed_script &= policy->AllowScriptFromSource(
-            url, AtomicString(), IntegrityMetadataSet(), kNotParserInserted,
-            redirect_status,
-            SecurityViolationReportingPolicy::kSuppressReporting);
-      }
-    }
-
-    if (is_allowed_worker && !is_allowed_script) {
-      UseCounter::Count(*document,
-                        WebFeature::kWorkerAllowedByChildBlockedByScript);
-    }
-  }
-
   if (ShouldBypassContentSecurityPolicy(url, execution_context_))
     return true;
 
@@ -1677,16 +1643,23 @@ const String& ContentSecurityPolicy::GetSelfProtocol() const {
   return self_protocol_;
 }
 
+// static
 bool ContentSecurityPolicy::ShouldBypassMainWorld(
     const ExecutionContext* context) {
-  if (const auto* document = DynamicTo<Document>(context)) {
-    if (document->GetFrame()) {
-      return document->GetFrame()
-          ->GetScriptController()
-          .ShouldBypassMainWorldCSP();
-    }
-  }
-  return false;
+  if (!context)
+    return false;
+
+  v8::Isolate* isolate = ToIsolate(context);
+  v8::HandleScope handle_scope(isolate);
+  v8::Local<v8::Context> v8_context = isolate->GetCurrentContext();
+  if (v8_context.IsEmpty())
+    return false;
+
+  DOMWrapperWorld& world = DOMWrapperWorld::Current(isolate);
+  if (!world.IsIsolatedWorld())
+    return false;
+
+  return IsolatedWorldCSP::Get().HasContentSecurityPolicy(world.GetWorldId());
 }
 
 bool ContentSecurityPolicy::ShouldSendViolationReport(

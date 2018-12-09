@@ -271,7 +271,7 @@ TEST_F(NGPaintFragmentTest, InlineBlock) {
   EXPECT_EQ(LayoutRect(), box2.SelectionVisualRect());
 
   GetDocument().GetFrame()->Selection().SelectAll();
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhasesForTest();
   EXPECT_EQ(LayoutRect(0, 0, 60, 10), outer_text.VisualRect());
   EXPECT_EQ(LayoutRect(0, 0, 60, 10), outer_text.SelectionVisualRect());
   EXPECT_EQ(LayoutRect(60, 0, 10, 10), box1.VisualRect());
@@ -584,9 +584,10 @@ TEST_F(NGPaintFragmentTest, MarkLineBoxesDirtyByTextSetData) {
   Element& target = *GetDocument().getElementById("target");
   ToText(*target.firstChild()).setData("abc");
   const NGPaintFragment& container = *GetPaintFragmentByElementId("container");
-  EXPECT_FALSE(container.FirstChild()->IsDirty());
-  EXPECT_TRUE(ToList(container.Children())[1]->IsDirty());
-  EXPECT_FALSE(ToList(container.Children())[2]->IsDirty());
+  auto lines = ToList(container.Children());
+  // TODO(kojii): Currently we don't optimzie for <br>. We can do this, then
+  // lines[0] should not be dirty.
+  EXPECT_TRUE(lines[0]->IsDirty());
 }
 
 TEST_F(NGPaintFragmentTest, MarkLineBoxesDirtyWrappedLine) {

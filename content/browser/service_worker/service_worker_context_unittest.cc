@@ -93,8 +93,7 @@ class RejectInstallTestHelper : public EmbeddedWorkerTestHelper {
       mojom::ServiceWorker::DispatchInstallEventCallback callback) override {
     dispatched_events()->push_back(Event::Install);
     std::move(callback).Run(blink::mojom::ServiceWorkerEventStatus::REJECTED,
-                            true /* has_fetch_handler */,
-                            base::TimeTicks::Now());
+                            true /* has_fetch_handler */);
   }
 };
 
@@ -105,8 +104,7 @@ class RejectActivateTestHelper : public EmbeddedWorkerTestHelper {
   void OnActivateEvent(
       mojom::ServiceWorker::DispatchActivateEventCallback callback) override {
     dispatched_events()->push_back(Event::Activate);
-    std::move(callback).Run(blink::mojom::ServiceWorkerEventStatus::REJECTED,
-                            base::TimeTicks::Now());
+    std::move(callback).Run(blink::mojom::ServiceWorkerEventStatus::REJECTED);
   }
 };
 
@@ -818,7 +816,7 @@ TEST_F(ServiceWorkerContextTest, ProviderHostIterator) {
       CreateProviderHostForWindow(
           kRenderProcessId1, provider_id++, true /* is_parent_frame_secure */,
           context()->AsWeakPtr(), &remote_endpoints.back());
-  host1->SetDocumentUrl(kOrigin1);
+  host1->UpdateUrls(kOrigin1, kOrigin1);
 
   // Host2 (provider_id=2): process_id=2, origin2.
   remote_endpoints.emplace_back();
@@ -826,7 +824,7 @@ TEST_F(ServiceWorkerContextTest, ProviderHostIterator) {
       CreateProviderHostForWindow(
           kRenderProcessId2, provider_id++, true /* is_parent_frame_secure */,
           context()->AsWeakPtr(), &remote_endpoints.back());
-  host2->SetDocumentUrl(kOrigin2);
+  host2->UpdateUrls(kOrigin2, kOrigin2);
 
   // Host3 (provider_id=3): process_id=2, origin1.
   remote_endpoints.emplace_back();
@@ -834,7 +832,7 @@ TEST_F(ServiceWorkerContextTest, ProviderHostIterator) {
       CreateProviderHostForWindow(
           kRenderProcessId2, provider_id++, true /* is_parent_frame_secure */,
           context()->AsWeakPtr(), &remote_endpoints.back());
-  host3->SetDocumentUrl(kOrigin1);
+  host3->UpdateUrls(kOrigin1, kOrigin1);
 
   // Host4 (provider_id < -1): process_id=2, origin2, for ServiceWorker.
   // Since the provider host is created via
@@ -857,7 +855,6 @@ TEST_F(ServiceWorkerContextTest, ProviderHostIterator) {
       CreateProviderHostForServiceWorkerContext(
           kRenderProcessId2, true /* is_parent_frame_secure */, version.get(),
           context()->AsWeakPtr(), &remote_endpoints.back());
-  host4->SetDocumentUrl(kOrigin2);
   const int host4_provider_id = host4->provider_id();
   EXPECT_LT(host4_provider_id, kInvalidServiceWorkerProviderId);
 

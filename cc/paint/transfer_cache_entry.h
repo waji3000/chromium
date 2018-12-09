@@ -23,11 +23,9 @@ enum class TransferCacheEntryType : uint32_t {
   kRawMemory,
   kImage,
   kColorSpace,
-  kPath,
   kShader,
-  kTextBlob,
   // Add new entries above this line, make sure to update kLast.
-  kLast = kTextBlob,
+  kLast = kShader,
 };
 
 // An interface used on the client to serialize a transfer cache entry
@@ -71,6 +69,9 @@ class CC_PAINT_EXPORT ServiceTransferCacheEntry {
   // and |type| is not modified.
   static bool SafeConvertToType(uint32_t raw_type,
                                 TransferCacheEntryType* type);
+
+  // Returns true if the entry needs a GrContext during deserialization.
+  static bool UsesGrContext(TransferCacheEntryType type);
 
   virtual ~ServiceTransferCacheEntry() {}
 

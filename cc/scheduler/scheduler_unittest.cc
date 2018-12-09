@@ -130,6 +130,8 @@ class FakeSchedulerClient : public SchedulerClient,
     last_begin_frame_ack_ = ack;
   }
 
+  void WillNotReceiveBeginFrame() override {}
+
   void ScheduledActionSendBeginMainFrame(
       const viz::BeginFrameArgs& args) override {
     EXPECT_FALSE(inside_action_);
@@ -698,7 +700,7 @@ TEST_F(SchedulerTest, RequestCommit) {
 TEST_F(SchedulerTest, RequestCommitAfterSetDeferCommit) {
   SetUpScheduler(EXTERNAL_BFS);
 
-  scheduler_->SetDeferCommits(true);
+  scheduler_->SetDeferMainFrameUpdate(true);
 
   scheduler_->SetNeedsBeginMainFrame();
   EXPECT_NO_ACTION();
@@ -710,7 +712,7 @@ TEST_F(SchedulerTest, RequestCommitAfterSetDeferCommit) {
   EXPECT_FALSE(scheduler_->begin_frames_expected());
 
   client_->Reset();
-  scheduler_->SetDeferCommits(false);
+  scheduler_->SetDeferMainFrameUpdate(false);
   EXPECT_ACTIONS("AddObserver(this)");
 
   // Start new BeginMainFrame after defer commit is off.
@@ -723,13 +725,13 @@ TEST_F(SchedulerTest, RequestCommitAfterSetDeferCommit) {
 TEST_F(SchedulerTest, DeferCommitWithRedraw) {
   SetUpScheduler(EXTERNAL_BFS);
 
-  scheduler_->SetDeferCommits(true);
+  scheduler_->SetDeferMainFrameUpdate(true);
 
   scheduler_->SetNeedsBeginMainFrame();
   EXPECT_NO_ACTION();
 
-  // The SetNeedsRedraw will override the SetDeferCommits(true), to allow a
-  // begin frame to be needed.
+  // The SetNeedsRedraw will override the SetDeferMainFrameUpdate(true), to
+  // allow a begin frame to be needed.
   client_->Reset();
   scheduler_->SetNeedsRedraw();
   EXPECT_ACTIONS("AddObserver(this)");
@@ -3089,6 +3091,25 @@ TEST_F(SchedulerTest, InvalidateLayerTreeFrameSinkWhenCannotDraw) {
   EXPECT_FALSE(scheduler_->RedrawPending());
 }
 
+TEST_F(SchedulerTest, NeedsPrepareTilesInvalidates) {
+  // This is to test that SetNeedsPrepareTiles causes invalidates even if
+  // CanDraw is false.
+  scheduler_settings_.using_synchronous_renderer_compositor = true;
+  SetUpScheduler(EXTERNAL_BFS);
+
+  scheduler_->SetCanDraw(false);
+
+  scheduler_->SetNeedsPrepareTiles();
+  EXPECT_ACTIONS("AddObserver(this)");
+  client_->Reset();
+
+  // Do not invalidate in next BeginFrame.
+  EXPECT_SCOPED(AdvanceFrame());
+  EXPECT_ACTIONS("WillBeginImplFrame",
+                 "ScheduledActionInvalidateLayerTreeFrameSink");
+  client_->Reset();
+}
+
 TEST_F(SchedulerTest, SetNeedsOneBeginImplFrame) {
   SetUpScheduler(EXTERNAL_BFS);
 
@@ -3991,7 +4012,7 @@ TEST_F(SchedulerTest, WaitForAllPipelineStagesAlwaysObservesBeginFrames) {
   EXPECT_ACTIONS("ScheduledActionBeginLayerTreeFrameSinkCreation");
   client_->Reset();
   scheduler_->DidCreateAndInitializeLayerTreeFrameSink();
-  scheduler_->SetDeferCommits(true);
+  scheduler_->SetDeferMainFrameUpdate(true);
   scheduler_->SetNeedsBeginMainFrame();
   EXPECT_TRUE(scheduler_->begin_frames_expected());
   EXPECT_FALSE(client_->IsInsideBeginImplFrame());

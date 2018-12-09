@@ -78,9 +78,8 @@ static std::string StorageTypeToString(
   return "INVALID";
 }
 
-// Returns true if |frame| is accesible mapped in the VideoFrame memory space.
 // static
-static bool IsStorageTypeMappable(VideoFrame::StorageType storage_type) {
+bool VideoFrame::IsStorageTypeMappable(VideoFrame::StorageType storage_type) {
   return
 #if defined(OS_LINUX)
       // This is not strictly needed but makes explicit that, at VideoFrame
@@ -599,8 +598,10 @@ scoped_refptr<VideoFrame> VideoFrame::WrapVideoFrame(
   // Copy all metadata to the wrapped frame.
   wrapping_frame->metadata()->MergeMetadataFrom(frame->metadata());
 
-  for (size_t i = 0; i < NumPlanes(format); ++i) {
-    wrapping_frame->data_[i] = frame->data(i);
+  if (frame->IsMappable()) {
+    for (size_t i = 0; i < NumPlanes(format); ++i) {
+      wrapping_frame->data_[i] = frame->data(i);
+    }
   }
 
 #if defined(OS_LINUX)
@@ -1242,7 +1243,7 @@ void VideoFrame::AllocateMemory(bool zero_initialize_memory) {
   }
 
   uint8_t* data = reinterpret_cast<uint8_t*>(
-      base::AlignedAlloc(total_buffer_size, kFrameAddressAlignment));
+      base::AlignedAlloc(total_buffer_size, layout_.buffer_addr_align()));
   if (zero_initialize_memory) {
     memset(data, 0, total_buffer_size);
   }

@@ -22,6 +22,9 @@ cr.define('onboarding_welcome_email_chooser', function() {
     /** @type {nux.NuxEmailProxy} */
     let testEmailBrowserProxy;
 
+    /** @type {nux.ModuleMetricsProxy} */
+    let testEmailMetricsProxy;
+
     /** @type {nux.BookmarkProxy} */
     let testBookmarkBrowserProxy;
 
@@ -31,16 +34,22 @@ cr.define('onboarding_welcome_email_chooser', function() {
     setup(function() {
       testEmailBrowserProxy = new TestNuxEmailProxy();
       nux.NuxEmailProxyImpl.instance_ = testEmailBrowserProxy;
+      testEmailMetricsProxy = new TestMetricsProxy();
+      nux.EmailMetricsProxyImpl.instance_ = testEmailMetricsProxy;
       testBookmarkBrowserProxy = new TestBookmarkProxy();
       nux.BookmarkProxyImpl.instance_ = testBookmarkBrowserProxy;
+      // Reset w/ new proxy for test.
+      nux.BookmarkBarManager.instance_ = new nux.BookmarkBarManager();
 
       testEmailBrowserProxy.setEmailList(emails);
 
       PolymerTest.clearBody();
       testElement = document.createElement('email-chooser');
       document.body.appendChild(testElement);
+      // Simulate nux-email's onRouteEnter call.
+      testElement.initializeSection();
       return Promise.all([
-        testEmailBrowserProxy.whenCalled('recordPageInitialized'),
+        testEmailMetricsProxy.whenCalled('recordPageShown'),
         testEmailBrowserProxy.whenCalled('getEmailList'),
       ]);
     });
@@ -50,42 +59,29 @@ cr.define('onboarding_welcome_email_chooser', function() {
     });
 
     test('test email chooser options', function() {
-      var options = testElement.shadowRoot.querySelectorAll('.option');
+      let options = testElement.shadowRoot.querySelectorAll('.option');
       assertEquals(2, options.length);
 
-      assertFalse(!!testElement.$$('.option[active]'));
-      assertTrue(testElement.$$('.action-button').disabled);
+      // First option is default selected and action button should be enabled.
+      assertEquals(testElement.$$('.option[active]'), options[0]);
+      assertFalse(testElement.$$('.action-button').disabled);
 
-      // Click first option, it should be selected and action button should be
-      // enabled.
       options[0].click();
-      return Promise
-          .all([
-            testBookmarkBrowserProxy.whenCalled('addBookmark'),
-            testEmailBrowserProxy.whenCalled('recordClickedOption'),
-          ])
-          .then(responses => {
-            let response = responses[0];
-            assertEquals(response.title, emails[0].name);
-            assertEquals(response.url, emails[0].url);
-            assertEquals(response.parentId, '1');
-            assertEquals(testElement.$$('.option[active]'), options[0]);
-            assertFalse(testElement.$$('.action-button').disabled);
+      return testBookmarkBrowserProxy.whenCalled('removeBookmark')
+          .then(removedId => {
+            assertEquals(removedId, 1);
+            assertFalse(!!testElement.$$('.option[active]'));
+            assertTrue(testElement.$$('.action-button').disabled);
 
-            // Click second option, it should be selected and first option
-            // should not be selected anymore.
+            // Click second option, it should be selected.
             testBookmarkBrowserProxy.reset();
             options[1].click();
             return Promise.all([
               testBookmarkBrowserProxy.whenCalled('addBookmark'),
-              testBookmarkBrowserProxy.whenCalled('removeBookmark'),
             ]);
           })
           .then(responses => {
             let addResponse = responses[0];
-            let removedId = responses[1];
-
-            assertEquals(removedId, 1);
 
             assertEquals(addResponse.title, emails[1].name);
             assertEquals(addResponse.url, emails[1].url);
@@ -108,21 +104,17 @@ cr.define('onboarding_welcome_email_chooser', function() {
     });
 
     test('test email chooser skip button', function() {
-      var options = testElement.shadowRoot.querySelectorAll('.option');
-      testElement.bookmarkBarWasShown_ = true;
+      let options = testElement.shadowRoot.querySelectorAll('.option');
+      testElement.wasBookmarkBarShownOnInit_ = true;
 
-      // Click first option, it should be selected and action button should be
-      // enabled.
-      options[0].click();
-      return testBookmarkBrowserProxy.whenCalled('addBookmark')
-          .then(response => {
-            testElement.$.noThanksButton.click();
-            return Promise.all([
-              testBookmarkBrowserProxy.whenCalled('removeBookmark'),
-              testBookmarkBrowserProxy.whenCalled('toggleBookmarkBar'),
-              testEmailBrowserProxy.whenCalled('recordNoThanks'),
-            ]);
-          })
+      // First option should be selected and action button should be enabled.
+      testElement.$.noThanksButton.click();
+      return Promise
+          .all([
+            testBookmarkBrowserProxy.whenCalled('removeBookmark'),
+            testBookmarkBrowserProxy.whenCalled('toggleBookmarkBar'),
+            testEmailMetricsProxy.whenCalled('recordDidNothingAndChoseSkip'),
+          ])
           .then(responses => {
             let removeBookmarkResponse = responses[0];
             let toggleBookmarkBarResponse = responses[1];
@@ -133,20 +125,17 @@ cr.define('onboarding_welcome_email_chooser', function() {
     });
 
     test('test email chooser next button', function() {
-      var options = testElement.shadowRoot.querySelectorAll('.option');
-      testElement.bookmarkBarWasShown_ = true;
+      let options = testElement.shadowRoot.querySelectorAll('.option');
+      testElement.wasBookmarkBarShownOnInit_ = true;
 
-      // Click first option, it should be selected and action button should be
-      // enabled.
-      options[0].click();
-      return testBookmarkBrowserProxy.whenCalled('addBookmark')
-          .then(response => {
-            testElement.$$('.action-button').click();
-            return Promise.all([
-              testEmailBrowserProxy.whenCalled('recordProviderSelected'),
-              testEmailBrowserProxy.whenCalled('recordGetStarted'),
-            ]);
-          })
+
+      // First option should be selected and action button should be enabled.
+      testElement.$$('.action-button').click();
+      return Promise
+          .all([
+            testEmailBrowserProxy.whenCalled('recordProviderSelected'),
+            testEmailMetricsProxy.whenCalled('recordDidNothingAndChoseNext'),
+          ])
           .then(responses => {
             let recordProviderSelectedResponse = responses[0];
 

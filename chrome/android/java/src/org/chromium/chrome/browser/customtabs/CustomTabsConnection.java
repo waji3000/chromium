@@ -54,7 +54,6 @@ import org.chromium.chrome.browser.WarmupManager;
 import org.chromium.chrome.browser.browserservices.BrowserSessionContentUtils;
 import org.chromium.chrome.browser.browserservices.Origin;
 import org.chromium.chrome.browser.browserservices.PostMessageHandler;
-import org.chromium.chrome.browser.customtabs.dynamicmodule.ActivityDelegate;
 import org.chromium.chrome.browser.customtabs.dynamicmodule.ModuleLoader;
 import org.chromium.chrome.browser.device.DeviceClassManager;
 import org.chromium.chrome.browser.init.ChainedTasks;
@@ -762,7 +761,12 @@ public class CustomTabsConnection {
             CustomTabsSessionToken sessionToken, int relation, Origin origin, Bundle extras) {
         // Essential parts of the verification will depend on native code and will be run sync on UI
         // thread. Make sure the client has called warmup() beforehand.
-        if (!mWarmupHasBeenCalled.get()) return false;
+        if (!mWarmupHasBeenCalled.get()) {
+            Log.d(TAG, "Verification failed due to warmup not having been previously called.");
+            mClientManager.getCallbackForSession(sessionToken).onRelationshipValidationResult(
+                    relation, Uri.parse(origin.toString()), false, null);
+            return false;
+        }
         return mClientManager.validateRelationship(sessionToken, relation, origin, extras);
     }
 
@@ -836,12 +840,16 @@ public class CustomTabsConnection {
      * Called when an intent is handled by either an existing or a new CustomTabActivity.
      *
      * @param session Session extracted from the intent.
-     * @param url URL extracted from the intent.
      * @param intent incoming intent.
      */
-    public void onHandledIntent(CustomTabsSessionToken session, String url, Intent intent) {
+    public void onHandledIntent(CustomTabsSessionToken session, Intent intent) {
+        String url = IntentHandler.getUrlFromIntent(intent);
+        if (TextUtils.isEmpty(url)) {
+            return;
+        }
         if (mLogRequests) {
-            Log.w(TAG, "onHandledIntent, URL: %s, extras:", bundleToJson(intent.getExtras()));
+            Log.w(TAG, "onHandledIntent, URL: %s, extras: %s", url,
+                    bundleToJson(intent.getExtras()));
         }
 
         // If we still have pending warmup tasks, don't continue as they would only delay intent
@@ -849,7 +857,8 @@ public class CustomTabsConnection {
         if (mWarmupTasks != null) mWarmupTasks.cancel();
 
         maybePreconnectToRedirectEndpoint(session, url, intent);
-        handleParallelRequest(session, intent);
+        ChromeBrowserInitializer.getInstance().runNowOrAfterNativeInitialization(
+                () -> handleParallelRequest(session, intent));
         maybePrefetchResources(session, intent);
     }
 
@@ -995,16 +1004,7 @@ public class CustomTabsConnection {
     @VisibleForTesting
     boolean canDoParallelRequest(CustomTabsSessionToken session, Uri referrer) {
         ThreadUtils.assertOnUiThread();
-        // The restrictions are:
-        // - Native initialization: Required to get the profile, and the feature state.
-        // - Feature check
-        // - The referrer's origin is allowed.
-        //
-        // TODO(lizeb): Relax the restrictions.
-        return ChromeBrowserInitializer.getInstance(ContextUtils.getApplicationContext())
-                       .hasNativeInitializationCompleted()
-                && ChromeFeatureList.isEnabled(ChromeFeatureList.CCT_PARALLEL_REQUEST)
-                && mClientManager.isFirstPartyOriginForSession(session, new Origin(referrer));
+        return mClientManager.isFirstPartyOriginForSession(session, new Origin(referrer));
     }
 
     /** See {@link ClientManager#getReferrerForSession(CustomTabsSessionToken)} */
@@ -1081,11 +1081,18 @@ public class CustomTabsConnection {
     void showSignInToastIfNecessary(CustomTabsSessionToken session, Intent intent) { }
 
     /**
-     * Sends a callback using {@link CustomTabsCallback} about the first run result if necessary.
+     * Sends a callback using {@link CustomTabsCallback} with the first run result if necessary.
      * @param intent The initial VIEW intent that initiated first run.
      * @param resultOK Whether first run was successful.
      */
     public void sendFirstRunCallbackIfNecessary(Intent intent, boolean resultOK) { }
+
+    /**
+     * Sends a callback using {@link CustomTabsCallback} with the first run result if necessary.
+     * @param intentExtras The extras for the initial VIEW intent that initiated first run.
+     * @param resultOK Whether first run was successful.
+     */
+    public void sendFirstRunCallbackIfNecessary(Bundle intentExtras, boolean resultOK) {}
 
     /**
      * Sends the navigation info that was captured to the client callback.
@@ -1128,17 +1135,8 @@ public class CustomTabsConnection {
      * @return true for success.
      */
     public boolean notifyNavigationEvent(CustomTabsSessionToken session, int navigationEvent) {
-        // Notify dynamic module
-        ClientManager.DynamicModuleSessionParams params =
-                mClientManager.getDynamicModuleParamsForSession(session);
-        if (params != null && params.moduleVersion >= 4) {
-            params.activityDelegate.onNavigationEvent(navigationEvent,
-                    getExtrasBundleForNavigationEventForSession(session));
-        }
-
         CustomTabsCallback callback = mClientManager.getCallbackForSession(session);
         if (callback == null) return false;
-
         try {
             callback.onNavigationEvent(
                     navigationEvent, getExtrasBundleForNavigationEventForSession(session));
@@ -1445,7 +1443,7 @@ public class CustomTabsConnection {
         if (extras != null) extrasIntent.putExtras(extras);
         if (IntentHandler.getExtraHeadersFromIntent(extrasIntent) != null) return;
 
-        Tab tab = Tab.createDetached(new CustomTabDelegateFactory(false, false, null));
+        Tab tab = Tab.createDetached(CustomTabDelegateFactory.createDummy());
         HiddenTabObserver observer = new HiddenTabObserver(this);
         tab.addObserver(observer);
 
@@ -1525,11 +1523,6 @@ public class CustomTabsConnection {
                     + mModuleLoader.getComponentName());
         }
         return mModuleLoader;
-    }
-
-    public void setActivityDelegateForSession(CustomTabsSessionToken sessionToken,
-            ActivityDelegate activityDelegate, int moduleVersion) {
-        mClientManager.setActivityDelegateForSession(sessionToken, activityDelegate, moduleVersion);
     }
 
     @CalledByNative

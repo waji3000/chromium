@@ -282,19 +282,6 @@ bool TabSpecificContentSettings::IsContentBlocked(
   return false;
 }
 
-bool TabSpecificContentSettings::IsBlockageIndicated(
-    ContentSettingsType content_type) const {
-  const auto& it = content_settings_status_.find(content_type);
-  if (it != content_settings_status_.end())
-    return it->second.blockage_indicated_to_user;
-  return false;
-}
-
-void TabSpecificContentSettings::SetBlockageHasBeenIndicated(
-    ContentSettingsType content_type) {
-  content_settings_status_[content_type].blockage_indicated_to_user = true;
-}
-
 bool TabSpecificContentSettings::IsContentAllowed(
     ContentSettingsType content_type) const {
   DCHECK_NE(CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS, content_type)
@@ -335,17 +322,6 @@ void TabSpecificContentSettings::OnContentBlockedWithDetail(
     return;
 
   ContentSettingsStatus& status = content_settings_status_[type];
-
-#if defined(OS_ANDROID)
-  if (type == CONTENT_SETTINGS_TYPE_POPUPS) {
-    // For Android we do not have a persistent button that will always be
-    // visible for blocked popups.  Instead we have info bars which could be
-    // dismissed.  Have to clear the blocked state so we properly notify the
-    // relevant pieces again.
-    status.blocked = false;
-    status.blockage_indicated_to_user = false;
-  }
-#endif
 
   if (!status.blocked) {
     status.blocked = true;
@@ -677,7 +653,6 @@ ClearContentSettingsExceptForNavigationRelatedSettings() {
         status.first == CONTENT_SETTINGS_TYPE_JAVASCRIPT)
       continue;
     status.second.blocked = false;
-    status.second.blockage_indicated_to_user = false;
     status.second.allowed = false;
   }
   microphone_camera_state_ = MICROPHONE_CAMERA_NOT_ACCESSED;
@@ -696,7 +671,6 @@ void TabSpecificContentSettings::ClearNavigationRelatedContentSettings() {
     ContentSettingsStatus& status =
         content_settings_status_[type];
     status.blocked = false;
-    status.blockage_indicated_to_user = false;
     status.allowed = false;
   }
   content::NotificationService::current()->Notify(
@@ -710,11 +684,10 @@ void TabSpecificContentSettings::FlashDownloadBlocked() {
                              base::UTF8ToUTF16(content::kFlashPluginName));
 }
 
-void TabSpecificContentSettings::SetPopupsBlocked(bool blocked) {
+void TabSpecificContentSettings::ClearPopupsBlocked() {
   ContentSettingsStatus& status =
       content_settings_status_[CONTENT_SETTINGS_TYPE_POPUPS];
-  status.blocked = blocked;
-  status.blockage_indicated_to_user = false;
+  status.blocked = false;
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_WEB_CONTENT_SETTINGS_CHANGED,
       content::Source<WebContents>(web_contents()),
@@ -945,3 +918,5 @@ bool TabSpecificContentSettings::HasContentSettingChangedViaPageInfo(
   return content_settings_changed_via_page_info_.find(type) !=
          content_settings_changed_via_page_info_.end();
 }
+
+WEB_CONTENTS_USER_DATA_KEY_IMPL(TabSpecificContentSettings)

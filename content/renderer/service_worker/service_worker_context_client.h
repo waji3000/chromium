@@ -19,7 +19,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/strings/string16.h"
 #include "base/time/time.h"
-#include "content/common/service_worker/controller_service_worker.mojom.h"
 #include "content/common/service_worker/embedded_worker.mojom.h"
 #include "content/common/service_worker/service_worker.mojom.h"
 #include "content/common/service_worker/service_worker_provider.mojom.h"
@@ -29,6 +28,7 @@
 #include "third_party/blink/public/common/service_worker/service_worker_status_code.h"
 #include "third_party/blink/public/mojom/blob/blob_registry.mojom.h"
 #include "third_party/blink/public/mojom/payments/payment_app.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/controller_service_worker.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_client.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_event_status.mojom.h"
@@ -91,7 +91,7 @@ class CONTENT_EXPORT ServiceWorkerContextClient
       bool is_starting_installed_worker,
       RendererPreferences renderer_preferences,
       mojom::ServiceWorkerRequest service_worker_request,
-      mojom::ControllerServiceWorkerRequest controller_request,
+      blink::mojom::ControllerServiceWorkerRequest controller_request,
       mojom::EmbeddedWorkerInstanceHostAssociatedPtrInfo instance_host,
       mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info,
       std::unique_ptr<EmbeddedWorkerInstanceClientImpl> embedded_worker_client,
@@ -124,35 +124,30 @@ class CONTENT_EXPORT ServiceWorkerContextClient
                             const blink::WebString& message,
                             int line_number,
                             const blink::WebString& source_url) override;
-  void DidHandleActivateEvent(int request_id,
-                              blink::mojom::ServiceWorkerEventStatus status,
-                              base::TimeTicks event_dispatch_time) override;
+  void DidHandleActivateEvent(
+      int request_id,
+      blink::mojom::ServiceWorkerEventStatus status) override;
   void DidHandleBackgroundFetchAbortEvent(
       int request_id,
-      blink::mojom::ServiceWorkerEventStatus status,
-      base::TimeTicks event_dispatch_time) override;
+      blink::mojom::ServiceWorkerEventStatus status) override;
   void DidHandleBackgroundFetchClickEvent(
       int request_id,
-      blink::mojom::ServiceWorkerEventStatus status,
-      base::TimeTicks event_dispatch_time) override;
+      blink::mojom::ServiceWorkerEventStatus status) override;
   void DidHandleBackgroundFetchFailEvent(
       int request_id,
-      blink::mojom::ServiceWorkerEventStatus status,
-      base::TimeTicks event_dispatch_time) override;
+      blink::mojom::ServiceWorkerEventStatus status) override;
   void DidHandleBackgroundFetchSuccessEvent(
       int request_id,
-      blink::mojom::ServiceWorkerEventStatus status,
-      base::TimeTicks event_dispatch_time) override;
-  void DidHandleCookieChangeEvent(int request_id,
-                                  blink::mojom::ServiceWorkerEventStatus status,
-                                  base::TimeTicks event_dispatch_time) override;
+      blink::mojom::ServiceWorkerEventStatus status) override;
+  void DidHandleCookieChangeEvent(
+      int request_id,
+      blink::mojom::ServiceWorkerEventStatus status) override;
   void DidHandleExtendableMessageEvent(
       int request_id,
-      blink::mojom::ServiceWorkerEventStatus status,
-      base::TimeTicks event_dispatch_time) override;
-  void DidHandleInstallEvent(int event_id,
-                             blink::mojom::ServiceWorkerEventStatus status,
-                             base::TimeTicks event_dispatch_time) override;
+      blink::mojom::ServiceWorkerEventStatus status) override;
+  void DidHandleInstallEvent(
+      int event_id,
+      blink::mojom::ServiceWorkerEventStatus status) override;
   void RespondToFetchEventWithNoResponse(
       int fetch_event_id,
       base::TimeTicks event_dispatch_time,
@@ -167,48 +162,39 @@ class CONTENT_EXPORT ServiceWorkerContextClient
       blink::WebServiceWorkerStreamHandle* web_body_as_stream,
       base::TimeTicks event_dispatch_time,
       base::TimeTicks respond_with_settled_time) override;
-  void DidHandleFetchEvent(int fetch_event_id,
-                           blink::mojom::ServiceWorkerEventStatus status,
-                           base::TimeTicks event_dispatch_time) override;
+  void DidHandleFetchEvent(
+      int fetch_event_id,
+      blink::mojom::ServiceWorkerEventStatus status) override;
   void DidHandleNotificationClickEvent(
       int request_id,
-      blink::mojom::ServiceWorkerEventStatus status,
-      base::TimeTicks event_dispatch_time) override;
+      blink::mojom::ServiceWorkerEventStatus status) override;
   void DidHandleNotificationCloseEvent(
       int request_id,
-      blink::mojom::ServiceWorkerEventStatus status,
-      base::TimeTicks event_dispatch_time) override;
-  void DidHandlePushEvent(int request_id,
-                          blink::mojom::ServiceWorkerEventStatus status,
-                          base::TimeTicks event_dispatch_time) override;
-  void DidHandleSyncEvent(int request_id,
-                          blink::mojom::ServiceWorkerEventStatus status,
-                          base::TimeTicks event_dispatch_time) override;
-  void RespondToAbortPaymentEvent(int event_id,
-                                  bool payment_aborted,
-                                  base::TimeTicks event_dispatch_time) override;
-  void DidHandleAbortPaymentEvent(int event_id,
-                                  blink::mojom::ServiceWorkerEventStatus status,
-                                  base::TimeTicks event_dispatch_time) override;
-  void RespondToCanMakePaymentEvent(
+      blink::mojom::ServiceWorkerEventStatus status) override;
+  void DidHandlePushEvent(
+      int request_id,
+      blink::mojom::ServiceWorkerEventStatus status) override;
+  void DidHandleSyncEvent(
+      int request_id,
+      blink::mojom::ServiceWorkerEventStatus status) override;
+  void RespondToAbortPaymentEvent(int event_id, bool payment_aborted) override;
+  void DidHandleAbortPaymentEvent(
       int event_id,
-      bool can_make_payment,
-      base::TimeTicks event_dispatch_time) override;
+      blink::mojom::ServiceWorkerEventStatus status) override;
+  void RespondToCanMakePaymentEvent(int event_id,
+                                    bool can_make_payment) override;
   void DidHandleCanMakePaymentEvent(
       int event_id,
-      blink::mojom::ServiceWorkerEventStatus status,
-      base::TimeTicks event_dispatch_time) override;
+      blink::mojom::ServiceWorkerEventStatus status) override;
   void RespondToPaymentRequestEvent(
       int payment_request_id,
-      const blink::WebPaymentHandlerResponse& response,
-      base::TimeTicks event_dispatch_time) override;
+      const blink::WebPaymentHandlerResponse& response) override;
   void DidHandlePaymentRequestEvent(
       int payment_request_id,
-      blink::mojom::ServiceWorkerEventStatus status,
-      base::TimeTicks event_dispatch_time) override;
+      blink::mojom::ServiceWorkerEventStatus status) override;
   std::unique_ptr<blink::WebServiceWorkerNetworkProvider>
   CreateServiceWorkerNetworkProvider() override;
-  std::unique_ptr<blink::WebWorkerFetchContext> CreateServiceWorkerFetchContext(
+  scoped_refptr<blink::WebWorkerFetchContext> CreateServiceWorkerFetchContext(
       blink::WebServiceWorkerNetworkProvider*) override;
 
   // Dispatches the fetch event if the worker is running normally, and queues it
@@ -392,7 +378,7 @@ class CONTENT_EXPORT ServiceWorkerContextClient
 
   // These Mojo objects are bound on the worker thread.
   mojom::ServiceWorkerRequest pending_service_worker_request_;
-  mojom::ControllerServiceWorkerRequest pending_controller_request_;
+  blink::mojom::ControllerServiceWorkerRequest pending_controller_request_;
 
   // This is bound on the main thread.
   scoped_refptr<mojom::ThreadSafeEmbeddedWorkerInstanceHostAssociatedPtr>
